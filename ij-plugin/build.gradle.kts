@@ -78,6 +78,8 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
     }
 
+    implementation(project(":mcp"))
+
     // Prompt base classes + generated prompt code
     implementation(project(":prompts"))
 
@@ -403,6 +405,7 @@ val verifyBundledLibraries by tasks.registering {
             "lib/ij-plugin-$pluginVersion.jar",
             "lib/kotlin-cli-$pluginVersion.jar",
             "lib/ocr-common-$pluginVersion.jar",
+            "lib/mcp-$pluginVersion.jar",
             "lib/prompts-api-$pluginVersion.jar",
             "lib/prompts-$pluginVersion.jar",
 
