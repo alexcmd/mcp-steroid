@@ -5,11 +5,9 @@ import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.extensions.PluginId
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.execution.ExecutionManager
-import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
@@ -138,7 +136,7 @@ class ExecuteCodeToolHandler : McpRegistrar {
             reason = reason ?: "No reason provided",
             timeout = timeout,
             dialogKiller = dialogKiller,
-            rawParams = params.arguments
+            rawParams = args
         )
 
         val result = project

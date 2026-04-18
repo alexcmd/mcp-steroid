@@ -1,7 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.mcp
 
-import com.intellij.openapi.diagnostic.Logger
+import com.jonnyzzz.mcpSteroid.thisLogger
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
  * - Server responds with Content-Type: application/json for JSON responses
  */
 object McpHttpTransport {
-    private val log = Logger.getInstance(McpHttpTransport::class.java)
+    private val log = thisLogger()
 
     const val SESSION_HEADER = "Mcp-Session-Id"
     const val SESSION_NOTICE_HEADER = "Mcp-Session-Notice"

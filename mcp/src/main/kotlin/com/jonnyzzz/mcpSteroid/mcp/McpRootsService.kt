@@ -1,13 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.mcp
 
-import com.intellij.openapi.diagnostic.Logger
+import com.jonnyzzz.mcpSteroid.thisLogger
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
-
-private val log = Logger.getInstance("com.jonnyzzz.mcpSteroid.mcp.McpRootsService")
 
 /**
  * Service for managing MCP Roots per session.
@@ -22,6 +20,7 @@ private val log = Logger.getInstance("com.jonnyzzz.mcpSteroid.mcp.McpRootsServic
  * - Refreshes cached roots when notified of changes
  */
 class McpRootsService {
+    private val log = thisLogger()
     private val rootsCache = ConcurrentHashMap<String, List<Root>>()
 
     /**
