@@ -12,7 +12,10 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.ex.StatusBarEx
 import com.jonnyzzz.mcpSteroid.execution.dialogWindowsLookup
-import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,9 +30,9 @@ private val log = logger<ListWindowsToolHandler>()
 /**
  * Handler for the steroid_list_windows MCP tool.
  */
-class ListWindowsToolHandler : McpRegistrar {
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+class ListWindowsToolHandler {
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_list_windows",
             description = "List open IDE windows and their associated projects. Use this to choose project_name for screenshot/input tools in multi-window setups.",
             inputSchema = buildJsonObject {

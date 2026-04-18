@@ -2,7 +2,8 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.ApplicationInfo
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.McpPromptRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.McpResourceRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.Prompt
 import com.jonnyzzz.mcpSteroid.mcp.PromptContent
 import com.jonnyzzz.mcpSteroid.mcp.PromptGetResult
@@ -10,6 +11,18 @@ import com.jonnyzzz.mcpSteroid.mcp.PromptMessage
 import com.jonnyzzz.mcpSteroid.prompts.PromptIndexBase
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
+
+/**
+ * Builds the [PromptsContext] for the currently running IDE. Used by article rendering
+ * to apply the correct per-product filters.
+ */
+fun buildPromptsContext(): PromptsContext {
+    val buildInfo = ApplicationInfo.getInstance().build
+    return PromptsContext(
+        productCode = buildInfo.productCode,
+        baselineVersion = buildInfo.baselineVersion,
+    )
+}
 
 /**
  * Registers all generated prompt articles as MCP resources and prompts.
@@ -23,30 +36,29 @@ import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
  * Content is rendered via [ArticleBase.readPayload] which handles per-part
  * filtering and see-also filtering internally.
  */
-class ResourceRegistrar : McpRegistrar {
+class ResourceRegistrar {
 
-    override fun register(server: McpServerCore) {
+    fun register(resources: McpResourceRegistrar, prompts: McpPromptRegistrar) {
         val resourcesIndex = ResourcesIndex()
         val context = buildPromptsContext()
 
         for ((folder, index) in resourcesIndex.roots) {
-            registerArticleResources(server, index, context)
+            registerArticleResources(resources, index, context)
             if (folder == "prompt") {
-                registerSkillPrompts(server, index, context)
+                registerSkillPrompts(prompts, index, context)
             }
         }
-
     }
 
     private fun registerArticleResources(
-        server: McpServerCore,
+        resources: McpResourceRegistrar,
         index: PromptIndexBase,
         context: PromptsContext,
     ) {
         for ((_, article) in index.articles) {
             if (!article.filter.matches(context)) continue
 
-            server.resourceRegistry.registerResource(
+            resources.registerResource(
                 uri = article.uri,
                 name = article.title.readPrompt(),
                 description = article.description.readPrompt(),
@@ -58,14 +70,14 @@ class ResourceRegistrar : McpRegistrar {
     }
 
     private fun registerSkillPrompts(
-        server: McpServerCore,
+        prompts: McpPromptRegistrar,
         index: PromptIndexBase,
         context: PromptsContext,
     ) {
         for ((_, article) in index.articles) {
             if (!article.filter.matches(context)) continue
 
-            server.promptRegistry.registerPrompt(
+            prompts.registerPrompt(
                 Prompt(
                     name = article.uri,
                     title = article.title.readPrompt(),
@@ -82,16 +94,6 @@ class ResourceRegistrar : McpRegistrar {
                     )
                 )
             }
-        }
-    }
-
-    companion object {
-        fun buildPromptsContext(): PromptsContext {
-            val buildInfo = ApplicationInfo.getInstance().build
-            return PromptsContext(
-                productCode = buildInfo.productCode,
-                baselineVersion = buildInfo.baselineVersion,
-            )
         }
     }
 }

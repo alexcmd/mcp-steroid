@@ -15,7 +15,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Registry for MCP tools.
  */
-class McpToolRegistry {
+class McpToolRegistry : McpToolRegistrar {
     private val log = thisLogger()
 
     private val jsonToLogMessages = Json {
@@ -27,7 +27,7 @@ class McpToolRegistry {
     /**
      * Register a tool with its handler.
      */
-    fun registerTool(
+    override fun registerTool(
         name: String,
         description: String?,
         inputSchema: JsonObject,

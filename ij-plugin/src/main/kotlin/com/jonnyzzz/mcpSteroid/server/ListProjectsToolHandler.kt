@@ -3,7 +3,10 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.project.ProjectManager
-import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -13,10 +16,10 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_list_projects MCP tool.
  */
-class ListProjectsToolHandler : McpRegistrar {
+class ListProjectsToolHandler {
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_list_projects",
             description = "List all open projects in the IDE. Returns project names that can be used with steroid_execute_code and steroid_open_project.",
             inputSchema = buildJsonObject {

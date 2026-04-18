@@ -7,7 +7,7 @@ import com.jonnyzzz.mcpSteroid.thisLogger
 /**
  * Registry for MCP resources.
  */
-class McpResourceRegistry {
+class McpResourceRegistry : McpResourceRegistrar, McpResourceReader {
     private val log = thisLogger()
 
     private val resources = mutableMapOf<String, McpResourceDefinition>()
@@ -15,11 +15,11 @@ class McpResourceRegistry {
     /**
      * Register a resource with its content provider (single content item).
      */
-    fun registerResource(
+    override fun registerResource(
         uri: String,
         name: String,
         description: String?,
-        mimeType: String = "text/plain",
+        mimeType: String,
         contentProvider: () -> String
     ) {
         resources[uri] = McpResourceDefinition(
@@ -72,7 +72,7 @@ class McpResourceRegistry {
     /**
      * Read a resource by URI.
      */
-    fun readResource(uri: String): ResourceReadResult? {
+    override fun readResource(uri: String): ResourceReadResult? {
         val definition = resources[uri] ?: return null
 
         val contents = try {

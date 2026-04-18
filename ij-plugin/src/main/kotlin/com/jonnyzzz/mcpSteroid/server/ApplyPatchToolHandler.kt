@@ -2,7 +2,7 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -16,7 +16,7 @@ import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import kotlinx.coroutines.withTimeoutOrNull
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ApplyPatchToolDescriptionPromptArticle
@@ -49,13 +49,13 @@ import kotlinx.serialization.json.*
  * all edits land as a single undoable [WriteCommandAction], PSI committed in
  * the same action, VFS async-refreshed on completion.
  */
-class ApplyPatchToolHandler : McpRegistrar {
-    private val log = Logger.getInstance(ApplyPatchToolHandler::class.java)
+class ApplyPatchToolHandler {
+    private val log = thisLogger()
 
-    private val toolDescription get() = ApplyPatchToolDescriptionPromptArticle().readPayload(ResourceRegistrar.buildPromptsContext())
+    private val toolDescription get() = ApplyPatchToolDescriptionPromptArticle().readPayload(buildPromptsContext())
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_apply_patch",
             description = toolDescription,
             inputSchema = buildJsonObject {

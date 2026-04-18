@@ -9,7 +9,7 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
@@ -34,7 +34,7 @@ import java.nio.file.Path
  * The tool can optionally trust the project path before opening, which allows skipping
  * the trust dialog.
  */
-class OpenProjectToolHandler : McpRegistrar {
+class OpenProjectToolHandler {
     private val logger = thisLogger()
     private val openProjectLock = Any()
     private val toolDescription = """
@@ -59,8 +59,8 @@ class OpenProjectToolHandler : McpRegistrar {
         - Always check modalDialogShowing in steroid_list_windows response
     """.trimIndent()
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_open_project",
             description = toolDescription,
             inputSchema = buildJsonObject {

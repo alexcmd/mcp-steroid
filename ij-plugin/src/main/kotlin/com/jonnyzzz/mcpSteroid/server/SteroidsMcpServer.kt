@@ -75,11 +75,8 @@ class SteroidsMcpServer(
             // Double-check after acquiring lock
             if (port > 0) return
 
-            // Register all MCP tools and resources via extension point
-            McpRegistrar.EP_NAME.extensionList.forEach { registrar ->
-                log.info("Registering MCP handler: ${registrar.javaClass.simpleName}")
-                registrar.register(mcpServer)
-            }
+            // Register all MCP tools, resources, and prompts explicitly (no extension point).
+            McpToolRegistrations().registerAll(mcpServer)
 
             val configuredPort = Registry.intValue("mcp.steroid.server.port")
 
@@ -225,19 +222,19 @@ class SteroidsMcpServer(
                 get("/") {
                     call.respondText(
                         contentType = ContentType.Text.Plain.withCharset(Charsets.UTF_8),
-                        text = SkillPromptArticle().readPayload(ResourceRegistrar.buildPromptsContext())
+                        text = SkillPromptArticle().readPayload(buildPromptsContext())
                     )
                 }
                 get("/skill.md") {
                     call.respondText(
                         contentType = ContentType.Text.Plain.withCharset(Charsets.UTF_8),
-                        text = SkillPromptArticle().readPayload(ResourceRegistrar.buildPromptsContext())
+                        text = SkillPromptArticle().readPayload(buildPromptsContext())
                     )
                 }
                 get("/SKILL.md") {
                     call.respondText(
                         contentType = ContentType.Text.Plain.withCharset(Charsets.UTF_8),
-                        text = SkillPromptArticle().readPayload(ResourceRegistrar.buildPromptsContext())
+                        text = SkillPromptArticle().readPayload(buildPromptsContext())
                     )
                 }
         }

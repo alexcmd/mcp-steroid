@@ -3,7 +3,8 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.McpResourceReader
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.FindDuplicatesPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.InspectAndFixPromptArticle
@@ -18,11 +19,13 @@ import kotlinx.serialization.json.*
  * Agents can call this instead of ReadMcpResourceTool — it's a purpose-built MCP tool
  * visible in the tool list, making resource discovery more natural.
  */
-class FetchResourceToolHandler : McpRegistrar {
+class FetchResourceToolHandler(
+    private val resources: McpResourceReader,
+) {
 
     private val log = thisLogger()
 
-    override fun register(server: McpServerCore) {
+    fun register(tools: McpToolRegistrar) {
         val testSkillUri = TestSkillPromptArticle().uri
         val debuggerUri = DebuggerSkillPromptArticle().uri
         val skillUri = SkillPromptArticle().uri
@@ -30,7 +33,7 @@ class FetchResourceToolHandler : McpRegistrar {
         val findDuplicatesUri = FindDuplicatesPromptArticle().uri
         val inspectAndFixUri = InspectAndFixPromptArticle().uri
 
-        server.toolRegistry.registerTool(
+        tools.registerTool(
             name = "steroid_fetch_resource",
             description = "Fetch a mcp-steroid:// skill guide by URI. Returns markdown with copy-paste Kotlin code recipes for steroid_execute_code. " +
                     "Running tests? → $testSkillUri | " +
@@ -58,7 +61,7 @@ class FetchResourceToolHandler : McpRegistrar {
 
             log.info("steroid_fetch_resource: $uri")
 
-            val result = server.resourceRegistry.readResource(uri)
+            val result = resources.readResource(uri)
                 ?: return@registerTool ToolCallResult(
                     content = listOf(ContentItem.Text(text = "ERROR: Resource not found: $uri")),
                     isError = true

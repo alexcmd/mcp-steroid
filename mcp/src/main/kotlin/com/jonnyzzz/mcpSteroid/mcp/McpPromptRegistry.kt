@@ -7,14 +7,14 @@ import com.jonnyzzz.mcpSteroid.thisLogger
 /**
  * Registry for MCP prompts.
  */
-class McpPromptRegistry {
+class McpPromptRegistry : McpPromptRegistrar {
     private val log = thisLogger()
     private val prompts = mutableMapOf<String, McpPromptDefinition>()
 
     /**
      * Register a prompt with its renderer.
      */
-    fun registerPrompt(
+    override fun registerPrompt(
         prompt: Prompt,
         renderer: (PromptGetParams) -> PromptGetResult,
     ) {

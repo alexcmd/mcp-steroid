@@ -3,7 +3,11 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.project.ProjectManager
-import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.InputSequenceParser
@@ -14,7 +18,7 @@ import kotlinx.serialization.json.*
 /**
  * Handler for the steroid_input MCP tool.
  */
-class VisionInputToolHandler : McpRegistrar {
+class VisionInputToolHandler {
     private val toolDescription = """
         Send input events (keyboard + mouse) to the IDE using a sequence string.
 
@@ -37,8 +41,8 @@ class VisionInputToolHandler : McpRegistrar {
         The input is delivered to the window captured by steroid_take_screenshot (window_id from metadata) and the focus is forced to that window.
     """.trimIndent()
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_input",
             description = toolDescription,
             inputSchema = buildJsonObject {

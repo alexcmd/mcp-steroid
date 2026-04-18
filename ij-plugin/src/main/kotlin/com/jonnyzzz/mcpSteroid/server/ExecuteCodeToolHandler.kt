@@ -9,7 +9,7 @@ import com.intellij.openapi.project.ProjectManager.getInstance
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.execution.ExecutionManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeGradlePromptArticle
@@ -38,11 +38,11 @@ data class ExecCodeParams(
 /**
  * Handler for the steroid_execute_code MCP tool.
  */
-class ExecuteCodeToolHandler : McpRegistrar {
-    private val toolDescription get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(ResourceRegistrar.buildPromptsContext())
+class ExecuteCodeToolHandler {
+    private val toolDescription get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(buildPromptsContext())
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_execute_code",
             description = toolDescription,
             inputSchema = buildJsonObject {

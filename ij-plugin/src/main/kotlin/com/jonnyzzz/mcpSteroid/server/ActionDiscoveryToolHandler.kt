@@ -24,7 +24,11 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
-import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
@@ -98,9 +102,9 @@ data class GutterIconInfo(
 /**
  * Handler for the steroid_action_discovery MCP tool.
  */
-class ActionDiscoveryToolHandler : McpRegistrar {
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+class ActionDiscoveryToolHandler {
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_action_discovery",
             description = "Discover what IDE actions are available at a file location before invoking them via steroid_execute_code. " +
                     "Use BEFORE applying quick-fixes, refactorings, or running gutter actions (Run/Debug) when you don't know the exact action ID. " +

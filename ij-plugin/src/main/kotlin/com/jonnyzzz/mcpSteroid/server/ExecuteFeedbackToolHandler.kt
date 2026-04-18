@@ -7,7 +7,7 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.storage.ExecutionStorage
@@ -22,7 +22,7 @@ import kotlinx.serialization.json.*
  * - Explanation of the rating
  * - Association with a task_id
  */
-class ExecuteFeedbackToolHandler : McpRegistrar {
+class ExecuteFeedbackToolHandler {
     private val log = thisLogger()
     private val json = Json {
         prettyPrint = true
@@ -48,8 +48,8 @@ class ExecuteFeedbackToolHandler : McpRegistrar {
             Feedback helps track execution history and identify patterns for improvement.
         """.trimIndent()
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_execute_feedback",
             description = toolDescription,
             inputSchema = buildJsonObject {

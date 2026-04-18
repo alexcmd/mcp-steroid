@@ -3,7 +3,11 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.project.ProjectManager
-import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.serialization.json.*
@@ -12,7 +16,7 @@ import java.util.*
 /**
  * Handler for the steroid_take_screenshot MCP tool.
  */
-class VisionScreenshotToolHandler : McpRegistrar {
+class VisionScreenshotToolHandler {
     private val toolDescription = """
         Capture a screenshot of the IDE and return an image payload.
 
@@ -29,8 +33,8 @@ class VisionScreenshotToolHandler : McpRegistrar {
         After execution, call steroid_execute_feedback to log your feedback.
     """.trimIndent()
 
-    override fun register(server: McpServerCore) {
-        server.toolRegistry.registerTool(
+    fun register(tools: McpToolRegistrar) {
+        tools.registerTool(
             name = "steroid_take_screenshot",
             description = toolDescription,
             inputSchema = buildJsonObject {
