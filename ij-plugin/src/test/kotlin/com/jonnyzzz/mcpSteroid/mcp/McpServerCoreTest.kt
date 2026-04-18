@@ -76,15 +76,13 @@ class McpServerCoreTest {
     @Test
     fun `test tools list returns registered tools`() = runBlocking {
         // Register a test tool
-        server.toolRegistry.registerTool(
-            name = "test_tool",
-            description = "A test tool",
-            inputSchema = buildJsonObject {
-                put("type", "object")
-            }
-        ) { _ ->
-            ToolCallResult(content = listOf(ContentItem.Text(text = "OK")))
-        }
+        server.toolRegistry.registerTool(object : McpTool {
+            override val name = "test_tool"
+            override val description = "A test tool"
+            override val inputSchema = buildJsonObject { put("type", "object") }
+            override suspend fun call(context: ToolCallContext) =
+                ToolCallResult(content = listOf(ContentItem.Text(text = "OK")))
+        })
 
         val request = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}"""
 
@@ -104,20 +102,22 @@ class McpServerCoreTest {
     fun `test tools call executes handler`() = runBlocking {
         var called = false
 
-        server.toolRegistry.registerTool(
-            name = "echo_tool",
-            description = "Echoes input",
-            inputSchema = buildJsonObject {
+        server.toolRegistry.registerTool(object : McpTool {
+            override val name = "echo_tool"
+            override val description = "Echoes input"
+            override val inputSchema = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("message") { put("type", "string") }
                 }
             }
-        ) { context ->
-            called = true
-            val message = context.params.arguments?.get("message")?.jsonPrimitive?.content ?: "no message"
-            ToolCallResult(content = listOf(ContentItem.Text(text = "Echo: $message")))
-        }
+
+            override suspend fun call(context: ToolCallContext): ToolCallResult {
+                called = true
+                val message = context.params.arguments?.get("message")?.jsonPrimitive?.content ?: "no message"
+                return ToolCallResult(content = listOf(ContentItem.Text(text = "Echo: $message")))
+            }
+        })
 
         val request = buildJsonObject {
             put("jsonrpc", "2.0")

@@ -13,14 +13,14 @@ import com.jonnyzzz.mcpSteroid.execution.McpEditingGuardException
 import com.jonnyzzz.mcpSteroid.execution.executeApplyPatch
 import com.jonnyzzz.mcpSteroid.execution.mcpEditingGuard
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
-import kotlinx.coroutines.withTimeoutOrNull
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
-import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ApplyPatchToolDescriptionPromptArticle
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 /**
@@ -49,68 +49,61 @@ import kotlinx.serialization.json.*
  * all edits land as a single undoable [WriteCommandAction], PSI committed in
  * the same action, VFS async-refreshed on completion.
  */
-class ApplyPatchToolHandler {
+class ApplyPatchToolHandler : McpTool {
     private val log = thisLogger()
 
-    private val toolDescription get() = ApplyPatchToolDescriptionPromptArticle().readPayload(buildPromptsContext())
-
-    fun register(tools: McpToolRegistrar) {
-        tools.registerTool(
-            name = "steroid_apply_patch",
-            description = toolDescription,
-            inputSchema = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") {
-                    putJsonObject("project_name") {
-                        put("type", "string")
-                        put("description", "Project name (from steroid_list_projects)")
-                    }
-                    putJsonObject("task_id") {
-                        put("type", "string")
-                        put("description", "Your task identifier; reuse across related calls.")
-                    }
-                    putJsonObject("reason") {
-                        put("type", "string")
-                        put("description", "One-line summary of what this patch changes.")
-                    }
-                    putJsonObject("hunks") {
-                        put("type", "array")
-                        put("description", "Literal-text hunks. Each hunk's old_string must occur exactly once in its file.")
-                        putJsonObject("items") {
-                            put("type", "object")
-                            putJsonObject("properties") {
-                                putJsonObject("file_path") {
-                                    put("type", "string")
-                                    put("description", "Absolute filesystem path. Matches Claude Code `Edit`'s `file_path` field.")
-                                }
-                                putJsonObject("old_string") {
-                                    put("type", "string")
-                                    put("description", "Literal text to replace (must occur exactly once).")
-                                }
-                                putJsonObject("new_string") {
-                                    put("type", "string")
-                                    put("description", "Replacement text.")
-                                }
-                            }
-                            putJsonArray("required") {
-                                add("file_path")
-                                add("old_string")
-                                add("new_string")
-                            }
+    override val name = "steroid_apply_patch"
+    override val description get() = ApplyPatchToolDescriptionPromptArticle().readPayload(buildPromptsContext())
+    override val inputSchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("project_name") {
+                put("type", "string")
+                put("description", "Project name (from steroid_list_projects)")
+            }
+            putJsonObject("task_id") {
+                put("type", "string")
+                put("description", "Your task identifier; reuse across related calls.")
+            }
+            putJsonObject("reason") {
+                put("type", "string")
+                put("description", "One-line summary of what this patch changes.")
+            }
+            putJsonObject("hunks") {
+                put("type", "array")
+                put("description", "Literal-text hunks. Each hunk's old_string must occur exactly once in its file.")
+                putJsonObject("items") {
+                    put("type", "object")
+                    putJsonObject("properties") {
+                        putJsonObject("file_path") {
+                            put("type", "string")
+                            put("description", "Absolute filesystem path. Matches Claude Code `Edit`'s `file_path` field.")
+                        }
+                        putJsonObject("old_string") {
+                            put("type", "string")
+                            put("description", "Literal text to replace (must occur exactly once).")
+                        }
+                        putJsonObject("new_string") {
+                            put("type", "string")
+                            put("description", "Replacement text.")
                         }
                     }
+                    putJsonArray("required") {
+                        add("file_path")
+                        add("old_string")
+                        add("new_string")
+                    }
                 }
-                putJsonArray("required") {
-                    add("project_name")
-                    add("task_id")
-                    add("hunks")
-                }
-            },
-            ::handle,
-        )
+            }
+        }
+        putJsonArray("required") {
+            add("project_name")
+            add("task_id")
+            add("hunks")
+        }
     }
 
-    private suspend fun handle(context: ToolCallContext): ToolCallResult {
+    override suspend fun call(context: ToolCallContext): ToolCallResult {
         val args = context.params.arguments ?: return errorResult("Missing arguments")
 
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull

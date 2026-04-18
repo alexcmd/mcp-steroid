@@ -44,19 +44,21 @@ class McpHttpTransportTest {
         )
 
         // Register a test tool
-        mcpServer.toolRegistry.registerTool(
-            name = "test_echo",
-            description = "Echo tool for testing",
-            inputSchema = buildJsonObject {
+        mcpServer.toolRegistry.registerTool(object : McpTool {
+            override val name = "test_echo"
+            override val description = "Echo tool for testing"
+            override val inputSchema = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("message") { put("type", "string") }
                 }
             }
-        ) { context ->
-            val message = context.params.arguments?.get("message")?.jsonPrimitive?.content ?: ""
-            ToolCallResult(content = listOf(ContentItem.Text(text = "Echo: $message")))
-        }
+
+            override suspend fun call(context: ToolCallContext): ToolCallResult {
+                val message = context.params.arguments?.get("message")?.jsonPrimitive?.content ?: ""
+                return ToolCallResult(content = listOf(ContentItem.Text(text = "Echo: $message")))
+            }
+        })
 
         // Register a test resource
         mcpServer.resourceRegistry.registerResource(

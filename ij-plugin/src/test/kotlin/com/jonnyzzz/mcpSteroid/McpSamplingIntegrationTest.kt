@@ -183,7 +183,7 @@ class McpSamplingIntegrationTest : BasePlatformTestCase() {
         server.startServerIfNeeded()
 
         // Register the test sampling tool
-        SamplingTestToolHandler.register(server.getServer())
+        server.getServer().toolRegistry.registerTool(SamplingTestToolHandler())
 
         // Initialize WITHOUT sampling capability
         val initResponse = client.post(server.mcpUrl) {
@@ -249,7 +249,7 @@ class McpSamplingIntegrationTest : BasePlatformTestCase() {
         server.startServerIfNeeded()
 
         // Register the test sampling tool
-        SamplingTestToolHandler.register(server.getServer())
+        server.getServer().toolRegistry.registerTool(SamplingTestToolHandler())
 
         // Initialize WITH sampling capability
         val initResponse = client.post(server.mcpUrl) {

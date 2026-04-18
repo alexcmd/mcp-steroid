@@ -4,16 +4,24 @@ package com.jonnyzzz.mcpSteroid.mcp
 import kotlinx.serialization.json.JsonObject
 
 /**
+ * A single MCP tool, bundling the metadata and the invocation logic. Replaces the
+ * previous parameter-list passed to [McpToolRegistrar.registerTool] so each tool is
+ * a self-describing object.
+ */
+interface McpTool {
+    val name: String
+    val description: String?
+    val inputSchema: JsonObject
+
+    suspend fun call(context: ToolCallContext): ToolCallResult
+}
+
+/**
  * Narrow role interface exposed by [McpToolRegistry] for registering a single MCP tool.
- * Passed to individual tool handlers so they only see the one method they need.
+ * Callers pass an [McpTool] instance — name/description/schema/handler live on that object.
  */
 fun interface McpToolRegistrar {
-    fun registerTool(
-        name: String,
-        description: String?,
-        inputSchema: JsonObject,
-        handler: suspend (ToolCallContext) -> ToolCallResult,
-    )
+    fun registerTool(tool: McpTool)
 }
 
 /**

@@ -4,7 +4,7 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
@@ -18,8 +18,9 @@ import kotlinx.serialization.json.*
 /**
  * Handler for the steroid_input MCP tool.
  */
-class VisionInputToolHandler {
-    private val toolDescription = """
+class VisionInputToolHandler : McpTool {
+    override val name = "steroid_input"
+    override val description = """
         Send input events (keyboard + mouse) to the IDE using a sequence string.
 
         HEAVY ENDPOINT: Intended for debugging only. Prefer steroid_execute_code for regular automation.
@@ -40,48 +41,40 @@ class VisionInputToolHandler {
 
         The input is delivered to the window captured by steroid_take_screenshot (window_id from metadata) and the focus is forced to that window.
     """.trimIndent()
-
-    fun register(tools: McpToolRegistrar) {
-        tools.registerTool(
-            name = "steroid_input",
-            description = toolDescription,
-            inputSchema = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") {
-                    putJsonObject("project_name") {
-                        put("type", "string")
-                        put("description", "Project name (from steroid_list_projects)")
-                    }
-                    putJsonObject("task_id") {
-                        put("type", "string")
-                        put("description", "Your task identifier to group related executions.")
-                    }
-                    putJsonObject("reason") {
-                        put("type", "string")
-                        put("description", "Reason for sending input. Required for audit logs.")
-                    }
-                        putJsonObject("screenshot_execution_id") {
-                            put("type", "string")
-                            put("description", "Execution ID from steroid_take_screenshot (or takeIdeScreenshot() inside a script)")
-                        }
-                    putJsonObject("sequence") {
-                        put("type", "string")
-                        put("description", "Comma-separated input sequence (stick/press/type/click/delay)")
-                    }
-                }
-                putJsonArray("required") {
-                    add("project_name")
-                    add("task_id")
-                    add("reason")
-                    add("screenshot_execution_id")
-                    add("sequence")
-                }
-            },
-            ::handle
-        )
+    override val inputSchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("project_name") {
+                put("type", "string")
+                put("description", "Project name (from steroid_list_projects)")
+            }
+            putJsonObject("task_id") {
+                put("type", "string")
+                put("description", "Your task identifier to group related executions.")
+            }
+            putJsonObject("reason") {
+                put("type", "string")
+                put("description", "Reason for sending input. Required for audit logs.")
+            }
+            putJsonObject("screenshot_execution_id") {
+                put("type", "string")
+                put("description", "Execution ID from steroid_take_screenshot (or takeIdeScreenshot() inside a script)")
+            }
+            putJsonObject("sequence") {
+                put("type", "string")
+                put("description", "Comma-separated input sequence (stick/press/type/click/delay)")
+            }
+        }
+        putJsonArray("required") {
+            add("project_name")
+            add("task_id")
+            add("reason")
+            add("screenshot_execution_id")
+            add("sequence")
+        }
     }
 
-    private suspend fun handle(context: ToolCallContext): ToolCallResult {
+    override suspend fun call(context: ToolCallContext): ToolCallResult {
         val args = context.params.arguments ?: return errorResult("Missing arguments")
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
             ?: return errorResult("Missing required parameter: project_name")

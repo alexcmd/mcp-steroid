@@ -14,7 +14,8 @@ import com.intellij.openapi.wm.ex.StatusBarEx
 import com.jonnyzzz.mcpSteroid.execution.dialogWindowsLookup
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
-import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.McpTool
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
 import kotlinx.coroutines.Dispatchers
@@ -30,22 +31,16 @@ private val log = logger<ListWindowsToolHandler>()
 /**
  * Handler for the steroid_list_windows MCP tool.
  */
-class ListWindowsToolHandler {
-    fun register(tools: McpToolRegistrar) {
-        tools.registerTool(
-            name = "steroid_list_windows",
-            description = "List open IDE windows and their associated projects. Use this to choose project_name for screenshot/input tools in multi-window setups.",
-            inputSchema = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") { }
-                putJsonArray("required") { }
-            }
-        ) {
-            handle()
-        }
+class ListWindowsToolHandler : McpTool {
+    override val name = "steroid_list_windows"
+    override val description = "List open IDE windows and their associated projects. Use this to choose project_name for screenshot/input tools in multi-window setups."
+    override val inputSchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") { }
+        putJsonArray("required") { }
     }
 
-    private suspend fun handle(): ToolCallResult {
+    override suspend fun call(context: ToolCallContext): ToolCallResult {
         val response = collectListWindowsResponse()
         val json = McpJson.encodeToString(response)
         return ToolCallResult(

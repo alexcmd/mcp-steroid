@@ -6,9 +6,9 @@ import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 /**
  * Central, explicit registration of every MCP tool, resource, and prompt this plugin exposes.
  *
- * Replaces the previous `mcpRegistrar` extension point: tools are wired directly here, each
- * handler receiving only the narrow single-method interface(s) it needs from the server
- * (e.g. [com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar], [com.jonnyzzz.mcpSteroid.mcp.McpResourceRegistrar]).
+ * Each tool handler is an [com.jonnyzzz.mcpSteroid.mcp.McpTool] implementation and is
+ * registered by passing the instance itself to the narrow
+ * [com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar] interface exposed by the server.
  */
 class McpToolRegistrations {
     fun registerAll(server: McpServerCore) {
@@ -16,16 +16,16 @@ class McpToolRegistrations {
         val resources = server.resourceRegistry
         val prompts = server.promptRegistry
 
-        ListProjectsToolHandler().register(tools)
-        ListWindowsToolHandler().register(tools)
-        ExecuteCodeToolHandler().register(tools)
-        ApplyPatchToolHandler().register(tools)
-        ExecuteFeedbackToolHandler().register(tools)
-        ActionDiscoveryToolHandler().register(tools)
-        VisionScreenshotToolHandler().register(tools)
-        VisionInputToolHandler().register(tools)
-        OpenProjectToolHandler().register(tools)
-        FetchResourceToolHandler(resources).register(tools)
+        tools.registerTool(ListProjectsToolHandler())
+        tools.registerTool(ListWindowsToolHandler())
+        tools.registerTool(ExecuteCodeToolHandler())
+        tools.registerTool(ApplyPatchToolHandler())
+        tools.registerTool(ExecuteFeedbackToolHandler())
+        tools.registerTool(ActionDiscoveryToolHandler())
+        tools.registerTool(VisionScreenshotToolHandler())
+        tools.registerTool(VisionInputToolHandler())
+        tools.registerTool(OpenProjectToolHandler())
+        tools.registerTool(FetchResourceToolHandler(resources))
 
         ResourceRegistrar().register(resources, prompts)
     }

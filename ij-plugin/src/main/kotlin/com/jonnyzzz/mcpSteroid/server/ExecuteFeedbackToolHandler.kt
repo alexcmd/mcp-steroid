@@ -7,7 +7,8 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.McpTool
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.storage.ExecutionStorage
@@ -22,17 +23,18 @@ import kotlinx.serialization.json.*
  * - Explanation of the rating
  * - Association with a task_id
  */
-class ExecuteFeedbackToolHandler {
+class ExecuteFeedbackToolHandler : McpTool {
     private val log = thisLogger()
     private val json = Json {
         prettyPrint = true
     }
 
-    private val toolDescription get() = """
+    override val name = "steroid_execute_feedback"
+    override val description = """
             Provide feedback on the result of a steroid_execute_code call.
-            
+
             Use this tool to rate execution results and track what worked or didn't work.
-            
+
             PARAMETERS:
             - project_name: The project where execution occurred
             - task_id: The same task_id you used in steroid_execute_code
@@ -44,55 +46,49 @@ class ExecuteFeedbackToolHandler {
               - 0.75-1.00: Success, achieved the intended goal
             - explanation: Describe what worked, what didn't, and what you'll try next
             - code (optional): The code snippet that was executed
-            
+
             Feedback helps track execution history and identify patterns for improvement.
         """.trimIndent()
 
-    fun register(tools: McpToolRegistrar) {
-        tools.registerTool(
-            name = "steroid_execute_feedback",
-            description = toolDescription,
-            inputSchema = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") {
-                    putJsonObject("project_name") {
-                        put("type", "string")
-                        put("description", "Project name (from steroid_list_projects)")
-                    }
-                    putJsonObject("task_id") {
-                        put("type", "string")
-                        put("description", "The task_id you used when calling steroid_execute_code")
-                    }
-                    putJsonObject("execution_id") {
-                        put("type", "string")
-                        put("description", "The execution_id returned from the most recent steroid_execute_code call for this task")
-                    }
-                    putJsonObject("success_rating") {
-                        put("type", "number")
-                        put("minimum", 0.0)
-                        put("maximum", 1.0)
-                        put("description", "Rate the success of the execution from 0.00 (complete failure) to 1.00 (complete success)")
-                    }
-                    putJsonObject("explanation") {
-                        put("type", "string")
-                        put("description", "Explain why you gave this rating. What worked? What didn't? What will you try next?")
-                    }
-                    putJsonObject("code") {
-                        put("type", "string")
-                        put("description", "Optional: The code snippet that was executed. Useful for tracking what code produced which results.")
-                    }
-                }
-                putJsonArray("required") {
-                    add("project_name")
-                    add("task_id")
-                    add("success_rating")
-                    add("explanation")
-                }
+    override val inputSchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("project_name") {
+                put("type", "string")
+                put("description", "Project name (from steroid_list_projects)")
             }
-        ) { context ->
-            handle(context.params)
+            putJsonObject("task_id") {
+                put("type", "string")
+                put("description", "The task_id you used when calling steroid_execute_code")
+            }
+            putJsonObject("execution_id") {
+                put("type", "string")
+                put("description", "The execution_id returned from the most recent steroid_execute_code call for this task")
+            }
+            putJsonObject("success_rating") {
+                put("type", "number")
+                put("minimum", 0.0)
+                put("maximum", 1.0)
+                put("description", "Rate the success of the execution from 0.00 (complete failure) to 1.00 (complete success)")
+            }
+            putJsonObject("explanation") {
+                put("type", "string")
+                put("description", "Explain why you gave this rating. What worked? What didn't? What will you try next?")
+            }
+            putJsonObject("code") {
+                put("type", "string")
+                put("description", "Optional: The code snippet that was executed. Useful for tracking what code produced which results.")
+            }
+        }
+        putJsonArray("required") {
+            add("project_name")
+            add("task_id")
+            add("success_rating")
+            add("explanation")
         }
     }
+
+    override suspend fun call(context: ToolCallContext): ToolCallResult = handle(context.params)
 
     private suspend fun handle(params: ToolCallParams): ToolCallResult {
         val args = params.arguments ?: return errorResult("Missing arguments")

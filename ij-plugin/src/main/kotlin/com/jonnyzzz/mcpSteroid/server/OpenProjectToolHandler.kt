@@ -9,7 +9,7 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpToolRegistrar
+import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
@@ -34,10 +34,12 @@ import java.nio.file.Path
  * The tool can optionally trust the project path before opening, which allows skipping
  * the trust dialog.
  */
-class OpenProjectToolHandler {
+class OpenProjectToolHandler : McpTool {
     private val logger = thisLogger()
     private val openProjectLock = Any()
-    private val toolDescription = """
+
+    override val name = "steroid_open_project"
+    override val description = """
         Open a project in the IDE. This tool initiates the project opening process and returns quickly.
 
         IMPORTANT: Project opening is ASYNCHRONOUS. This tool returns immediately; you MUST poll to verify the project is fully ready before using it.
@@ -58,42 +60,34 @@ class OpenProjectToolHandler {
         - Other dialogs (project type, SDK selection, etc.) may still appear
         - Always check modalDialogShowing in steroid_list_windows response
     """.trimIndent()
-
-    fun register(tools: McpToolRegistrar) {
-        tools.registerTool(
-            name = "steroid_open_project",
-            description = toolDescription,
-            inputSchema = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") {
-                    putJsonObject("project_path") {
-                        put("type", "string")
-                        put("description", "Absolute path to the project directory to open.")
-                    }
-                    putJsonObject("task_id") {
-                        put("type", "string")
-                        put("description", "Your task identifier to group related executions.")
-                    }
-                    putJsonObject("reason") {
-                        put("type", "string")
-                        put("description", "Reason for opening the project. Required for audit logs.")
-                    }
-                    putJsonObject("trust_project") {
-                        put("type", "boolean")
-                        put("description", "If true, trust the project path before opening (skips trust dialog). Default: true")
-                    }
-                }
-                putJsonArray("required") {
-                    add("project_path")
-                    add("task_id")
-                    add("reason")
-                }
-            },
-            ::handle
-        )
+    override val inputSchema = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            putJsonObject("project_path") {
+                put("type", "string")
+                put("description", "Absolute path to the project directory to open.")
+            }
+            putJsonObject("task_id") {
+                put("type", "string")
+                put("description", "Your task identifier to group related executions.")
+            }
+            putJsonObject("reason") {
+                put("type", "string")
+                put("description", "Reason for opening the project. Required for audit logs.")
+            }
+            putJsonObject("trust_project") {
+                put("type", "boolean")
+                put("description", "If true, trust the project path before opening (skips trust dialog). Default: true")
+            }
+        }
+        putJsonArray("required") {
+            add("project_path")
+            add("task_id")
+            add("reason")
+        }
     }
 
-    private suspend fun handle(context: ToolCallContext): ToolCallResult {
+    override suspend fun call(context: ToolCallContext): ToolCallResult {
         val args = context.params.arguments ?: return errorResult("Missing arguments")
         val projectPathStr = args["project_path"]?.jsonPrimitive?.contentOrNull
             ?: return errorResult("Missing required parameter: project_path")

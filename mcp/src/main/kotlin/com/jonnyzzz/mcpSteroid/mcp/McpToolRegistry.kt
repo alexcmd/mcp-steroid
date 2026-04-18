@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.mcp
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.thisLogger
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -22,37 +21,28 @@ class McpToolRegistry : McpToolRegistrar {
         prettyPrint = true
     }
 
-    private val tools = mutableMapOf<String, McpToolDefinition>()
+    private val tools = mutableMapOf<String, McpTool>()
 
     /**
-     * Register a tool with its handler.
+     * Register a tool. Metadata (name/description/inputSchema) and the invocation
+     * logic live on the [McpTool] instance itself.
      */
-    override fun registerTool(
-        name: String,
-        description: String?,
-        inputSchema: JsonObject,
-        handler: suspend (ToolCallContext) -> ToolCallResult
-    ) {
-        tools[name] = McpToolDefinition(
-            tool = Tool(
-                name = name,
-                description = description,
-                inputSchema = inputSchema
-            ),
-            handler = handler
-        )
+    override fun registerTool(tool: McpTool) {
+        tools[tool.name] = tool
     }
 
     /**
-     * Get all registered tools.
+     * Get all registered tools as MCP-protocol [Tool] descriptors.
      */
-    fun listTools(): List<Tool> = tools.values.map { it.tool }
+    fun listTools(): List<Tool> = tools.values.map {
+        Tool(name = it.name, description = it.description, inputSchema = it.inputSchema)
+    }
 
     /**
      * Call a tool by name.
      */
     suspend fun callTool(params: ToolCallParams, session: McpSession): ToolCallResult {
-        val definition = tools[params.name]
+        val tool = tools[params.name]
             ?: return ToolCallResult(
                 content = listOf(ContentItem.Text(text = "Tool not found: ${params.name}")),
                 isError = true
@@ -91,7 +81,7 @@ class McpToolRegistry : McpToolRegistrar {
         val toolCallContext = ToolCallContext(params, session, progress)
 
         return try {
-            definition.handler(toolCallContext)
+            tool.call(toolCallContext)
         } catch (e: Exception) {
             ToolCallResult.builder()
                 .addTextContent("Tool execution error: ${e.message}")
@@ -185,11 +175,3 @@ data class ToolCallContext(
         }
     }
 }
-
-/**
- * Internal representation of a registered tool with its handler.
- */
-private data class McpToolDefinition(
-    val tool: Tool,
-    val handler: suspend (context: ToolCallContext) -> ToolCallResult
-)
