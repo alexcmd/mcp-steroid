@@ -22,6 +22,7 @@ include(":ij-plugin")
 include(":mcp-core")
 include(":mcp-http")
 include(":mcp-stdio")
+include(":mcp-steroid-server")
 
 include(":ocr-common")
 include(":ocr-tesseract")

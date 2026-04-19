@@ -81,6 +81,9 @@ dependencies {
     implementation(project(":mcp-core"))
     // Ktor server + McpHttpTransport, transitively brings :mcp-core in
     implementation(project(":mcp-http"))
+    // Transport-agnostic tool-handler metadata + registrations (empty for now —
+    // classes will migrate across from :ij-plugin in the steps 6-13 refactor series).
+    implementation(project(":mcp-steroid-server"))
 
     // Prompt base classes + generated prompt code
     implementation(project(":prompts"))
@@ -404,6 +407,7 @@ val verifyBundledLibraries by tasks.registering {
             "lib/ocr-common-$pluginVersion.jar",
             "lib/mcp-core-$pluginVersion.jar",
             "lib/mcp-http-$pluginVersion.jar",
+            "lib/mcp-steroid-server-$pluginVersion.jar",
             "lib/prompts-api-$pluginVersion.jar",
             "lib/prompts-$pluginVersion.jar",
 
