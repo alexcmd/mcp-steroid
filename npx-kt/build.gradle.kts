@@ -21,6 +21,9 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("com.posthog:posthog-server:2.3.0")
 
+    // MCP protocol types (JsonRpc*, MCP_PROTOCOL_VERSION) + stdio framing
+    implementation(project(":mcp-stdio"))
+
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }

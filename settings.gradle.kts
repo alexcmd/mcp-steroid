@@ -21,6 +21,7 @@ include(":intellij-downloader")
 include(":ij-plugin")
 include(":mcp-core")
 include(":mcp-http")
+include(":mcp-stdio")
 
 include(":ocr-common")
 include(":ocr-tesseract")

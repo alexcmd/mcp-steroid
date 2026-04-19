@@ -1,6 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.mcp.FramingBuffer
+import com.jonnyzzz.mcpSteroid.mcp.encodeFramedMessage
+import com.jonnyzzz.mcpSteroid.mcp.encodeNdjsonMessage
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
