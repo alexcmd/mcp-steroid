@@ -12,10 +12,10 @@ import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
-import org.junit.After
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 
 /**
@@ -29,7 +29,7 @@ class McpHttpTransportTest {
     private lateinit var client: HttpClient
     private var port: Int = 0
 
-    @Before
+    @BeforeEach
     fun setUp() {
         port = ServerSocket(0).use { it.localPort }
 
@@ -101,7 +101,7 @@ class McpHttpTransportTest {
         client = HttpClient(io.ktor.client.engine.cio.CIO)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         client.close()
         server.stop(100, 100)
@@ -133,7 +133,7 @@ class McpHttpTransportTest {
 
         // Should include the session header.
         val sessionId = response.headers[McpHttpTransport.SESSION_HEADER]
-        assertNotNull("Should return a session ID", sessionId)
+        assertNotNull(sessionId, "Should return a session ID")
 
         // Parse response
         val body = response.bodyAsText()
@@ -225,7 +225,7 @@ class McpHttpTransportTest {
         assertNull(jsonResponse.error)
 
         val result = McpJson.decodeFromJsonElement<ToolsListResult>(jsonResponse.result!!)
-        assertTrue("Should have at least one tool available", result.tools.isNotEmpty())
+        assertTrue(result.tools.isNotEmpty(), "Should have at least one tool available")
         assertEquals("test_echo", result.tools[0].name)
     }
 
@@ -348,11 +348,11 @@ class McpHttpTransportTest {
 
         // Server should return a new session ID
         val newSessionId = response.headers[McpHttpTransport.SESSION_HEADER]
-        assertNotNull("Server should return a new session ID", newSessionId)
+        assertNotNull(newSessionId, "Server should return a new session ID")
         assertNotEquals("unknown-session-id", newSessionId)
         val notice = response.headers[McpHttpTransport.SESSION_NOTICE_HEADER]
-        assertNotNull("Server should return a session notice for an unknown session", notice)
-        assertTrue("Session notice should mention the unknown session", notice!!.contains("Unknown session"))
+        assertNotNull(notice, "Server should return a session notice for an unknown session")
+        assertTrue(notice!!.contains("Unknown session"), "Session notice should mention the unknown session")
     }
 
     @Test
@@ -400,11 +400,11 @@ class McpHttpTransportTest {
 
         // Server should return a new session ID
         val newSessionId = afterDeleteResponse.headers[McpHttpTransport.SESSION_HEADER]
-        assertNotNull("Server should return a new session ID after a deleted session", newSessionId)
+        assertNotNull(newSessionId, "Server should return a new session ID after a deleted session")
         assertNotEquals(sessionId, newSessionId, "The new session ID should be different")
         val notice = afterDeleteResponse.headers[McpHttpTransport.SESSION_NOTICE_HEADER]
-        assertNotNull("Server should return a session notice after a deleted session", notice)
-        assertTrue("Session notice should mention the unknown session", notice!!.contains("Unknown session"))
+        assertNotNull(notice, "Server should return a session notice after a deleted session")
+        assertTrue(notice!!.contains("Unknown session"), "Session notice should mention the unknown session")
     }
 
     @Test
@@ -565,74 +565,74 @@ class McpHttpTransportTest {
         val body = response.bodyAsText()
         val jsonResponse = McpJson.decodeFromString<JsonRpcResponse>(body)
 
-        assertNotNull("Should have error", jsonResponse.error)
+        assertNotNull(jsonResponse.error, "Should have error")
         assertEquals(JsonRpcErrorCodes.METHOD_NOT_FOUND, jsonResponse.error?.code)
         assertTrue(
+            jsonResponse.error?.message?.contains("not found") == true,
             "Error message should mention method",
-            jsonResponse.error?.message?.contains("not found") == true
         )
     }
 
-@Test
-fun `test POST prompts list returns prompts`() = runBlocking {
-    val initRequest = buildJsonObject {
-        put("jsonrpc", "2.0")
-        put("id", 1)
-        put("method", "initialize")
-        putJsonObject("params") {
-            put("protocolVersion", MCP_PROTOCOL_VERSION)
-            putJsonObject("capabilities") {}
-            putJsonObject("clientInfo") {
-                put("name", "test-client")
-                put("version", "1.0.0")
+    @Test
+    fun `test POST prompts list returns prompts`() = runBlocking {
+        val initRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 1)
+            put("method", "initialize")
+            putJsonObject("params") {
+                put("protocolVersion", MCP_PROTOCOL_VERSION)
+                putJsonObject("capabilities") {}
+                putJsonObject("clientInfo") {
+                    put("name", "test-client")
+                    put("version", "1.0.0")
+                }
             }
         }
-    }
 
-    val initResponse = client.post("http://localhost:$port/mcp") {
-        contentType(ContentType.Application.Json)
-        accept(ContentType.Application.Json)
-        setBody(initRequest.toString())
-    }
-    val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
-
-    val listRequest = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"prompts/list\"}"
-    val listResponse = client.post("http://localhost:$port/mcp") {
-        contentType(ContentType.Application.Json)
-        accept(ContentType.Application.Json)
-        header(McpHttpTransport.SESSION_HEADER, sessionId)
-        setBody(listRequest)
-    }
-
-    assertEquals(HttpStatusCode.OK, listResponse.status)
-    val listRpc = McpJson.decodeFromString<JsonRpcResponse>(listResponse.bodyAsText())
-    assertNull("prompts/list should succeed", listRpc.error)
-
-    val promptsList = McpJson.decodeFromJsonElement<PromptsListResult>(listRpc.result!!)
-    assertTrue(promptsList.prompts.any { it.name == "test_prompt" })
-
-    val getRequest = buildJsonObject {
-        put("jsonrpc", "2.0")
-        put("id", 3)
-        put("method", "prompts/get")
-        putJsonObject("params") {
-            put("name", "test_prompt")
+        val initResponse = client.post("http://localhost:$port/mcp") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            setBody(initRequest.toString())
         }
-    }
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
 
-    val getResponse = client.post("http://localhost:$port/mcp") {
-        contentType(ContentType.Application.Json)
-        accept(ContentType.Application.Json)
-        header(McpHttpTransport.SESSION_HEADER, sessionId)
-        setBody(getRequest.toString())
-    }
+        val listRequest = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"prompts/list\"}"
+        val listResponse = client.post("http://localhost:$port/mcp") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(listRequest)
+        }
 
-    assertEquals(HttpStatusCode.OK, getResponse.status)
-    val getRpc = McpJson.decodeFromString<JsonRpcResponse>(getResponse.bodyAsText())
-    assertNull("prompts/get should succeed", getRpc.error)
-    val getResult = McpJson.decodeFromJsonElement<PromptGetResult>(getRpc.result!!)
-    assertEquals(1, getResult.messages.size)
-}
+        assertEquals(HttpStatusCode.OK, listResponse.status)
+        val listRpc = McpJson.decodeFromString<JsonRpcResponse>(listResponse.bodyAsText())
+        assertNull(listRpc.error, "prompts/list should succeed")
+
+        val promptsList = McpJson.decodeFromJsonElement<PromptsListResult>(listRpc.result!!)
+        assertTrue(promptsList.prompts.any { it.name == "test_prompt" })
+
+        val getRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 3)
+            put("method", "prompts/get")
+            putJsonObject("params") {
+                put("name", "test_prompt")
+            }
+        }
+
+        val getResponse = client.post("http://localhost:$port/mcp") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(getRequest.toString())
+        }
+
+        assertEquals(HttpStatusCode.OK, getResponse.status)
+        val getRpc = McpJson.decodeFromString<JsonRpcResponse>(getResponse.bodyAsText())
+        assertNull(getRpc.error, "prompts/get should succeed")
+        val getResult = McpJson.decodeFromJsonElement<PromptGetResult>(getRpc.result!!)
+        assertEquals(1, getResult.messages.size)
+    }
 
     @Test
     fun `test POST resources list returns resources`() = runBlocking {
@@ -672,11 +672,11 @@ fun `test POST prompts list returns prompts`() = runBlocking {
         val body = response.bodyAsText()
         val jsonResponse = McpJson.decodeFromString<JsonRpcResponse>(body)
 
-        assertNull("Should not have error", jsonResponse.error)
-        assertNotNull("Should have result", jsonResponse.result)
+        assertNull(jsonResponse.error, "Should not have error")
+        assertNotNull(jsonResponse.result, "Should have result")
 
         val resourcesList = McpJson.decodeFromJsonElement<ResourcesListResult>(jsonResponse.result!!)
-        assertTrue("Should have at least one resource", resourcesList.resources.isNotEmpty())
+        assertTrue(resourcesList.resources.isNotEmpty(), "Should have at least one resource")
     }
 
     @Test
@@ -725,14 +725,14 @@ fun `test POST prompts list returns prompts`() = runBlocking {
         val jsonResponse = McpJson.decodeFromString<JsonRpcResponse>(body)
 
         // tools/call returns result with isError=true, not a JSON-RPC error
-        assertNull("Should not have JSON-RPC error", jsonResponse.error)
-        assertNotNull("Should have result", jsonResponse.result)
+        assertNull(jsonResponse.error, "Should not have JSON-RPC error")
+        assertNotNull(jsonResponse.result, "Should have result")
 
         val result = McpJson.decodeFromJsonElement<ToolCallResult>(jsonResponse.result!!)
-        assertTrue("Should be marked as error", result.isError)
+        assertTrue(result.isError, "Should be marked as error")
         assertTrue(
+            (result.content[0] as ContentItem.Text).text.contains("not found"),
             "Error content should mention tool not found",
-            (result.content[0] as ContentItem.Text).text.contains("not found")
         )
     }
 
@@ -749,7 +749,7 @@ fun `test POST prompts list returns prompts`() = runBlocking {
         val body = response.bodyAsText()
         val jsonResponse = McpJson.decodeFromString<JsonRpcResponse>(body)
 
-        assertNotNull("Should have error", jsonResponse.error)
+        assertNotNull(jsonResponse.error, "Should have error")
         assertEquals(JsonRpcErrorCodes.PARSE_ERROR, jsonResponse.error?.code)
     }
 
@@ -791,7 +791,7 @@ fun `test POST prompts list returns prompts`() = runBlocking {
         val body = response.bodyAsText()
         val jsonResponse = McpJson.decodeFromString<JsonRpcResponse>(body)
 
-        assertNotNull("Should have error", jsonResponse.error)
+        assertNotNull(jsonResponse.error, "Should have error")
         assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, jsonResponse.error?.code)
     }
 
@@ -845,11 +845,11 @@ fun `test POST prompts list returns prompts`() = runBlocking {
         val response3 = McpJson.decodeFromJsonElement<JsonRpcResponse>(responses[2])
         val response4 = McpJson.decodeFromJsonElement<JsonRpcResponse>(responses[3])
 
-        assertNull("ping should succeed", response1.error)
-        assertNotNull("unknown/method1 should fail", response2.error)
+        assertNull(response1.error, "ping should succeed")
+        assertNotNull(response2.error, "unknown/method1 should fail")
         assertEquals(JsonRpcErrorCodes.METHOD_NOT_FOUND, response2.error?.code)
-        assertNull("tools/list should succeed", response3.error)
-        assertNotNull("unknown/method2 should fail", response4.error)
+        assertNull(response3.error, "tools/list should succeed")
+        assertNotNull(response4.error, "unknown/method2 should fail")
         assertEquals(JsonRpcErrorCodes.METHOD_NOT_FOUND, response4.error?.code)
     }
 
@@ -1023,7 +1023,7 @@ fun `test POST prompts list returns prompts`() = runBlocking {
 
         // Per MCP 2025-11-25 spec: Server MUST include MCP-Protocol-Version header in responses
         val protocolVersionHeader = response.headers[McpHttpTransport.PROTOCOL_VERSION_HEADER]
-        assertNotNull("Response should include MCP-Protocol-Version header", protocolVersionHeader)
+        assertNotNull(protocolVersionHeader, "Response should include MCP-Protocol-Version header")
         assertEquals(MCP_PROTOCOL_VERSION, protocolVersionHeader)
     }
 
@@ -1037,7 +1037,7 @@ fun `test POST prompts list returns prompts`() = runBlocking {
 
         // Per MCP 2025-11-25 spec: Server MUST include MCP-Protocol-Version header in responses
         val protocolVersionHeader = response.headers[McpHttpTransport.PROTOCOL_VERSION_HEADER]
-        assertNotNull("GET response should include MCP-Protocol-Version header", protocolVersionHeader)
+        assertNotNull(protocolVersionHeader, "GET response should include MCP-Protocol-Version header")
         assertEquals(MCP_PROTOCOL_VERSION, protocolVersionHeader)
     }
 
@@ -1049,17 +1049,17 @@ fun `test POST prompts list returns prompts`() = runBlocking {
 
         // Check CORS headers expose MCP-Protocol-Version
         val exposeHeaders = response.headers["Access-Control-Expose-Headers"]
-        assertNotNull("Should have Access-Control-Expose-Headers", exposeHeaders)
+        assertNotNull(exposeHeaders, "Should have Access-Control-Expose-Headers")
         assertTrue(
+            exposeHeaders!!.contains(McpHttpTransport.PROTOCOL_VERSION_HEADER),
             "CORS should expose MCP-Protocol-Version header",
-            exposeHeaders!!.contains(McpHttpTransport.PROTOCOL_VERSION_HEADER)
         )
 
         val allowHeaders = response.headers["Access-Control-Allow-Headers"]
-        assertNotNull("Should have Access-Control-Allow-Headers", allowHeaders)
+        assertNotNull(allowHeaders, "Should have Access-Control-Allow-Headers")
         assertTrue(
+            allowHeaders!!.contains(McpHttpTransport.PROTOCOL_VERSION_HEADER),
             "CORS should allow MCP-Protocol-Version header",
-            allowHeaders!!.contains(McpHttpTransport.PROTOCOL_VERSION_HEADER)
         )
     }
 }

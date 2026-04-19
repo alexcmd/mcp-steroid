@@ -3,9 +3,9 @@ package com.jonnyzzz.mcpSteroid.mcp
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 /**
  * Unit tests for McpServerCore message handling.
@@ -14,7 +14,7 @@ class McpServerCoreTest {
     private lateinit var server: McpServerCore
     private lateinit var session: McpSession
 
-    @Before
+    @BeforeEach
     fun setUp() {
         server = McpServerCore(
             serverInfo = ServerInfo(
@@ -46,7 +46,7 @@ class McpServerCoreTest {
         }
 
         val responseJson = server.handleMessage(request.toString(), session)
-        assertNotNull("Should return response", responseJson)
+        assertNotNull(responseJson, "Should return response")
 
         val response = McpJson.decodeFromString<JsonRpcResponse>(responseJson!!)
         assertEquals(1, response.id.jsonPrimitive.int)
@@ -140,7 +140,7 @@ class McpServerCoreTest {
         val result = McpJson.decodeFromJsonElement<ToolCallResult>(response.result!!)
         assertEquals(1, result.content.size)
         assertEquals("Echo: Hello", (result.content[0] as ContentItem.Text).text)
-        assertTrue("Handler should have been called", called)
+        assertTrue(called, "Handler should have been called")
     }
 
     @Test
@@ -182,7 +182,7 @@ class McpServerCoreTest {
         val notification = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""
 
         val response = server.handleMessage(notification, session)
-        assertNull("Notifications should not return a response", response)
+        assertNull(response, "Notifications should not return a response")
     }
 
     @Test
@@ -213,7 +213,7 @@ class McpServerCoreTest {
 
     @Test
     fun `test session is marked initialized after initialize`() = runBlocking {
-        assertFalse("Session should not be initialized yet", session.initialized)
+        assertFalse(session.initialized, "Session should not be initialized yet")
 
         val request = buildJsonObject {
             put("jsonrpc", "2.0")
@@ -231,7 +231,7 @@ class McpServerCoreTest {
 
         server.handleMessage(request.toString(), session)
 
-        assertTrue("Session should be initialized", session.initialized)
+        assertTrue(session.initialized, "Session should be initialized")
         assertEquals("test-client", session.clientInfo?.name)
     }
 

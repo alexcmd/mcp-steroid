@@ -2,8 +2,8 @@
 package com.jonnyzzz.mcpSteroid.mcp
 
 import kotlinx.serialization.json.*
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 
 /**
  * Unit tests for MCP protocol types and serialization.
@@ -21,9 +21,9 @@ class McpProtocolTest {
         )
 
         val json = McpJson.encodeToString(JsonRpcRequest.serializer(), request)
-        assertTrue("Should contain jsonrpc", json.contains("\"jsonrpc\"") && json.contains("\"2.0\""))
-        assertTrue("Should contain id", json.contains("\"id\"") && json.contains("1"))
-        assertTrue("Should contain method", json.contains("\"method\"") && json.contains("\"initialize\""))
+        assertTrue(json.contains("\"jsonrpc\"") && json.contains("\"2.0\""), "Should contain jsonrpc")
+        assertTrue(json.contains("\"id\"") && json.contains("1"), "Should contain id")
+        assertTrue(json.contains("\"method\"") && json.contains("\"initialize\""), "Should contain method")
 
         val decoded = McpJson.decodeFromString<JsonRpcRequest>(json)
         assertEquals(JSONRPC_VERSION, decoded.jsonrpc)
