@@ -19,7 +19,7 @@ include(":prompts")
 include(":intellij-downloader")
 
 include(":ij-plugin")
-include(":mcp")
+include(":mcp-core")
 include(":mcp-http")
 
 include(":ocr-common")

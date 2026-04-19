@@ -78,8 +78,8 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
     }
 
-    implementation(project(":mcp"))
-    // Ktor server + McpHttpTransport, transitively brings :mcp in
+    implementation(project(":mcp-core"))
+    // Ktor server + McpHttpTransport, transitively brings :mcp-core in
     implementation(project(":mcp-http"))
 
     // Prompt base classes + generated prompt code
@@ -402,7 +402,7 @@ val verifyBundledLibraries by tasks.registering {
             "lib/ij-plugin-$pluginVersion.jar",
             "lib/kotlin-cli-$pluginVersion.jar",
             "lib/ocr-common-$pluginVersion.jar",
-            "lib/mcp-$pluginVersion.jar",
+            "lib/mcp-core-$pluginVersion.jar",
             "lib/mcp-http-$pluginVersion.jar",
             "lib/prompts-api-$pluginVersion.jar",
             "lib/prompts-$pluginVersion.jar",

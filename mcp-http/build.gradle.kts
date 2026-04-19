@@ -19,7 +19,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1")
 
     // MCP protocol types, session manager, registries
-    api(project(":mcp"))
+    api(project(":mcp-core"))
 
     // Ktor server — the HTTP transport that speaks MCP Streamable HTTP
     val ktorVersion = "3.1.0"
