@@ -229,6 +229,7 @@ val pluginCoreSubprojects = setOf(
     "ij-plugin",
     "mcp-core",
     "mcp-http",
+    "mcp-stdio",
     "ai-agents",
 )
 
