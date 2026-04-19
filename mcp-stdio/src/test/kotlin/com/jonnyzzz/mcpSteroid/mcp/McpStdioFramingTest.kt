@@ -297,4 +297,132 @@ class McpStdioFramingTest {
         assertNotNull(frame)
         assertEquals(original, frame.payloadText)
     }
+
+    // -------------------------------------------------------------------------
+    // Edge cases: Content-Length parsing
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `content-length 0 yields empty payload frame`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Length: 0\r\n\r\n".toByteArray(Charsets.UTF_8))
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals("", frame.payloadText)
+        assertEquals("framed", frame.mode)
+    }
+
+    @Test
+    fun `content-length header is case insensitive`() {
+        val buf = FramingBuffer()
+        val body = """{"x":1}"""
+        val bodyLen = body.toByteArray(Charsets.UTF_8).size
+        buf.append("CONTENT-LENGTH: $bodyLen\r\n\r\n$body".toByteArray(Charsets.UTF_8))
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals(body, frame.payloadText)
+    }
+
+    @Test
+    fun `content-length with extra whitespace around value`() {
+        val buf = FramingBuffer()
+        val body = """{"x":1}"""
+        val bodyLen = body.toByteArray(Charsets.UTF_8).size
+        buf.append("Content-Length:   $bodyLen  \r\n\r\n$body".toByteArray(Charsets.UTF_8))
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals(body, frame.payloadText)
+    }
+
+    @Test
+    fun `additional headers before content-length are ignored`() {
+        val buf = FramingBuffer()
+        val body = """{"x":1}"""
+        val bodyLen = body.toByteArray(Charsets.UTF_8).size
+        val headers = "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\nContent-Length: $bodyLen\r\n\r\n"
+        buf.append(headers.toByteArray(Charsets.UTF_8))
+        buf.append(body.toByteArray(Charsets.UTF_8))
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals(body, frame.payloadText)
+    }
+
+    @Test
+    fun `non-numeric content-length falls through to ndjson fallback`() {
+        val buf = FramingBuffer()
+        // "Content-Length: xyz" doesn't parse -> impl tries NDJSON; data doesn't
+        // start with {/[, so readNextFrame returns null.
+        buf.append("Content-Length: xyz\r\n\r\n{}\n".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextFrame())
+    }
+
+    @Test
+    fun `negative content-length is rejected`() {
+        val buf = FramingBuffer()
+        buf.append("Content-Length: -5\r\n\r\n{}\n".toByteArray(Charsets.UTF_8))
+        // Negative value is rejected by decodeContentLength; buffer does NOT
+        // start with JSON-like byte, so NDJSON fallback also fails -> null.
+        assertNull(buf.readNextFrame())
+    }
+
+    // -------------------------------------------------------------------------
+    // Edge cases: NDJSON
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `ndjson with leading whitespace is accepted and trimmed`() {
+        val buf = FramingBuffer()
+        // Leading spaces before the JSON object.
+        buf.append("   {\"id\":\"1\"}\n".toByteArray(Charsets.UTF_8))
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals("""{"id":"1"}""", frame.payloadText)
+        assertEquals("ndjson", frame.mode)
+    }
+
+    @Test
+    fun `ndjson batch array over multiple appends`() {
+        val buf = FramingBuffer()
+        // Simulate partial delivery.
+        buf.append("[{\"id\":\"1\"},".toByteArray(Charsets.UTF_8))
+        assertNull(buf.readNextFrame())
+        buf.append("{\"id\":\"2\"}]\n".toByteArray(Charsets.UTF_8))
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals("""[{"id":"1"},{"id":"2"}]""", frame.payloadText)
+    }
+
+    // -------------------------------------------------------------------------
+    // append(bytes, length) overload
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `append with shorter length only copies requested prefix`() {
+        val buf = FramingBuffer()
+        val fullBody = """{"id":"1","junk":"ignoreme"}"""
+        val shortBody = """{"id":"1"}"""
+        val encoded = encodeNdjsonMessage(shortBody).toByteArray(Charsets.UTF_8)
+        // Pad the source array with trailing bytes that must NOT be read.
+        val padded = encoded + fullBody.toByteArray(Charsets.UTF_8)
+        buf.append(padded, encoded.size)
+        val frame = buf.readNextFrame()
+        assertNotNull(frame)
+        assertEquals(shortBody, frame.payloadText)
+        assertTrue(buf.isEmpty())
+    }
+
+    // -------------------------------------------------------------------------
+    // encodeFramedMessage edge cases
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `encodeFramedMessage empty payload produces zero-length header`() {
+        val encoded = encodeFramedMessage("")
+        assertEquals("Content-Length: 0\r\n\r\n", encoded)
+    }
+
+    @Test
+    fun `encodeNdjsonMessage empty payload is just a newline`() {
+        assertEquals("\n", encodeNdjsonMessage(""))
+    }
 }
