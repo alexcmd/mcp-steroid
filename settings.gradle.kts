@@ -20,6 +20,7 @@ include(":intellij-downloader")
 
 include(":ij-plugin")
 include(":mcp")
+include(":mcp-http")
 
 include(":ocr-common")
 include(":ocr-tesseract")
