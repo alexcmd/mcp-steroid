@@ -1,6 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.mcp.JSONRPC_VERSION
+import com.jonnyzzz.mcpSteroid.mcp.MCP_PROTOCOL_VERSION
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -45,7 +47,7 @@ class UpstreamClient(
     suspend fun ensureInitialized() {
         if (initialized) return
         val params = buildJsonObject {
-            put("protocolVersion", PROTOCOL_VERSION)
+            put("protocolVersion", MCP_PROTOCOL_VERSION)
             put("capabilities", buildJsonObject { })
             put("clientInfo", buildJsonObject {
                 put("name", "mcp-steroid-proxy")
