@@ -14,17 +14,27 @@ When an agent task asks for "run one fast test through Maven" — pick a plain J
 
 ### Call 1 — launch the test, attach output capture, return immediately
 
-This script kicks off the Maven run with a `ProgramRunner.Callback`. As soon as the run starts (which happens on EDT inside `runConfiguration`), the callback fires with the `RunContentDescriptor` and we attach a `ProcessListener` that captures every `event.text` line plus the final exit code. State is parked in `project.userData` so the polling script can read it.
+This script creates a Maven run configuration via `MavenRunConfigurationType.createRunnerAndConfigurationSettings(...)`, attaches it to the `RunManager`, then dispatches `ProgramRunnerUtil.executeConfiguration(...)` on `Dispatchers.EDT`. The polling loop waits for the corresponding `RunContentDescriptor` to appear (typically in <500ms), attaches a `ProcessListener` to capture every `event.text` line plus the final exit code, then returns. State is parked in `project.userData` so the polling script can read it.
+
+> ⚠️ **Avoid `MavenRunConfigurationType.runConfiguration(...)` directly.** That convenience overload calls `ApplicationManager.getApplication().invokeAndWait(...)` internally, which can block the script's coroutine dispatcher. Prefer the `createRunnerAndConfigurationSettings` + `ProgramRunnerUtil.executeConfiguration` shape used below.
 
 ```kotlin[IU]
 import org.jetbrains.idea.maven.execution.MavenRunConfigurationType
 import org.jetbrains.idea.maven.execution.MavenRunnerParameters
+import com.intellij.execution.ProgramRunnerUtil
+import com.intellij.execution.RunManager
+import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.process.ProcessEvent
-import com.intellij.execution.runners.ProgramRunner
-import com.intellij.execution.ui.RunContentDescriptor
+import com.intellij.execution.ui.RunContentManager
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.application.EDT
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.seconds
 
 val exitKey = Key.create<CompletableDeferred<Int>>("mcp.steroid.maven.exit.code")
 val outputKey = Key.create<MutableList<String>>("mcp.steroid.maven.output.lines")
@@ -34,32 +44,61 @@ if (project.getUserData(exitKey)?.isActive == true) {
     println("Maven run already in flight — call the polling script instead.")
 } else {
     val exitDeferred = CompletableDeferred<Int>()
+    @Suppress("UNCHECKED_CAST")
     val outputLines: MutableList<String> =
         java.util.concurrent.CopyOnWriteArrayList<String>() as MutableList<String>
     project.putUserData(exitKey, exitDeferred)
     project.putUserData(outputKey, outputLines)
     project.putUserData(labelKey, "MyServiceTest#shouldReturnFeature")
 
-    val callback = ProgramRunner.Callback { descriptor: RunContentDescriptor ->
-        descriptor.processHandler?.addProcessListener(object : ProcessListener {
-            override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) { outputLines.add(event.text) }
-            override fun processTerminated(event: ProcessEvent) { exitDeferred.complete(event.exitCode) }
-        })
+    val params = MavenRunnerParameters(
+        /* isPomExecution = */ true,
+        /* workingDirPath = */ project.basePath!!,
+        /* pomFileName    = */ null,
+        /* goals          = */ listOf(
+            "test",
+            "-pl", "core",
+            "-Dtest=com.example.MyServiceTest#shouldReturnFeature",
+            "-DskipITs",
+            "-Dspotless.check.skip=true",
+        ),
+        /* enabledProfiles = */ emptyList(),
+    )
+    val configSettings = MavenRunConfigurationType.createRunnerAndConfigurationSettings(
+        null, null, params, project, "Maven test (MCP)", false,
+    )
+    val runManager = RunManager.getInstance(project)
+    runManager.addConfiguration(configSettings)
+    runManager.selectedConfiguration = configSettings
+
+    withContext(Dispatchers.EDT) {
+        ProgramRunnerUtil.executeConfiguration(configSettings, DefaultRunExecutor.getRunExecutorInstance())
     }
 
-    // Multi-module reactor: target a single submodule via `-pl <module>` in the goal list,
-    // the working dir stays at the reactor root.
-    MavenRunConfigurationType.runConfiguration(project,
-        MavenRunnerParameters(true, project.basePath!!, null,
-            listOf(
-                "test",
-                "-pl", "core",
-                "-Dtest=com.example.MyServiceTest#shouldReturnFeature",
-                "-DskipITs",
-                "-Dspotless.check.skip=true",
-            ),
-            emptyList()),
-        null, null, callback)
+    // Wait for the descriptor to appear, then attach the ProcessListener.
+    val attached = withTimeoutOrNull(20.seconds) {
+        while (true) {
+            val handler = RunContentManager.getInstance(project).allDescriptors
+                .firstOrNull { it.displayName?.contains("Maven test (MCP)") == true }
+                ?.processHandler
+            if (handler != null) {
+                handler.addProcessListener(object : ProcessListener {
+                    override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
+                        outputLines.add(event.text)
+                    }
+                    override fun processTerminated(event: ProcessEvent) {
+                        exitDeferred.complete(event.exitCode)
+                    }
+                })
+                return@withTimeoutOrNull true
+            }
+            delay(200)
+        }
+        @Suppress("UNREACHABLE_CODE") false
+    }
+    if (attached != true) {
+        println("WARN: Maven run started but RunContentDescriptor did not appear in 20s.")
+    }
 
     println("Maven test launched: MyServiceTest#shouldReturnFeature")
     println("EXECUTION_VIA: MavenRunConfigurationType")
