@@ -10,276 +10,91 @@ When an agent task asks for "run one fast test through Maven" — pick a plain J
 
 > ⚠️ **Single-call pattern does NOT work for Maven test runs.** The MCP HTTP transport (claude-code's CLI in particular) cancels in-flight tool calls after ~60 seconds. Maven setup + a JUnit test on a fresh checkout often takes 30–120s. A single script that calls `runConfiguration` and then `await`s the SMT listener will be cancelled mid-run by the client, even though the IDE-side script timeout is much larger. **Use the two-call pattern below: launch in call 1, poll in call 2+.**
 
-> ⚠️ **The reliable evidence is the *Run console output*, not `SMTRunnerEventsListener`.** Maven's surefire writes line-based text — whether IntelliJ promotes it to SMT events depends on the surefire version and the run-config wrapping. The recipe below skips SMT entirely and reads what the IDE's Run tool window already shows: `BUILD SUCCESS` / `BUILD FAILURE`, `Tests run: N, Failures: M, Errors: K`, and the surefire summary. That output is captured via a `ProcessListener` attached at run-start through `ProgramRunner.Callback.processStarted(descriptor)`.
+> ⚠️ **Use polling, not listeners.** Read state directly from the live `RunContentDescriptor`'s `ProcessHandler` (terminated? exit code?) plus the surefire XML report on disk. SMT events do not fire reliably for Maven surefire, and a long-lived `messageBus.connect()` is brittle across retries. Polling is shorter, simpler, and matches what a human reads from the Run tool window.
 
-### Call 1 — launch the test, attach output capture, return immediately
+> ⚠️ **Avoid `MavenRunConfigurationType.runConfiguration(...)` directly.** That convenience overload calls `ApplicationManager.getApplication().invokeAndWait(...)` internally, which can block the script's coroutine dispatcher. Use `createRunnerAndConfigurationSettings` + `ProgramRunnerUtil.executeConfiguration` dispatched on `Dispatchers.EDT`.
 
-This script creates a Maven run configuration via `MavenRunConfigurationType.createRunnerAndConfigurationSettings(...)`, attaches it to the `RunManager`, then dispatches `ProgramRunnerUtil.executeConfiguration(...)` on `Dispatchers.EDT`. The polling loop waits for the corresponding `RunContentDescriptor` to appear (typically in <500ms), attaches a `ProcessListener` to capture every `event.text` line plus the final exit code, then returns. State is parked in `project.userData` so the polling script can read it.
-
-> ⚠️ **Avoid `MavenRunConfigurationType.runConfiguration(...)` directly.** That convenience overload calls `ApplicationManager.getApplication().invokeAndWait(...)` internally, which can block the script's coroutine dispatcher. Prefer the `createRunnerAndConfigurationSettings` + `ProgramRunnerUtil.executeConfiguration` shape used below.
+### Call 1 — launch the test, return immediately
 
 ```kotlin[IU]
-import org.jetbrains.idea.maven.execution.MavenRunConfigurationType
-import org.jetbrains.idea.maven.execution.MavenRunnerParameters
 import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultRunExecutor
-import com.intellij.execution.process.ProcessListener
-import com.intellij.execution.process.ProcessEvent
-import com.intellij.execution.ui.RunContentManager
-import com.intellij.openapi.util.Key
 import com.intellij.openapi.application.EDT
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.seconds
+import org.jetbrains.idea.maven.execution.MavenRunConfigurationType
+import org.jetbrains.idea.maven.execution.MavenRunnerParameters
 
-val exitKey = Key.create<CompletableDeferred<Int>>("mcp.steroid.maven.exit.code")
-val outputKey = Key.create<MutableList<String>>("mcp.steroid.maven.output.lines")
-val labelKey = Key.create<String>("mcp.steroid.maven.test.label")
-
-if (project.getUserData(exitKey)?.isActive == true) {
-    println("Maven run already in flight — call the polling script instead.")
-} else {
-    val exitDeferred = CompletableDeferred<Int>()
-    @Suppress("UNCHECKED_CAST")
-    val outputLines: MutableList<String> =
-        java.util.concurrent.CopyOnWriteArrayList<String>() as MutableList<String>
-    project.putUserData(exitKey, exitDeferred)
-    project.putUserData(outputKey, outputLines)
-    project.putUserData(labelKey, "MyServiceTest#shouldReturnFeature")
-
-    val params = MavenRunnerParameters(
-        /* isPomExecution = */ true,
-        /* workingDirPath = */ project.basePath!!,
-        /* pomFileName    = */ null,
-        /* goals          = */ listOf(
-            "test",
-            "-pl", "core",
-            "-Dtest=com.example.MyServiceTest#shouldReturnFeature",
-            "-DskipITs",
-            "-Dspotless.check.skip=true",
-        ),
-        /* enabledProfiles = */ emptyList(),
-    )
-    val configSettings = MavenRunConfigurationType.createRunnerAndConfigurationSettings(
-        null, null, params, project, "Maven test (MCP)", false,
-    )
-    val runManager = RunManager.getInstance(project)
-    runManager.addConfiguration(configSettings)
-    runManager.selectedConfiguration = configSettings
-
-    withContext(Dispatchers.EDT) {
-        ProgramRunnerUtil.executeConfiguration(configSettings, DefaultRunExecutor.getRunExecutorInstance())
-    }
-
-    // Wait for the descriptor to appear, then attach the ProcessListener.
-    val attached = withTimeoutOrNull(20.seconds) {
-        while (true) {
-            val handler = RunContentManager.getInstance(project).allDescriptors
-                .firstOrNull { it.displayName?.contains("Maven test (MCP)") == true }
-                ?.processHandler
-            if (handler != null) {
-                handler.addProcessListener(object : ProcessListener {
-                    override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
-                        outputLines.add(event.text)
-                    }
-                    override fun processTerminated(event: ProcessEvent) {
-                        exitDeferred.complete(event.exitCode)
-                    }
-                })
-                return@withTimeoutOrNull true
-            }
-            delay(200)
-        }
-        @Suppress("UNREACHABLE_CODE") false
-    }
-    if (attached != true) {
-        println("WARN: Maven run started but RunContentDescriptor did not appear in 20s.")
-    }
-
-    println("Maven test launched: MyServiceTest#shouldReturnFeature")
-    println("EXECUTION_VIA: MavenRunConfigurationType")
-    println("Call the polling script next; expected total runtime 30–120s.")
+val params = MavenRunnerParameters(
+    true, project.basePath!!, null,
+    listOf(
+        "test",
+        "-pl", "core",
+        "-Dtest=com.example.MyServiceTest#shouldReturnFeature",
+        "-DskipITs",
+        "-Dspotless.check.skip=true",
+    ),
+    emptyList(),
+)
+val settings = MavenRunConfigurationType.createRunnerAndConfigurationSettings(
+    null, null, params, project, "Maven test (MCP)", false,
+)
+RunManager.getInstance(project).addConfiguration(settings)
+withContext(Dispatchers.EDT) {
+    ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecutorInstance())
 }
+println("Maven test launched: ${params.goals}")
+println("EXECUTION_VIA: MavenRunConfigurationType")
+println("Call the polling script next.")
 ```
 
-### Call 2 — poll for completion + parse run output (re-issue every 20–30s until done)
-
-This script awaits the exit-code deferred with a **short** `withTimeoutOrNull(30.seconds)` so the script itself returns well under the MCP HTTP transport's ~60-second client-side cancel. When the process terminates, it parses the captured output for `BUILD SUCCESS` / `BUILD FAILURE` / `Tests run:` and emits the structured result. The agent re-issues this script until it sees `TEST_RESULT:`.
+### Call 2 — poll the descriptor's ProcessHandler + read surefire XML (re-issue every 20–30s)
 
 ```kotlin[IU]
-import com.intellij.openapi.util.Key
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.seconds
+import com.intellij.execution.ui.RunContentManager
+import com.intellij.openapi.vfs.LocalFileSystem
 
-val exitKey = Key.create<CompletableDeferred<Int>>("mcp.steroid.maven.exit.code")
-val outputKey = Key.create<MutableList<String>>("mcp.steroid.maven.output.lines")
-val labelKey = Key.create<String>("mcp.steroid.maven.test.label")
-
-val exitDeferred = project.getUserData(exitKey)
-val outputLines = project.getUserData(outputKey)
-if (exitDeferred == null || outputLines == null) {
-    println("No Maven run in flight. Run the launch script first.")
+val descriptor = RunContentManager.getInstance(project).allDescriptors
+    .firstOrNull { it.displayName?.contains("Maven test (MCP)") == true }
+val handler = descriptor?.processHandler
+if (handler == null) {
+    println("No Maven run in flight; run the launch script first.")
+} else if (!handler.isProcessTerminated) {
+    println("Maven run still in flight; call this script again.")
 } else {
-    val exitCode = withTimeoutOrNull(30.seconds) { exitDeferred.await() }
-    if (exitCode == null) {
-        // Still running — print the most recent line so the agent sees progress.
-        val live = outputLines.lastOrNull()?.trimEnd() ?: "(no output yet)"
-        println("Maven run still in flight after 30s. Latest console line: $live")
-        println("Call this script again to keep polling.")
-    } else {
-        // Run finished — parse the surefire tail to extract pass/fail.
-        val joined = outputLines.joinToString("")
-        val tail = joined.lines().takeLast(40).joinToString("\n")
-        val testsRunLine = Regex("Tests run: (\\d+), Failures: (\\d+), Errors: (\\d+), Skipped: (\\d+)")
-            .find(joined)
-        val buildSuccess = joined.contains("BUILD SUCCESS")
-        val passed = buildSuccess && testsRunLine?.let { it.groupValues[2] == "0" && it.groupValues[3] == "0" } == true
-
-        val label = project.getUserData(labelKey) ?: "<unknown>"
-        println("EXECUTION_VIA: MavenRunConfigurationType")
-        println("TEST_LABEL: $label")
-        println("PROCESS_EXIT_CODE: $exitCode")
-        if (testsRunLine != null) println("TESTS_RUN_LINE: ${testsRunLine.value}")
-        println("TEST_RESULT: ${if (passed) "PASSED" else "FAILED"}")
-        println("--- Run console tail (last 40 lines) ---")
-        println(tail)
-
-        project.putUserData(exitKey, null)
-        project.putUserData(outputKey, null)
-        project.putUserData(labelKey, null)
-    }
+    val exit = handler.exitCode ?: -1
+    val module = "core" // adjust to the targeted -pl module
+    val reportsDir = LocalFileSystem.getInstance()
+        .findFileByPath("${project.basePath}/$module/target/surefire-reports")
+    val testsRunLines = reportsDir?.children
+        ?.filter { it.name.endsWith(".txt") }
+        ?.mapNotNull { vf ->
+            String(vf.contentsToByteArray(), vf.charset).lines()
+                .firstOrNull { it.startsWith("Tests run:") }
+                ?.let { vf.name + ": " + it }
+        }
+        ?: emptyList()
+    println("EXECUTION_VIA: MavenRunConfigurationType")
+    println("PROCESS_EXIT_CODE: $exit")
+    testsRunLines.forEach { println("TESTS_RUN: $it") }
+    println("TEST_RESULT: ${if (exit == 0) "PASSED" else "FAILED"}")
 }
 ```
 
-**Why "read the run console" instead of `SMTRunnerEventsListener`:**
-- The Run tool window's console **always** has the surefire summary — `BUILD SUCCESS|FAILURE`, `Tests run: N, Failures: M, Errors: K, Skipped: J` — for any green-or-red Maven test run. It is the same evidence a human looks at.
-- SMT events are best-effort: they fire only when the IDE's Java program runner recognizes surefire's output format and promotes it. With `MavenRunConfigurationType.runConfiguration`, that promotion is *not* guaranteed (observed empty `SMTestProxy.SMRootTestProxy.allTests` even on `BUILD SUCCESS`).
-- The `ProgramRunner.Callback.processStarted(descriptor)` hook fires synchronously inside `runConfiguration`'s EDT block — by the time `runConfiguration` returns, the `ProcessListener` is already attached and starts capturing the very first `[INFO] Scanning for projects...` line.
-- `project.userData` survives across `steroid_execute_code` calls; the `ProcessHandler` is bound to the run descriptor, which lives until the user closes the Run tab.
+**Why this shape:**
+- `RunContentDescriptor.processHandler` exposes `isProcessTerminated` and `exitCode` directly — read whenever you want, no event subscription.
+- Maven surefire writes one `<TestClass>.txt` and `<TestClass>.xml` per class into `<module>/target/surefire-reports/`. The `.txt` files start with `Tests run: N, Failures: M, Errors: K, Skipped: J, Time elapsed: …` — same numbers a human reads.
+- `processHandler.exitCode == 0` is the authoritative pass/fail signal; the surefire counts are extra detail for the agent's report.
+- Each script returns in <2s — well under the MCP HTTP transport's ~60s cancel window. `project.userData`, `CompletableDeferred`, and `messageBus.connect()` are all unnecessary.
 
 **`-am` (also-make) is BANNED.** It walks the upstream graph and frequently OOM-kills the container. Pin to the one submodule with `-pl <module>` and accept that one extra `install` round-trip below if a sibling artifact is missing.
 
 ### Sibling-install fallback (when the targeted module references an in-reactor sibling not yet in `~/.m2`)
 
-If the polling script reports `TEST_RESULT: FAILED` and the failure mentions `The POM for io.example:sibling:jar:X is missing` or `Could not resolve artifact ...:sibling:jar:X`, install ONLY that sibling — through IntelliJ — using the same two-call shape:
+If the polling script reports `TEST_RESULT: FAILED` and the surefire/Maven log mentions `The POM for io.example:sibling:jar:X is missing` or `Could not resolve artifact ...:sibling:jar:X`, install ONLY that one sibling through IntelliJ. Same two-call shape: launch via `createRunnerAndConfigurationSettings` with goals `install -pl <missing-module> -DskipTests`, give the run config a unique name (e.g. `"Maven install (MCP)"`), then poll the descriptor's `processHandler.exitCode` exactly like the test polling script. Drop `-Dtest=...` from the goal list. Stop after at most TWO sibling-install rounds; if more are needed, escalate.
 
-```kotlin[IU]
-import org.jetbrains.idea.maven.execution.MavenRunner
-import org.jetbrains.idea.maven.execution.MavenRunnerParameters
-import org.jetbrains.idea.maven.execution.MavenRunnerSettings
-import com.intellij.openapi.util.Key
-import kotlinx.coroutines.CompletableDeferred
-
-val installKey = Key.create<CompletableDeferred<Boolean>>("mcp.steroid.maven.install.done")
-val installDeferred = CompletableDeferred<Boolean>()
-project.putUserData(installKey, installDeferred)
-
-val params = MavenRunnerParameters(
-    /* isPomExecution = */ true,
-    /* workingDirPath = */ project.basePath!!,
-    /* pomFileName    = */ null,
-    /* goals          = */ listOf("install", "-pl", "test-commons", "-DskipTests"),
-    /* enabledProfiles = */ emptyList()
-)
-val runner = MavenRunner.getInstance(project)
-val settings: MavenRunnerSettings = runner.settings.clone()
-settings.mavenProperties["spotless.check.skip"] = "true"
-runner.run(params, settings) { installDeferred.complete(true) }
-println("Sibling install launched: test-commons")
-println("Call the polling script (substituting installKey) next.")
-```
-
-The polling script for the install is identical in shape to call 2 above — just swap the key. Stop after at most TWO sibling-install rounds; if more are needed, escalate.
-
-**Why `MavenRunner.run` (not `MavenRunConfigurationType.runConfiguration`) for the install:** the install goal has no test framework, so `SMTRunnerEventsListener` never fires — the simpler `MavenRunner.run` callback (which fires only on exit-code 0) is the right primitive there.
-
----
-
-## Primary: MavenRunner + MavenRunnerParameters
-
-Use `MavenRunner` for all Maven goal execution — it runs inside the IDE JVM, reuses IntelliJ's Maven installation, and avoids spawning a separate process:
-
-```kotlin[IU]
-import org.jetbrains.idea.maven.execution.MavenRunner
-import org.jetbrains.idea.maven.execution.MavenRunnerParameters
-import org.jetbrains.idea.maven.execution.MavenRunnerSettings
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeout
-import kotlin.time.Duration.Companion.minutes
-
-val done = CompletableDeferred<Boolean>()
-val params = MavenRunnerParameters(
-    /* isPomExecution    = */ true,
-    /* workingDirPath   = */ project.basePath!!,
-    /* pomFileName      = */ null,              // null → use default pom.xml
-    /* goals            = */ listOf("package"),
-    /* enabledProfiles  = */ emptyList()
-)
-val runner = MavenRunner.getInstance(project)
-val settings: MavenRunnerSettings = runner.settings.clone()
-settings.mavenProperties["spotless.check.skip"] = "true"
-runner.run(params, settings) { done.complete(true) }
-// Note: callback fires only on exit code 0. If Maven fails, the deferred never completes.
-// For pass/fail semantics use MavenRunConfigurationType + SMTRunnerEventsListener (see coding-with-intellij-spring.md).
-val ok = withTimeout(5.minutes) { done.await() }
-println("Maven goal completed: $ok")
-```
-
-**Import paths:**
-```kotlin[IU]
-import org.jetbrains.idea.maven.execution.MavenRunner             // project service
-import org.jetbrains.idea.maven.execution.MavenRunnerParameters   // goal + working dir
-import org.jetbrains.idea.maven.execution.MavenRunnerSettings     // properties, skip flags
-import org.jetbrains.idea.maven.execution.MavenRunConfigurationType  // lower-level static entry
-import org.jetbrains.idea.maven.project.MavenProjectsManager      // sync/reload
-import org.jetbrains.idea.maven.buildtool.MavenSyncSpec            // full/incremental sync spec
-```
-
----
-
-## Structured Pass/Fail for Test Runs — SMTRunnerEventsListener
-
-For Maven test execution with explicit pass/fail result, use `MavenRunConfigurationType.runConfiguration` + `SMTRunnerEventsListener`. See **`mcp-steroid://skill/coding-with-intellij-spring`** for the complete pattern. Summary:
-
-```kotlin[IU]
-import org.jetbrains.idea.maven.execution.MavenRunConfigurationType
-import org.jetbrains.idea.maven.execution.MavenRunnerParameters
-import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener
-import com.intellij.execution.testframework.sm.runner.SMTestProxy
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeout
-import kotlin.time.Duration.Companion.minutes
-
-val mavenResult = CompletableDeferred<Boolean>()
-project.messageBus.connect().subscribe(SMTRunnerEventsListener.TEST_STATUS, object : SMTRunnerEventsListener {
-    override fun onTestingFinished(testsRoot: SMTestProxy.SMRootTestProxy) { mavenResult.complete(testsRoot.isPassed) }
-    override fun onTestingStarted(testsRoot: SMTestProxy.SMRootTestProxy) {}
-    override fun onTestsCountInSuite(count: Int) {}
-    override fun onTestStarted(test: SMTestProxy) {}
-    override fun onTestFinished(test: SMTestProxy) {}
-    override fun onTestFailed(test: SMTestProxy) {}
-    override fun onTestIgnored(test: SMTestProxy) {}
-    override fun onSuiteFinished(suite: SMTestProxy) {}
-    override fun onSuiteStarted(suite: SMTestProxy) {}
-    override fun onCustomProgressTestsCategory(categoryName: String?, count: Int) {}
-    override fun onCustomProgressTestStarted() {}
-    override fun onCustomProgressTestFailed() {}
-    override fun onCustomProgressTestFinished() {}
-    override fun onSuiteTreeNodeAdded(testProxy: SMTestProxy) {}
-    override fun onSuiteTreeStarted(suite: SMTestProxy) {}
-})
-MavenRunConfigurationType.runConfiguration(project,
-    MavenRunnerParameters(true, project.basePath!!, null,
-        listOf("test", "-Dtest=MyServiceTest", "-Dspotless.check.skip=true"), emptyList()),
-    null, null) {}
-val passed = withTimeout(5.minutes) { mavenResult.await() }
-println("Maven test: passed=$passed")
-```
+**`MavenRunner.run` is the lighter alternative**, but it has no `RunContentDescriptor` — you can poll its returned future instead, but it's simpler to keep one shape across all Maven invocations.
 
 ---
 

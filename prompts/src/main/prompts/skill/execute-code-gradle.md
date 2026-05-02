@@ -60,11 +60,11 @@ Key points:
 - Use the two-argument `ExternalSystemUtil.refreshProject(path, importSpec)` form; older overloads are deprecated.
 - If sync fails, fix the Gradle/JDK/import problem. Do not continue with unresolved dependencies.
 
-## Agent: Run Gradle Tests (two-call pattern with SMT events)
+## Agent: Run Gradle Tests (two-call pattern, polling)
 
-The preferred Gradle test runner from `steroid_execute_code`. Uses `GradleRunConfiguration.isRunAsTest = true` so per-test events flow through `SMTRunnerEventsListener.TEST_STATUS` (verified end-to-end by `GradleTestExecutionTest` in this repo). The two-call shape — launch in call 1, poll in call 2+ — keeps every script under the MCP HTTP transport's ~60-second client-side cancel.
+The preferred Gradle test runner from `steroid_execute_code`. Uses `GradleRunConfiguration.isRunAsTest = true` so per-test results land in IntelliJ's standard SM test-runner data model. **Read that model by polling**, not by subscribing to events — the polling shape is much shorter and survives retries cleanly.
 
-> ⚠️ **Each call must finish in under 60 seconds.** A typical Gradle test on a fresh checkout (cold daemon, dependency resolve, compile, test execution) easily exceeds that. Do NOT try a single-call `withTimeout(5.minutes) { deferred.await() }` recipe; it will be cancelled by the client mid-await even though the IDE-side script timeout is much larger.
+> ⚠️ **Each call must finish in under 60 seconds.** A typical Gradle test on a fresh checkout (cold daemon, dependency resolve, compile, test execution) easily exceeds that. Do NOT try a single-call recipe that awaits the whole run; it will be cancelled by the client mid-await even though the IDE-side script timeout is much larger.
 
 ### Call 1 — launch the Gradle test, return immediately
 
@@ -72,112 +72,65 @@ The preferred Gradle test runner from `steroid_execute_code`. Uses `GradleRunCon
 import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultRunExecutor
-import com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener
-import com.intellij.execution.testframework.sm.runner.SMTestProxy
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration
 import com.intellij.openapi.application.EDT
-import com.intellij.openapi.util.Key
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.plugins.gradle.service.execution.GradleExternalTaskConfigurationType
 import org.jetbrains.plugins.gradle.service.execution.GradleRunConfiguration
 
-data class GradleTestSummary(val total: Int, val failed: Int)
-val resultKey = Key.create<CompletableDeferred<GradleTestSummary>>("mcp.steroid.gradle.test.summary")
-val labelKey = Key.create<String>("mcp.steroid.gradle.test.label")
+val factory = GradleExternalTaskConfigurationType.getInstance().configurationFactories.single()
+val runConfig = factory.createTemplateConfiguration(project) as ExternalSystemRunConfiguration
+runConfig.name = "Gradle test (MCP)"
+runConfig.settings.externalProjectPath = project.basePath
+runConfig.settings.taskNames = listOf(
+    ":api:test",
+    "--tests", "com.example.api.ProductControllerTest",
+    "--rerun-tasks",                  // never trust UP-TO-DATE on first run after a code edit
+    "--console=plain",
+)
+// Critical: without isRunAsTest=true the SM test-runner data model is empty.
+(runConfig as GradleRunConfiguration).isRunAsTest = true
 
-if (project.getUserData(resultKey)?.isActive == true) {
-    println("Gradle run already in flight — call the polling script instead.")
-} else {
-    val deferred = CompletableDeferred<GradleTestSummary>()
-    project.putUserData(resultKey, deferred)
-    project.putUserData(labelKey, ":api:test --tests com.example.api.ProductControllerTest")
+val settings = RunManager.getInstance(project).createConfiguration(runConfig, factory)
+RunManager.getInstance(project).addConfiguration(settings)
 
-    project.messageBus.connect().subscribe(
-        SMTRunnerEventsListener.TEST_STATUS,
-        object : SMTRunnerEventsListener {
-            override fun onTestingFinished(testsRoot: SMTestProxy.SMRootTestProxy) {
-                val total = testsRoot.allTests.size
-                val failed = testsRoot.allTests.count { it.isDefect }
-                deferred.complete(GradleTestSummary(total, failed))
-            }
-            override fun onTestingStarted(testsRoot: SMTestProxy.SMRootTestProxy) {}
-            override fun onTestsCountInSuite(count: Int) {}
-            override fun onTestStarted(test: SMTestProxy) {}
-            override fun onTestFinished(test: SMTestProxy) {}
-            override fun onTestFailed(test: SMTestProxy) {}
-            override fun onTestIgnored(test: SMTestProxy) {}
-            override fun onSuiteFinished(suite: SMTestProxy) {}
-            override fun onSuiteStarted(suite: SMTestProxy) {}
-            override fun onCustomProgressTestsCategory(categoryName: String?, count: Int) {}
-            override fun onCustomProgressTestStarted() {}
-            override fun onCustomProgressTestFinished() {}
-            override fun onCustomProgressTestFailed() {}
-            override fun onSuiteTreeNodeAdded(testProxy: SMTestProxy) {}
-            override fun onSuiteTreeStarted(suite: SMTestProxy) {}
-        }
-    )
-
-    val runManager = RunManager.getInstance(project)
-    val factory = GradleExternalTaskConfigurationType.getInstance().configurationFactories.single()
-    val runConfig = factory.createTemplateConfiguration(project) as ExternalSystemRunConfiguration
-    runConfig.name = "Gradle test (MCP)"
-    runConfig.settings.externalProjectPath = project.basePath
-    runConfig.settings.taskNames = listOf(
-        ":api:test",
-        "--tests", "com.example.api.ProductControllerTest",
-        "--rerun-tasks",                       // never trust UP-TO-DATE on first run after a code edit
-        "--console=plain",
-    )
-
-    // Critical: enable SMT integration. Without isRunAsTest=true, SMTRunnerEventsListener
-    // never fires for Gradle runs, even with `:test` in the task list.
-    (runConfig as GradleRunConfiguration).isRunAsTest = true
-
-    val settings = runManager.createConfiguration(runConfig, factory)
-    runManager.addConfiguration(settings)
-    runManager.selectedConfiguration = settings
-
-    withContext(Dispatchers.EDT) {
-        ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecutorInstance())
-    }
-    println("Gradle test launched: ${runConfig.settings.taskNames}")
-    println("EXECUTION_VIA: GradleRunConfiguration")
-    println("Call the polling script next; expected total runtime 30–180s for cold daemon.")
+withContext(Dispatchers.EDT) {
+    ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecutorInstance())
 }
+println("Gradle test launched: ${runConfig.settings.taskNames}")
+println("EXECUTION_VIA: GradleRunConfiguration")
+println("Call the polling script next; expected total runtime 30–180s for cold daemon.")
 ```
 
-### Call 2 — poll for the SMT result (re-issue every 20–30s until done)
+### Call 2 — poll the SM test-runner data model (re-issue every 20–30s)
+
+The Gradle test run produces a `RunContentDescriptor` whose `executionConsole` is an `SMTRunnerConsoleView`. That view exposes `resultsViewer.testsRootNode: SMTestProxy.SMRootTestProxy`, which has `.allTests`, `.isInProgress`, `.isPassed`, and `.isDefect` — exactly the same data the SMT events would have given, but readable on demand.
 
 ```kotlin[IU]
-import com.intellij.openapi.util.Key
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.seconds
+import com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+import com.intellij.execution.ui.RunContentManager
 
-data class GradleTestSummary(val total: Int, val failed: Int)
-val resultKey = Key.create<CompletableDeferred<GradleTestSummary>>("mcp.steroid.gradle.test.summary")
-val labelKey = Key.create<String>("mcp.steroid.gradle.test.label")
-
-val deferred = project.getUserData(resultKey)
-if (deferred == null) {
-    println("No Gradle run in flight. Run the launch script first.")
+val descriptor = RunContentManager.getInstance(project).allDescriptors
+    .firstOrNull { it.displayName?.contains("Gradle test (MCP)") == true }
+val handler = descriptor?.processHandler
+if (handler == null) {
+    println("No Gradle run in flight; run the launch script first.")
+} else if (!handler.isProcessTerminated) {
+    println("Gradle run still in flight; call this script again.")
 } else {
-    val summary = withTimeoutOrNull(30.seconds) { deferred.await() }
-    if (summary == null) {
-        println("Gradle test still running after 30s; call this script again to keep polling.")
-    } else {
-        val label = project.getUserData(labelKey) ?: "<unknown>"
-        val passed = summary.failed == 0 && summary.total > 0
-        println("EXECUTION_VIA: GradleRunConfiguration")
-        println("TEST_LABEL: $label")
-        println("TEST_TOTAL: ${summary.total}")
-        println("TEST_FAILED: ${summary.failed}")
-        println("TEST_RESULT: ${if (passed) "PASSED" else "FAILED"}")
-        project.putUserData(resultKey, null)
-        project.putUserData(labelKey, null)
-    }
+    val exit = handler.exitCode ?: -1
+    val root = (descriptor.executionConsole as? SMTRunnerConsoleView)
+        ?.resultsViewer?.testsRootNode
+    val tests = root?.allTests ?: emptyList()
+    val total = tests.size
+    val failed = tests.count { it.isDefect }
+    val passed = exit == 0 && failed == 0 && (root?.isPassed == true || total > 0)
+    println("EXECUTION_VIA: GradleRunConfiguration")
+    println("PROCESS_EXIT_CODE: $exit")
+    println("TEST_TOTAL: $total")
+    println("TEST_FAILED: $failed")
+    println("TEST_RESULT: ${if (passed) "PASSED" else "FAILED"}")
 }
 ```
 
