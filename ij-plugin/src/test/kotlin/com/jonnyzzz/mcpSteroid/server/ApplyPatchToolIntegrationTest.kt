@@ -23,6 +23,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
@@ -218,6 +219,172 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
 
         assertTrue("steroid_apply_patch should fail, got: ${result.output}", result.isError)
         assertTrue("Error should name empty hunks: ${result.output}", result.output.contains("hunks array is empty"))
+    }
+
+    // --- Tricky tool-handler hardening: malformed envelopes from MCP clients ---
+
+    /**
+     * Some MCP clients pass complex parameters as serialised JSON strings
+     * instead of native arrays/objects (Claude Code's tool-call envelope does
+     * this for nested structures). Today the handler does
+     * `args["hunks"]?.jsonArray` which throws `IllegalArgumentException` on a
+     * `JsonPrimitive`, leaking a 500-style stacktrace through the MCP layer
+     * instead of returning a clean tool-error. Pin the contract: a
+     * string-encoded `hunks` MUST come back as a tool-error (`isError=true`)
+     * with a clear message — not a JsonPrimitive cast crash.
+     *
+     * This is also a regression guard for the live bug observed when calling
+     * the tool from Claude Code on 2026-05-04: the cast threw and the tool
+     * appeared to "hang" until the client timed out.
+     */
+    fun testStringEncodedHunksWithNonArrayPrimitiveReturnsCleanError(): Unit = timeoutRunBlocking(30.seconds) {
+        // Send hunks as a JSON number (not an array, not a string-encoded array)
+        // — exercises the broadest "wrong shape" branch without going near VFS.
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+        val sessionId = startSession(server)
+
+        val response = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(
+                buildJsonObject {
+                    put("jsonrpc", "2.0")
+                    put("id", "apply-patch-bad-shape")
+                    put("method", "tools/call")
+                    putJsonObject("params") {
+                        put("name", "steroid_apply_patch")
+                        putJsonObject("arguments") {
+                            put("project_name", project.name)
+                            put("task_id", "bad-shape")
+                            put("reason", "Regression: hunks shipped as a number")
+                            put("hunks", 42)
+                        }
+                    }
+                }.toString()
+            )
+        }
+
+        val bodyText = response.bodyAsText()
+        assertEquals("Body: $bodyText", HttpStatusCode.OK, response.status)
+        val rpc = McpJson.decodeFromString<JsonRpcResponse>(bodyText)
+        assertNull("Handler must not leak as JSON-RPC error: ${rpc.error}", rpc.error)
+        val toolResult = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+        assertTrue("Result.isError must be true on bad hunks shape", toolResult.isError)
+        val msg = toolResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+        assertTrue(
+            "Error must mention array-shape: $msg",
+            msg.contains("hunks", ignoreCase = true) && msg.contains("array", ignoreCase = true),
+        )
+    }
+
+    /**
+     * Some MCP clients pass the `hunks` parameter as a serialised JSON string
+     * instead of a real array (Claude Code's tool-call envelope sometimes does
+     * this for nested structures). Today the handler decodes the string back
+     * into an array; if it ever stops doing so, this test catches it.
+     *
+     * Live reproducer (2026-05-04): the original `?.jsonArray` cast threw
+     * `IllegalArgumentException("Element class kotlinx.serialization.json.JsonLiteral is not a JsonArray")`
+     * which leaked through `McpHttpTransport.handlePost`'s catch as a 500.
+     */
+    fun testStringEncodedHunksAreDecodedAndApplied(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val file = writeProjectFile(dir, "Stringy.java", "class Stringy { int v = 1; }\n")
+
+            val server = SteroidsMcpServer.getInstance()
+            server.startServerIfNeeded()
+            val sessionId = startSession(server)
+
+            // hunks as a serialised JSON-string of a real array — the bug from the wild.
+            val stringEncoded = buildJsonObject {
+                putJsonArray("wrap") {
+                    addJsonObject {
+                        put("file_path", file.toString())
+                        put("old_string", "v = 1")
+                        put("new_string", "v = 99")
+                    }
+                }
+            }["wrap"]!!.toString()
+
+            val response = client.post(server.mcpUrl) {
+                contentType(ContentType.Application.Json)
+                accept(ContentType.Application.Json)
+                header(McpHttpTransport.SESSION_HEADER, sessionId)
+                setBody(
+                    buildJsonObject {
+                        put("jsonrpc", "2.0")
+                        put("id", "apply-patch-string-hunks")
+                        put("method", "tools/call")
+                        putJsonObject("params") {
+                            put("name", "steroid_apply_patch")
+                            putJsonObject("arguments") {
+                                put("project_name", project.name)
+                                put("task_id", "string-encoded")
+                                put("reason", "Regression: hunks shipped as JSON string")
+                                put("hunks", stringEncoded)
+                            }
+                        }
+                    }.toString()
+                )
+            }
+
+            val bodyText = response.bodyAsText()
+            assertEquals("Body: $bodyText", HttpStatusCode.OK, response.status)
+            val rpc = McpJson.decodeFromString<JsonRpcResponse>(bodyText)
+            assertNull("Handler must not leak as JSON-RPC error: ${rpc.error}", rpc.error)
+            val toolResult = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+            val msg = toolResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+            assertFalse("String-encoded hunks must succeed (msg: $msg)", toolResult.isError)
+            // Disk reflects the patch.
+            assertEquals("class Stringy { int v = 99; }\n", Files.readString(file))
+        }
+    }
+
+    /**
+     * Missing `project_name` should return a clean tool-error, not crash.
+     * Pinning the validation contract for malformed envelopes from clients.
+     */
+    fun testMissingProjectNameReturnsCleanError(): Unit = timeoutRunBlocking(30.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+        val sessionId = startSession(server)
+
+        val response = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(
+                buildJsonObject {
+                    put("jsonrpc", "2.0")
+                    put("id", "no-project")
+                    put("method", "tools/call")
+                    putJsonObject("params") {
+                        put("name", "steroid_apply_patch")
+                        putJsonObject("arguments") {
+                            // project_name missing on purpose
+                            put("task_id", "no-project")
+                            put("reason", "validation regression guard")
+                            putJsonArray("hunks") {
+                                addJsonObject {
+                                    put("file_path", "/tmp/never")
+                                    put("old_string", "a")
+                                    put("new_string", "b")
+                                }
+                            }
+                        }
+                    }
+                }.toString()
+            )
+        }
+
+        val rpc = McpJson.decodeFromString<JsonRpcResponse>(response.bodyAsText())
+        assertNull("Validation failure must surface as tool-result, not JSON-RPC error", rpc.error)
+        val toolResult = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+        assertTrue("Missing project_name must be tool-error", toolResult.isError)
+        val msg = toolResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+        assertTrue("Error names project_name: $msg", msg.contains("project_name"))
     }
 
     private suspend fun callApplyPatchTool(hunks: List<JsonObject>): ApplyPatchCallResult {
