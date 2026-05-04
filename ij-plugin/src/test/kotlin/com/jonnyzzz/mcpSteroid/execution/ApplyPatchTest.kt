@@ -65,14 +65,14 @@ class ApplyPatchTest : BasePlatformTestCase() {
     private fun createContext(): McpScriptContextImpl {
         val executionId = ExecutionId("test-apply-patch")
         val disposable = Disposer.newDisposable(testRootDisposable, "apply-patch-$executionId")
-        val modalityMonitor = ModalityStateMonitor(project, executionId, disposable)
         return McpScriptContextImpl(
             project = project,
             params = buildJsonObject { },
             executionId = executionId,
             disposable = disposable,
             resultBuilder = TestResultBuilder(),
-            modalityMonitor = modalityMonitor,
+            // No-op killer hook for tests — ScriptExecutor wires this in production.
+            onDoNotCancelOnModalityStateChange = {},
         )
     }
 
