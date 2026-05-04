@@ -221,7 +221,7 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
         assertTrue("Error should name empty hunks: ${result.output}", result.output.contains("hunks array is empty"))
     }
 
-    // --- Tricky tool-handler hardening: malformed envelopes from MCP clients ---
+    // --- Tricky edge cases through the real MCP HTTP transport ---
 
     /**
      * Some MCP clients pass complex parameters as serialised JSON strings
@@ -343,6 +343,66 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
     }
 
     /**
+     * Latency guard for the full HTTP path. The original "stuck" symptom is
+     * an EDT deadlock in `ApplyPatch.kt` — but it can also surface as a slow
+     * client roundtrip. A 1-hunk patch through HTTP must complete in well
+     * under Claude Code's 60s tool-call timeout, even on a cold sandbox.
+     */
+    fun testToolCallCompletesQuickly(): Unit = timeoutRunBlocking(15.seconds) {
+        withTempDir { dir ->
+            val file = writeProjectFile(dir, "Quick.java", "class Quick { int v = 1; }\n")
+            val started = System.currentTimeMillis()
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "v = 1", "v = 42")),
+            )
+            val elapsed = System.currentTimeMillis() - started
+            assertFalse("steroid_apply_patch should succeed: ${result.output}", result.isError)
+            // Generous bound: tests sometimes share a JVM with other Docker-y stuff.
+            assertTrue("Apply-patch HTTP roundtrip too slow: ${elapsed}ms", elapsed < 10_000)
+        }
+    }
+
+    /**
+     * Empty `new_string` deletion through the HTTP boundary. The JSON envelope
+     * must preserve empty strings (some serialisers strip them by default),
+     * and the engine must accept the deletion semantics.
+     */
+    fun testEmptyNewStringDeletesThroughTool(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val file = writeProjectFile(dir, "ToolDelete.java", "import a.B;\nimport a.C;\nclass X {}\n")
+
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "import a.B;\n", "")),
+            )
+
+            assertFalse("Apply-patch should succeed, got: ${result.output}", result.isError)
+            assertEquals("import a.C;\nclass X {}\n", Files.readString(file))
+        }
+    }
+
+    /**
+     * CRLF line-ending preservation through the HTTP boundary. Mirrors the
+     * unit-level CRLF test but exercises JSON-string roundtripping of `\r\n`.
+     */
+    fun testCrlfLineEndingsPreservedThroughTool(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val file = dir / "ToolCrlf.java"
+            file.parent.createDirectories()
+            Files.write(file, "class A {\r\n    int x = 1;\r\n}\r\n".toByteArray())
+            LocalFileSystem.getInstance().refreshAndFindFileByNioFile(file)
+
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "int x = 1", "int x = 42")),
+            )
+
+            assertFalse("Apply-patch should succeed, got: ${result.output}", result.isError)
+            val onDisk = Files.readAllBytes(file).toString(Charsets.UTF_8)
+            assertTrue("CRLF preserved on disk", onDisk.contains("\r\n"))
+            assertTrue("New value present", onDisk.contains("int x = 42"))
+        }
+    }
+
+    /**
      * Missing `project_name` should return a clean tool-error, not crash.
      * Pinning the validation contract for malformed envelopes from clients.
      */
@@ -385,6 +445,23 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
         assertTrue("Missing project_name must be tool-error", toolResult.isError)
         val msg = toolResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
         assertTrue("Error names project_name: $msg", msg.contains("project_name"))
+    }
+
+    /**
+     * Multi-byte (Unicode) content roundtrips through JSON envelope correctly.
+     * Catches naive byte-vs-codepoint offset mistakes and JSON encoding drift.
+     */
+    fun testUnicodeContentThroughTool(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val file = writeProjectFile(dir, "ToolUnicode.kt", "val msg = \"héllo 🌍 world\"\n")
+
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "héllo 🌍 world", "héllo 🌎 world")),
+            )
+
+            assertFalse("Apply-patch should succeed, got: ${result.output}", result.isError)
+            assertEquals("val msg = \"héllo 🌎 world\"\n", Files.readString(file))
+        }
     }
 
     private suspend fun callApplyPatchTool(hunks: List<JsonObject>): ApplyPatchCallResult {
