@@ -45,9 +45,17 @@ val files = readAction {
 println("Scanning ${files.size} file(s) for clones")
 
 val wrapper = LocalInspectionToolWrapper(DuplicateInspection())
+
+// IMPORTANT — `DuplicatedCode` emits ONE descriptor per cluster *per file containing
+// its main fragment*. A 2-fragment cluster surfaces twice — once with fragment A as
+// `main` and B as a duplicate, then with the roles swapped (this happens for both
+// cross-file pairs AND for two methods inside the same file). Deduplicate before
+// reporting or you will over-count.
+val seenKeys = mutableSetOf<String>()
 val clusters = mutableListOf<CloneCluster>()
 
 for (vf in files) {
+    if (clusters.size >= maxClustersToReport) break
     val perFile = readAction {
         val psiFile = PsiManager.getInstance(project).findFile(vf) ?: return@readAction emptyList<CloneCluster>()
         val raw: List<ProblemDescriptor> = InspectionEngine.inspectEx(
@@ -62,13 +70,19 @@ for (vf in files) {
             PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
         ).values.flatten()
 
-        raw.filterIsInstance<DuplicateProblemDescriptor>().map { dpd ->
+        raw.filterIsInstance<DuplicateProblemDescriptor>().mapNotNull { dpd ->
             val tc: TextClone = dpd.textClone
-            CloneCluster(main = tc.main.toRange(), duplicates = tc.duplicates.map { it.toRange() })
+            val main = tc.main.toRange()
+            val dups = tc.duplicates.map { it.toRange() }
+            // Cluster identity = unordered set of all fragments. Sort the ranges, then join.
+            val key = (listOf(main) + dups)
+                .map { "${it.path}:${it.startLine}-${it.endLine}" }
+                .sorted()
+                .joinToString("|")
+            if (seenKeys.add(key)) CloneCluster(main = main, duplicates = dups) else null
         }
     }
     clusters += perFile
-    if (clusters.size >= maxClustersToReport) break
 }
 
 println("CLUSTERS_FOUND: ${clusters.size}")
@@ -81,7 +95,9 @@ clusters.forEachIndexed { i, c ->
 
 # How it works
 
-- `DuplicateInspection` is a `LocalInspectionTool` (`shortName = "DuplicatedCode"`, registered with `runForWholeFile="true"`). Per-file `checkFile` looks up a `DuplicateScopeExtension` for the file's language, queries the project-wide `HashFragmentIndex`, and emits a `DuplicateProblemDescriptor` for each clone cluster whose main fragment lives in the inspected file. So one pass over project sources visits every cluster exactly once (each cluster is anchored by its `main`).
+- `DuplicateInspection` is a `LocalInspectionTool` (`shortName = "DuplicatedCode"`, registered with `runForWholeFile="true"`). Per-file `checkFile` looks up a `DuplicateScopeExtension` for the file's language, queries the project-wide `HashFragmentIndex`, and emits a `DuplicateProblemDescriptor` for each clone where the inspected file holds the cluster's `main` fragment.
+- **Same logical cluster surfaces multiple times.** A 2-fragment cluster is reported twice — fragment A as `main` + B as duplicate, then B as `main` + A as duplicate. An N-fragment cluster appears N times, once per fragment-as-`main`. The recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly 2× too large.
+- `maxClustersToReport` caps **unique** clusters (post-dedup) — the `seenKeys` guard ensures the loop's break runs against deduped count, not raw descriptor count.
 - `DuplicateProblemDescriptor.getTextClone()` returns a `TextClone(main: TextFragment, duplicates: List<TextFragment>)`. `TextFragment` exposes `file: VirtualFile`, `range: TextRange`, and `lines: IntRange` — everything you need to render `path:startLine-endLine` and pull the snippet text from the document.
 - Indexing must be ready. The script's bootstrap calls `waitForSmartMode()` automatically; if you trigger any reindexing in the same call, await `Observation.awaitConfiguration(project)` before the inspection runs.
 

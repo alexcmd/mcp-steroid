@@ -123,6 +123,9 @@ class FindDuplicatesRecipeTest : BasePlatformTestCase() {
             println("Scanning ${ktFiles.size} Kotlin file(s)")
 
             val wrapper = LocalInspectionToolWrapper(DuplicateInspection())
+            // Same dedup as the published recipe — DuplicatedCode emits one descriptor
+            // per fragment-as-main, so a 2-fragment cluster surfaces twice.
+            val seenKeys = mutableSetOf<String>()
             val clusters = mutableListOf<CloneCluster>()
 
             for (vf in ktFiles) {
@@ -140,9 +143,15 @@ class FindDuplicatesRecipeTest : BasePlatformTestCase() {
                         PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
                     ).values.flatten()
 
-                    raw.filterIsInstance<DuplicateProblemDescriptor>().map { dpd ->
+                    raw.filterIsInstance<DuplicateProblemDescriptor>().mapNotNull { dpd ->
                         val tc: TextClone = dpd.textClone
-                        CloneCluster(main = tc.main.toRange(), duplicates = tc.duplicates.map { it.toRange() })
+                        val main = tc.main.toRange()
+                        val dups = tc.duplicates.map { it.toRange() }
+                        val key = (listOf(main) + dups)
+                            .map { "${it.path}:${it.startLine}-${it.endLine}" }
+                            .sorted()
+                            .joinToString("|")
+                        if (seenKeys.add(key)) CloneCluster(main = main, duplicates = dups) else null
                     }
                 }
                 clusters += perFile
@@ -153,7 +162,7 @@ class FindDuplicatesRecipeTest : BasePlatformTestCase() {
                 println("CLUSTER main=${c.main.path}:${c.main.startLine}-${c.main.endLine} duplicates=${c.duplicates.size}")
                 c.duplicates.forEach { d -> println("  dup=${d.path}:${d.startLine}-${d.endLine}") }
             }
-            println("DEMO_DUPLICATES_HIT: ${if (clusters.any { it.main.path.endsWith("DemoDuplicates.kt") }) "yes" else "no"}")
+            println("DEMO_DUPLICATES_HIT: ${if (clusters.any { it.main.path.endsWith("DemoDuplicates.kt") || it.duplicates.any { d -> d.path.endsWith("DemoDuplicates.kt") } }) "yes" else "no"}")
         """.trimIndent()
 
         val result = manager.executeWithProgress(
