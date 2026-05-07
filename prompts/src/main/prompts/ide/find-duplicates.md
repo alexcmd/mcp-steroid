@@ -93,6 +93,57 @@ clusters.forEachIndexed { i, c ->
 }
 ```
 
+# Reporting the duplicated source text
+
+`CloneRange` only carries path + line numbers — useful for navigation, not for
+showing the user *what* is duplicated. When the task is "summarize the
+duplication for a human", read the snippet from the `Document` while you still
+hold the read action:
+
+```kotlin[IU]
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.jetbrains.clones.structures.TextFragment
+
+fun TextFragment.snippet(maxChars: Int = 300): String {
+    val doc = FileDocumentManager.getInstance().getDocument(file) ?: return ""
+    return range.substring(doc.text).take(maxChars)
+}
+// inside the same readAction { } that owns the descriptor:
+//   val text = tc.main.snippet()
+```
+
+Combine with the recipe above: replace `CloneRange` with a richer record that
+also stores `snippet`, and call `tc.main.snippet()` / `it.snippet()` while the
+read action is still open. (Touching `Document` outside `readAction { }` will
+throw `ReadAccessException` — see `mcp-steroid://skill/coding-with-intellij-threading`.)
+
+# Discovering which file types exist in the project
+
+The default `targetExtensions = listOf("java", "kt", "py")` is a sensible
+starting point. For an unfamiliar project, ask the IDE which extensions are
+actually present before running the recipe at scale:
+
+```kotlin[IU]
+import com.intellij.psi.search.GlobalSearchScope
+
+val byExtCount = readAction {
+    com.intellij.psi.search.FilenameIndex
+        .processAllFileNames({ true }, GlobalSearchScope.projectScope(project), null)
+}
+// or simpler — just probe the candidates you care about:
+val present = listOf("java", "kt", "kts", "py", "groovy", "js", "ts", "rb")
+    .associateWith { ext ->
+        readAction {
+            com.intellij.psi.search.FilenameIndex
+                .getAllFilesByExt(project, ext, GlobalSearchScope.projectScope(project)).size
+        }
+    }
+println(present.filterValues { it > 0 })
+```
+
+Use the non-empty extensions to populate `targetExtensions` so the inspection
+loop visits files the project actually has.
+
 # How it works
 
 - `DuplicateInspection` is a `LocalInspectionTool` (`shortName = "DuplicatedCode"`, registered with `runForWholeFile="true"`). Per-file `checkFile` looks up a `DuplicateScopeExtension` for the file's language, queries the project-wide `HashFragmentIndex`, and emits a `DuplicateProblemDescriptor` for each clone where the inspected file holds the cluster's `main` fragment.
