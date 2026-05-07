@@ -51,7 +51,9 @@ fun TextFragment.toRange() = CloneRange(file.path, lines.first, lines.last)
 // Adjust to your task
 val targetExtensions = listOf("java", "kt", "py")
 val maxClustersToReport = 20
-val pathFilter: (String) -> Boolean = { true } // narrow to src/main/, exclude /build/, etc.
+// Sane default: skip generated trees that are usually full of noise. Widen to `{ true }`
+// for a full audit, or narrow to e.g. `{ "/src/main/" in it }` for production-only.
+val pathFilter: (String) -> Boolean = { "/build/" !in it && "/.gradle/" !in it && "/out/" !in it }
 
 val scope = GlobalSearchScope.projectScope(project)
 val files = readAction {
@@ -115,8 +117,9 @@ For pipelines or follow-up code that needs to consume the result programmaticall
 
 ```kotlin[IU]
 // Drop into the base recipe — replaces the trailing println loop. The local data classes
-// here mirror the ones in the base recipe; reuse the recipe's `clusters` directly when
-// you assemble both blocks together.
+// here mirror the ones in the base recipe; **delete the data class and `val clusters`
+// stubs below when merging** — they exist only so this block stands alone for KtBlock
+// compilation. The real `clusters` comes from the base recipe.
 data class CloneRange(val path: String, val startLine: Int, val endLine: Int)
 data class CloneCluster(val main: CloneRange, val duplicates: List<CloneRange>)
 val clusters: List<CloneCluster> = emptyList()  // populated by the base recipe
@@ -201,6 +204,7 @@ the inspection loop unchanged.
 - `maxClustersToReport` caps **unique** clusters (post-dedup) — the `seenKeys` guard ensures the loop's break runs against deduped count, not raw descriptor count.
 - `DuplicateProblemDescriptor.getTextClone()` returns a `TextClone(main: TextFragment, duplicates: List<TextFragment>)`. `TextFragment` exposes `file: VirtualFile`, `range: TextRange`, and `lines: IntRange` — everything you need to render `path:startLine-endLine` and pull the snippet text from the document.
 - Indexing must be ready. The script's bootstrap calls `waitForSmartMode()` automatically; if you trigger any reindexing in the same call, await `Observation.awaitConfiguration(project)` before the inspection runs.
+- **Runtime scales with project size.** A small fixture finishes in 2-5 s; a 500-file project takes 30-60 s; multi-thousand-file monorepos can take 2-5 minutes (the `HashFragmentIndex` query inside `checkFile` is project-wide). For large projects bump `steroid_execute_code` `timeout` (default 600 s, registry-configurable via `mcp.steroid.execution.timeout`) and narrow `pathFilter` to a target subtree.
 
 # Language coverage (Java, Kotlin, Python, ...)
 
