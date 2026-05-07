@@ -48,7 +48,10 @@ data class CloneCluster(val main: CloneRange, val duplicates: List<CloneRange>)
 
 fun TextFragment.toRange() = CloneRange(file.path, lines.first, lines.last)
 
-// Adjust to your task
+// Adjust to your task. The recipe reports file:line ranges only — to also capture
+// the duplicated source text, see "Reporting the duplicated source text" below.
+// For unfamiliar polyglot projects, run the extension-probe snippet (under
+// "Discovering which file types exist") first to see what to scan.
 val targetExtensions = listOf("java", "kt", "py")
 val maxClustersToReport = 20
 // Sane default: skip generated trees that are usually full of noise. Widen to `{ true }`
