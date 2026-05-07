@@ -7,9 +7,16 @@ import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
@@ -90,28 +97,38 @@ class FindDuplicatesPromptTest {
 
         // 3) Agent's FINAL recipe call did not reach for private-field reflection.
         //    Probing reflection earlier (to learn the API) is allowed by policy; using it
-        //    in the shipped exec_code is not.
+        //    in the shipped exec_code is not. Earlier we grepped `combined` (full stdout)
+        //    for the forbidden tokens, but our own skill articles describe these patterns
+        //    in prose warnings — fetching the article echoed them into stdout and the
+        //    grep fired falsely. Parse the agent's NDJSON instead and check ONLY the
+        //    `code` field of every `mcp__mcp-steroid__steroid_execute_code` invocation.
         console.writeInfo("Checking: NO private-field reflection in the final exec_code")
+        val execCodeBodies = readAgentExecCodeBodies(agent)
+        check(execCodeBodies.isNotEmpty()) {
+            "[${agent.displayName}] No steroid_execute_code calls captured in NDJSON. The recipe was never run."
+        }
         val reflectionPatterns = listOf(
             "setAccessible(true)",
-            "setAccessible(true);",
-            "getDeclaredField(\"myTextClone\")",
-            "getDeclaredField(\"my_text_clone\")",
-            "Class.forName(\"com.jetbrains.clones.DuplicateProblemDescriptor\")",
+            ".getDeclaredField(\"myTextClone\")",
+            ".getDeclaredField(\"my_text_clone\")",
+            "Class.forName(\"com.jetbrains.clones.DuplicateProblemDescriptor\"",
         )
-        val reflectionHits = reflectionPatterns.filter { combined.contains(it) }
-        check(reflectionHits.isEmpty()) {
+        val offendingBodies = execCodeBodies.mapIndexedNotNull { i, body ->
+            val hits = reflectionPatterns.filter { body.contains(it) }
+            if (hits.isEmpty()) null else (i + 1) to hits
+        }
+        check(offendingBodies.isEmpty()) {
             buildString {
-                appendLine("[${agent.displayName}] Agent's final exec_code uses private-field reflection on")
+                appendLine("[${agent.displayName}] Agent's exec_code uses private-field reflection on")
                 appendLine("DuplicateProblemDescriptor — exactly the regression issue #33 reports.")
-                appendLine("Forbidden tokens found: $reflectionHits")
+                appendLine("Offending submissions:")
+                offendingBodies.forEach { (idx, hits) -> appendLine("  exec_code #$idx -> $hits") }
                 appendLine()
                 appendLine("Recipe must use the public `getTextClone()` getter directly. See")
                 appendLine("`mcp-steroid://ide/find-duplicates` for the typed pattern.")
-                appendLine("Output:\n$combined")
             }
         }
-        console.writeSuccess("No private-field reflection detected")
+        console.writeSuccess("No private-field reflection in any of ${execCodeBodies.size} exec_code submission(s)")
 
         // 4) Agent reported a non-zero count of clusters.
         console.writeInfo("Checking: DUPLICATES_FOUND marker")
@@ -163,6 +180,59 @@ class FindDuplicatesPromptTest {
 
         println("[TEST/${agent.displayName}] discovered + used DuplicatedCode without private-field reflection")
         println("[TEST/${agent.displayName}] reflection saved -> $savedTo")
+    }
+
+    /**
+     * Extract every `code` field from the agent's NDJSON for `mcp__mcp-steroid__steroid_execute_code`
+     * invocations during the most recent run. Returns an empty list if the NDJSON is missing.
+     *
+     * Both Claude (new structured format: `assistant.message.content[].type == "tool_use"`) and
+     * Codex (`type == "item.completed"` with `item.type == "mcp_tool_call"`) are supported.
+     */
+    private fun readAgentExecCodeBodies(agent: AiAgentSession): List<String> {
+        val logsRoot = ProjectHomeDirectory.requireProjectHomeDirectory()
+            .resolve("test-integration/build/test-logs/test")
+        if (!Files.isDirectory(logsRoot)) return emptyList()
+        val agentSlug = agent.displayName.lowercase().replace(Regex("[^a-z0-9]+"), "-")
+        val pattern = Regex("""agent-$agentSlug-\d+-raw\.ndjson""")
+        val ndjson = Files.walk(logsRoot).use { stream ->
+            stream
+                .filter { Files.isRegularFile(it) && pattern.matches(it.fileName.toString()) }
+                .toList()
+        }.maxByOrNull { Files.getLastModifiedTime(it).toMillis() } ?: return emptyList()
+
+        val codes = mutableListOf<String>()
+        Files.newBufferedReader(ndjson).useLines { lines ->
+            for (raw in lines) {
+                if ('{' !in raw) continue
+                val obj = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: continue
+                // Claude format: assistant.message.content[*].type == "tool_use"
+                val content = obj["message"]?.jsonObject?.get("content")?.let { runCatching { it.jsonArray }.getOrNull() }
+                if (content != null) {
+                    for (entry in content) {
+                        val item = runCatching { entry.jsonObject }.getOrNull() ?: continue
+                        if (item["type"]?.jsonPrimitive?.contentOrNull != "tool_use") continue
+                        val name = item["name"]?.jsonPrimitive?.contentOrNull ?: continue
+                        if (!name.endsWith("steroid_execute_code")) continue
+                        val code = item["input"]?.jsonObject?.get("code")?.jsonPrimitive?.contentOrNull
+                        if (!code.isNullOrEmpty()) codes += code
+                    }
+                }
+                // Codex format: item.completed with item.type == "mcp_tool_call"
+                val item = obj["item"]?.let { runCatching { it.jsonObject }.getOrNull() }
+                if (item != null && item["type"]?.jsonPrimitive?.contentOrNull == "mcp_tool_call") {
+                    val tool = item["tool"]?.jsonPrimitive?.contentOrNull
+                        ?: item["name"]?.jsonPrimitive?.contentOrNull
+                    if (tool == "steroid_execute_code" || tool?.endsWith("__steroid_execute_code") == true) {
+                        val args: JsonObject? = item["arguments"]?.let { runCatching { it.jsonObject }.getOrNull() }
+                            ?: item["input"]?.let { runCatching { it.jsonObject }.getOrNull() }
+                        val code = args?.get("code")?.jsonPrimitive?.contentOrNull
+                        if (!code.isNullOrEmpty()) codes += code
+                    }
+                }
+            }
+        }
+        return codes
     }
 
     private fun extractImprovementsBlock(output: String): String? {
