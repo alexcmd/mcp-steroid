@@ -227,11 +227,12 @@ If `DuplicateScopeExtension.findDuplicateScope(fileType)` returns `null` for the
 
 # When the direct import does not compile
 
-If `steroid_execute_code` reports `unresolved reference: DuplicateProblemDescriptor`, the duplicates-detector module is not loaded into the running IDE (e.g. PyCharm Community without the Python duplicates plugin pulled in). The fix is **not** to switch to reflection — it is to declare the missing module so the IDE loads it and the typed import compiles:
+The recipe's typed imports work in **IDEA Ultimate, PyCharm Pro, RubyMine, and other commercial IDEs that bundle the duplicates-detector module** (the bulk of agent traffic). If `steroid_execute_code` reports `unresolved reference: DuplicateProblemDescriptor`, the module isn't loaded in the running IDE — most likely a Community / EAP build, or an unusual configuration. The fix is **not** reflection. Try in this order:
 
-1. List the loaded plugins with the "Find Plugin by ID" recipe in `mcp-steroid://skill/coding-with-intellij-patterns`. Confirm whether `com.intellij.modules.duplicatesDetector` is present.
-2. If it is missing, pass it through the `required_plugins` parameter on your `steroid_execute_code` call so the IDE side handles loading. Do not install it programmatically.
-3. Re-run the typed snippet above. The recipe is the same in every IDE that has the module loaded — there is no reflection branch.
+1. **Just retry without any preflight.** The `steroid_execute_code` script classpath is built from every loaded plugin's classloader files, and the module's classes appear there as soon as the IDE has loaded the plugin. The first compile failure can be transient (e.g. you fired the call before the IDE finished loading after a fresh restart).
+2. **Confirm the module is loaded.** Use the "Find Plugin by ID" recipe in `mcp-steroid://skill/coding-with-intellij-patterns`. The relevant module is `com.intellij.modules.duplicatesDetector`. If it shows as loaded, the typed import will work — there is nothing to declare.
+3. **`required_plugins` — last resort, with caveat.** `required_plugins` runs a preflight check that *can reject the module-style ID format* `com.intellij.modules.duplicatesDetector`. Try the typed import without `required_plugins` first; only if the class is genuinely missing AND the module isn't loaded should you declare it — and even then, expect to discover the right ID format empirically (the preflight error will name accepted IDs). Do not assume one specific value will pass.
+4. **Do not switch to reflection.** Private-field renames silently break next IDE release. The public `getTextClone()` getter is the answer.
 
 > **Reflection is for exploration, not for the recipe you ship.** If you reached for `Class.getDeclaredField("myTextClone")` + `setAccessible(true)` to extract the clone pair, stop — that path is brittle (private-field renames in the next IDE release silently break the script) and unnecessary. The public `getTextClone()` getter and the typed `import` above are the right answer. See the reflection-policy note in `mcp-steroid://skill/coding-with-intellij`.
 
