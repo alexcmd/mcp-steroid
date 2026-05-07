@@ -117,6 +117,11 @@ also stores `snippet`, and call `tc.main.snippet()` / `it.snippet()` while the
 read action is still open. (Touching `Document` outside `readAction { }` will
 throw `ReadAccessException` — see `mcp-steroid://skill/coding-with-intellij-threading`.)
 
+When the user is asking *what* is duplicated (not just *where*), include the
+snippet of each cluster's `main` fragment in your reply so they can judge
+relevance without opening every file. For pure counting / triage tasks the
+file:line markers from the base recipe are enough — skip the snippet helper.
+
 # Discovering which file types exist in the project
 
 The default `targetExtensions = listOf("java", "kt", "py")` is a sensible
@@ -142,7 +147,10 @@ println(present.filterValues { it > 0 })
 ```
 
 Use the non-empty extensions to populate `targetExtensions` so the inspection
-loop visits files the project actually has.
+loop visits files the project actually has. For an autonomous run where you
+want a single round-trip, inline the probe into the main recipe — replace the
+hard-coded `targetExtensions` with the result of the probe, then continue with
+the inspection loop unchanged.
 
 # How it works
 

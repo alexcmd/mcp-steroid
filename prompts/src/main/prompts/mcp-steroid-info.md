@@ -9,6 +9,8 @@ This is a **STATEFUL** API — every call changes the IDE state. The IntelliJ ID
 2. Use `steroid_fetch_resource` to read the `mcp-steroid://` skill guide for your task
 3. Use `steroid_execute_code` for any IDE automation task (including every file edit)
 
+> **Tool schemas may be deferred.** If your client lazy-loads MCP tool schemas (Claude Code does), the `steroid_*` tools above are listed but not callable until you load their schemas — call `ToolSearch` (or your client's equivalent) for `mcp__mcp-steroid__steroid_list_projects`, `…steroid_fetch_resource`, `…steroid_execute_code` before the first invocation. Skipping this surfaces as `InputValidationError` on the first call and a wasted turn.
+
 **Quick recipes — fetch one and run.** Common one-shot tasks have a ready-made `mcp-steroid://ide/...` article with a copy-paste Kotlin snippet. Reach for these before improvising; they handle threading, IDE-version drift, and typed-vs-reflection traps so you don't have to.
 
 | If the user asks for… | Fetch this resource |
