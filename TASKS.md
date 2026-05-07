@@ -17,6 +17,34 @@ Current focus: make MCP Steroid measurably better than vanilla agent runs on DPA
 - Use `run-agent.sh` reviews for non-trivial direction changes. Require three reviews and consensus before selecting the next low-hanging fruit.
 - Keep run-agent artifacts outside this repository unless explicitly asked to preserve them.
 
+## Pending — IMPROVEMENTS.md harness rollout (separate PR)
+
+The two-task prompt + per-agent reflection harness landed on
+`FindDuplicatesPromptTest` in the issue-33 PR (see CLAUDE.md → "IMPROVEMENTS.md
+harness — agent self-feedback for prompt tuning"). The pattern is generic; we
+should extend it across every test-integration prompt-style test so each one
+produces a per-agent reflection artifact.
+
+- [ ] **Audit prompt-style tests in `:test-integration:test`.** Likely
+  candidates: `ReferencesSearchPromptTest`, `FilenameIndexPromptTest`,
+  `PsiClassLookupPromptTest`, `MavenRunnerAdoptionTest`,
+  `ResourceReadingTest`, `WhatYouSeeTest`'s `toolPreference`. Confirm which
+  of them run an agent against an open prompt (vs. infrastructure smoke).
+- [ ] **For each prompt test, add Task 2 (reflection)** to the prompt and
+  snapshot the `<<<IMPROVEMENTS>>>...<<<END_IMPROVEMENTS>>>` block to
+  `test-integration/build/improvements/IMPROVEMENTS-<test>-<agent>.md`.
+  Reuse the helper pattern in `FindDuplicatesPromptTest` (`extractImprovementsBlock`,
+  `saveImprovements`) — likely worth promoting to a shared helper in
+  `test-integration/src/main/.../integration/tests/`.
+- [ ] **Iteration cadence per test**: 5×Claude → 3×Codex → 3×Claude → 3×Codex
+  (the `find-duplicates` cadence). Each cycle reads the IMPROVEMENTS files,
+  applies prompt-only tweaks, re-runs.
+- [ ] **Land in a separate PR.** Wait until the issue-33 PR ships so the
+  harness contract has stabilized; then propose the rollout as one self-contained
+  change per prompt test (or one umbrella PR if the helper extraction is cohesive).
+- [ ] Update CLAUDE.md when rollout completes to drop the "currently wired into
+  FindDuplicatesPromptTest" caveat.
+
 ## Pending — Reflection audit follow-up (issue #33)
 
 Audit on 2026-05-07 across `prompts/src/main/prompts/**/*.md` for `Class.forName`,
