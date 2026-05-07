@@ -17,6 +17,23 @@ Execute Kotlin code directly in IntelliJ IDEA's runtime with full access to the 
 - Full project model with module dependencies instead of workspace folders
 - Platform-specific indices for O(1) code search instead of filesystem scans
 
+## Common task → resource cheat sheet
+
+Before reading further, if your task matches one of these, skip straight to the linked recipe:
+
+| Task | Fetch this |
+|---|---|
+| Find duplicate / cloned / DRY-violation / copy-paste code | `mcp-steroid://ide/find-duplicates` |
+| Run a single named inspection + apply quick-fix | `mcp-steroid://ide/inspect-and-fix` |
+| List enabled inspections in the project | `mcp-steroid://ide/inspection-summary` |
+| Multi-file literal-text edit (atomic) | `steroid_apply_patch` (or `mcp-steroid://ide/apply-patch`) |
+| Find usages of a symbol | `mcp-steroid://lsp/find-references` |
+| Run / debug a test | `mcp-steroid://ide/demo-debug-test` |
+| Run Maven / Gradle tests | `mcp-steroid://skill/execute-code-maven`, `mcp-steroid://skill/execute-code-gradle` |
+| API discovery / exploration | continue reading this guide |
+
+The full index is in the "MCP Resources (Use Them)" section below.
+
 ## Quickstart Flow
 
 ```

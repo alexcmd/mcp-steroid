@@ -6,6 +6,8 @@ Run the bundled `DuplicatedCode` inspection across the project and walk each clo
 
 Whenever an agent is asked to "find and refactor duplicate code", "extract a common helper for repeated logic", or "scan for clones". The `DuplicatedCode` inspection is the right tool: it is bundled in IntelliJ IDEA Ultimate, runs on Java, Kotlin, Python, Groovy, JavaScript, Ruby, and other supported languages via the same `DuplicateProblemDescriptor` payload, and the descriptor exposes a public `getTextClone()` getter so a script can enumerate every clone cluster typed.
 
+**Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. The recipe handles both with the same dedup logic — don't assume duplicates are always cross-file when summarizing results.
+
 > **Before submitting the recipe, ensure `steroid_execute_code` is callable in your session.** If your client lazy-loads MCP tool schemas (e.g. Claude Code's deferred tools), call `ToolSearch` (or the equivalent schema-load step for your client) for `mcp__mcp-steroid__steroid_execute_code` first. Without the schema loaded the call will fail with `InputValidationError` and you will lose a turn.
 
 # Why direct typed access works (no reflection needed)

@@ -240,7 +240,19 @@ class FindDuplicatesPromptTest {
             pattern = """<<<\s*IMPROVEMENTS\s*>>>\s*\n([\s\S]*?)\n\s*<<<\s*END_IMPROVEMENTS\s*>>>""",
             options = setOf(RegexOption.IGNORE_CASE),
         )
-        return regex.find(output)?.groupValues?.getOrNull(1)?.trim()
+        // Use the LAST match. Codex sometimes echoes the prompt template (including the
+        // <<<IMPROVEMENTS>>> markers and our placeholder hint) before producing its real
+        // answer, so the first match would be Codex's echo instead of the reflection.
+        // Claude tends to produce one block, so last == first there. Take last for both.
+        val candidates = regex.findAll(output).toList()
+        // Prefer a non-placeholder match: skip a block whose content is just our
+        // parenthetical instruction (the "(your reflection: ...)" hint).
+        val placeholderHint = "your reflection"
+        val preferred = candidates.lastOrNull { match ->
+            val content = match.groupValues.getOrNull(1)?.trim().orEmpty()
+            content.isNotEmpty() && !content.startsWith("(") && placeholderHint !in content.lowercase()
+        } ?: candidates.lastOrNull()
+        return preferred?.groupValues?.getOrNull(1)?.trim()
     }
 
     private fun saveImprovements(agentName: String, content: String): Path {
