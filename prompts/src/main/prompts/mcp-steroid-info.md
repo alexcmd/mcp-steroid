@@ -9,7 +9,7 @@ This is a **STATEFUL** API — every call changes the IDE state. The IntelliJ ID
 2. Use `steroid_fetch_resource` to read the `mcp-steroid://` skill guide for your task
 3. Use `steroid_execute_code` for any IDE automation task (including every file edit)
 
-> **Tool schemas may be deferred.** If your client lazy-loads MCP tool schemas (Claude Code does), the `steroid_*` tools above are listed but not callable until you load their schemas — call `ToolSearch` (or your client's equivalent) for `mcp__mcp-steroid__steroid_list_projects`, `…steroid_fetch_resource`, `…steroid_execute_code` before the first invocation. Skipping this surfaces as `InputValidationError` on the first call and a wasted turn.
+> **Tool schemas may be deferred.** If your client lazy-loads MCP tool schemas (Claude Code does), the `steroid_*` tools above are listed but not callable until you load their schemas — call `ToolSearch` (or your client's equivalent) for `mcp__mcp-steroid__steroid_list_projects`, `…steroid_fetch_resource`, `…steroid_execute_code` before the first invocation. Skipping this surfaces as `InputValidationError` on the first call and a wasted turn. **Tip (Claude Code):** load all three at once with `ToolSearch(query="select:mcp__mcp-steroid__steroid_list_projects,mcp__mcp-steroid__steroid_fetch_resource,mcp__mcp-steroid__steroid_execute_code")` — one round-trip instead of three.
 
 > **Resource URIs are direct.** Pass any `mcp-steroid://<folder>/<id>` URI to `steroid_fetch_resource` exactly as written — `mcp-steroid://ide/find-duplicates` works as-is. The `mcp-steroid://` scheme is the resource address; do not prefix it with the tool's MCP namespace (`mcp__mcp-steroid__…` is for **tool names**, not resource URIs).
 
