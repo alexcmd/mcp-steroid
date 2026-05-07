@@ -31,7 +31,7 @@ Pre-flight catches missing or non-unique anchors before any edit lands, so keep 
 | **Run Maven / Gradle tests** | IDE runner — see `mcp-steroid://skill/execute-code-maven` and `mcp-steroid://skill/execute-code-gradle`; Bash is only for shell-level final verification or IDE-runner fallback |
 | **IDE build aborted (`errors=false, aborted=true`)** | Fetch `mcp-steroid://skill/execute-code-gradle` or `mcp-steroid://skill/execute-code-maven` and run the matching sync pattern before Bash fallback. |
 | **Compile check after an edit** | `ProjectTaskManager.getInstance(project).buildAllModules().await()` |
-| **Find duplicate / cloned code across the project** | Fetch `mcp-steroid://ide/find-duplicates` — ready-made recipe over `DuplicateInspection` + typed `DuplicateProblemDescriptor.textClone`. No private-field reflection. |
+| **Find duplicate / cloned code across the project** | **Fetch `mcp-steroid://ide/find-duplicates` FIRST** — do not start with `grep` / `Bash` / ad-hoc text search. The recipe runs the IDE's `DuplicateInspection` over the project index and walks the typed `DuplicateProblemDescriptor.textClone`. No private-field reflection. |
 | **Run a single named inspection on a file (with quick-fix)** | Fetch `mcp-steroid://ide/inspect-and-fix`. For *all enabled* inspections, use the context-API helper `runInspectionsDirectly(file)` directly. |
 | **Git / Docker CLI / shell** | native `Bash` — genuinely outside the IDE |
 

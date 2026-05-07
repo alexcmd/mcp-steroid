@@ -8,6 +8,10 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 **Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. The recipe handles both with the same dedup logic — don't assume duplicates are always cross-file when summarizing results.
 
+**Line numbers are 1-based.** `TextFragment.lines.first` and `TextFragment.lines.last` are 1-based and ready to show to a user (the IDE does `getLineNumber(offset) + 1` internally). `path:startLine-endLine` lines you print are clickable in IDE/editor consoles without conversion.
+
+**`.kt` vs `.kts`.** A Kotlin/Gradle project usually has both — `.kt` for source and `.kts` for build scripts. The recipe scans whichever extensions you put in `targetExtensions`. If the user asks about *source* files, leave `.kts` out; for a full project audit, add it.
+
 > **Before submitting the recipe, ensure `steroid_execute_code` is callable in your session.** If your client lazy-loads MCP tool schemas (e.g. Claude Code's deferred tools), call `ToolSearch` (or the equivalent schema-load step for your client) for `mcp__mcp-steroid__steroid_execute_code` first. Without the schema loaded the call will fail with `InputValidationError` and you will lose a turn.
 
 # Why direct typed access works (no reflection needed)
@@ -93,6 +97,32 @@ clusters.forEachIndexed { i, c ->
     println("  main ${c.main.path}:${c.main.startLine}-${c.main.endLine}")
     c.duplicates.forEach { d -> println("  dup  ${d.path}:${d.startLine}-${d.endLine}") }
 }
+```
+
+# Structured output (printJson)
+
+For pipelines or follow-up code that needs to consume the result programmatically, swap the trailing `println` block for a single `printJson` call. Stable shape: `clusterCount`, `clusters[].occurrences`, `clusters[].fragments[].{path, startLine, endLine}`. Same dedup logic as the base recipe — only the final emission changes.
+
+```kotlin[IU]
+// Drop into the base recipe — replaces the trailing println loop. The local data classes
+// here mirror the ones in the base recipe; reuse the recipe's `clusters` directly when
+// you assemble both blocks together.
+data class CloneRange(val path: String, val startLine: Int, val endLine: Int)
+data class CloneCluster(val main: CloneRange, val duplicates: List<CloneRange>)
+val clusters: List<CloneCluster> = emptyList()  // populated by the base recipe
+
+val payload: Map<String, Any> = mapOf(
+    "clusterCount" to clusters.size,
+    "clusters" to clusters.map { c ->
+        mapOf(
+            "occurrences" to (c.duplicates.size + 1),
+            "fragments" to (listOf(c.main) + c.duplicates).map { r ->
+                mapOf("path" to r.path, "startLine" to r.startLine, "endLine" to r.endLine)
+            },
+        )
+    },
+)
+printJson(payload)
 ```
 
 # Reporting the duplicated source text
