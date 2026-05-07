@@ -119,7 +119,10 @@ class FindDuplicatesRecipeTest : BasePlatformTestCase() {
             fun TextFragment.toRange() = CloneRange(file.path, lines.first, lines.last)
 
             val scope = GlobalSearchScope.projectScope(project)
-            val ktFiles = readAction { FilenameIndex.getAllFilesByExt(project, "kt", scope).toList() }
+            val pathFilter: (String) -> Boolean = { true }
+            val ktFiles = readAction {
+                FilenameIndex.getAllFilesByExt(project, "kt", scope).filter { pathFilter(it.path) }
+            }
             println("Scanning ${ktFiles.size} Kotlin file(s)")
 
             val wrapper = LocalInspectionToolWrapper(DuplicateInspection())

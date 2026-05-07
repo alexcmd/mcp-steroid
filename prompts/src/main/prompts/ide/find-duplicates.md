@@ -6,11 +6,19 @@ Run the bundled `DuplicatedCode` inspection across the project and walk each clo
 
 Whenever an agent is asked to "find and refactor duplicate code", "extract a common helper for repeated logic", or "scan for clones". The `DuplicatedCode` inspection is the right tool: it is bundled in IntelliJ IDEA Ultimate, runs on Java, Kotlin, Python, Groovy, JavaScript, Ruby, and other supported languages via the same `DuplicateProblemDescriptor` payload, and the descriptor exposes a public `getTextClone()` getter so a script can enumerate every clone cluster typed.
 
-**Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. The recipe handles both with the same dedup logic — don't assume duplicates are always cross-file when summarizing results.
+**Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
+
+**Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. **And the inspection emits the same logical cluster N times** (once per fragment-as-`main`), so a 2-fragment pair surfaces twice — the recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly N× too large.
 
 **Line numbers are 1-based.** `TextFragment.lines.first` and `TextFragment.lines.last` are 1-based and ready to show to a user (the IDE does `getLineNumber(offset) + 1` internally). `path:startLine-endLine` lines you print are clickable in IDE/editor consoles without conversion.
 
 **`.kt` vs `.kts`.** A Kotlin/Gradle project usually has both — `.kt` for source and `.kts` for build scripts. The recipe scans whichever extensions you put in `targetExtensions`. If the user asks about *source* files, leave `.kts` out; for a full project audit, add it.
+
+**Source-only path filter** — if your build pollutes `src/` with generated files or you want to skip tests, narrow with the `pathFilter` lambda already wired into the recipe. Common variants:
+
+- Production source only: `pathFilter = { it.contains("/src/main/") }`
+- Source + tests: `pathFilter = { "/src/main/" in it || "/src/test/" in it }`
+- Skip `build/` and other generated trees: `pathFilter = { "/build/" !in it && "/.gradle/" !in it }`
 
 > **Before submitting the recipe, ensure `steroid_execute_code` is callable in your session.** If your client lazy-loads MCP tool schemas (e.g. Claude Code's deferred tools), call `ToolSearch` (or the equivalent schema-load step for your client) for `mcp__mcp-steroid__steroid_execute_code` first. Without the schema loaded the call will fail with `InputValidationError` and you will lose a turn.
 
@@ -43,10 +51,12 @@ fun TextFragment.toRange() = CloneRange(file.path, lines.first, lines.last)
 // Adjust to your task
 val targetExtensions = listOf("java", "kt", "py")
 val maxClustersToReport = 20
+val pathFilter: (String) -> Boolean = { true } // narrow to src/main/, exclude /build/, etc.
 
 val scope = GlobalSearchScope.projectScope(project)
 val files = readAction {
     targetExtensions.flatMap { ext -> FilenameIndex.getAllFilesByExt(project, ext, scope) }
+        .filter { pathFilter(it.path) }
 }
 println("Scanning ${files.size} file(s) for clones")
 
