@@ -127,7 +127,9 @@ Like the Java canonical recipe, the Kotlin example below sets `setRecursiveSearc
 
 ## Canonical Kotlin example — `runCatching{}.onFailure{}` audit
 
-⚠️ This is **search-only by default**. Rewriting to `try/catch` drops the `Result<T>` return value; do not enable replacement until you have audited every match's surrounding context.
+⚠️ **Search-only by default.** Rewriting to `try/catch` drops the `Result<T>` return value of the original chain. The pattern below specifically matches the `.onFailure { … }` shape — it does NOT match `runCatching { … }.getOrElse { … }`, `runCatching { … }.getOrThrow()`, `runCatching { … }.let { … }`, etc. because `onFailure` is a literal method-name anchor (see [syntax](mcp-steroid://skill/structural-search-syntax) "literal identifiers anchor exactly"). When the result IS consumed via `.getOrElse`/`.getOrThrow`/`.let`, those callsites are intentionally excluded — but they are also the ones that would be unsafe to rewrite, so the exclusion lines up with the safety story.
+
+⚠️ **`'_E ->` matches explicit parameters only.** The lambda parameter `'_E ->` only matches `{ e -> … }`-style lambdas; it does NOT match `{ … }`-style lambdas using the implicit `it`. To match both shapes, write two patterns or replace `'_E -> '_HANDLER*` with just `'_HANDLER*` (and accept that the parameter is then unconstrained).
 
 ```
 val opts = MatchOptions().apply {

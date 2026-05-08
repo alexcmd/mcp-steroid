@@ -10,17 +10,18 @@ This is the load-bearing article. Any rewrite copied from elsewhere should be cr
 
 When the search target is a known file or small set of files (debugging an SSR pattern, scoped audit), use `LocalSearchScope` instead of `GlobalSearchScope.projectScope(project)` — much faster, doesn't iterate the project index.
 
+The recipe below works **for every supported language**. Swap `JavaFileType.INSTANCE` → `KotlinFileType.INSTANCE` (or any other `LanguageFileType.INSTANCE`) and the matching apostrophe-form pattern; the rest is identical.
+
 ```
 import com.intellij.psi.search.LocalSearchScope
 
 // Resolve the file BEFORE entering any readAction. findProjectPsiFile is a suspend fun.
-val psi = findProjectPsiFile("src/main/java/com/example/Foo.java")
+val psi = findProjectPsiFile("src/main/java/com/example/Foo.java")    // or .kt, .py-not-supported (no SSR), …
     ?: error("file not in project")
 
-// Use LocalSearchScope as the scope on MatchOptions
 val matchOptions = MatchOptions().apply {
-    fillSearchCriteria("System.out.println('_msg);")
-    setFileType(JavaFileType.INSTANCE)
+    fillSearchCriteria("System.out.println('_msg);")                    // pattern; swap per language
+    setFileType(JavaFileType.INSTANCE)                                  // OR KotlinFileType.INSTANCE, etc.
     setScope(LocalSearchScope(psi))
     setRecursiveSearch(true)
 }
