@@ -148,14 +148,23 @@ class StructuralSearchYoutrackdbTest {
         }
         console.writeSuccess("[ssr-youtrackdb] JAVA_PREDEFINED_COUNT=$nTpl")
 
-        // 7. IMPROVEMENTS reflection.
+        // 7. IMPROVEMENTS reflection — mandatory.
+        console.writeInfo("[ssr-youtrackdb] capturing IMPROVEMENTS reflection")
         val improvements = extractImprovementsBlock(output)
-        if (improvements != null && improvements.isNotBlank()) {
-            val savedTo = saveImprovements(agent.displayName, improvements)
-            console.writeSuccess("[ssr-youtrackdb] improvements -> $savedTo")
-        } else {
-            console.writeInfo("[ssr-youtrackdb] no IMPROVEMENTS block returned (optional)")
+        check(improvements != null && improvements.isNotBlank()) {
+            buildString {
+                appendLine("[ssr-youtrackdb/${agent.displayName}] Task 2 (IMPROVEMENTS reflection) was not delivered.")
+                appendLine("The agent must emit a block delimited by `<<<IMPROVEMENTS>>>` ... `<<<END_IMPROVEMENTS>>>`")
+                appendLine("with notes on what was difficult or unclear. Constraint: prompt-only tweaks")
+                appendLine("(no new MCP tools / API methods).")
+                appendLine()
+                appendLine("Got delimited block: ${improvements?.take(120)}")
+                appendLine("Output:")
+                appendLine(combined)
+            }
         }
+        val savedTo = saveImprovements(agent.displayName, improvements)
+        console.writeSuccess("[ssr-youtrackdb] improvements -> $savedTo")
 
         console.writeHeader("[ssr-youtrackdb/${agent.displayName}] PASSED")
         println("[TEST/ssr-youtrackdb/${agent.displayName}] passed (profiles=$nProfiles optionalGet=$nOptGet predefined=$nTpl)")
@@ -347,13 +356,24 @@ These come from `mcp-steroid://skill/structural-search-api-recipe`:
   time on the same `MatchOptions` — it overwrites the search pattern.
 - Use the apostrophe form (`'_x`, `'_x:[exprtype(...)]`) for the Optional.get audit.
 
-## Optional reflection
+## Reflection — REQUIRED
 
-If anything in the skill articles was unclear or could be improved, share notes
-between these delimiters (prompt-only tweaks; no new MCP tools / API methods):
+Now reflect on Task 1: what was difficult, slow, or ambiguous in the skill
+articles? Which passages were unclear, missing, or actively misleading?
+What additional examples or warnings would have made you find the right
+recipe faster on a real-world Maven multi-module project like this one?
+
+**Hard constraint** — suggestions must be about **prompts only**
+(`mcp-steroid://skill/structural-search*`, tool descriptions, system-prompt
+text). We **cannot** add MCP tools or API methods; the only knob the
+maintainers can turn is the prompt content.
+
+Print your reflection between these exact delimiters as part of your final
+answer (the test will FAIL the run if this block is missing):
 
 <<<IMPROVEMENTS>>>
-(your reflection)
+(your reflection: bullet points; what was hard, what was missing, which
+skill article needs which prompt-only tweak)
 <<<END_IMPROVEMENTS>>>
 """.trimIndent()
     }

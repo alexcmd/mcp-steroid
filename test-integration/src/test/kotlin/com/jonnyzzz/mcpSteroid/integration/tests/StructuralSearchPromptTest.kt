@@ -267,15 +267,28 @@ class StructuralSearchPromptTest {
         // 5. Custom per-scenario assertions.
         customAssertions?.invoke(combined, output, consoleAdapter)
 
-        // 6. IMPROVEMENTS reflection.
+        // 6. IMPROVEMENTS reflection — mandatory. The whole point of this bucket is
+        //    to surface prompt-only tweaks; without the reflection block the test
+        //    has no signal to feed back into skill-article tuning.
         consoleAdapter.writeInfo("[$scenarioName] capturing IMPROVEMENTS reflection")
         val improvements = extractImprovementsBlock(output)
-        if (improvements != null && improvements.isNotBlank()) {
-            val savedTo = saveImprovements(scenarioName, agent.displayName, improvements)
-            consoleAdapter.writeSuccess("[$scenarioName] improvements -> $savedTo")
-        } else {
-            consoleAdapter.writeInfo("[$scenarioName] no IMPROVEMENTS block returned (not asserted; the prompt makes it optional for the bucket)")
+        check(improvements != null && improvements.isNotBlank()) {
+            buildString {
+                appendLine("[$scenarioName/${agent.displayName}] Task 2 (IMPROVEMENTS reflection) was not delivered.")
+                appendLine("The agent must emit a block delimited by `<<<IMPROVEMENTS>>>` ... `<<<END_IMPROVEMENTS>>>`")
+                appendLine("with notes on what was difficult, ambiguous, or missing in the structural-search")
+                appendLine("skill articles. The constraint stated in the prompt is that suggestions must be")
+                appendLine("PROMPT-ONLY — we cannot extend the MCP tool surface or add API methods, so the")
+                appendLine("only knob we can turn is the skill-article content. Without the reflection,")
+                appendLine("this test has no maintenance signal and the bucket has no purpose.")
+                appendLine()
+                appendLine("Got delimited block: ${improvements?.take(120)}")
+                appendLine("Output:")
+                appendLine(combined)
+            }
         }
+        val savedTo = saveImprovements(scenarioName, agent.displayName, improvements)
+        consoleAdapter.writeSuccess("[$scenarioName] improvements -> $savedTo")
 
         consoleAdapter.writeHeader("[$scenarioName/${agent.displayName}] PASSED")
         println("[TEST/$scenarioName/${agent.displayName}] passed")
@@ -449,16 +462,28 @@ above on their own lines.
   time on the same `MatchOptions` — it overwrites the search pattern.
 - Use the apostrophe form (`'_x`, `'_x:[regex(...)]`, etc.) when authoring patterns.
 
-## Task 2 — reflect on Task 1 (optional)
+## Task 2 — reflect on Task 1 (REQUIRED)
 
-If anything was unclear or the skill articles could be improved, print your
-notes between these delimiters:
+Now look back at how Task 1 actually went. What was difficult, slow, or
+ambiguous? Which skill article passages were unclear, missing, or actively
+misleading? What additional examples or warnings would have made you find
+the right recipe faster — or kept you from going down a dead end?
+
+**Hard constraint** — your suggestions must be about **prompts only**: skill
+articles (`mcp-steroid://skill/structural-search*`), tool descriptions, system-
+prompt text. We **cannot** add MCP tools or API methods as a fix path; the only
+knob the maintainers can turn is the prompt content. Frame every suggestion in
+those terms (e.g. "the `mcp-steroid://skill/structural-search-syntax` article
+should mention X near the `:[exprtype(...)]` row so an agent finds it without
+trial and error").
+
+Print your reflection between these exact delimiters as part of your final
+answer (the test will FAIL the run if this block is missing):
 
 <<<IMPROVEMENTS>>>
-(your reflection: what was hard, what was missing, prompt-only tweaks)
+(your reflection: bullet points are fine — what was hard, what was missing,
+which skill article needs which prompt-only tweak)
 <<<END_IMPROVEMENTS>>>
-
-The constraint is **prompt-only tweaks** — we cannot add MCP tools or API methods.
 """.trimIndent()
 
         val OPTIONAL_GET_PROMPT: String = ssrTaskTemplate(
