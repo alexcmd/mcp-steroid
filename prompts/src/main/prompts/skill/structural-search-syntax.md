@@ -49,7 +49,7 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 
 '_x:[exprtype( java\.lang\.String )]   # resolved expression type matches FQN
 '_x:[exprtype( *Number )]              # exprtype within hierarchy
-'_x:[exprtype( ~.*Optional<.*> )]      # exprtype as a regex
+'_x:[exprtype( ~.*Optional<.*> )]      # exprtype as a regex (REQUIRED when arg has .*, +, |, etc.)
 '_x:[!exprtype( void )]                # NOT (exprtype matches)
 
 '_x:[formal( java\.util\.List )]       # expected/formal-arg type (Java)
@@ -59,6 +59,8 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 '_:[within( "if ('_c) { '_st*; }" )]   # ONLY on __context__ — whole match must live inside the outer pattern
 '_:[context( SavedContextTemplate )]   # ONLY on __context__ — runs in the named context
 ```
+
+> ⚠️ **Common pitfall — `exprtype` and parameterized types.** Without the `~` prefix, the `exprtype` argument is an **exact-FQN string compare**. So `:[exprtype( java\.util\.Optional<.*> )]` does NOT match `Optional<String>` callsites — `<.*>` is regex syntax that goes through unchanged into an exact compare and never matches. Whenever the arg contains `.*`, `+`, `|`, `<.*>`, or any other regex metacharacter, the `~` prefix is REQUIRED: `:[exprtype( ~java\.util\.Optional<.*> )]`. Same rule for `formal(...)`. Symptom of the bug: `Matcher.validate` passes, `findMatches` quietly returns 0 — the "silent-zero-match" failure mode the [api-recipe](mcp-steroid://skill/structural-search-api-recipe) §4.1 warns about.
 
 Plus the escape hatch: any name starting with `_` is a custom macro routed to the language profile's predicate registry.
 

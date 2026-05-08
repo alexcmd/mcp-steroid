@@ -14,7 +14,7 @@ Every entry below is meant to be dropped into the canonical recipe in [api-recip
 | A2 | `JOptionPane.showMessageDialog(null, msg)` → annotated for follow-up | Java | `JOptionPane.'_show(null, '_msg);` | `//FIXME provide a parent frame\nJOptionPane.$show$(null, $msg$);` |
 | A3 | Hamcrest `assertThat(actual, is(expected))` → AssertJ | Java | `org.hamcrest.MatcherAssert.assertThat('_a, org.hamcrest.Matchers.is('_e));` | `org.assertj.core.api.Assertions.assertThat($a$).isEqualTo($e$);` |
 | A4 | Guava `Lists.newArrayList()` → JDK | Java | `com.google.common.collect.Lists.newArrayList()` | `new java.util.ArrayList<>()` |
-| A5 | `Optional.get()` audit (search-only) | Java | `'_o:[exprtype( java\.util\.Optional<.*> )].get()` | (none) |
+| A5 | `Optional.get()` audit (search-only) | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | (none) |
 | A6 | Kotlin `kotlin.test.assertEquals` → JUnit5 | Kotlin | `kotlin.test.assertEquals('_e, '_a)` | `org.junit.jupiter.api.Assertions.assertEquals($e$, $a$)` |
 
 For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs collapse to short names + imports. For Kotlin migrations on K2 set it to false (asynchronous shortening — see [api-recipe](mcp-steroid://skill/structural-search-api-recipe) §7).
@@ -25,8 +25,8 @@ For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs colla
 |---|---|---|---|---|
 | B1 | Audit `println` calls (project policy: route via `LoggerFactory`) | Kotlin | `println('_msg)` | search-only |
 | B2 | Detect `runCatching{}.onFailure{}` chain (this repo bans it) | Kotlin | `'_x.runCatching { '_body }.onFailure { '_handler }` | search-only — see warning below |
-| B3 | Audit `Optional.get()` callsites | Java | `'_o:[exprtype( java\.util\.Optional<.*> )].get()` | search-only |
-| B4 | Force trailing-lambda for `forEach` | Kotlin | `'_xs.forEach('_lambda:[exprtype( kotlin\.jvm\.functions\.Function1.* )])` | `$xs$.forEach $lambda$` |
+| B3 | Audit `Optional.get()` callsites | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | search-only |
+| B4 | Force trailing-lambda for `forEach` | Kotlin | `'_xs.forEach('_lambda:[exprtype( ~kotlin\.jvm\.functions\.Function1.* )])` | `$xs$.forEach $lambda$` |
 | B5 | Detect `System.out` / `System.err` in non-test sources | Java | `System.'_io:[regex( out|err )].'_call('_args*);` | search-only |
 | B6 | Detect `if (x != null) x.f()` nullable abuse | Kotlin | `if ('_x != null) '_x.'_f('_args*)` | `$x$?.$f$($args$)` |
 
@@ -49,7 +49,7 @@ For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs colla
 |---|---|---|---|
 | D1 | All `System.out.println` call sites | Java | `System.out.'_m('_args*);` |
 | D2 | Reflection: `Class.forName(...)` | Java | `Class.forName('_name)` |
-| D3 | Reflection: `getDeclaredMethod`/`getDeclaredField` | Java | `'_o:[exprtype( java\.lang\.Class.* )].getDeclaredMethod('_n, '_args*)` |
+| D3 | Reflection: `getDeclaredMethod`/`getDeclaredField` | Java | `'_o:[exprtype( ~java\.lang\.Class.* )].getDeclaredMethod('_n, '_args*)` |
 | D4 | JS `eval(...)` | JavaScript | `eval('_x)` |
 | D5 | All `Thread.sleep(...)` | Java/Kotlin | `Thread.sleep('_ms)` |
 | D6 | `runBlocking` in production code | Kotlin | `kotlinx.coroutines.runBlocking { '_body* }` |

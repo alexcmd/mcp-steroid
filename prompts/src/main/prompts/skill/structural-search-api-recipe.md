@@ -101,6 +101,17 @@ if (replaceOptions != null) {
 
 The empirical proof: `Matcher(project, malformed)` succeeds; `Matcher.validate(project, malformed)` raises `MalformedPatternException`. Same options, different code path. Validate before constructing the matcher.
 
+**Diagnostic for "silent zero matches"** — if `validate` passes but `findMatches` returns 0 against a scope you know contains the shape, dump the `MatchVariableConstraint` fields before assuming the matcher is broken. The most common cause is a missing `~` prefix on an `exprtype(...)` whose argument contains regex metacharacters (`.*`, `+`, `<.*>`, etc.) — without `~`, the constraint is an exact-FQN compare that can't match parameterized types. See the [syntax article](mcp-steroid://skill/structural-search-syntax) "Common pitfall" callout. Quick check:
+
+```
+opts.variableConstraintNames.forEach { name ->
+    val c = opts.getVariableConstraint(name)
+    println("'$name' regex='${c.regExp}' exprType='${c.expressionTypes}' nameOfExprType='${c.nameOfExprType}'")
+}
+```
+
+If `expressionTypes` contains `<.*>` and `nameOfExprType` is empty, you forgot `~`.
+
 ### 2. Don't wrap `findMatches` in an outer `readAction`
 
 `Matcher.findMatches(sink)` wraps its workload in `PsiManager.runInBatchFilesMode { … }` and runs the indexable-files iteration under `ReadAction.runBlocking` itself. An outer read action causes nested locks and, on `GlobalSearchScope`, can deadlock the indexed-files iteration. The same advice applies to `LocalSearchScope` in production code; only the `testFindMatches(...)` API skips the read-action scheduler. If you need a read action to *prepare* a `LocalSearchScope` (e.g. to collect `PsiElement`s), release it before calling `findMatches`.
