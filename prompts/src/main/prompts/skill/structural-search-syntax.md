@@ -37,6 +37,12 @@ form: [within(...)]<actual template>   ← leading-bracket context form
 '_x*?      # non-greedy variant (trailing ?)
 ```
 
+**On argument/parameter lists**: `foo('_args*)` matches calls with zero or more
+arguments — both `foo()` and `foo(x, y, z)`. Same for `class C('_p*) { … }` (zero
+or more constructor parameters), method declarations `'_T '_m('_p*) { … }`, and
+type-argument lists `Map<'_K*, '_V*>`. A bare `'_args` (no quantifier) requires
+exactly one argument, so `foo('_args)` would NOT match `foo()`.
+
 ## The nine inline macros
 
 Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filter or a separate template):
@@ -99,6 +105,10 @@ while (it.hasNext()) { dumpPsi(it.current()); it.advance() }
 The PSI dump shows a real `PsiClassImpl` containing a `PsiReferenceListImpl` for `extends $Base$` whose child `PsiJavaCodeReferenceElementImpl` holds a `PsiIdentifier` with text `__$_Base`. The variable is just a Java identifier with the platform-internal prefix glued on; the constraint (`regex` + `withinHierarchy=true` from the leading `*`) lives separately on the `MatchVariableConstraint` and is evaluated by the predicate after the structural shape matches.
 
 So when you write a template, ask yourself: "if I replaced `'_x` with the literal identifier `x`, would this still parse as the target language?" If yes, the structural shape is correct. The constraints are decoration on top.
+
+**Corollary — literal identifiers anchor exactly.** Only names introduced by the apostrophe (`'_x`, `'_method`, `'_args`) become matching variables. Every other identifier in the template is a literal that the matcher requires verbatim. So `System.out.'_m('_args*);` matches every method called on `System.out` (because `System` and `out` are literals) but NOT `System.err.anything(...)` — to match either receiver, write `System.'_io.'_m('_args*);` and constrain `'_io` with `:[regex( out|err )]`.
+
+**Trailing semicolon for Java statement patterns**: Java SSR templates parsed as statements must include the trailing `;`. So `System.out.println("x");` is a valid statement template; `System.out.println("x")` (no semicolon) is an expression and matches expression contexts only. Same rule for variable declarations, method calls used as statements, etc. If you omit the semicolon expecting it to "auto-close", the validator may pass but the matcher will silently match nothing — the same silent-zero-match trap as the missing `~` on `exprtype`.
 
 ## "This variable is the target"
 
