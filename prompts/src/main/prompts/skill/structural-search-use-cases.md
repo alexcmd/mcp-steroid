@@ -68,6 +68,18 @@ These illustrate why SSR beats `grep`/`sed`: the matcher honours overload resolu
 | E4 | Rewrite usages of a constant excluding its declaration | Java | `'_T.MAX_LEN:[!ref( MyClass\.MAX_LEN )]` | `$T$.maxLen()` |
 | E5 | `assertTrue(a.equals(b))` → `assertEquals(b, a)` (overload-safe) | Java | `assertTrue('_a.equals('_b))` | `assertEquals($b$, $a$)` |
 
+## F — Class hierarchy queries
+
+Java's `implements` keyword in a class template matches BOTH `implements` and `extends` reference lists in source — see [syntax §"Java `implements` matches both"](mcp-steroid://skill/structural-search-syntax). The `:*Foo` shorthand (or `:[regex( *Foo )]`) widens the match to transitive subtypes.
+
+| # | Use case | Lang | Search |
+|---|---|---|---|
+| F1 | All classes implementing or extending `Greeting` (direct + transitive) | Java | `class '_C implements '_I:*Greeting {}` |
+| F2 | All `Throwable` subclasses (direct + transitive) | Java | `class '_C extends '_T:*Throwable {}` |
+| F3 | Classes implementing one of two interfaces | Java | `class '_C implements '_I:[regex( Serializable\|Cloneable )] {}` |
+| F4 | Classes annotated with a specific annotation | Java | `@'_A:[regex( javax\.persistence\.Entity )] class '_C {}` |
+| F5 | Methods that override a method from a hierarchy | Java | `class '_C { @Override '_T '_m('_p*) { '_body*; } }` |
+
 ## Tips for authoring new templates
 
 1. **Start search-only.** Set `replacePattern = null`, run, count. If the count is wildly off, the pattern is wrong; fix it before any write.

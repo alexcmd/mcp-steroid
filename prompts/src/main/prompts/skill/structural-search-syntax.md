@@ -58,6 +58,11 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 '_x:[exprtype( ~.*Optional<.*> )]      # exprtype as a regex (REQUIRED when arg has .*, +, |, etc.)
 '_x:[!exprtype( void )]                # NOT (exprtype matches)
 
+'_x:*Foo                               # shorthand for '_x:[regex( *Foo )] — sets withinHierarchy=true and regex='Foo'
+'_x:+Foo                               # shorthand for strictlyWithinHierarchy (only proper subtypes/supertypes)
+'_x:!Foo                               # shorthand for '_x:[!regex( Foo )] — invert regex
+'_x:Foo                                # shorthand for '_x:[regex( Foo )] — bare regex after the colon
+
 '_x:[formal( java\.util\.List )]       # expected/formal-arg type (Java)
 '_x:[ref( SavedTemplateName )]         # variable resolves to a reference saved as another template
 '_x:[script( "x.text.length() > 5" )]  # Groovy filter — x is bound to PSI; can NOT be inverted
@@ -109,6 +114,10 @@ So when you write a template, ask yourself: "if I replaced `'_x` with the litera
 **Corollary — literal identifiers anchor exactly.** Only names introduced by the apostrophe (`'_x`, `'_method`, `'_args`) become matching variables. Every other identifier in the template is a literal that the matcher requires verbatim. So `System.out.'_m('_args*);` matches every method called on `System.out` (because `System` and `out` are literals) but NOT `System.err.anything(...)` — to match either receiver, write `System.'_io.'_m('_args*);` and constrain `'_io` with `:[regex( out|err )]`.
 
 **Trailing semicolon for Java statement patterns**: Java SSR templates parsed as statements must include the trailing `;`. So `System.out.println("x");` is a valid statement template; `System.out.println("x")` (no semicolon) is an expression and matches expression contexts only. Same rule for variable declarations, method calls used as statements, etc. If you omit the semicolon expecting it to "auto-close", the validator may pass but the matcher will silently match nothing — the same silent-zero-match trap as the missing `~` on `exprtype`.
+
+**`{}` matches any body (including non-empty)**: a pattern like `class '_C implements '_I {}` matches classes with any body content — methods, fields, nested classes — because SSR's loose-matching default (`MatchOptions.looseMatching=true`) skips unmatched siblings. To constrain body content, write the relevant elements explicitly inside the braces (`class '_C { '_T '_field; '_M; }`), or use a `:[contains(...)]` constraint on the whole template, or a `:[script(...)]` filter. The same applies to `void '_m() {}` matching method bodies, `{ … }` matching block expressions in Kotlin, and similar.
+
+**Java `implements` matches both `implements` and `extends`**: in a Java class template, `class '_C implements '_I {}` matches classes that implement an interface AND classes that extend a class. Java SSR collapses both reference-list contexts during matching — so a single pattern finds direct implementors, direct subclasses, and (with the `:*Type` hierarchy modifier) transitive ones too. You do not need separate `implements` and `extends` patterns. Reference: see use-case F1 in [use-cases](mcp-steroid://skill/structural-search-use-cases).
 
 ## "This variable is the target"
 
