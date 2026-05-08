@@ -8,6 +8,14 @@ This is the load-bearing article. Any rewrite copied from elsewhere should be cr
 
 > **Read-only EP introspection is a different track.** If your task is just "list the registered profiles", "count predefined templates for Java", "check whether the Kotlin profile is loaded", you do NOT need `MatchOptions`, do NOT need to call `Matcher.validate`, and do NOT need to think about template syntax at all. Skip to [§ Lightweight introspection](#lightweight-introspection--do-you-need-the-full-pipeline) below — the rules in this article (validate-first, no-outer-readAction, smart-pointer invalidation, etc.) start to matter only once you construct `MatchOptions` or `Matcher`.
 
+> **The most common SSR audit shape — "introspection + ONE search"** — is the [Mixed-mode example](#mixed-mode-example--introspection--one-validated-matcher) below. If your task is "is the Java profile loaded? if yes, count Optional.get() callsites", start there. Same for "count predefined templates for Java AND find every System.out.println".
+
+> **Top failure modes** (ranked by how silent they are):
+> 1. Missing `~` prefix on `exprtype(...)` containing regex metacharacters (`.*`, `<.*>`, `+`, `|`) — silent zero matches. See [syntax § Common pitfall](mcp-steroid://skill/structural-search-syntax) and §1 below.
+> 2. Calling `fillSearchCriteria(...)` twice on the same `MatchOptions` — silently overwrites the search pattern. See §"What NOT to do" below.
+> 3. Wrapping `Matcher.findMatches(...)` in an outer `readAction { }` / `smartReadAction { }` — deadlock. See §2 below.
+> 4. Single-backslash `\.` inside a Kotlin `"…"` string — Kotlin escape eats the `\`, regex sees a literal `.` (matches any char) instead of an escaped dot. Use `\\.` in `"…"` strings, or use Kotlin triple-quoted `"""…"""` strings for SSR patterns and write `\.` directly.
+
 ## Single-file scope (LocalSearchScope) variant
 
 When the search target is a known file or small set of files (debugging an SSR pattern, scoped audit), use `LocalSearchScope` instead of `GlobalSearchScope.projectScope(project)` — much faster, doesn't iterate the project index.
@@ -90,11 +98,12 @@ No `Replacer`, no per-match reporting, no command processor. Use this when the m
 
 > **For large multi-module repos** (multi-module Maven, multi-module Gradle), prefer marker-only output as above. Per-match payloads (file paths, line numbers, snippet text) on a project-wide audit can produce thousands of lines that drown out the marker the test or maintainer needs. Print marker-only first; only iterate per-match details after the count looks plausible.
 
-### Mixed-mode example — introspection + one validated matcher
+## Mixed-mode example — introspection + one validated matcher
 
-When a task needs BOTH a profile/template enumeration AND one structural search (e.g. "is the Java profile loaded? if yes, count Optional.get() callsites"), do both in the same script — the introspection part doesn't need `Matcher.validate` and the search part does. They coexist cleanly:
+This is the **default shape for real audits**: a profile/template enumeration plus one structural search in the same script (e.g. "is the Java profile loaded? if yes, count `Optional.get()` callsites"). Introspection doesn't need `Matcher.validate`; the matcher does. They coexist cleanly:
 
 ```
+// Imports — full set; mixed-mode adds the StructuralSearchProfile class to the minimal set.
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.application.readAction
 import com.intellij.psi.search.GlobalSearchScope
@@ -104,7 +113,7 @@ import com.intellij.structuralsearch.StructuralSearchProfile
 import com.intellij.structuralsearch.StructuralSearchUtil
 import com.intellij.structuralsearch.plugin.util.CollectingMatchResultSink
 
-// Lightweight introspection — no MatchOptions, no validate, no scope.
+// 1. Lightweight introspection — no MatchOptions, no validate, no scope.
 val profiles = StructuralSearchProfile.EP_NAME.extensionList
 println("SSR_PROFILES: ${profiles.size}")
 val javaProfile = StructuralSearchUtil.getProfileByFileType(JavaFileType.INSTANCE)
@@ -113,23 +122,31 @@ if (javaProfile != null) {
     println("JAVA_PREDEFINED_COUNT: ${javaProfile.predefinedTemplates.size}")
 }
 
-// Now the validated matcher — only if the profile we need is loaded.
+// 2. Validated matcher — only if the profile we need is loaded.
 if (javaProfile != null) {
+    // Triple-quoted string so we can write \. directly without doubling backslashes.
+    val pattern = """'_opt:[exprtype( ~java\.util\.Optional<.*> )].get()"""
+    //                            ^^^                                  ^^^^^^
+    //                            ⚠ ~ is REQUIRED — `<.*>` is regex.   ^ literal method name; expression form (no trailing ;)
+    //                            Without ~, this silently matches 0.
     val opts = MatchOptions().apply {
-        fillSearchCriteria("'_opt:[exprtype( ~java\\.util\\.Optional<.*> )].get()")
+        fillSearchCriteria(pattern)
         setFileType(JavaFileType.INSTANCE)
         setRecursiveSearch(true)
         setSearchInjectedCode(false)
         setScope(GlobalSearchScope.projectScope(project))
     }
-    readAction { Matcher.validate(project, opts) }
+
+    readAction { Matcher.validate(project, opts) }   // releases before findMatches; findMatches runs its own internal read action
     val sink = CollectingMatchResultSink()
-    Matcher(project, opts).findMatches(sink)
+    Matcher(project, opts).findMatches(sink)         // do NOT wrap; see §2
+
+    // sink.matches is List<MatchResult> — empty when no hits, never null.
     println("OPTIONAL_GET_MATCHES: ${sink.matches.size}")
 }
 ```
 
-Two distinct contracts in one script: introspection runs unconditionally and is fast; the matcher runs gated on `javaProfile != null` and follows the validate-first / no-outer-readAction rules.
+Two distinct contracts in one script: introspection runs unconditionally and is fast; the matcher runs gated on `javaProfile != null` and follows the validate-first / no-outer-readAction rules. **Marker-only output** (`SSR_PROFILES:`, `OPTIONAL_GET_MATCHES:`) is the recommended first pass — see "For large multi-module repos" above.
 
 > **Helper resolution**: when the prompt names a specific project-relative path (e.g. "audit `src/main/java/com/example/Foo.java`"), use `findProjectPsiFile("<that path>")` to resolve the `PsiFile` BEFORE entering any read action — `findProjectPsiFile` is a suspend fun and cannot be called inside `readAction { }`. Then pass it to `LocalSearchScope(psi)`. See [coding-with-intellij-context-api § File Access Helpers](mcp-steroid://skill/coding-with-intellij-context-api) for the do/don't.
 

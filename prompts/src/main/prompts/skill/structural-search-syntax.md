@@ -83,16 +83,18 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 A concrete recipe that ties together the apostrophe form, the `~` prefix, the expression template (no trailing `;`), and the typed-receiver shape:
 
 ```
-val pattern = "'_opt:[exprtype( ~java\\.util\\.Optional<.*> )].get()"   // EXPRESSION template (no trailing ;)
-//             ^^^^^                                            ^^^^^^
-//             receiver typed-var with exprtype filter           literal method name
+// Recommended: triple-quoted Kotlin string — write the SSR backslashes verbatim.
+val pattern = """'_opt:[exprtype( ~java\.util\.Optional<.*> )].get()"""
+//                ^^^^                                          ^^^^^^
+//                receiver typed-var with exprtype filter        literal method name
+//                                                              EXPRESSION template (no trailing ;)
 ```
 
 Notes:
 
 1. The pattern is an **expression template** (no trailing `;`) because `Optional.get()` callsites appear inside expressions: as an argument, RHS of `=`, return value, etc. Trailing `;` would lock the pattern to statement contexts only — see "Expression vs statement patterns" below.
 2. `~` prefix on `exprtype(...)` is required because `<.*>` is regex syntax. Without `~`, the constraint is exact-FQN compare and silently matches zero.
-3. **In Kotlin string literals you must double the backslash**: write `java\\.util\\.Optional<.*>` inside a Kotlin string (the escape `\\` produces the single backslash that the SSR transformer then sees as the regex `\.`). Inside a triple-quoted Kotlin string `"""…"""`, single backslashes are fine. The api-recipe canonical examples already use the double-escape form because they are inline `"…"` strings.
+3. **Kotlin string-escaping**: prefer **triple-quoted strings** (`"""…"""`) for SSR patterns — single backslashes are written verbatim, no doubling needed. In double-quoted strings (`"…"`) every backslash must be doubled: `"…java\\.util\\.Optional<.*>…"`. Counting backslashes in normal strings is the most error-prone part of authoring SSR patterns — when a pattern fails to match, check the runtime value of the string before assuming the SSR engine is broken.
 
 ### Expression vs statement patterns
 
