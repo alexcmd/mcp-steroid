@@ -88,6 +88,49 @@ Notes: in Java SSR, `implements` in the pattern matches BOTH `implements` and `e
 
 No `Replacer`, no per-match reporting, no command processor. Use this when the maintenance task is just "tell me how many of X exist". Switch to the canonical recipe at the top of this article when you need per-match details, line numbers, or a replacement.
 
+> **For large multi-module repos** (multi-module Maven, multi-module Gradle), prefer marker-only output as above. Per-match payloads (file paths, line numbers, snippet text) on a project-wide audit can produce thousands of lines that drown out the marker the test or maintainer needs. Print marker-only first; only iterate per-match details after the count looks plausible.
+
+### Mixed-mode example — introspection + one validated matcher
+
+When a task needs BOTH a profile/template enumeration AND one structural search (e.g. "is the Java profile loaded? if yes, count Optional.get() callsites"), do both in the same script — the introspection part doesn't need `Matcher.validate` and the search part does. They coexist cleanly:
+
+```
+import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.openapi.application.readAction
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.structuralsearch.MatchOptions
+import com.intellij.structuralsearch.Matcher
+import com.intellij.structuralsearch.StructuralSearchProfile
+import com.intellij.structuralsearch.StructuralSearchUtil
+import com.intellij.structuralsearch.plugin.util.CollectingMatchResultSink
+
+// Lightweight introspection — no MatchOptions, no validate, no scope.
+val profiles = StructuralSearchProfile.EP_NAME.extensionList
+println("SSR_PROFILES: ${profiles.size}")
+val javaProfile = StructuralSearchUtil.getProfileByFileType(JavaFileType.INSTANCE)
+println("JAVA_PROFILE_FOUND: ${if (javaProfile != null) "yes" else "no"}")
+if (javaProfile != null) {
+    println("JAVA_PREDEFINED_COUNT: ${javaProfile.predefinedTemplates.size}")
+}
+
+// Now the validated matcher — only if the profile we need is loaded.
+if (javaProfile != null) {
+    val opts = MatchOptions().apply {
+        fillSearchCriteria("'_opt:[exprtype( ~java\\.util\\.Optional<.*> )].get()")
+        setFileType(JavaFileType.INSTANCE)
+        setRecursiveSearch(true)
+        setSearchInjectedCode(false)
+        setScope(GlobalSearchScope.projectScope(project))
+    }
+    readAction { Matcher.validate(project, opts) }
+    val sink = CollectingMatchResultSink()
+    Matcher(project, opts).findMatches(sink)
+    println("OPTIONAL_GET_MATCHES: ${sink.matches.size}")
+}
+```
+
+Two distinct contracts in one script: introspection runs unconditionally and is fast; the matcher runs gated on `javaProfile != null` and follows the validate-first / no-outer-readAction rules.
+
 > **Helper resolution**: when the prompt names a specific project-relative path (e.g. "audit `src/main/java/com/example/Foo.java`"), use `findProjectPsiFile("<that path>")` to resolve the `PsiFile` BEFORE entering any read action — `findProjectPsiFile` is a suspend fun and cannot be called inside `readAction { }`. Then pass it to `LocalSearchScope(psi)`. See [coding-with-intellij-context-api § File Access Helpers](mcp-steroid://skill/coding-with-intellij-context-api) for the do/don't.
 
 ## Lightweight introspection — do you need the full pipeline?
@@ -226,9 +269,11 @@ opts.variableConstraintNames.forEach { name ->
 
 If `expressionTypes` contains `<.*>` and `nameOfExprType` is empty, you forgot `~`.
 
-### 2. Don't wrap `findMatches` in an outer `readAction`
+### 2. Don't wrap `findMatches` in an outer `readAction` — same for `smartReadAction`, `WriteIntentReadAction`, etc.
 
 `Matcher.findMatches(sink)` wraps its workload in `PsiManager.runInBatchFilesMode { … }` and runs the indexable-files iteration under `ReadAction.runBlocking` itself. An outer read action causes nested locks and, on `GlobalSearchScope`, can deadlock the indexed-files iteration. The same advice applies to `LocalSearchScope` in production code; only the `testFindMatches(...)` API skips the read-action scheduler. If you need a read action to *prepare* a `LocalSearchScope` (e.g. to collect `PsiElement`s), release it before calling `findMatches`.
+
+> ⚠ **SSR is the documented exception to the general "wrap PSI/index reads in `smartReadAction`" guidance** in [coding-with-intellij-threading](mcp-steroid://skill/coding-with-intellij-threading). For SSR `Matcher.findMatches(...)` calls specifically, do NOT use an outer `smartReadAction { }`, `WriteIntentReadAction`, or any other read-action wrapper — `Matcher` runs its own `ReadAction.runBlocking().inSmartMode()` internally, and an outer wrap deadlocks. The general threading rules apply everywhere ELSE in your script (collecting PsiFiles, reading match results, writing replacements); just not around `findMatches` itself.
 
 ### 3. From a coroutine: prefer `Replacer.replace(info)` (singular) over `replaceAll`
 

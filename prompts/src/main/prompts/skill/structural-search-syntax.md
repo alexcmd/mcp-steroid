@@ -78,6 +78,34 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 
 > ⚠️ **Common pitfall — `exprtype` and parameterized types.** Without the `~` prefix, the `exprtype` argument is an **exact-FQN string compare**. So `:[exprtype( java\.util\.Optional<.*> )]` does NOT match `Optional<String>` callsites — `<.*>` is regex syntax that goes through unchanged into an exact compare and never matches. Whenever the arg contains `.*`, `+`, `|`, `<.*>`, or any other regex metacharacter, the `~` prefix is REQUIRED: `:[exprtype( ~java\.util\.Optional<.*> )]`. Same rule for `formal(...)`. Symptom of the bug: `Matcher.validate` passes, `findMatches` quietly returns 0 — the "silent-zero-match" failure mode the [api-recipe](mcp-steroid://skill/structural-search-api-recipe) §4.1 warns about.
 
+### Worked example — `Optional.get()` callsite audit
+
+A concrete recipe that ties together the apostrophe form, the `~` prefix, the expression template (no trailing `;`), and the typed-receiver shape:
+
+```
+val pattern = "'_opt:[exprtype( ~java\\.util\\.Optional<.*> )].get()"   // EXPRESSION template (no trailing ;)
+//             ^^^^^                                            ^^^^^^
+//             receiver typed-var with exprtype filter           literal method name
+```
+
+Notes:
+
+1. The pattern is an **expression template** (no trailing `;`) because `Optional.get()` callsites appear inside expressions: as an argument, RHS of `=`, return value, etc. Trailing `;` would lock the pattern to statement contexts only — see "Expression vs statement patterns" below.
+2. `~` prefix on `exprtype(...)` is required because `<.*>` is regex syntax. Without `~`, the constraint is exact-FQN compare and silently matches zero.
+3. **In Kotlin string literals you must double the backslash**: write `java\\.util\\.Optional<.*>` inside a Kotlin string (the escape `\\` produces the single backslash that the SSR transformer then sees as the regex `\.`). Inside a triple-quoted Kotlin string `"""…"""`, single backslashes are fine. The api-recipe canonical examples already use the double-escape form because they are inline `"…"` strings.
+
+### Expression vs statement patterns
+
+A template's role (expression vs statement) is decided by the language's parser, not by SSR. Your trailing `;` is the cue:
+
+| Trailing `;` | Pattern role | Matches | Common cases |
+|---|---|---|---|
+| No `;` | **expression** | Any expression context: `if (...)`, RHS of assignment, method argument, return value, ternary branch, etc. | Method calls used as values (`'_o.get()`), arithmetic (`'_a + '_b`), casts (`('_T) '_x`), null checks (`'_x == null`). |
+| Trailing `;` | **statement** | A statement that produces this expression at top level | Statement-level method calls (`System.out.println('_x);`), assignments (`'_x = '_v;`), declarations (`int '_v = '_init;`). |
+| `{ '_st*; }` | **block** | A block containing zero or more statements | Method bodies, control-flow bodies. Combined with class/method templates. |
+
+Same expression in two roles produces two different patterns: `'_o.get()` (expression — matches a `get()` callsite anywhere) vs `'_o.get();` (statement — matches only when the callsite is a top-level statement, ignoring the return value). The expression form is almost always what you want for an audit.
+
 Plus the escape hatch: any name starting with `_` is a custom macro routed to the language profile's predicate registry.
 
 ```
@@ -160,7 +188,7 @@ val javaOnly  = javaProfile.predefinedTemplates                              // 
 javaOnly.forEach { println("${it.category}/${it.name}: ${it.matchOptions.searchPattern}") }
 ```
 
-The Java profile alone ships 98 predefined templates in current IntelliJ; Kotlin K2 ships 34, JavaScript 13, Go 21, XML 10. Every predefined template is a `Configuration` with `MatchOptions` already populated — feed it directly to a `Matcher`.
+The Java profile shipped roughly 98 predefined templates in IntelliJ 2026.1; Kotlin K2 ~34, JavaScript ~13, Go ~21, XML ~10. These counts evolve with each IDE release — use them as order-of-magnitude expectations, not exact values, and always probe the live `predefinedTemplates.size` for the version you are targeting. Every predefined template is a `Configuration` with `MatchOptions` already populated — feed it directly to a `Matcher`.
 
 ## Cross-references
 
