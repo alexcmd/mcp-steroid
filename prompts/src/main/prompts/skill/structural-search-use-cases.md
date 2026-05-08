@@ -24,7 +24,7 @@ For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs colla
 | # | Use case | Lang | Search | Replacement |
 |---|---|---|---|---|
 | B1 | Audit `println` calls (project policy: route via `LoggerFactory`) | Kotlin | `println('_msg)` | search-only |
-| B2 | Detect `runCatching{}.onFailure{}` chain (this repo bans it) | Kotlin | `'_x.runCatching { '_body }.onFailure { '_handler }` | search-only — see warning below |
+| B2 | Detect `runCatching{}.onFailure{}` chain (this repo bans it) | Kotlin | `runCatching { '_BODY* }.onFailure { '_E -> '_HANDLER* }` (matches receiver-less stdlib calls; see [structural-search-kotlin](mcp-steroid://skill/structural-search-kotlin) for the receiver-bearing variant `'_x.runCatching { … }`) | search-only — see warning below |
 | B3 | Audit `Optional.get()` callsites | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | search-only |
 | B4 | Force trailing-lambda for `forEach` | Kotlin | `'_xs.forEach('_lambda:[exprtype( ~kotlin\.jvm\.functions\.Function1.* )])` | `$xs$.forEach $lambda$` |
 | B5 | Detect `System.out` / `System.err` in non-test sources | Java | `System.'_io:[regex( out|err )].'_call('_args*);` | search-only |

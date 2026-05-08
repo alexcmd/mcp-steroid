@@ -99,7 +99,7 @@ if (replaceOptions != null) {
 
 `Matcher(project, options)` constructs the matcher with `checkForErrors=false`. Several `MalformedPatternException` paths inside `PatternCompiler` are silently swallowed when this flag is false. Skipping validation does not raise an error — it produces a quietly-empty match set that looks like a clean miss.
 
-The empirical proof: `Matcher(project, malformed)` succeeds; `Matcher.validate(project, malformed)` raises `MalformedPatternException`. Same options, different code path. Validate before constructing the matcher.
+The empirical proof: `Matcher(project, malformed)` succeeds; `Matcher.validate(project, malformed)` raises `MalformedPatternException`. Same options, different code path. Always call `Matcher.validate(project, opts)` (a static method) **before** calling `findMatches(...)` — the constructor itself does not validate.
 
 **Diagnostic for "silent zero matches"** — if `validate` passes but `findMatches` returns 0 against a scope you know contains the shape, dump the `MatchVariableConstraint` fields before assuming the matcher is broken. The most common cause is a missing `~` prefix on an `exprtype(...)` whose argument contains regex metacharacters (`.*`, `+`, `<.*>`, etc.) — without `~`, the constraint is an exact-FQN compare that can't match parameterized types. See the [syntax article](mcp-steroid://skill/structural-search-syntax) "Common pitfall" callout. Quick check:
 

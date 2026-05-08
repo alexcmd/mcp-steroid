@@ -115,6 +115,16 @@ These are real gaps observed in the profile sources and the test corpus. If your
 11. **Standalone-type / standalone-annotation parsing is fragile.** `createPatternTree` has explicit fallbacks for nullable types and user-types-with-type-parameters that silently swallow `KotlinExceptionWithAttachments`. Edge-case patterns may parse as a comment with attached `PATTERN_ERROR` user-data instead of a usable tree.
 12. **No KDoc reference (`[Foo.bar]`) constraint** beyond raw text matching of `@'_Tag '_Text` — `KDocLink` PSI is reachable but `isApplicableConstraint` does not register a reference predicate for KDoc nodes.
 
+## Lambda parameters: explicit `'_E ->` vs implicit `it`
+
+Lambdas with an explicit parameter list (`{ e -> … }`) and lambdas with the implicit `it` (`{ … }`) have **different PSI shapes** — the explicit form has a `KtParameterList`, the implicit form does not. A pattern that includes `'_E ->` will only match lambdas with an explicit parameter; it does NOT match `it`-style lambdas. If you need to match both, write two patterns (or use a `:[script(...)]` filter on the lambda).
+
+Practical advice: include `'_E ->` when the audit is about **what the parameter is named or typed**; omit it (e.g. `{ '_HANDLER* }`) when only the body matters and the project uses `it` consistently.
+
+## `setRecursiveSearch(true)` — recommended for Kotlin call patterns
+
+Like the Java canonical recipe, the Kotlin example below sets `setRecursiveSearch(true)` so the matcher descends into nested expressions (a `runCatching` chain inside another lambda body, a method call inside an `if` branch, etc.). Default is `false`, which only matches at the top of each statement — frequently NOT what an audit recipe wants. Set it explicitly per the canonical recipe in [api-recipe](mcp-steroid://skill/structural-search-api-recipe).
+
 ## Canonical Kotlin example — `runCatching{}.onFailure{}` audit
 
 ⚠️ This is **search-only by default**. Rewriting to `try/catch` drops the `Result<T>` return value; do not enable replacement until you have audited every match's surrounding context.
@@ -126,9 +136,10 @@ val opts = MatchOptions().apply {
         runCatching {
             '_TRYBODY*
         }.onFailure { '_E ->
-            '_CATCHBODY*
+            '_HANDLER*
         }
     """.trimIndent())
+    setRecursiveSearch(true)            // descend into nested expressions; see note above
     setSearchInjectedCode(false)
     setScope(GlobalSearchScope.projectScope(project))
 }

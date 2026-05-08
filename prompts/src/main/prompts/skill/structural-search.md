@@ -13,6 +13,12 @@ Structural Search and Replace is IntelliJ's PSI-aware grep/sed: a matching engin
 
 If your edit is mechanical and structural — same shape, different identifiers, different overload — SSR is the right tool. If it is one-off or text-only, regular Find/Replace is faster.
 
+## Quickstarts
+
+- **Authoring a Kotlin pattern?** → jump to [structural-search-kotlin](mcp-steroid://skill/structural-search-kotlin) for the canonical `runCatching{}.onFailure{}` audit recipe with imports, `setRecursiveSearch(true)`, and `setSearchInjectedCode(false)`. Skim the api-recipe and syntax articles only if you need the rules behind the recipe.
+- **Need a Java pattern?** → [api-recipe](mcp-steroid://skill/structural-search-api-recipe) has the canonical Java recipe; [use-cases](mcp-steroid://skill/structural-search-use-cases) has 27 ready-to-paste search/replace pairs.
+- **First time with SSR?** → read this overview top-to-bottom, then [syntax](mcp-steroid://skill/structural-search-syntax) for the template language.
+
 ## The mental model — templates are PSI trees
 
 The single fact that explains everything else: an SSR template is real source code in the chosen language with placeholder identifiers (variables). When you call `MatchOptions.fillSearchCriteria(...)`, the language profile parses your template into an actual PSI subtree. Variable placeholders become `PsiIdentifier`-style leaves with internal prefixes (`__$_x` in Java, `_____x` in Kotlin). The matcher walks both pattern PSI and candidate PSI in parallel and binds each variable to the candidate subtree it matches.
