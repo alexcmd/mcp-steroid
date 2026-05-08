@@ -34,6 +34,35 @@ println("matches in ${psi.virtualFile.name}: ${sink.matches.size}")
 
 Same rules apply: validate first, do NOT wrap `findMatches` in an outer `readAction`. If you need to gather multiple `PsiElement`s for the scope, do it inside a separate `readAction { }` block first, then pass the array to `LocalSearchScope(elements: Array<PsiElement>)`. Release the read action before calling `findMatches`.
 
+## Minimal search-only recipe (count + marker)
+
+For a small audit where you only need a count, this is the smallest correct recipe:
+
+```
+import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.openapi.application.readAction
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.structuralsearch.MatchOptions
+import com.intellij.structuralsearch.Matcher
+import com.intellij.structuralsearch.plugin.util.CollectingMatchResultSink
+
+val opts = MatchOptions().apply {
+    fillSearchCriteria("System.out.'_m('_args*);")     // any apostrophe-form Java pattern
+    setFileType(JavaFileType.INSTANCE)
+    setRecursiveSearch(true)
+    setSearchInjectedCode(false)
+    setScope(GlobalSearchScope.projectScope(project))   // or LocalSearchScope — see variant above
+}
+readAction { Matcher.validate(project, opts) }
+val sink = CollectingMatchResultSink()
+Matcher(project, opts).findMatches(sink)
+println("MATCHES: ${sink.matches.size}")                // emit a single marker line
+```
+
+No `Replacer`, no per-match reporting, no command processor. Use this when the maintenance task is just "tell me how many of X exist". Switch to the canonical recipe at the top of this article when you need per-match details, line numbers, or a replacement.
+
+> **Helper resolution**: when the prompt names a specific project-relative path (e.g. "audit `src/main/java/com/example/Foo.java`"), use `findProjectPsiFile("<that path>")` to resolve the `PsiFile` BEFORE entering any read action — `findProjectPsiFile` is a suspend fun and cannot be called inside `readAction { }`. Then pass it to `LocalSearchScope(psi)`. See [coding-with-intellij-context-api § File Access Helpers](mcp-steroid://skill/coding-with-intellij-context-api) for the do/don't.
+
 ## Lightweight introspection — do you need the full pipeline?
 
 If your task is *not* a search/replace — e.g. "enumerate registered profiles", "list predefined templates for Java", "check whether the Kotlin profile is loaded" — you do NOT need `MatchOptions` / `Matcher` / `Replacer`. Use the EP and util APIs directly:

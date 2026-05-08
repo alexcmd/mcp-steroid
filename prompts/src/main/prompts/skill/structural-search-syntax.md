@@ -115,6 +115,18 @@ So when you write a template, ask yourself: "if I replaced `'_x` with the litera
 
 **Worked example — chained calls.** `runCatching { '_BODY* }.onFailure { '_E -> '_HANDLER* }` has THREE literal anchors: `runCatching`, `.`, and `onFailure`. So this template matches `runCatching { … }.onFailure { … }` but does NOT match `runCatching { … }.getOrElse { … }`, `runCatching { … }.getOrThrow()`, or `foo.runCatching { … }.onFailure { … }` (the leading receiver `foo` doesn't match the receiver-less template). To widen, replace each literal you want generalized with a typed variable: `'_x.runCatching { '_BODY* }.'_M( '_args* )` matches any chained call after `runCatching`, with any receiver.
 
+**Worked example — qualified receivers.** `System.out.'_m('_args*);` has the literal anchors `System`, `.`, `out`, and `.`. The receiver `System.out` is matched character-for-character. Behaviour:
+
+| Source code | Matches `System.out.'_m('_args*);`? | Why |
+|---|---|---|
+| `System.out.println("hi");` | yes | Receiver `System.out` matches; `.println` binds `'_m`; `("hi")` binds `'_args*`. |
+| `System.out.printf("%d", 1);` | yes | Same anchors; `'_m` = `printf`, `'_args*` = two args. |
+| `System.err.println("hi");` | **no** | Literal `out` is required; `err` is a different identifier. |
+| `out.println("hi");` (where `out` is a parameter or local) | **no** | The receiver chain `System.out.…` is required; a single-identifier receiver doesn't match. |
+| `someClass.out.println("hi");` | **no** | `System` is a literal anchor; the receiver chain must start with it. |
+
+To widen the receiver, introduce a typed variable: `'_recv.'_field.'_m('_args*);` and constrain `'_recv` / `'_field` with `:[regex(...)]` or `:[exprtype(...)]` as needed.
+
 **Trailing semicolon for Java statement patterns**: Java SSR templates parsed as statements must include the trailing `;`. So `System.out.println("x");` is a valid statement template; `System.out.println("x")` (no semicolon) is an expression and matches expression contexts only. Same rule for variable declarations, method calls used as statements, etc. If you omit the semicolon expecting it to "auto-close", the validator may pass but the matcher will silently match nothing — the same silent-zero-match trap as the missing `~` on `exprtype`.
 
 **`{}` matches any body (including non-empty)**: a pattern like `class '_C implements '_I {}` matches classes with any body content — methods, fields, nested classes — because SSR's loose-matching default (`MatchOptions.looseMatching=true`) skips unmatched siblings. To constrain body content, write the relevant elements explicitly inside the braces (`class '_C { '_T '_field; '_M; }`), or use a `:[contains(...)]` constraint on the whole template, or a `:[script(...)]` filter. The same applies to `void '_m() {}` matching method bodies, `{ … }` matching block expressions in Kotlin, and similar.

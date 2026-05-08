@@ -47,7 +47,7 @@ For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs colla
 
 | # | Use case | Lang | Search |
 |---|---|---|---|
-| D1 | All `System.out` method calls (any method, any args; named for the common `println` case) | Java | `System.out.'_m('_args*);` |
+| D1 | All `System.out` method calls (any method, any args; named for the common `println` case). When the target file is known, prefer `setScope(LocalSearchScope(findProjectPsiFile("<path>")))` per [api-recipe § Single-file scope](mcp-steroid://skill/structural-search-api-recipe). | Java | `System.out.'_m('_args*);` |
 | D2 | Reflection: `Class.forName(...)` | Java | `Class.forName('_name)` |
 | D3 | Reflection: `getDeclaredMethod`/`getDeclaredField` | Java | `'_o:[exprtype( ~java\.lang\.Class.* )].getDeclaredMethod('_n, '_args*)` |
 | D4 | JS `eval(...)` | JavaScript | `eval('_x)` |
