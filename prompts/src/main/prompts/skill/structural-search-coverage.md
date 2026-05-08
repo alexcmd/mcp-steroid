@@ -6,6 +6,8 @@ Per-language profile FQN, file type, supports flags, predefined-template count, 
 
 Each row says: which language profile to register in `MatchOptions.setFileType(...)`, which `MatchOptions.dialect = ...` to set if the language has dialects, what kind of replace handler the profile uses, and which optional features (shorten FQN, static import, predefined templates) the profile supports. Counts and "loaded" status come from the live IntelliJ Ultimate 2026.1.1 with the standard plugin set.
 
+> **Plugin dependencies note**: profiles ship with their respective language plugin. The "Bundled" rows below assume the language plugin is installed and enabled in the running IDE. If the Go plugin is not installed, `GoStructuralSearchProfile` will not appear in `EP_NAME.extensionList` — this is expected, not a bug. Run the live-enumeration recipe at the bottom of this article to confirm what is actually loaded.
+
 ## Bundled (in IntelliJ community / ultimate)
 
 | Language | Profile FQN | File type | Replace handler | Shorten FQN | Static import | Predefined templates | Pattern contexts |

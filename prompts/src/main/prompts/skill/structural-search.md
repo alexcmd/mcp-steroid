@@ -17,6 +17,7 @@ If your edit is mechanical and structural — same shape, different identifiers,
 
 - **Authoring a Kotlin pattern?** → jump to [structural-search-kotlin](mcp-steroid://skill/structural-search-kotlin) for the canonical `runCatching{}.onFailure{}` audit recipe with imports, `setRecursiveSearch(true)`, and `setSearchInjectedCode(false)`. Skim the api-recipe and syntax articles only if you need the rules behind the recipe.
 - **Need a Java pattern?** → [api-recipe](mcp-steroid://skill/structural-search-api-recipe) has the canonical Java recipe; [use-cases](mcp-steroid://skill/structural-search-use-cases) has 27 ready-to-paste search/replace pairs.
+- **Just need to check which profiles are available, or enumerate predefined templates?** → jump to [coverage § Programmatic enumeration of all profiles](mcp-steroid://skill/structural-search-coverage). The full api-recipe is overkill for read-only introspection.
 - **First time with SSR?** → read this overview top-to-bottom, then [syntax](mcp-steroid://skill/structural-search-syntax) for the template language.
 
 ## The mental model — templates are PSI trees

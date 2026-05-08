@@ -6,6 +6,36 @@ Validation-first recipe, threading rules, scope and injected-code caveats, smart
 
 This is the load-bearing article. Any rewrite copied from elsewhere should be cross-checked against the rules below — they catch the most common ways an SSR script silently fails.
 
+## Lightweight introspection — do you need the full pipeline?
+
+If your task is *not* a search/replace — e.g. "enumerate registered profiles", "list predefined templates for Java", "check whether the Kotlin profile is loaded" — you do NOT need `MatchOptions` / `Matcher` / `Replacer`. Use the EP and util APIs directly:
+
+```
+import com.intellij.structuralsearch.StructuralSearchProfile
+import com.intellij.structuralsearch.StructuralSearchUtil
+import com.intellij.ide.highlighter.JavaFileType
+
+// 1. Every registered profile, by FQN
+StructuralSearchProfile.EP_NAME.extensionList.forEach { p ->
+    println("${p.javaClass.name}  shortenFQN=${p.supportsShortenFQNames()} staticImport=${p.supportsUseStaticImports()}")
+}
+
+// 2. Resolve the profile for a given file type (returns null if not supported)
+val javaProfile = StructuralSearchUtil.getProfileByFileType(JavaFileType.INSTANCE)
+require(javaProfile != null) { "Java SSR profile not loaded" }
+
+// 3. All shipped predefined templates, sorted by category/name
+val all = StructuralSearchUtil.getPredefinedTemplates()
+all.groupBy { it.category ?: "<none>" }.forEach { (cat, list) -> println("$cat: ${list.size}") }
+
+// 4. Predefined templates for one profile only
+javaProfile.predefinedTemplates.forEach { println("${it.category}/${it.name}") }
+```
+
+These calls are read-only and fast — they don't need `Matcher.validate`, don't need a write action, don't need a scope. See [coverage](mcp-steroid://skill/structural-search-coverage) for the full per-language matrix.
+
+The rest of this article is for **search and replace** workloads.
+
 ## The recipe
 
 ```
