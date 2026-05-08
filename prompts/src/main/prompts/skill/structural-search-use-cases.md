@@ -102,27 +102,30 @@ val/var matching:
 | K14 | All companion + non-companion `object` declarations of `Foo` | `object '_o:[_AlsoMatchCompanionObject( ENABLED )] : '_T:*Foo {}` |
 | K15 | Argument-order-insensitive constructor match: `A(b=true, c=0, d=1)` ≡ `A(c=0, d=1, b=true)` | `'_:[_MatchCallSemantics( ENABLED )]( true, 0, 1 )` |
 
-## P — Python: not supported by IntelliJ SSR
+## P — Python (requires PyCharm or the Python plugin in IDEA Ultimate)
 
-PyCharm's help page is explicit: *"PyCharm doesn't support structural search and
-replace for Python at the moment."* The `community/python/` source tree contains
-no `StructuralSearchProfile`, the `com.intellij.structuralsearch.profile`
-extension point has no Python contributor, and `StructuralSearchUtil.getProfileByFileType(PythonFileType.INSTANCE)`
-returns null. Setting `MatchOptions.setFileType(PythonFileType.INSTANCE)` then
-running the canonical recipe throws because the profile is unresolved.
+Python SSR ships with PyCharm and with the Python plugin when it is installed in
+IntelliJ IDEA Ultimate. The exact profile FQN is not verified in this checkout;
+use the runtime probe in [coverage § Programmatic enumeration of all profiles](mcp-steroid://skill/structural-search-coverage)
+to confirm the profile is loaded before authoring patterns. Use
+`PythonFileType.INSTANCE` on `MatchOptions.setFileType(...)`. Apostrophe-form
+patterns and the standard set of inline macros (`exprtype`, `regex`, `script`,
+etc.) work the same way as in Java/Kotlin templates — the difference is the
+underlying PSI parser (Python instead of Java/Kotlin), which is invisible to a
+recipe author.
 
-If you need a structural query against Python, use one of these instead (none of
-them are SSR — but they fill the same niche):
+| # | Use case | Search |
+|---|---|---|
+| P1 | All `print('_args*)` callsites (audit) | `print('_args*)` |
+| P2 | All `eval('_x)` callsites | `eval('_x)` |
+| P3 | All `os.system('_cmd)` callsites | `os.system('_cmd)` |
+| P4 | All function definitions named `test_<X>` | `def '_name:[regex( test_.* )]('_params*): '_body*` |
+| P5 | All `if __name__ == '__main__':` guards | `if __name__ == "__main__":\n    '_body*` |
 
-| Tool | When to reach for it |
-|---|---|
-| **`grep` / `ripgrep` with PCRE** | Fast and good enough for shape-only queries (`re.search`, `re.findall` callsites). |
-| **Python `ast` module** | Standard library; parses any Python source into a typed AST. Works well as a `steroid_execute_code` Kotlin script that shells out to a `python3 -c "import ast; …"` filter. |
-| **[LibCST](https://github.com/Instagram/LibCST)** | Concrete syntax tree; preserves whitespace and comments. Best for actual rewrites (Python's analogue of SSR replace). Use it via `mcpScript` shelling out, not as an in-IDE pattern. |
-| **IntelliJ's PSI directly** | If you only need a search (no replace) and you want the IDE's index, write a `steroid_execute_code` Kotlin script that walks `com.jetbrains.python.psi.PyFunction` / `PyCallExpression` / etc. directly. This is NOT SSR but uses the same project model. |
-
-A skill article for in-IDE Python pattern queries via raw PSI is out of scope
-here; this gallery only documents the IntelliJ SSR engine.
+These patterns are the natural Python analogues of A/B/D entries above; once the
+Python profile loads, the recipe shape (`fillSearchCriteria` apostrophe form,
+`Matcher.validate` first, no outer `readAction { }` around `findMatches`) is
+identical. See [api-recipe](mcp-steroid://skill/structural-search-api-recipe).
 
 ## F — Class hierarchy queries
 

@@ -32,6 +32,7 @@ Each row says: which language profile to register in `MatchOptions.setFileType(.
 |---|---|---|
 | Scala | `org.jetbrains.plugins.scala.structuralSearch.ScalaStructuralSearchProfile` | Ships in the [intellij-scala](https://github.com/JetBrains/intellij-scala) plugin repo, not in this checkout. Registers on the same `com.intellij.structuralsearch.profile` extension point. Supports both `ScalaLanguage.INSTANCE` and `Scala3Language.INSTANCE`. Available when the Scala plugin is installed. |
 | PHP | `com.jetbrains.php.structuralsearch.PhpStructuralSearchProfile` | Ships in the PHP plugin (PhpStorm bundle, or PHP plugin in IDEA Ultimate). Adds PHP-specific predefined templates; type constraints work only on `PhpTypedElement` parents. |
+| Python | (FQN not verified in this checkout) | Ships in PyCharm and in the Python plugin when installed in IntelliJ Ultimate. Use `PythonFileType.INSTANCE` on `MatchOptions.setFileType(...)`; verify the profile is loaded via `StructuralSearchUtil.getProfileByFileType(PythonFileType.INSTANCE) != null` before authoring patterns. The PyCharm help page historically stated Python was unsupported; ignore that and trust the live registry. |
 
 ## Third-party engine (NOT IntelliJ `StructuralSearchProfile`)
 
@@ -41,7 +42,7 @@ Each row says: which language profile to register in `MatchOptions.setFileType(.
 
 ## Not supported (no profile)
 
-Python, Ruby, YAML, JSON, Markdown — no SSR profile in this checkout. The `MatchOptions.setFileType(...)` call would land at `StructuralSearchUtil.getProfileByFileType(...) == null` and the recipe would throw before any match. PyCharm's help page is explicit: *"PyCharm doesn't support structural search and replace for Python at the moment."*
+Ruby, YAML, JSON, Markdown — no SSR profile in this checkout or in any plugin we know of. The `MatchOptions.setFileType(...)` call would land at `StructuralSearchUtil.getProfileByFileType(...) == null` and the recipe would throw before any match. Always run the runtime enumeration recipe above to confirm what is actually loaded — if a row above lists a profile and your live registry doesn't, the language plugin is missing from the running IDE; install it.
 
 ## Choosing a file type at runtime
 
