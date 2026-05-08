@@ -13,7 +13,7 @@ Each row says: which language profile to register in `MatchOptions.setFileType(.
 | Language | Profile FQN | File type | Replace handler | Shorten FQN | Static import | Predefined templates | Pattern contexts |
 |---|---|---|---:|---:|---:|---:|---|
 | Java | `com.intellij.structuralsearch.JavaStructuralSearchProfile` | `JavaFileType.INSTANCE` | `JavaReplaceHandler` (PSI-aware) | yes | yes | 98 | `default`, `member` |
-| Kotlin | `o.j.k.idea.k2.codeinsight.structuralsearch.KotlinStructuralSearchProfile` | `KotlinFileType.INSTANCE` | `KotlinStructuralReplaceHandler` (PSI-aware) | yes (async — see [api-recipe](mcp-steroid://skill/structural-search-api-recipe)) | no | 34 | `default`, `property` |
+| Kotlin | `org.jetbrains.kotlin.idea.k2.codeinsight.structuralsearch.KotlinStructuralSearchProfile` | `KotlinFileType.INSTANCE` | `KotlinStructuralReplaceHandler` (PSI-aware) | yes (async — see [api-recipe](mcp-steroid://skill/structural-search-api-recipe)) | no | 34 | `default`, `property` |
 | Groovy | `com.intellij.structuralsearch.groovy.GroovyStructuralSearchProfile` | `GroovyFileType.GROOVY_FILE_TYPE` | `DocumentBasedReplaceHandler` (text-level) | no | no | 0 | `File`, `Class` |
 | JavaScript / TypeScript / JSX / TSX | `com.intellij.structuralsearch.JSStructuralSearchProfile` (+ `JSStructuralSearchProfile2` for ECMA L4 / Flex) | `JavaScriptFileType.INSTANCE` (or `TypeScriptFileType`/`TypeScriptJSXFileType`) — pick the dialect's file type | `DocumentBasedReplaceHandler` | no | no | 13 | (none) |
 | Go | `com.goide.structuralsearch.GoStructuralSearchProfile` | `GoFileType.INSTANCE` | `DocumentBasedReplaceHandler` | no | no | 21 | (none) |
@@ -70,6 +70,26 @@ StructuralSearchProfile.EP_NAME.extensionList.forEach { p ->
 ```
 
 This is the single most useful diagnostic when an agent suspects a language profile is missing — the EP list is the source of truth.
+
+> ⚠ **The count is "registered extension instances", not "supported languages".** Some languages register multiple profile classes (e.g. JavaScript ships both `JSStructuralSearchProfile` and `JSStructuralSearchProfile2` to cover ECMA L4 / Flex), and one profile can cover multiple languages (`XmlStructuralSearchProfile` is the same instance keyed for both XML and HTML file types). Don't dedupe by language to compare against this article's matrix. Don't hardcode an expected total either — the count is **installation-dependent** (Go/Rust/PHP profiles only appear when their language plugin is installed). Use the enumeration to confirm the specific profile you need is loaded, not as a head count.
+
+### Marker-oriented mini-recipe (count + presence checks)
+
+For verification tasks that just need "how many profiles, is Java/Kotlin loaded":
+
+```
+import com.intellij.structuralsearch.StructuralSearchProfile
+
+val profiles = StructuralSearchProfile.EP_NAME.extensionList
+println("SSR_PROFILES: ${profiles.size}")
+
+val javaLoaded = profiles.any { it.javaClass.simpleName == "JavaStructuralSearchProfile" }
+val kotlinLoaded = profiles.any { it.javaClass.simpleName == "KotlinStructuralSearchProfile" }
+println("JAVA_PROFILE_FOUND: ${if (javaLoaded) "yes" else "no"}")
+println("KOTLIN_PROFILE_FOUND: ${if (kotlinLoaded) "yes" else "no"}")
+```
+
+Prefer matching by **simple class name** (or by suffix) for these checks. Full FQNs vary across IntelliJ versions and plugin layouts (the Kotlin profile sat under `org.jetbrains.kotlin.idea.structuralsearch.*` in K1, then moved to `org.jetbrains.kotlin.idea.k2.codeinsight.structuralsearch.*` for K2); a presence check that anchors on the simple name survives the move.
 
 ## Cross-references
 

@@ -6,6 +6,8 @@ Validation-first recipe, threading rules, scope and injected-code caveats, smart
 
 This is the load-bearing article. Any rewrite copied from elsewhere should be cross-checked against the rules below — they catch the most common ways an SSR script silently fails.
 
+> **Read-only EP introspection is a different track.** If your task is just "list the registered profiles", "count predefined templates for Java", "check whether the Kotlin profile is loaded", you do NOT need `MatchOptions`, do NOT need to call `Matcher.validate`, and do NOT need to think about template syntax at all. Skip to [§ Lightweight introspection](#lightweight-introspection--do-you-need-the-full-pipeline) below — the rules in this article (validate-first, no-outer-readAction, smart-pointer invalidation, etc.) start to matter only once you construct `MatchOptions` or `Matcher`.
+
 ## Single-file scope (LocalSearchScope) variant
 
 When the search target is a known file or small set of files (debugging an SSR pattern, scoped audit), use `LocalSearchScope` instead of `GlobalSearchScope.projectScope(project)` — much faster, doesn't iterate the project index.
