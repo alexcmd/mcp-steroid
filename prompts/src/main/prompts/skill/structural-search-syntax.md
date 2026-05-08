@@ -53,10 +53,10 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 '_x:[!regex( <pattern> )]              # NOT (text matches)
 '_x:[regex( *<pattern> )]              # text within type hierarchy
 
-'_x:[exprtype( java\.lang\.String )]   # resolved expression type matches FQN
-'_x:[exprtype( *Number )]              # exprtype within hierarchy
-'_x:[exprtype( ~.*Optional<.*> )]      # exprtype as a regex (REQUIRED when arg has .*, +, |, etc.)
-'_x:[!exprtype( void )]                # NOT (exprtype matches)
+'_x:[exprtype( java\.lang\.String )]                  # resolved expression type matches FQN exactly
+'_x:[exprtype( *Number )]                             # exprtype within hierarchy (subtype of Number)
+'_x:[exprtype( ~java\.util\.Optional<.*> )]           # ⚠ ~ REQUIRED when arg has .*, +, |, <.*>; without ~ the constraint is exact-FQN compare and silently matches NOTHING
+'_x:[!exprtype( void )]                               # NOT (exprtype matches)
 
 '_x:*Foo                               # shorthand for '_x:[regex( *Foo )] — sets withinHierarchy=true and regex='Foo'
 '_x:+Foo                               # shorthand for strictlyWithinHierarchy (only proper subtypes/supertypes)

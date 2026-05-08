@@ -14,7 +14,7 @@ Every entry below is meant to be dropped into the canonical recipe in [api-recip
 | A2 | `JOptionPane.showMessageDialog(null, msg)` → annotated for follow-up | Java | `JOptionPane.'_show(null, '_msg);` | `//FIXME provide a parent frame\nJOptionPane.$show$(null, $msg$);` |
 | A3 | Hamcrest `assertThat(actual, is(expected))` → AssertJ | Java | `org.hamcrest.MatcherAssert.assertThat('_a, org.hamcrest.Matchers.is('_e));` | `org.assertj.core.api.Assertions.assertThat($a$).isEqualTo($e$);` |
 | A4 | Guava `Lists.newArrayList()` → JDK | Java | `com.google.common.collect.Lists.newArrayList()` | `new java.util.ArrayList<>()` |
-| A5 | `Optional.get()` audit (search-only) | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | (none) |
+| A5 | **Java `Optional.get()` audit** (search-only) | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | (none) |
 | A6 | Kotlin `kotlin.test.assertEquals` → JUnit5 | Kotlin | `kotlin.test.assertEquals('_e, '_a)` | `org.junit.jupiter.api.Assertions.assertEquals($e$, $a$)` |
 
 For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs collapse to short names + imports. For Kotlin migrations on K2 set it to false (asynchronous shortening — see [api-recipe](mcp-steroid://skill/structural-search-api-recipe) §7).
@@ -25,7 +25,7 @@ For Java migrations, set `isToShortenFQN = true` so the replacement's FQNs colla
 |---|---|---|---|---|
 | B1 | Audit `println` calls (project policy: route via `LoggerFactory`) | Kotlin | `println('_msg)` | search-only |
 | B2 | Detect `runCatching{}.onFailure{}` chain (this repo bans it) | Kotlin | `runCatching { '_BODY* }.onFailure { '_E -> '_HANDLER* }` (matches receiver-less stdlib calls; see [structural-search-kotlin](mcp-steroid://skill/structural-search-kotlin) for the receiver-bearing variant `'_x.runCatching { … }`) | search-only — see warning below |
-| B3 | Audit `Optional.get()` callsites | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | search-only |
+| B3 | **Java `Optional.get()` audit** (same as A5; surfaced under Code-Style enforcement) | Java | `'_o:[exprtype( ~java\.util\.Optional<.*> )].get()` | search-only |
 | B4 | Force trailing-lambda for `forEach` | Kotlin | `'_xs.forEach('_lambda:[exprtype( ~kotlin\.jvm\.functions\.Function1.* )])` | `$xs$.forEach $lambda$` |
 | B5 | Detect `System.out` / `System.err` in non-test sources | Java | `System.'_io:[regex( out|err )].'_call('_args*);` | search-only |
 | B6 | Detect `if (x != null) x.f()` nullable abuse | Kotlin | `if ('_x != null) '_x.'_f('_args*)` | `$x$?.$f$($args$)` |

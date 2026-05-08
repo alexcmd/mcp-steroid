@@ -6,6 +6,33 @@ Validation-first recipe, threading rules, scope and injected-code caveats, smart
 
 This is the load-bearing article. Any rewrite copied from elsewhere should be cross-checked against the rules below — they catch the most common ways an SSR script silently fails.
 
+## Single-file scope (LocalSearchScope) variant
+
+When the search target is a known file or small set of files (debugging an SSR pattern, scoped audit), use `LocalSearchScope` instead of `GlobalSearchScope.projectScope(project)` — much faster, doesn't iterate the project index.
+
+```
+import com.intellij.psi.search.LocalSearchScope
+
+// Resolve the file BEFORE entering any readAction. findProjectPsiFile is a suspend fun.
+val psi = findProjectPsiFile("src/main/java/com/example/Foo.java")
+    ?: error("file not in project")
+
+// Use LocalSearchScope as the scope on MatchOptions
+val matchOptions = MatchOptions().apply {
+    fillSearchCriteria("System.out.println('_msg);")
+    setFileType(JavaFileType.INSTANCE)
+    setScope(LocalSearchScope(psi))
+    setRecursiveSearch(true)
+}
+
+readAction { Matcher.validate(project, matchOptions) }
+val sink = CollectingMatchResultSink()
+Matcher(project, matchOptions).findMatches(sink)   // do NOT wrap; same threading rule as global scope
+println("matches in ${psi.virtualFile.name}: ${sink.matches.size}")
+```
+
+Same rules apply: validate first, do NOT wrap `findMatches` in an outer `readAction`. If you need to gather multiple `PsiElement`s for the scope, do it inside a separate `readAction { }` block first, then pass the array to `LocalSearchScope(elements: Array<PsiElement>)`. Release the read action before calling `findMatches`.
+
 ## Lightweight introspection — do you need the full pipeline?
 
 If your task is *not* a search/replace — e.g. "enumerate registered profiles", "list predefined templates for Java", "check whether the Kotlin profile is loaded" — you do NOT need `MatchOptions` / `Matcher` / `Replacer`. Use the EP and util APIs directly:
