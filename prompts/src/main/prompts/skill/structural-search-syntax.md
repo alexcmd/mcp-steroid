@@ -62,6 +62,11 @@ Inside `:[…]` you compose constraints with `&&` (no `||` — use a script filt
 '_x:+Foo                               # shorthand for strictlyWithinHierarchy (only proper subtypes/supertypes)
 '_x:!Foo                               # shorthand for '_x:[!regex( Foo )] — invert regex
 '_x:Foo                                # shorthand for '_x:[regex( Foo )] — bare regex after the colon
+```
+
+> ⚠️ **`'_I:*Greeting` is NOT a Java-language operator** — it is the bare-regex shorthand for `'_I:[regex( *Greeting )]`, which sets `MatchVariableConstraint.setWithinHierarchy(true)` plus regex `Greeting`. The engine resolves the matched reference to its type and walks the supertype chain; if any type's name matches `Greeting`, it's a match. Combined with the "Java `implements` matches both `implements` and `extends`" rule below, `class '_C implements '_I:*Greeting {}` finds direct implementors, direct subclasses, AND transitive ones in one query — see use-case [F1](mcp-steroid://skill/structural-search-use-cases).
+
+```
 
 '_x:[formal( java\.util\.List )]       # expected/formal-arg type (Java)
 '_x:[ref( SavedTemplateName )]         # variable resolves to a reference saved as another template

@@ -130,7 +130,7 @@ Java's `implements` keyword in a class template matches BOTH `implements` and `e
 
 | # | Use case | Lang | Search |
 |---|---|---|---|
-| F1 | All classes implementing or extending `Greeting` (direct + transitive) | Java | `class '_C implements '_I:*Greeting {}` |
+| F1 | All classes implementing or extending `Greeting` (direct + transitive). Counter-intuitively, this single template ALSO matches `class LoudGreeter extends FormalGreeter {}` even though `LoudGreeter` doesn't write `implements Greeting` directly: Java SSR collapses `implements` and `extends` reference lists during matching ([syntax §"Java `implements` matches both"](mcp-steroid://skill/structural-search-syntax)), and the `:*Greeting` modifier walks the supertype chain. | Java | `class '_C implements '_I:*Greeting {}` |
 | F2 | All `Throwable` subclasses (direct + transitive) | Java | `class '_C extends '_T:*Throwable {}` |
 | F3 | Classes implementing one of two interfaces | Java | `class '_C implements '_I:[regex( Serializable\|Cloneable )] {}` |
 | F4 | Classes annotated with a specific annotation | Java | `@'_A:[regex( javax\.persistence\.Entity )] class '_C {}` |

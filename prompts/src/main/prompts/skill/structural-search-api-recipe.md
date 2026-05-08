@@ -59,6 +59,31 @@ Matcher(project, opts).findMatches(sink)
 println("MATCHES: ${sink.matches.size}")                // emit a single marker line
 ```
 
+### Hierarchy-audit variant (single file, marker-only output)
+
+For "find all implementors of an interface inside one file" tasks:
+
+```
+import com.intellij.psi.search.LocalSearchScope
+
+val psi = findProjectPsiFile("src/main/java/com/example/SsrHierarchyDemo.java")
+    ?: error("file not in project")
+
+val opts = MatchOptions().apply {
+    fillSearchCriteria("class '_C implements '_I:*Greeting {}")     // :*Greeting widens to the supertype chain
+    setFileType(JavaFileType.INSTANCE)
+    setScope(LocalSearchScope(psi))
+    setRecursiveSearch(true)
+    setSearchInjectedCode(false)
+}
+readAction { Matcher.validate(project, opts) }
+val sink = CollectingMatchResultSink()
+Matcher(project, opts).findMatches(sink)
+println("IMPLEMENTORS: ${sink.matches.size}")
+```
+
+Notes: in Java SSR, `implements` in the pattern matches BOTH `implements` and `extends` reference lists in source — so this template captures direct implementors AND transitive subclasses in one query. See [syntax §"Java `implements` matches both"](mcp-steroid://skill/structural-search-syntax) and use-case [F1](mcp-steroid://skill/structural-search-use-cases).
+
 No `Replacer`, no per-match reporting, no command processor. Use this when the maintenance task is just "tell me how many of X exist". Switch to the canonical recipe at the top of this article when you need per-match details, line numbers, or a replacement.
 
 > **Helper resolution**: when the prompt names a specific project-relative path (e.g. "audit `src/main/java/com/example/Foo.java`"), use `findProjectPsiFile("<that path>")` to resolve the `PsiFile` BEFORE entering any read action — `findProjectPsiFile` is a suspend fun and cannot be called inside `readAction { }`. Then pass it to `LocalSearchScope(psi)`. See [coding-with-intellij-context-api § File Access Helpers](mcp-steroid://skill/coding-with-intellij-context-api) for the do/don't.
