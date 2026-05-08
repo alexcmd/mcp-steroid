@@ -68,6 +68,62 @@ These illustrate why SSR beats `grep`/`sed`: the matcher honours overload resolu
 | E4 | Rewrite usages of a constant excluding its declaration | Java | `'_T.MAX_LEN:[!ref( MyClass\.MAX_LEN )]` | `$T$.maxLen()` |
 | E5 | `assertTrue(a.equals(b))` → `assertEquals(b, a)` (overload-safe) | Java | `assertTrue('_a.equals('_b))` | `assertEquals($b$, $a$)` |
 
+## K — Kotlin idioms and modernization
+
+These are Kotlin-specific recipes beyond the cross-language entries above. Always
+set `setFileType(KotlinFileType.INSTANCE)` and prefer `setRecursiveSearch(true)`
+(see [api-recipe](mcp-steroid://skill/structural-search-api-recipe) §4 and
+[structural-search-kotlin](mcp-steroid://skill/structural-search-kotlin)). The
+Kotlin profile's four custom filters (`_AlsoMatchVal`, `_AlsoMatchVar`,
+`_AlsoMatchCompanionObject`, `_MatchCallSemantics`) are documented in the
+Kotlin-specific article.
+
+| # | Use case | Search | Replacement |
+|---|---|---|---|
+| K1 | `MutableList<T>()` constructor → idiomatic factory | `MutableList<'_T>('_capacity)` | `ArrayList<$T$>($capacity$)` (or audit-only when capacity is symbolic) |
+| K2 | `arrayOf(x).toList()` → `listOf(x)` | `arrayOf('_args*).toList()` | `listOf($args$)` |
+| K3 | Redundant smart-cast: `if (x is Y) (x as Y).method()` → `if (x is Y) x.method()` | `if ('_x is '_Y) ('_x as '_Y).'_m('_args*)` | `if ($x$ is $Y$) $x$.$m$($args$)` |
+| K4 | Find every `data class` (audit) | `data class '_C('_props*)` | search-only |
+| K5 | `lateinit var` audit (could be `var x: T? = null` instead) | `lateinit var '_x: '_T` | search-only |
+| K6 | `lazy { … }` audit, surfacing default `SYNCHRONIZED` mode where `NONE` would suffice | `val '_x by lazy { '_body* }` | search-only (decide per call site) |
+| K7 | `@Volatile` field audit | `@Volatile var '_x: '_T = '_init` | search-only |
+| K8 | `requireNotNull` / `checkNotNull` audit | `requireNotNull('_x)` (and `checkNotNull('_x)` as a separate template) | search-only |
+| K9 | Companion-object call to a `@JvmStatic` candidate: `Foo.Companion.bar()` → `Foo.bar()` | `'_C.Companion.'_m('_args*)` | `$C$.$m$($args$)` |
+| K10 | `var x = …` followed by `x = …` (could be one assignment) — needs script filter for adjacency; see [syntax §script(...)](mcp-steroid://skill/structural-search-syntax) | `'_x:[script("/* check next sibling reassigns x */")]` | search-only |
+| K11 | `runCatching { … }.getOrNull()` (the safer Result-aware variant; complement to B2) | `runCatching { '_body* }.getOrNull()` | search-only |
+| K12 | `apply { … }` where the receiver is unused (could be `also` or eliminated) | `'_x.apply { '_body* }` | search-only — manual review for receiver usage |
+
+Use `_AlsoMatchVal( ENABLED )` / `_AlsoMatchVar( ENABLED )` on `'_x` to widen
+val/var matching:
+
+| # | Use case | Search |
+|---|---|---|
+| K13 | Find vars-or-vals of a given type | `var '_x:[_AlsoMatchVal( ENABLED )]:[exprtype( ~kotlin\.collections\.List<.*> )] = '_init` |
+| K14 | All companion + non-companion `object` declarations of `Foo` | `object '_o:[_AlsoMatchCompanionObject( ENABLED )] : '_T:*Foo {}` |
+| K15 | Argument-order-insensitive constructor match: `A(b=true, c=0, d=1)` ≡ `A(c=0, d=1, b=true)` | `'_:[_MatchCallSemantics( ENABLED )]( true, 0, 1 )` |
+
+## P — Python: not supported by IntelliJ SSR
+
+PyCharm's help page is explicit: *"PyCharm doesn't support structural search and
+replace for Python at the moment."* The `community/python/` source tree contains
+no `StructuralSearchProfile`, the `com.intellij.structuralsearch.profile`
+extension point has no Python contributor, and `StructuralSearchUtil.getProfileByFileType(PythonFileType.INSTANCE)`
+returns null. Setting `MatchOptions.setFileType(PythonFileType.INSTANCE)` then
+running the canonical recipe throws because the profile is unresolved.
+
+If you need a structural query against Python, use one of these instead (none of
+them are SSR — but they fill the same niche):
+
+| Tool | When to reach for it |
+|---|---|
+| **`grep` / `ripgrep` with PCRE** | Fast and good enough for shape-only queries (`re.search`, `re.findall` callsites). |
+| **Python `ast` module** | Standard library; parses any Python source into a typed AST. Works well as a `steroid_execute_code` Kotlin script that shells out to a `python3 -c "import ast; …"` filter. |
+| **[LibCST](https://github.com/Instagram/LibCST)** | Concrete syntax tree; preserves whitespace and comments. Best for actual rewrites (Python's analogue of SSR replace). Use it via `mcpScript` shelling out, not as an in-IDE pattern. |
+| **IntelliJ's PSI directly** | If you only need a search (no replace) and you want the IDE's index, write a `steroid_execute_code` Kotlin script that walks `com.jetbrains.python.psi.PyFunction` / `PyCallExpression` / etc. directly. This is NOT SSR but uses the same project model. |
+
+A skill article for in-IDE Python pattern queries via raw PSI is out of scope
+here; this gallery only documents the IntelliJ SSR engine.
+
 ## F — Class hierarchy queries
 
 Java's `implements` keyword in a class template matches BOTH `implements` and `extends` reference lists in source — see [syntax §"Java `implements` matches both"](mcp-steroid://skill/structural-search-syntax). The `:*Foo` shorthand (or `:[regex( *Foo )]`) widens the match to transitive subtypes.
