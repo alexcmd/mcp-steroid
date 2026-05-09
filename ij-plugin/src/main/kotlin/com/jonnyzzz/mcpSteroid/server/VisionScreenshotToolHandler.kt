@@ -63,7 +63,7 @@ class VisionScreenshotToolHandler : McpTool {
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val args = context.params.arguments ?: return errorResult("Missing arguments")
+        val args = context.params.arguments
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
             ?: return errorResult("Missing required parameter: project_name")
         val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull

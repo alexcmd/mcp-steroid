@@ -55,7 +55,7 @@ class McpHttpTransportTest {
             }
 
             override suspend fun call(context: ToolCallContext): ToolCallResult {
-                val message = context.params.arguments?.get("message")?.jsonPrimitive?.content ?: ""
+                val message = context.params.arguments["message"]?.jsonPrimitive?.content ?: ""
                 return ToolCallResult(content = listOf(ContentItem.Text(text = "Echo: $message")))
             }
         })

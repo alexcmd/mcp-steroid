@@ -162,7 +162,7 @@ class ExecutionStorage(
         val executionId = newExecutionId("feedback-$taskId")
         writeToolMetadata(executionId, element.name, element.arguments, taskId)
         writeCodeExecutionData(executionId, "feedback.json", element)
-        writeCodeExecutionData(executionId, "params.json", element.arguments ?: buildJsonObject { })
+        writeCodeExecutionData(executionId, "params.json", element.arguments)
         writeCodeExecutionData(executionId, "execution-id.txt", executionId.executionId)
         writeProjectInfo(executionId)
         return executionId
@@ -190,7 +190,7 @@ class ExecutionStorage(
         return executionId
     }
 
-    suspend fun writeToolCall(toolName: String, arguments: JsonObject?, taskId: String? = null): ExecutionId {
+    suspend fun writeToolCall(toolName: String, arguments: JsonObject, taskId: String? = null): ExecutionId {
         val executionId = newExecutionId(taskId ?: "tool-$toolName")
         writeToolMetadata(executionId, toolName, arguments, taskId)
         writeCodeExecutionData(executionId, "params.json", arguments ?: buildJsonObject { })

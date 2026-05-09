@@ -89,7 +89,7 @@ class OpenProjectToolHandler : McpTool {
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val args = context.params.arguments ?: return errorResult("Missing arguments")
+        val args = context.params.arguments
         val projectPathStr = args["project_path"]?.jsonPrimitive?.contentOrNull
             ?: return errorResult("Missing required parameter: project_path")
         args["task_id"]?.jsonPrimitive?.contentOrNull

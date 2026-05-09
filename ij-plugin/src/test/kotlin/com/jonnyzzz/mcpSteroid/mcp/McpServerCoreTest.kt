@@ -114,7 +114,7 @@ class McpServerCoreTest {
 
             override suspend fun call(context: ToolCallContext): ToolCallResult {
                 called = true
-                val message = context.params.arguments?.get("message")?.jsonPrimitive?.content ?: "no message"
+                val message = context.params.arguments["message"]?.jsonPrimitive?.content ?: "no message"
                 return ToolCallResult(content = listOf(ContentItem.Text(text = "Echo: $message")))
             }
         })

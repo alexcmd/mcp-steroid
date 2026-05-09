@@ -48,14 +48,14 @@ class SamplingTestToolHandler : McpTool {
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val prompt = context.params.arguments?.get("prompt")
+        val prompt = context.params.arguments["prompt"]
             ?.let { (it as? JsonPrimitive)?.content }
             ?: return ToolCallResult(
                 content = listOf(ContentItem.Text("Missing required parameter: prompt")),
                 isError = true
             )
 
-        val systemPrompt = context.params.arguments?.get("system_prompt")
+        val systemPrompt = context.params.arguments["system_prompt"]
             ?.let { (it as? JsonPrimitive)?.content }
 
         // Check if client supports sampling

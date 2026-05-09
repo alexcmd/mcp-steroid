@@ -51,8 +51,7 @@ class McpToolRegistry : McpToolRegistrar {
         val textParams = jsonToLogMessages.encodeToString(params.rawArguments)
         log.info("callTool with parameters: $textParams")
 
-        val progressToken = params.rawArguments
-            ?.get("arguments")
+        val progressToken = params.rawArguments["arguments"]
             ?.jsonObject
             ?.get("_meta")
             ?.jsonObject?.get("progressToken")

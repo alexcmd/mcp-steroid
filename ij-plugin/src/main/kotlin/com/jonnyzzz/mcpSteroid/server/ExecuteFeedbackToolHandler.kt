@@ -91,7 +91,7 @@ class ExecuteFeedbackToolHandler : McpTool {
     override suspend fun call(context: ToolCallContext): ToolCallResult = handle(context.params)
 
     private suspend fun handle(params: ToolCallParams): ToolCallResult {
-        val args = params.arguments ?: return errorResult("Missing arguments")
+        val args = params.arguments
 
         val aggregated = validate(args)
         if (aggregated != null) return errorResult(aggregated)

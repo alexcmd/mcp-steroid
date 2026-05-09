@@ -90,7 +90,7 @@ class ExecuteCodeToolHandler : McpTool {
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val params = context.params
-        val args = params.arguments ?: return errorResult("Missing arguments")
+        val args = params.arguments
 
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
             ?: return errorResult("Missing required parameter: project_name")

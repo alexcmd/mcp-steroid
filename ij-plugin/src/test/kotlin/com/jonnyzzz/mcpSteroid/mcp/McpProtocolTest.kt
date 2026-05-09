@@ -158,8 +158,8 @@ class McpProtocolTest {
         val decoded = McpJson.decodeFromString<ToolCallParams>(json)
 
         assertEquals("test_tool", decoded.name)
-        assertEquals("value1", decoded.arguments?.get("arg1")?.jsonPrimitive?.content)
-        assertEquals(42, decoded.arguments?.get("arg2")?.jsonPrimitive?.int)
+        assertEquals("value1", decoded.arguments["arg1"]?.jsonPrimitive?.content)
+        assertEquals(42, decoded.arguments["arg2"]?.jsonPrimitive?.int)
     }
 
     @Test

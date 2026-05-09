@@ -56,7 +56,7 @@ class FetchResourceToolHandler(
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val uri = context.params.arguments?.get("uri")?.jsonPrimitive?.content
+        val uri = context.params.arguments["uri"]?.jsonPrimitive?.content
             ?: return ToolCallResult(
                 content = listOf(ContentItem.Text(text = "ERROR: Missing required parameter: uri")),
                 isError = true
