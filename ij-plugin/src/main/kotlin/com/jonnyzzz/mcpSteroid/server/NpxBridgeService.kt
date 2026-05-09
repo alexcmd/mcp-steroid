@@ -6,7 +6,6 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.UUID

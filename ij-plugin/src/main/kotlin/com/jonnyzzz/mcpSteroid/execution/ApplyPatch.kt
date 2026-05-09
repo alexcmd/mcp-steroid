@@ -41,12 +41,6 @@ import kotlinx.serialization.Serializable
 class ApplyPatchException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
 @Serializable
-data class ApplyPatchRequest(val hunks: List<ApplyPatchHunk>)
-
-@Serializable
-data class ApplyPatchHunk(val filePath: String, val oldString: String, val newString: String)
-
-@Serializable
 data class AppliedHunk(
     val index: Int,
     val path: String,

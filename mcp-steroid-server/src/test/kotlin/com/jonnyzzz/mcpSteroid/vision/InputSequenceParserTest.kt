@@ -1,9 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.vision
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 import java.awt.event.KeyEvent
 
 class InputSequenceParserTest {
@@ -128,8 +129,10 @@ class InputSequenceParserTest {
         assertTrue(steps[1] is InputStep.PressKey)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun rejectsUnknownOperation() {
-        parser.parse("noop:1")
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.parse("noop:1")
+        }
     }
 }

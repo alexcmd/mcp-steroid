@@ -13,49 +13,16 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.ex.StatusBarEx
 import com.jonnyzzz.mcpSteroid.execution.dialogWindowsLookup
-import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpJson
-import com.jonnyzzz.mcpSteroid.mcp.McpTool
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
+import java.awt.Frame
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import javax.swing.SwingUtilities
-
-private val log = logger<ListWindowsToolHandler>()
-/**
- * Handler for the steroid_list_windows MCP tool.
- */
-class ListWindowsToolSpec(val handler: ListWindowsToolHandler) : McpTool {
-    override val name = "steroid_list_windows"
-    override val description = "List open IDE windows and their associated projects. Use this to choose project_name for screenshot/input tools in multi-window setups."
-    override val inputSchema = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") { }
-        putJsonArray("required") { }
-    }
-
-    override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val response = handler.collectListWindowsResponse()
-        val json = McpJson.encodeToString(response)
-        return ToolCallResult(
-            content = listOf(ContentItem.Text(text = json))
-        )
-    }
-}
-
-interface ListWindowsToolHandler {
-    suspend fun collectListWindowsResponse(): ListWindowsResponse
-}
 
 @Service(Service.Level.APP)
 class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
+    private val log = logger<ListWindowsToolHandler>()
+
     override suspend fun collectListWindowsResponse(): ListWindowsResponse {
         // Use DialogWindowsLookup for reliable modal detection:
         // fast negative path (canPumpEdtNonModal), then EDT check if needed.
@@ -124,7 +91,7 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
                     WindowInfo(
                         projectName = project?.name,
                         projectPath = project?.basePath,
-                        title = (window as? java.awt.Frame)?.title,
+                        title = (window as? Frame)?.title,
                         isActive = window?.isActive ?: false,
                         isVisible = window?.isVisible ?: false,
                         bounds = bounds?.let { WindowBounds(it.x, it.y, it.width, it.height) },
@@ -145,7 +112,7 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
                         WindowInfo(
                             projectName = null,
                             projectPath = null,
-                            title = (window as? java.awt.Frame)?.title,
+                            title = (window as? Frame)?.title,
                             isActive = window.isActive,
                             isVisible = window.isVisible,
                             bounds = WindowBounds(bounds.x, bounds.y, bounds.width, bounds.height),
@@ -161,60 +128,9 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
         return ListWindowsResponse(
             windows = windowInfos,
             backgroundTasks = progressTasks,
+            ide = IdeInfo.ofApplication(),
+            plugin = PluginInfo.ofCurrentPlugin(),
+            pid = ProcessHandle.current().pid(),
         )
     }
 }
-
-@Serializable
-data class ListWindowsResponse(
-    val ide: IdeInfo = IdeInfo.ofApplication(),
-    val plugin: PluginInfo = PluginInfo.ofCurrentPlugin(),
-    val pid: Long = ProcessHandle.current().pid(),
-
-    val windows: List<WindowInfo>,
-    val backgroundTasks: List<ProgressTaskInfo>,
-)
-
-@Serializable
-data class WindowInfo(
-    val projectName: String?,
-    val projectPath: String?,
-    val title: String?,
-    val isActive: Boolean,
-    val isVisible: Boolean,
-    val bounds: WindowBounds?,
-    val windowId: String,
-    /** True if a modal dialog is currently showing in the IDE */
-    val modalDialogShowing: Boolean = false,
-    /** True if the project is currently indexing (dumb mode) */
-    val indexingInProgress: Boolean? = null,
-    /** True if the project has been fully initialized */
-    val projectInitialized: Boolean? = null,
-)
-
-@Serializable
-data class WindowBounds(
-    val x: Int,
-    val y: Int,
-    val width: Int,
-    val height: Int,
-)
-
-/** Information about a background task/progress indicator */
-@Serializable
-data class ProgressTaskInfo(
-    /** Task title (e.g., "Indexing", "Building") */
-    val title: String,
-    /** Current status text */
-    val text: String,
-    /** Secondary status text */
-    val text2: String,
-    /** Progress fraction (0.0 to 1.0), null if indeterminate */
-    val fraction: Double?,
-    /** True if progress is indeterminate (no percentage) */
-    val isIndeterminate: Boolean,
-    /** True if the task can be canceled */
-    val isCancellable: Boolean,
-    /** Project name this task belongs to (if known) */
-    val projectName: String?
-)

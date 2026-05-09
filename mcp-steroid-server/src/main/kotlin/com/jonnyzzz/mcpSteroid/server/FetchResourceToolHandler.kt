@@ -1,7 +1,5 @@
-/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpResourceReader
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
@@ -13,10 +11,16 @@ import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.DebuggerSkillPromptArtic
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.TestSkillPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJPromptArticle
-import kotlinx.serialization.json.*
+import com.jonnyzzz.mcpSteroid.thisLogger
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 /**
- * Simple tool that fetches any MCP Steroid resource by URI and returns its markdown content.
+ * Simple tool that fetches any MCP Steroid resource by URI and returns its Markdown content.
  * Agents can call this instead of ReadMcpResourceTool — it's a purpose-built MCP tool
  * visible in the tool list, making resource discovery more natural.
  */
@@ -52,7 +56,9 @@ class FetchResourceToolHandler(
                 put("description", "The resource URI to fetch (from ListMcpResourcesTool or MCP server instructions)")
             }
         }
-        putJsonArray("required") { add("uri") }
+        putJsonArray("required") {
+            add("uri")
+        }
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {

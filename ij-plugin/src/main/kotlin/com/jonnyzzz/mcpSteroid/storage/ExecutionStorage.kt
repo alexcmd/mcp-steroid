@@ -5,8 +5,6 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.jetbrains.fus.reporting.serialization.toJsonElement
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import kotlinx.coroutines.CoroutineScope

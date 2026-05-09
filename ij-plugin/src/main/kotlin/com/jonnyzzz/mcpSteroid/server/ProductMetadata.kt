@@ -4,13 +4,6 @@ package com.jonnyzzz.mcpSteroid.server
 import com.jonnyzzz.mcpSteroid.PluginDescriptorProvider
 import kotlinx.serialization.Serializable
 
-@Serializable
-data class PluginInfo(
-    val id: String,
-    val name: String,
-    val version: String
-)
-
 fun PluginInfo.Companion.ofCurrentPlugin(): PluginInfo {
     val plugin = PluginDescriptorProvider.getInstance()
     return PluginInfo(

@@ -8,10 +8,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 
 /**
  * Unit tests for [ExecuteFeedbackToolSpec.handle] argument validation.
@@ -60,7 +60,7 @@ class ExecuteFeedbackToolHandlerTest {
             }
         )
         assertNotNull(err)
-        assertTrue("mentions project_name: $err", err!!.contains("project_name"))
+        assertTrue(err!!.contains("project_name"), "mentions project_name: $err")
     }
 
     @Test
@@ -69,7 +69,7 @@ class ExecuteFeedbackToolHandlerTest {
         // empty args object surfaces project_name (the first check).
         val err = validate(buildJsonObject { })
         assertNotNull(err)
-        assertTrue("mentions project_name: $err", err!!.contains("project_name"))
+        assertTrue(err!!.contains("project_name"), "mentions project_name: $err")
     }
 
     @Test
@@ -86,8 +86,8 @@ class ExecuteFeedbackToolHandlerTest {
             }
         )
         assertNotNull(err)
-        assertTrue("mentions success_rating: $err", err!!.contains("success_rating"))
-        assertTrue("hints against `rating`: $err", err.contains("rating`"))
+        assertTrue(err!!.contains("success_rating"), "mentions success_rating: $err")
+        assertTrue(err.contains("rating`"), "hints against `rating`: $err")
     }
 
     @Test
@@ -101,8 +101,8 @@ class ExecuteFeedbackToolHandlerTest {
             }
         )
         assertNotNull(err)
-        assertTrue("names the offending value: $err", err!!.contains("1.7"))
-        assertTrue("gives the allowed range: $err", err.contains("0.00..1.00"))
+        assertTrue(err!!.contains("1.7"), "names the offending value: $err")
+        assertTrue(err.contains("0.00..1.00"), "gives the allowed range: $err")
     }
 
     @Test
@@ -116,7 +116,7 @@ class ExecuteFeedbackToolHandlerTest {
             }
         )
         assertNotNull(err)
-        assertTrue("mentions explanation: $err", err!!.contains("explanation"))
+        assertTrue(err!!.contains("explanation"), "mentions explanation: $err")
     }
 
     @Test
@@ -130,6 +130,6 @@ class ExecuteFeedbackToolHandlerTest {
             }
         )
         assertNotNull(err)
-        assertTrue("mentions explanation: $err", err!!.contains("explanation"))
+        assertTrue(err!!.contains("explanation"), "mentions explanation: $err")
     }
 }
