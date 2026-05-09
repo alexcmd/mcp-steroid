@@ -79,7 +79,7 @@ suspend fun handleRpc(
             put("instructions", "Proxy MCP server for MCP Steroid instances discovered from local IDE metadata.")
         }
 
-        "ping" -> JsonObject(emptyMap())
+        "ping" -> buildJsonObject {  }
 
         "tools/list" -> {
             val groups = registry.buildToolGroups()
@@ -108,7 +108,7 @@ suspend fun handleRpc(
 
         "tools/call" -> {
             val toolName = params["name"]?.jsonPrimitive?.contentOrNull
-            val args = params["arguments"] as? JsonObject ?: JsonObject(emptyMap())
+            val args = params["arguments"] as? JsonObject ?: buildJsonObject {  }
 
             val captureToolCall = { result: JsonObject, route: String, extra: Map<String, Any> ->
                 beacon?.capture(BeaconEvents.TOOL_CALL, mapOf(

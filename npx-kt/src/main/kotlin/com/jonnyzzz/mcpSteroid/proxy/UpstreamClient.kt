@@ -57,7 +57,7 @@ class UpstreamClient(
         if (metadataPatch != null) {
             server.metadata = mergeServerMetadata(server.metadata, metadataPatch)
         }
-        sendNotification("notifications/initialized", JsonObject(emptyMap()))
+        sendNotification("notifications/initialized", buildJsonObject {  })
         initialized = true
     }
 
@@ -86,7 +86,7 @@ class UpstreamClient(
             val message = errObj?.get("message")?.jsonPrimitive?.content ?: "Upstream error"
             throw Exception(message)
         }
-        return response["result"] as? JsonObject ?: JsonObject(emptyMap())
+        return response["result"] as? JsonObject ?: buildJsonObject {  }
     }
 
     suspend fun callTool(
@@ -230,7 +230,7 @@ class UpstreamClient(
             throw Exception("Upstream HTTP ${response.status.value} ${response.status.description}${if (body.isNotEmpty()) ": $body" else ""}")
         }
 
-        if (!expectResponse) return JsonObject(emptyMap())
+        if (!expectResponse) return buildJsonObject {  }
 
         val text = response.bodyAsText()
         val json = try {

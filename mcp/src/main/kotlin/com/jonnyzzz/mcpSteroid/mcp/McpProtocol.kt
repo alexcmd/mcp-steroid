@@ -152,10 +152,10 @@ data class ToolsListResult(
 @Serializable
 data class ToolCallParams(
     val name: String,
-    val arguments: JsonObject? = null,
+    val arguments: JsonObject = buildJsonObject {  },
 
     @Transient
-    val rawArguments: JsonObject? = null,
+    val rawArguments: JsonObject = buildJsonObject {  },
 )
 
 @Serializable

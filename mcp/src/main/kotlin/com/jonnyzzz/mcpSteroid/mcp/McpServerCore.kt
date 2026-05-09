@@ -142,7 +142,7 @@ class McpServerCore(
     }
 
     private fun handlePing(id: JsonElement): String {
-        return encodeResult(id, JsonObject(emptyMap()))
+        return encodeResult(id, buildJsonObject {  })
     }
 
     private fun handleToolsList(id: JsonElement): String {

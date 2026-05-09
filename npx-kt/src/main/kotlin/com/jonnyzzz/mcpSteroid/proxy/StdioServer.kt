@@ -54,7 +54,7 @@ class StdioServer(
         }
 
         return try {
-            val params = request["params"] as? JsonObject ?: JsonObject(emptyMap())
+            val params = request["params"] as? JsonObject ?: buildJsonObject {  }
             val result = handleRpc(
                 method = method,
                 params = params,
