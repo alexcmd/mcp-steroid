@@ -178,6 +178,11 @@ fun ToolCallResult.Companion.errorResult(message: String) = ToolCallResult(
     isError = true
 )
 
+fun ToolCallResult.Companion.successTextResult(message: String) = ToolCallResult(
+    content = listOf(ContentItem.Text(text = message)),
+    isError = false
+)
+
 // ==================== Content Types ====================
 
 @Serializable
