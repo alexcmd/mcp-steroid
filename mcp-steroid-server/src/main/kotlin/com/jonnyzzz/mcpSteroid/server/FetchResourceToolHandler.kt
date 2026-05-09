@@ -1,10 +1,11 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
-import com.jonnyzzz.mcpSteroid.mcp.McpResourceReader
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
+import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.FindDuplicatesPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.InspectAndFixPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.DebuggerSkillPromptArticle
@@ -25,7 +26,7 @@ import kotlinx.serialization.json.putJsonObject
  * visible in the tool list, making resource discovery more natural.
  */
 class FetchResourceToolHandler(
-    private val resources: McpResourceReader,
+    private val handler: () -> PromptsContext,
 ) : McpTool {
 
     private val log = thisLogger()
@@ -70,18 +71,16 @@ class FetchResourceToolHandler(
 
         log.info("steroid_fetch_resource: $uri")
 
-        val result = resources.readResource(uri)
+        val promptsContext = handler()
+        val article = ResourcesIndex().roots.values
+            .asSequence()
+            .flatMap { it.articles.values.asSequence() }
+            .firstOrNull { it.uri == uri && it.filter.matches(promptsContext) }
             ?: return ToolCallResult(
                 content = listOf(ContentItem.Text(text = "ERROR: Resource not found: $uri")),
                 isError = true
             )
 
-        val text = result.contents.firstOrNull()?.text
-            ?: return ToolCallResult(
-                content = listOf(ContentItem.Text(text = "ERROR: Resource empty: $uri")),
-                isError = true
-            )
-
-        return ToolCallResult(content = listOf(ContentItem.Text(text = text)))
+        return ToolCallResult(content = listOf(ContentItem.Text(text = article.readPayload(promptsContext))))
     }
 }

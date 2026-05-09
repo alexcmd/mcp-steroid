@@ -28,7 +28,7 @@ class McpToolRegistrations {
         tools.registerTool(OpenProjectToolSpec { service<OpenProjectToolHandler>() })
 
 
-        tools.registerTool(FetchResourceToolHandler(resources))
-        ResourceRegistrar().register(resources, prompts)
+        tools.registerTool(FetchResourceToolHandler { buildPromptsContext() })
+        ResourceRegistrar { buildPromptsContext() }.register(resources, prompts)
     }
 }

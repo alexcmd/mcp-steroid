@@ -36,11 +36,13 @@ fun buildPromptsContext(): PromptsContext {
  * Content is rendered via [ArticleBase.readPayload] which handles per-part
  * filtering and see-also filtering internally.
  */
-class ResourceRegistrar {
+class ResourceRegistrar(
+    private val handler: () -> PromptsContext,
+) {
 
     fun register(resources: McpResourceRegistrar, prompts: McpPromptRegistrar) {
         val resourcesIndex = ResourcesIndex()
-        val context = buildPromptsContext()
+        val context = handler()
 
         for ((folder, index) in resourcesIndex.roots) {
             registerArticleResources(resources, index, context)
