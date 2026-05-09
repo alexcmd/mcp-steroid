@@ -4,9 +4,11 @@ package com.jonnyzzz.mcpSteroid.storage
 import com.intellij.openapi.components.service
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.testExecParams
 import org.junit.Assert.assertNotEquals
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -104,6 +106,37 @@ class ExecutionStorageTest : BasePlatformTestCase() {
         assertNull(storage.findExecutionId("../etc/passwd"))
         assertNull(storage.findExecutionId("foo/bar"))
         assertNull(storage.findExecutionId(".."))
+    }
+
+    /**
+     * Pins the universal-sentinel contract: findExecutionId must locate executions
+     * written through every public write path. Regressed once when writeNewExecution
+     * stopped writing params.json (the previous sentinel) — switching to tool.json
+     * (always written by writeToolMetadata) restored coverage across all three.
+     */
+    fun testFindExecutionIdLocatesAllWritePaths(): Unit = timeoutRunBlocking(10.seconds) {
+        val execId = storage.writeNewExecution(testExecParams("println(1)", taskId = "find-exec"))
+        val toolCallId = storage.writeToolCall(
+            toolName = "steroid_list_projects",
+            arguments = buildJsonObject { put("k", "v") },
+            taskId = "find-tool",
+        )
+        val feedbackId = storage.writeExecutionFeedback(
+            taskId = "find-feedback",
+            element = FeedbackParams(
+                taskId = "find-feedback",
+                successRating = 1.0,
+                explanation = "ok",
+                code = null,
+            ),
+        )
+
+        assertEquals("writeNewExecution must be findable",
+            execId.executionId, storage.findExecutionId(execId.executionId)?.executionId)
+        assertEquals("writeToolCall must be findable",
+            toolCallId.executionId, storage.findExecutionId(toolCallId.executionId)?.executionId)
+        assertEquals("writeExecutionFeedback must be findable",
+            feedbackId.executionId, storage.findExecutionId(feedbackId.executionId)?.executionId)
     }
 
     fun testAppendExecutionEvent(): Unit = timeoutRunBlocking(10.seconds) {
