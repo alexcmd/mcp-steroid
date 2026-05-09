@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.openapi.components.service
 import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 
 /**
@@ -16,8 +17,8 @@ class McpToolRegistrations {
         val resources = server.resourceRegistry
         val prompts = server.promptRegistry
 
-        tools.registerTool(ListProjectsToolHandler())
-        tools.registerTool(ListWindowsToolHandler())
+        tools.registerTool(ListProjectsToolSpec(service<ListProjectsToolHandlerIJ>()))
+        tools.registerTool(ListWindowsToolSpec(service<ListWindowsToolHandlerIJ>()))
         tools.registerTool(ExecuteCodeToolHandler())
         tools.registerTool(ApplyPatchToolHandler())
         tools.registerTool(ExecuteFeedbackToolHandler())

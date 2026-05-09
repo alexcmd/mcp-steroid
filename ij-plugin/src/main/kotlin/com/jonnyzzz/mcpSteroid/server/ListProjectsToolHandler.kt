@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
@@ -17,7 +18,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_list_projects MCP tool.
  */
-class ListProjectsToolHandler : McpTool {
+class ListProjectsToolSpec(val handler: ListProjectsToolHandler) : McpTool {
     override val name = "steroid_list_projects"
     override val description = "List all open projects in the IDE. Returns project names that can be used with steroid_execute_code and steroid_open_project."
     override val inputSchema = buildJsonObject {
@@ -27,7 +28,7 @@ class ListProjectsToolHandler : McpTool {
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val response = collectListProjectsResponse()
+        val response = handler.collectListProjectsResponse()
         val json = McpJson.encodeToString(response)
 
         return ToolCallResult(
@@ -36,21 +37,28 @@ class ListProjectsToolHandler : McpTool {
     }
 }
 
-suspend fun collectListProjectsResponse(): ListProjectsResponse {
-    val openProjects = readAction {
-        ProjectManager.getInstance().openProjects.toList()
-    }
+interface ListProjectsToolHandler {
+    suspend fun collectListProjectsResponse(): ListProjectsResponse
+}
 
-    val projects = openProjects.map { project ->
-        ProjectInfo(
-            name = project.name,
-            path = project.basePath ?: ""
+@Service(Service.Level.APP)
+class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
+    override suspend fun collectListProjectsResponse(): ListProjectsResponse {
+        val openProjects = readAction {
+            ProjectManager.getInstance().openProjects.toList()
+        }
+
+        val projects = openProjects.map { project ->
+            ProjectInfo(
+                name = project.name,
+                path = project.basePath ?: ""
+            )
+        }
+
+        return ListProjectsResponse(
+            projects = projects
         )
     }
-
-    return ListProjectsResponse(
-        projects = projects
-    )
 }
 
 @Serializable

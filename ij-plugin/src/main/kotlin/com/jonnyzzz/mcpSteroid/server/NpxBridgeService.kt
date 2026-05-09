@@ -73,7 +73,7 @@ class NpxBridgeService {
 
     suspend fun buildProjects(mcpUrl: String): NpxBridgeProjectsResponse {
         val seq = nextSeq()
-        val projects = collectListProjectsResponse()
+        val projects = service<ListProjectsToolHandlerIJ>().collectListProjectsResponse()
         return NpxBridgeProjectsResponse(
             projects = projects.projects,
             pid = projects.pid,
@@ -87,7 +87,7 @@ class NpxBridgeService {
 
     suspend fun buildWindows(mcpUrl: String): NpxBridgeWindowsResponse {
         val seq = nextSeq()
-        val windows = collectListWindowsResponse()
+        val windows = service<ListWindowsToolHandlerIJ>().collectListWindowsResponse()
         return NpxBridgeWindowsResponse(
             windows = windows.windows,
             backgroundTasks = windows.backgroundTasks,
@@ -103,8 +103,8 @@ class NpxBridgeService {
     suspend fun buildSummary(mcpUrl: String): NpxBridgeSummaryResponse {
         val seq = nextSeq()
         val metadata = buildMetadata(mcpUrl)
-        val projects = collectListProjectsResponse().projects
-        val windows = collectListWindowsResponse()
+        val projects = service<ListProjectsToolHandlerIJ>().collectListProjectsResponse().projects
+        val windows = service<ListWindowsToolHandlerIJ>().collectListWindowsResponse()
         return NpxBridgeSummaryResponse(
             metadata = metadata,
             projects = projects,
