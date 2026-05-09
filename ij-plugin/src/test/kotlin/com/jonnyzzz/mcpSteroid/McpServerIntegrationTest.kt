@@ -315,50 +315,6 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         assertTrue("Action groups should be empty when skipped", discovery.actionGroups.isEmpty())
     }
 
-    fun testExecuteCodeRejectsMissingPlugins(): Unit = timeoutRunBlocking(30.seconds) {
-        val server = SteroidsMcpServer.getInstance()
-        server.startServerIfNeeded()
-        val sessionId = startSession(server)
-
-        val execResponse = client.post(server.mcpUrl) {
-            contentType(ContentType.Application.Json)
-            accept(ContentType.Application.Json)
-            header(McpHttpTransport.SESSION_HEADER, sessionId)
-            setBody(
-                buildJsonObject {
-                    put("jsonrpc", "2.0")
-                    put("id", "execute-missing-plugin")
-                    put("method", "tools/call")
-                    putJsonObject("params") {
-                        put("name", "steroid_execute_code")
-                        putJsonObject("arguments") {
-                            put("project_name", project.name)
-                            put(
-                                "code",
-                                """
-                                    println("should not run")
-                                """.trimIndent()
-                            )
-                            put("reason", "Verify required_plugins gating")
-                            put("task_id", "integration-test-task-missing-plugin")
-                            putJsonArray("required_plugins") {
-                                add(JsonPrimitive("com.example.missing.plugin"))
-                            }
-                        }
-                    }
-                }.toString()
-            )
-        }
-
-        assertEquals(HttpStatusCode.OK, execResponse.status)
-        val execRpc = McpJson.decodeFromString<JsonRpcResponse>(execResponse.bodyAsText())
-        assertNull("steroid_execute_code should return result payload", execRpc.error)
-        val execResult = McpJson.decodeFromJsonElement<ToolCallResult>(execRpc.result!!)
-        val execOutput = execResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
-        assertTrue("Missing plugin request should be an error", execResult.isError)
-        assertTrue("Should mention missing plugin", execOutput.contains("Missing required plugins"))
-    }
-
     /**
      * Tests that the server responds correctly to GET requests with Claude CLI's Accept header.
      * Claude CLI sends "Accept: application/json, text/event-stream" for health checks.

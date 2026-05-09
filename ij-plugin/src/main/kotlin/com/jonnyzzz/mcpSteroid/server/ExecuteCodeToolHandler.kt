@@ -68,17 +68,6 @@ class ExecuteCodeToolHandler : McpTool {
                 put("type", "boolean")
                 put("description", "Override pre-execution dialog killer: true = force enable, false = force disable. Default: use registry setting (mcp.steroid.dialog.killer.enabled).")
             }
-            putJsonObject("required_plugins") {
-                put("type", "array")
-                putJsonObject("items") {
-                    put("type", "string")
-                }
-                put(
-                    "description",
-                    "Optional list of required plugin IDs (example: com.intellij.database). " +
-                        "Check installed plugins via steroid_execute_code with PluginManagerCore.getPluginSet().enabledPlugins."
-                )
-            }
         }
         putJsonArray("required") {
             add("project_name")
@@ -101,19 +90,6 @@ class ExecuteCodeToolHandler : McpTool {
         val reason = args["reason"]?.jsonPrimitive?.contentOrNull
         val timeout = args["timeout"]?.jsonPrimitive?.intOrNull ?: Registry.intValue("mcp.steroid.execution.timeout", 600)
         val dialogKiller = args["dialog_killer"]?.jsonPrimitive?.booleanOrNull
-        val requiredPlugins = args["required_plugins"]
-            ?.jsonArray
-            ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-            ?.filter { it.isNotBlank() }
-            ?: emptyList()
-
-        val missingPlugins = findMissingPlugins(requiredPlugins)
-        if (missingPlugins.isNotEmpty()) {
-            return errorResult(
-                "Missing required plugins: ${missingPlugins.joinToString(", ")}. " +
-                    "Check installed plugins via steroid_execute_code with PluginManagerCore.getPluginSet().enabledPlugins."
-            )
-        }
 
         val (project, availableNames) = readAction {
             val openProjects = getInstance().openProjects
@@ -156,16 +132,6 @@ class ExecuteCodeToolHandler : McpTool {
         content = listOf(ContentItem.Text(text = "ERROR: $message")),
         isError = true
     )
-
-    private fun findMissingPlugins(requiredPlugins: List<String>): List<String> {
-        if (requiredPlugins.isEmpty()) return emptyList()
-        return requiredPlugins.filter { pluginId ->
-            val resolvedId = PluginId.getId(pluginId)
-            val resolved = PluginManagerCore.getPlugin(resolvedId)
-            resolved == null || !PluginManagerCore.isLoaded(resolvedId)
-        }
-    }
-
 }
 
 internal object ExecuteCodeBuildAbortGuidance {
