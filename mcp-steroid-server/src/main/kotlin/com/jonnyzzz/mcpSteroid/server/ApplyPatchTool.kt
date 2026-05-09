@@ -1,7 +1,5 @@
 package com.jonnyzzz.mcpSteroid.server
 
-import com.jonnyzzz.mcpSteroid.execution.ApplyPatchHunk
-import com.jonnyzzz.mcpSteroid.execution.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
@@ -10,6 +8,7 @@ import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ApplyPatchToolDescriptionPromptArticle
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -21,6 +20,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+
+@Serializable
+data class ApplyPatchRequest(val hunks: List<ApplyPatchHunk>)
+
+@Serializable
+data class ApplyPatchHunk(val filePath: String, val oldString: String, val newString: String)
 
 /**
  * First-class MCP tool for atomic multi-site literal-text patching.

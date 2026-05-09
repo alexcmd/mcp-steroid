@@ -4,6 +4,8 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable

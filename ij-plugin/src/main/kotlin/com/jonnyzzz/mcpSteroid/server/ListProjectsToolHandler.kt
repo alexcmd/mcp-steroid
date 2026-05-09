@@ -4,6 +4,8 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.ProjectManager
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PluginInfo
 
 @Service(Service.Level.APP)
 class ListProjectsToolHandlerIJ : ListProjectsToolHandler {

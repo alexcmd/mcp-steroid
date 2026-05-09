@@ -1,4 +1,4 @@
-package com.jonnyzzz.mcpSteroid.server
+package com.jonnyzzz.mcpSteroid
 
 import kotlinx.serialization.Serializable
 

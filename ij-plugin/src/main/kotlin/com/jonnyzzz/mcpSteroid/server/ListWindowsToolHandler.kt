@@ -12,6 +12,8 @@ import com.intellij.openapi.progress.TaskInfo
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.ex.StatusBarEx
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.execution.dialogWindowsLookup
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
 import java.awt.Frame

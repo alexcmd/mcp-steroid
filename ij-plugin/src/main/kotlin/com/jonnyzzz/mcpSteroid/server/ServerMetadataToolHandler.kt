@@ -3,6 +3,8 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.util.SystemInfoRt
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import kotlinx.serialization.Serializable
 import java.nio.file.Files
 import java.nio.file.Path

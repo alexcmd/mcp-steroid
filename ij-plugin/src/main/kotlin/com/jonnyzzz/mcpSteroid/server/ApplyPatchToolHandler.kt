@@ -8,7 +8,6 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.jonnyzzz.mcpSteroid.execution.ApplyPatchException
-import com.jonnyzzz.mcpSteroid.execution.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.execution.McpEditingGuardException
 import com.jonnyzzz.mcpSteroid.execution.executeApplyPatch
 import com.jonnyzzz.mcpSteroid.execution.mcpEditingGuard

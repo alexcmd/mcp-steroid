@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.ApplicationInfo
+import com.jonnyzzz.mcpSteroid.IdeInfo
 
 fun IdeInfo.Companion.ofApplication(): IdeInfo {
     val appInfo = ApplicationInfo.getInstance()
