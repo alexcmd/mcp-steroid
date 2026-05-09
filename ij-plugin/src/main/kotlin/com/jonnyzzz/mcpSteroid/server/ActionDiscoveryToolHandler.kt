@@ -10,7 +10,6 @@ import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.impl.DocumentMarkupModel
@@ -101,7 +100,6 @@ data class GutterIconInfo(
 )
 
 
-@Service(Service.Level.APP)
 class ActionDiscoveryToolHandlerIJ : ActionDiscoveryToolHandler {
     private val json = Json { encodeDefaults = true }
 

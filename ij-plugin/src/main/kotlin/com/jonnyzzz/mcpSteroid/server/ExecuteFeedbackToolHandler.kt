@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -15,7 +14,6 @@ import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.serialization.json.*
 
 
-@Service(Service.Level.APP)
 class ExecuteFeedbackToolHandlerIJ: ExecuteFeedbackToolHandler {
     private val log = thisLogger()
     private val json = Json {

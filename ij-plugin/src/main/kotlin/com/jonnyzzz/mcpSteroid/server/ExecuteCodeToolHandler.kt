@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.jonnyzzz.mcpSteroid.execution.ExecutionManager
@@ -16,7 +15,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 
-@Service(Service.Level.APP)
 class ExecuteCodeToolHandlerIJ : ExecuteCodeToolHandler {
     override suspend fun executeCode(
         projectName: String,

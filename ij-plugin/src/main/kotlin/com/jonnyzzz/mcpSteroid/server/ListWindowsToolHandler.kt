@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressModel
@@ -21,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.swing.SwingUtilities
 
-@Service(Service.Level.APP)
 class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
     private val log = logger<ListWindowsToolHandler>()
 

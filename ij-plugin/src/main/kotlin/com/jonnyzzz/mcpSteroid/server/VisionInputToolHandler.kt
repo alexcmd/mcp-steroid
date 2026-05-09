@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
@@ -13,7 +12,6 @@ import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.serialization.json.*
 
-@Service(Service.Level.APP)
 class VisionInputToolHandlerIJ : VisionInputToolHandler {
     private val log = thisLogger()
     private val json = Json { ignoreUnknownKeys = true }

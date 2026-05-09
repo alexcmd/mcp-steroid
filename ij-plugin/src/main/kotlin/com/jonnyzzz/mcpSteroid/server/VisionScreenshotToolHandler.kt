@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
@@ -14,7 +13,6 @@ import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.serialization.json.*
 import java.util.*
 
-@Service(Service.Level.APP)
 class VisionScreenshotToolHandlerIJ : VisionScreenshotToolHandler {
     private val log = thisLogger()
     private val json = Json { encodeDefaults = true }

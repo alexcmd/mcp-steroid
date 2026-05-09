@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.ide.GeneralSettings
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
@@ -16,7 +15,6 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
 
-@Service(Service.Level.APP)
 class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
     private val logger = thisLogger()
 

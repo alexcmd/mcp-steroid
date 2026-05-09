@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
@@ -17,7 +16,6 @@ import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.mcp.successTextResult
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 
-@Service(Service.Level.APP)
 class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
     private val log = thisLogger()
 
