@@ -23,6 +23,13 @@ later but not in scope here.
 - [ ] com.jonnyzzz.mcpSteroid.thisLogger should be internal to avoid usage from IntelliJ plugin code
 - [ ] `withTimeoutOrNull(5_000L) { Observation.awaitConfiguration(project) }` -- no need for timeout around patch application handler 
 - [ ] `CLAUDE_FETCH_RESOURCE_TOOL = "mcp__mcp-steroid__steroid_fetch_resource"` the incorrect named entities, use Spec to refer to them
+- [ ] project name to project resolution and error handling
+- [ ] process cancelled exception must be handled in the HTTP server level
+- [ ] review TODO-APPLY-PATCH.md records
+- [ ] deprecate ActionDiscoveryToolHandler
+- [ ] VisionService -> IntelliJ Service 
+- [ ] OpenProject does not log to execution service
+
 
 # TASKS
 
