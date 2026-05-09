@@ -21,15 +21,15 @@ later but not in scope here.
 - [ ] add assert that mcp-core coroutines library is the same as in IntelliJ
 - [ ] add check that slf4j works in IntelliJ and logs are not lost
 - [ ] com.jonnyzzz.mcpSteroid.thisLogger should be internal to avoid usage from IntelliJ plugin code
-- [ ] `withTimeoutOrNull(5_000L) { Observation.awaitConfiguration(project) }` -- no need for timeout around patch application handler 
+- [ ] `withTimeoutOrNull(5_000L) { Observation.awaitConfiguration(project) }` -- no need for timeout around patch application handler
 - [ ] `CLAUDE_FETCH_RESOURCE_TOOL = "mcp__mcp-steroid__steroid_fetch_resource"` the incorrect named entities, use Spec to refer to them
 - [ ] project name to project resolution and error handling
 - [ ] process cancelled exception must be handled in the HTTP server level
 - [ ] review TODO-APPLY-PATCH.md records
 - [ ] deprecate ActionDiscoveryToolHandler
-- [ ] VisionService -> IntelliJ Service 
+- [ ] VisionService -> IntelliJ Service
 - [ ] OpenProject does not log to execution service
-
+- [ ] include `--scope user` to Claude default configuration suggestion
 
 # TASKS
 
