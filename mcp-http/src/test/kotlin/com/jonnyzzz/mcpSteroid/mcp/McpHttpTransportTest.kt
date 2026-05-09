@@ -22,7 +22,6 @@ import java.net.ServerSocket
  * Integration tests for McpHttpTransport.
  * Tests the full HTTP transport layer with a Ktor server.
  */
-@Suppress("GrazieInspection", "GrazieInspectionRunner", "UastIncorrectHttpHeaderInspection")
 class McpHttpTransportTest {
     private lateinit var server: EmbeddedServer<*, *>
     private lateinit var mcpServer: McpServerCore
@@ -357,7 +356,7 @@ class McpHttpTransportTest {
 
     @Test
     fun `test DELETE terminates session`() = runBlocking {
-        // First create a session by sending an initialization request.
+        // First, create a session by sending an initialization request.
         val initRequest = buildJsonObject {
             put("jsonrpc", "2.0")
             put("id", 1)
@@ -1048,6 +1047,7 @@ class McpHttpTransportTest {
         assertEquals(HttpStatusCode.NoContent, response.status)
 
         // Check CORS headers expose MCP-Protocol-Version
+        @Suppress("UastIncorrectHttpHeaderInspection")
         val exposeHeaders = response.headers["Access-Control-Expose-Headers"]
         assertNotNull(exposeHeaders, "Should have Access-Control-Expose-Headers")
         assertTrue(
