@@ -35,7 +35,7 @@ data class ExecCodeParams(
 /**
  * Handler for the steroid_execute_code MCP tool.
  */
-class ExecuteCodeToolSpec(val handler: ExecuteCodeToolHandler) : McpTool {
+class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpTool {
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
     override val inputSchema = buildJsonObject {
@@ -108,7 +108,7 @@ class ExecuteCodeToolSpec(val handler: ExecuteCodeToolHandler) : McpTool {
             dialogKiller = dialogKiller,
         )
 
-        return handler.executeCode(projectName, execCodeParams, context.mcpProgressReporter)
+        return handler().executeCode(projectName, execCodeParams, context.mcpProgressReporter)
     }
 }
 

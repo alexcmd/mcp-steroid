@@ -23,11 +23,13 @@ import org.junit.jupiter.api.Test
 class ExecuteFeedbackToolHandlerTest {
     private fun validate(args: JsonObject): String? {
         val result = runBlocking {
-            ExecuteFeedbackToolSpec(object : ExecuteFeedbackToolHandler {
-                override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
-                    return ToolCallResult.successTextResult("Success")
+            ExecuteFeedbackToolSpec {
+                object : ExecuteFeedbackToolHandler {
+                    override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
+                        return ToolCallResult.successTextResult("Success")
+                    }
                 }
-            }).handle(args)
+            }.handle(args)
         }
 
         return if (result.isError) {

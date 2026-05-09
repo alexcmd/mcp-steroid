@@ -19,7 +19,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_input MCP tool.
  */
-class VisionInputToolSpec(val handler: VisionInputToolHandler) : McpTool {
+class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpTool {
     override val name = "steroid_input"
 
     override val description = """
@@ -96,7 +96,7 @@ class VisionInputToolSpec(val handler: VisionInputToolHandler) : McpTool {
             throw IllegalArgumentException("Unsupported target in sequence. Only screenshot/screen targets are supported.")
         }
 
-        return handler.handleInputSequence(projectName, InputParams(
+        return handler().handleInputSequence(projectName, InputParams(
             taskId = taskId,
             reason = reason,
             screenshotExecutionId = screenshotExecutionId,

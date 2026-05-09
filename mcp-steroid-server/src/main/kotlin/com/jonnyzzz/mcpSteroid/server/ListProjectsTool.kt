@@ -16,7 +16,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_list_projects MCP tool.
  */
-class ListProjectsToolSpec(val handler: ListProjectsToolHandler) : McpTool {
+class ListProjectsToolSpec(val handler: () -> ListProjectsToolHandler) : McpTool {
     override val name = "steroid_list_projects"
     override val description = "List all open projects in the IDE. Returns project names that can be used with steroid_execute_code and steroid_open_project."
     override val inputSchema = buildJsonObject {
@@ -26,7 +26,7 @@ class ListProjectsToolSpec(val handler: ListProjectsToolHandler) : McpTool {
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val response = handler.collectListProjectsResponse()
+        val response = handler().collectListProjectsResponse()
         val json = McpJson.encodeToString(response)
 
         return ToolCallResult(

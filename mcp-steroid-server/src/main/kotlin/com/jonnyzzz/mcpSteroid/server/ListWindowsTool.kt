@@ -16,7 +16,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_list_windows MCP tool.
  */
-class ListWindowsToolSpec(val handler: ListWindowsToolHandler) : McpTool {
+class ListWindowsToolSpec(val handler: () -> ListWindowsToolHandler) : McpTool {
     override val name = "steroid_list_windows"
     override val description = "List open IDE windows and their associated projects. Use this to choose project_name for screenshot/input tools in multi-window setups."
     override val inputSchema = buildJsonObject {
@@ -26,7 +26,7 @@ class ListWindowsToolSpec(val handler: ListWindowsToolHandler) : McpTool {
     }
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val response = handler.collectListWindowsResponse()
+        val response = handler().collectListWindowsResponse()
         val json = McpJson.encodeToString(response)
         return ToolCallResult(
             content = listOf(ContentItem.Text(text = json))

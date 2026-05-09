@@ -19,7 +19,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_action_discovery MCP tool.
  */
-class ActionDiscoveryToolSpec(val handler: ActionDiscoveryToolHandler) : McpTool {
+class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : McpTool {
     override val name = "steroid_action_discovery"
 
     override val description =
@@ -74,7 +74,7 @@ class ActionDiscoveryToolSpec(val handler: ActionDiscoveryToolHandler) : McpTool
         val maxActions = args["max_actions_per_group"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 200
         val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
 
-        return handler.discoverActions(
+        return handler().discoverActions(
             projectName,
             ActionDiscoveryParams(
                 filePath = filePath,

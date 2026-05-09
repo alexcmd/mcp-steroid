@@ -17,15 +17,15 @@ class McpToolRegistrations {
         val resources = server.resourceRegistry
         val prompts = server.promptRegistry
 
-        tools.registerTool(ListProjectsToolSpec(service<ListProjectsToolHandler>()))
-        tools.registerTool(ListWindowsToolSpec(service<ListWindowsToolHandler>()))
-        tools.registerTool(ExecuteCodeToolSpec(service<ExecuteCodeToolHandler>()))
-        tools.registerTool(ApplyPatchToolSpec(service<ApplyPatchToolHandler>()))
-        tools.registerTool(ExecuteFeedbackToolSpec(service<ExecuteFeedbackToolHandler>()))
-        tools.registerTool(ActionDiscoveryToolSpec(service<ActionDiscoveryToolHandler>())) // deprecate it
-        tools.registerTool(VisionScreenshotToolSpec(service<VisionScreenshotToolHandler>()))
-        tools.registerTool(VisionInputToolSpec(service<VisionInputToolHandler>()))
-        tools.registerTool(OpenProjectToolSpec(service<OpenProjectToolHandler>()))
+        tools.registerTool(ListProjectsToolSpec { service<ListProjectsToolHandler>() })
+        tools.registerTool(ListWindowsToolSpec { service<ListWindowsToolHandler>() })
+        tools.registerTool(ExecuteCodeToolSpec { service<ExecuteCodeToolHandler>() })
+        tools.registerTool(ApplyPatchToolSpec { service<ApplyPatchToolHandler>() })
+        tools.registerTool(ExecuteFeedbackToolSpec { service<ExecuteFeedbackToolHandler>() })
+        tools.registerTool(ActionDiscoveryToolSpec { service<ActionDiscoveryToolHandler>() }) // deprecate it
+        tools.registerTool(VisionScreenshotToolSpec { service<VisionScreenshotToolHandler>() })
+        tools.registerTool(VisionInputToolSpec { service<VisionInputToolHandler>() })
+        tools.registerTool(OpenProjectToolSpec { service<OpenProjectToolHandler>() })
 
 
         tools.registerTool(FetchResourceToolHandler(resources))

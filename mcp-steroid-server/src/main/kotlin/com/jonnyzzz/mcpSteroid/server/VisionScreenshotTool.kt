@@ -16,7 +16,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Handler for the steroid_take_screenshot MCP tool.
  */
-class VisionScreenshotToolSpec(val handler: VisionScreenshotToolHandler) : McpTool {
+class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) : McpTool {
     override val name = "steroid_take_screenshot"
 
     override val description = """
@@ -72,7 +72,7 @@ class VisionScreenshotToolSpec(val handler: VisionScreenshotToolHandler) : McpTo
             ?: return ToolCallResult.errorResult("Missing required parameter: reason")
         val windowId = args["window_id"]?.jsonPrimitive?.contentOrNull
 
-        return handler.screenshotWindow(projectName, ScreenshotParams(taskId, reason, windowId), context.mcpProgressReporter)
+        return handler().screenshotWindow(projectName, ScreenshotParams(taskId, reason, windowId), context.mcpProgressReporter)
     }
 }
 

@@ -30,7 +30,7 @@ import kotlinx.serialization.json.putJsonObject
  * The tool can optionally trust the project path before opening, which allows skipping
  * the trust dialog.
  */
-class OpenProjectToolSpec(val handler: OpenProjectToolHandler) : McpTool {
+class OpenProjectToolSpec(val handler: () -> OpenProjectToolHandler) : McpTool {
     private val logger = thisLogger()
 
     override val name = "steroid_open_project"
@@ -114,7 +114,7 @@ class OpenProjectToolSpec(val handler: OpenProjectToolHandler) : McpTool {
             return ToolCallResult.errorResult("Failed to resolve project path: $requestedProjectPath - ${e.message}")
         }
 
-        return handler.handleOpenProject(
+        return handler().handleOpenProject(
             OpenProjectParams(
                 projectPath = projectPath.toString(),
                 trustProject = trustProject,

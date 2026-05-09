@@ -53,7 +53,7 @@ data class ApplyPatchHunk(val filePath: String, val oldString: String, val newSt
  * all edits land as a single undoable [WriteCommandAction], PSI committed in
  * the same action, VFS async-refreshed on completion.
  */
-class ApplyPatchToolSpec(val handler: ApplyPatchToolHandler) : McpTool {
+class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
     override val name = "steroid_apply_patch"
     override val description get() = ApplyPatchToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
     override val inputSchema = buildJsonObject {
@@ -151,7 +151,7 @@ class ApplyPatchToolSpec(val handler: ApplyPatchToolHandler) : McpTool {
             ApplyPatchHunk(filePath = filePath, oldString = oldString, newString = newString)
         }
 
-        return handler.applyPatch(projectName, ApplyPatchRequest(hunks))
+        return handler().applyPatch(projectName, ApplyPatchRequest(hunks))
     }
 }
 

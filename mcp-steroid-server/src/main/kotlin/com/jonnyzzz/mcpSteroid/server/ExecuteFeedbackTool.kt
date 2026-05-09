@@ -23,7 +23,7 @@ import kotlinx.serialization.json.putJsonObject
  * - Explanation of the rating
  * - Association with a task_id
  */
-class ExecuteFeedbackToolSpec(val handler: ExecuteFeedbackToolHandler) : McpTool {
+class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : McpTool {
     override val name = "steroid_execute_feedback"
     override val description = """
             Provide feedback on the result of a steroid_execute_code call and suggestions to improve the service.
@@ -121,7 +121,7 @@ class ExecuteFeedbackToolSpec(val handler: ExecuteFeedbackToolHandler) : McpTool
             code = code
         )
 
-        return handler.handleFeedback(projectName, params)
+        return handler().handleFeedback(projectName, params)
     }
 }
 
