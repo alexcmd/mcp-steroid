@@ -137,7 +137,8 @@ class McpServerCore(
         if (error != null) {
             val rpcError = try {
                 McpJson.decodeFromJsonElement<JsonRpcError>(error)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                log.warn("Failed to decode incoming JSON-RPC error response", e)
                 JsonRpcError(code = -1, message = "Unknown error")
             }
             session.handleErrorResponse(idString, rpcError)
@@ -172,13 +173,9 @@ class McpServerCore(
     }
 
     private fun handleNotification(method: String) {
+        // Notifications never produce a response per JSON-RPC §4.1; we just record them.
+        // Per-method handlers can be added here when they need to do work.
         log.info("Client notification: $method")
-        when (method) {
-            McpMethods.INITIALIZED -> {
-                // Client confirmed initialization - nothing special needed
-            }
-            // Handle other notifications as needed
-        }
     }
 
     private fun handleInitialize(id: JsonElement, params: JsonObject?, session: McpSession): String {

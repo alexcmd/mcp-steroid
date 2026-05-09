@@ -52,7 +52,6 @@ object JsonRpcErrorCodes {
     const val INVALID_REQUEST = -32600
     const val METHOD_NOT_FOUND = -32601
     const val INVALID_PARAMS = -32602
-    @Suppress("unused")
     const val INTERNAL_ERROR = -32603
 
     /**

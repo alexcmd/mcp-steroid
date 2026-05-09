@@ -60,10 +60,6 @@ class McpStdioServerProtocolTest {
             inputBytes.write(encodeNdjsonMessage(jsonStr).toByteArray(Charsets.UTF_8))
         }
 
-        fun sendRaw(bytes: ByteArray) {
-            inputBytes.write(bytes)
-        }
-
         suspend fun runRaw(): ByteArray {
             val outputBuffer = ByteArrayOutputStream()
             val input = ByteArrayInputStream(inputBytes.toByteArray())
@@ -258,13 +254,15 @@ class McpStdioServerProtocolTest {
     }
 
     @Test
-    fun `initialize without params returns invalid params error`() = runTest {
+    fun `initialize without params returns a valid response without crashing`() = runTest {
+        // Current behaviour: missing params is tolerated as an empty initialize, the
+        // server still emits an InitializeResult. The test pins this lenient choice;
+        // tightening to -32602 (per spec) would be a separate decision.
         val h = StdioHarness()
         h.sendFramed(reqNoParams("1", "initialize"))
         val resp = h.runAndGetObjects()[0]
-        // No params is acceptable per current implementation (treated as empty),
-        // but the result must still be a valid response, not a hang/crash.
-        assertTrue(resp["result"] != null || resp["error"] != null)
+        assertNotNull(resp["result"])
+        assertNull(resp["error"])
     }
 
     // =========================================================================
@@ -336,7 +334,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(req("1", "no/such/method"))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32601, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.METHOD_NOT_FOUND, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -368,7 +366,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1"}""")
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
     }
 
     // =========================================================================
@@ -380,7 +378,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":""")
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32700, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -388,7 +386,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"id": "1", "method": "ping" """)
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32700, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -414,7 +412,7 @@ class McpStdioServerProtocolTest {
         // "42" is valid JSON but not an object/array
         h.sendFramed("42")
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
     }
 
     // =========================================================================
@@ -560,7 +558,7 @@ class McpStdioServerProtocolTest {
         h.sendFramed(req("1", "tools/call", """{"arguments":{}}"""))
         val resp = h.runAndGetObjects()[0]
         val error = resp["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
         assertEquals("1", resp["id"]?.jsonPrimitive?.content, "id must be echoed even on protocol error")
     }
 
@@ -569,7 +567,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(reqNoParams("1", "tools/call"))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -632,7 +630,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(req("1", "resources/read", """{}"""))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -642,7 +640,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(req("1", "resources/read", """{"uri":"test://nonexistent"}"""))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32002, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.RESOURCE_NOT_FOUND, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -650,7 +648,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(reqNoParams("1", "resources/read"))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
     }
 
     // =========================================================================
@@ -692,7 +690,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(req("1", "prompts/get", """{"name":"unknown_prompt"}"""))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -700,7 +698,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed(reqNoParams("1", "prompts/get"))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
     }
 
     // =========================================================================
@@ -978,19 +976,23 @@ class McpStdioServerProtocolTest {
 
     @Test
     fun `framed message split across multiple bytes is reassembled`() = runTest {
-        // Build a single Content-Length frame, then feed it byte-by-byte.
+        // Build a single Content-Length frame, then feed it byte-by-byte. The reader
+        // calls `read(buf, off, len)` on an 8KB buffer, so we override **that** method
+        // (returning 1) — overriding the no-arg `read()` would leave the bulk-read path
+        // backed by the default impl, which doesn't honour our pacing.
         val payload = req("1", "ping")
         val framed = encodeFramedMessage(payload)
         val bytes = framed.toByteArray(Charsets.UTF_8)
         val outputBuffer = ByteArrayOutputStream()
         val server = StdioHarness.newServer()
-        // ByteArrayInputStream returns one byte at a time when read(buf) is called
-        // with a 1-byte buf — but our reader uses an 8KB buf, so all bytes arrive in
-        // one chunk. To genuinely stress the streaming path we wrap in an
-        // InputStream that returns one byte per read() call.
         val driblet = object : java.io.InputStream() {
             var pos = 0
             override fun read(): Int = if (pos >= bytes.size) -1 else (bytes[pos++].toInt() and 0xff)
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (pos >= bytes.size) return -1
+                b[off] = bytes[pos++]
+                return 1
+            }
         }
         McpStdioServer(server, driblet, outputBuffer).run()
 
@@ -1137,7 +1139,7 @@ class McpStdioServerProtocolTest {
         val elements = h.runAndGetElements()
         assertEquals(1, elements.size)
         val resp = elements[0] as JsonObject
-        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
         assertEquals("null", resp["id"].toString())
     }
 
@@ -1183,7 +1185,7 @@ class McpStdioServerProtocolTest {
         val responses = h.runAndGetObjects()
         assertEquals(2, responses.size, "Server must keep reading after parse error")
         // First is the parse error (-32700), second is the ping response.
-        assertEquals(-32700, (responses[0]["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.PARSE_ERROR, (responses[0]["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
         assertEquals("after", responses[1]["id"]?.jsonPrimitive?.content)
         assertNull(responses[1]["error"])
     }
@@ -1270,7 +1272,7 @@ class McpStdioServerProtocolTest {
         h.sendFramed("""{"id":"1","method":"ping"}""")
         val resp = h.runAndGetObjects()[0]
         val error = resp["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -1278,7 +1280,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"1.0","id":"1","method":"ping"}""")
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -1286,7 +1288,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":2.0,"id":"1","method":"ping"}""")
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -1296,7 +1298,7 @@ class McpStdioServerProtocolTest {
         h.sendFramed("""{"jsonrpc":"2.0","id":true,"method":"ping"}""")
         val resp = h.runAndGetObjects()[0]
         val error = resp["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
         assertEquals("null", resp["id"].toString(),
             "Server cannot trust a structurally-invalid id, so the response id MUST be null")
     }
@@ -1306,7 +1308,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":{"x":1},"method":"ping"}""")
         val resp = h.runAndGetObjects()[0]
-        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
         assertEquals("null", resp["id"].toString())
     }
 
@@ -1315,7 +1317,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":[1,2],"method":"ping"}""")
         val resp = h.runAndGetObjects()[0]
-        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
         assertEquals("null", resp["id"].toString())
     }
 
@@ -1325,7 +1327,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":true}""")
         val resp = h.runAndGetObjects()[0]
-        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
         assertEquals("1", resp["id"]?.jsonPrimitive?.content)
     }
 
@@ -1334,7 +1336,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":42}""")
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -1344,7 +1346,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":"ping","params":[1,2]}""")
         val resp = h.runAndGetObjects()[0]
-        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -1352,7 +1354,7 @@ class McpStdioServerProtocolTest {
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":"ping","params":42}""")
         val resp = h.runAndGetObjects()[0]
-        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
     }
 
     @Test

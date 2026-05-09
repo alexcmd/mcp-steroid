@@ -19,7 +19,7 @@ import kotlin.coroutines.coroutineContext
 /**
  * Generic MCP stdio transport.
  *
- * Mirrors [McpHttpTransport][com.jonnyzzz.mcpSteroid.mcp] for HTTP: it reads framed
+ * Mirrors [McpHttpTransport][com.jonnyzzz.mcpSteroid.mcp.McpHttpTransport] for HTTP: it reads framed
  * (or NDJSON) JSON-RPC messages from [input], dispatches each through an
  * [McpServerCore], and writes responses to [output] using the same framing the peer
  * is using. Server-initiated notifications and server-to-client requests (e.g.
@@ -147,7 +147,7 @@ class McpStdioServer(
      */
     private suspend fun writeFrame(text: String) {
         val frame = when (outputMode) {
-            "ndjson" -> encodeNdjsonMessage(text)
+            FrameMode.NDJSON -> encodeNdjsonMessage(text)
             else -> encodeFramedMessage(text)
         }
         val bytes = frame.toByteArray(Charsets.UTF_8)
@@ -171,3 +171,14 @@ class McpStdioServer(
         private const val READ_BUFFER_SIZE = 8192
     }
 }
+
+/**
+ * Wire-level framing mode. Values match the [FrameResult.mode] strings produced by
+ * [FramingBuffer] so we can compare on identity (and dodge the stringly-typed pitfall
+ * of `if (outputMode == "ndjson")` typos).
+ */
+internal object FrameMode {
+    const val NDJSON = "ndjson"
+    const val FRAMED = "framed"
+}
+
