@@ -10,6 +10,7 @@ import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlin.time.Duration.Companion.seconds
 
@@ -84,7 +85,7 @@ class ScriptExecutor(
                     val killerJob: Job? = if (exec.cancelOnModal) {
                         launch(CoroutineName("execution-dialog-killer-$executionId")) {
                             while (isActive) {
-                                delay(KILLER_POLL_INTERVAL_MS)
+                                delay(KILLER_POLL_INTERVAL_MS.milliseconds)
                                 try {
                                     dialogKiller().killProjectDialogs(
                                         project = project,
