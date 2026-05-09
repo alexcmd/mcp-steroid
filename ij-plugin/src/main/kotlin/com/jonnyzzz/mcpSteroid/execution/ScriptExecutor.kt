@@ -103,7 +103,6 @@ class ScriptExecutor(
 
                     val context = McpScriptContextImpl(
                         project = project,
-                        params = exec.rawParams,
                         executionId = executionId,
                         disposable = executionDisposable,
                         resultBuilder = resultBuilder,
