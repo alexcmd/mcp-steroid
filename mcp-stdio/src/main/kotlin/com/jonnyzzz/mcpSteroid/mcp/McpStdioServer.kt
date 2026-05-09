@@ -6,6 +6,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
@@ -18,7 +19,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
-import kotlin.coroutines.coroutineContext
 
 /**
  * Generic MCP stdio transport.
@@ -109,7 +109,7 @@ class McpStdioServer(
     private suspend fun readLoop(scope: CoroutineScope, session: McpSession) {
         val buffer = FramingBuffer()
         val buf = ByteArray(READ_BUFFER_SIZE)
-        while (coroutineContext.isActive) {
+        while (currentCoroutineContext().isActive) {
             val n = readChunk(buf)
             if (n < 0) break          // EOF
             if (n == 0) continue       // 0-byte read is unusual for blocking InputStream; defend against it

@@ -1,8 +1,14 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.mcp
 
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -761,16 +767,17 @@ class McpStdioServerProtocolTest {
     // =========================================================================
 
     @Test
-    fun `three sequential pings return three responses`() = runTest {
+    fun `three sequential pings return three responses with matching ids`() = runTest {
+        // Non-initialize dispatch is concurrent (commit 584143ba), so wire-order is
+        // not guaranteed even for fast handlers. Assert by id-set instead.
         val h = StdioHarness()
         h.sendFramed(req("1", "ping"))
         h.sendFramed(req("2", "ping"))
         h.sendFramed(req("3", "ping"))
         val responses = h.runAndGetObjects()
         assertEquals(3, responses.size)
-        assertEquals("1", responses[0]["id"]?.jsonPrimitive?.content)
-        assertEquals("2", responses[1]["id"]?.jsonPrimitive?.content)
-        assertEquals("3", responses[2]["id"]?.jsonPrimitive?.content)
+        val ids = responses.mapNotNull { it["id"]?.jsonPrimitive?.content }.toSet()
+        assertEquals(setOf("1", "2", "3"), ids)
     }
 
     @Test
@@ -1235,15 +1242,19 @@ class McpStdioServerProtocolTest {
     @Test
     fun `ids from interleaved string and numeric requests are not swapped`() = runTest {
         // Bidirectional id type tracking — a server keying by `id.toString()` would alias these.
+        // Wire-order isn't guaranteed under concurrent dispatch (commit 584143ba), so we
+        // identify each response by its id type, not its position in the output stream.
         val h = StdioHarness()
         h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":"ping"}""")
         h.sendFramed("""{"jsonrpc":"2.0","id":1,"method":"ping"}""")
         val responses = h.runAndGetObjects()
         assertEquals(2, responses.size)
-        // First response must echo string "1"
-        assertEquals("1", responses[0]["id"]?.jsonPrimitive?.content)
-        // Second response must echo numeric 1 (jsonPrimitive.int succeeds)
-        assertEquals(1, responses[1]["id"]?.jsonPrimitive?.int)
+        val stringResp = responses.firstOrNull { it["id"]?.jsonPrimitive?.isString == true }
+        val numericResp = responses.firstOrNull { it["id"]?.jsonPrimitive?.isString == false }
+        assertNotNull(stringResp, "Must have one response with a string id")
+        assertNotNull(numericResp, "Must have one response with a numeric id")
+        assertEquals("1", stringResp!!["id"]?.jsonPrimitive?.content)
+        assertEquals(1, numericResp!!["id"]?.jsonPrimitive?.int)
     }
 
     // ---- Tool-call concurrency ---------------------------------------------
@@ -1422,7 +1433,7 @@ class McpStdioServerProtocolTest {
                 val r = context.session.sendRequest(
                     method = "sampling/createMessage",
                     params = buildJsonObject { put("messages", buildJsonArray { }) },
-                    timeout = kotlin.time.Duration.parse("PT60S")
+                    timeout = 60.seconds
                 )
                 return ToolCallResult(content = listOf(ContentItem.Text(text = r?.toString() ?: "null")))
             }
@@ -1436,7 +1447,7 @@ class McpStdioServerProtocolTest {
         val started = System.currentTimeMillis()
         // No virtual-time tricks; runTest+Dispatchers.IO is real wall time. If this
         // test takes anywhere near 60s the cancel path is broken.
-        kotlinx.coroutines.runBlocking {
+        runBlocking {
             McpStdioServer(server, ByteArrayInputStream(inputBytes), outputBuffer).run()
         }
         val elapsed = System.currentTimeMillis() - started
@@ -1470,7 +1481,7 @@ class McpStdioServerProtocolTest {
         val inputBytes = combined.toByteArray(Charsets.UTF_8)
 
         val outputBuffer = ByteArrayOutputStream()
-        kotlinx.coroutines.runBlocking {
+        runBlocking {
             McpStdioServer(server, ByteArrayInputStream(inputBytes), outputBuffer).run()
         }
 
@@ -1493,24 +1504,24 @@ class McpStdioServerProtocolTest {
         // Round-4 finding: outgoing pumps started before the first inbound frame would
         // default to Content-Length, corrupting a spec-only NDJSON peer. Default is
         // now NDJSON to match the MCP 2025-11-25 stdio transport spec.
+        //
+        // Round-6 fix: hold stdin open via a piped stream so we don't EOF before the
+        // pump has had a chance to write the notification. We close the pipe only AFTER
+        // we've had time to write, so the assertion is deterministic — empty output
+        // here would be a real bug, not a race.
         val server = McpServerCore(
             serverInfo = ServerInfo(name = "early-notify", version = "1.0"),
             capabilities = ServerCapabilities()
         )
 
-        // No input → no inbound frame → outputMode never set by the reader.
-        // We trigger an outgoing notification programmatically before the read loop
-        // would have anything to detect from. We do this by giving the server a
-        // session-aware tool that emits a notification, but to keep the wire empty
-        // we simply… don't send a request. Use a small wrapper that runs run() with
-        // an empty input but enqueues a notification on its session manually via
-        // the SessionManager's freshly-created session.
+        val piped = PipedOutputStream()
+        val pipedIn = PipedInputStream(piped, 1024)
         val outputBuffer = ByteArrayOutputStream()
-        kotlinx.coroutines.runBlocking<Unit> {
-            kotlinx.coroutines.coroutineScope {
-                val emitJob = launch {
+        runBlocking<Unit> {
+            coroutineScope {
+                launch {
                     while (server.sessionManager.getSessionCount() == 0) {
-                        kotlinx.coroutines.delay(5)
+                        delay(5)
                     }
                     val session = server.sessionManager.getAllSessions().single()
                     session.sendNotification(
@@ -1519,21 +1530,19 @@ class McpStdioServerProtocolTest {
                             params = buildJsonObject { put("when", "before-input") }
                         )
                     )
-                    kotlinx.coroutines.delay(50)
+                    // Give the pump time to drain before we EOF the read side.
+                    delay(100)
+                    piped.close()
                 }
-                McpStdioServer(server, ByteArrayInputStream(ByteArray(0)), outputBuffer).run()
-                emitJob.cancel()
+                McpStdioServer(server, pipedIn, outputBuffer).run()
             }
         }
 
         val raw = outputBuffer.toByteArray().toString(Charsets.UTF_8)
-        // Output should be NDJSON (no Content-Length header) — empty if the test
-        // raced (notification got dropped because session closed faster than the pump),
-        // but if anything was written it MUST be NDJSON.
-        if (raw.isNotEmpty()) {
-            assertFalse(raw.contains("Content-Length:"),
-                "Pre-input notifications must use NDJSON framing per MCP 2025-11-25, got: $raw")
-        }
+        assertTrue(raw.isNotEmpty(), "Pump must have written the notification before EOF")
+        assertFalse(raw.contains("Content-Length:"),
+            "Pre-input notifications must use NDJSON framing per MCP 2025-11-25, got: $raw")
+        assertTrue(raw.contains("notifications/early"))
     }
 
     // ---- Round-5 review fixes: parse-tolerant initialize peek + spec gaps -
@@ -1599,7 +1608,7 @@ class McpStdioServerProtocolTest {
         val callFrame = """{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"is_initialized","arguments":{}}}"""
         val combined = encodeFramedMessage(notif) + encodeFramedMessage(callFrame)
         val outputBuffer = ByteArrayOutputStream()
-        kotlinx.coroutines.runBlocking<Unit> {
+        runBlocking<Unit> {
             McpStdioServer(server, ByteArrayInputStream(combined.toByteArray(Charsets.UTF_8)), outputBuffer).run()
         }
 

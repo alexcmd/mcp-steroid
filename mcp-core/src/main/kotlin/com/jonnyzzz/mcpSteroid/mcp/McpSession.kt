@@ -86,7 +86,8 @@ class McpSession(
     fun sendNotification(notification: JsonRpcNotification) {
         val result = notificationChannel.trySend(notification)
         if (result.isFailure) {
-            log.warn("[MCP Session $id] dropped notification ${notification.method}: $result")
+            val reason = if (result.isClosed) "channel closed" else "buffer full"
+            log.warn("[MCP Session $id] dropped notification ${notification.method}: $reason")
         }
     }
 
@@ -132,7 +133,8 @@ class McpSession(
             // Don't leave the deferred parked waiting for a response that will
             // never come — the request never reached the wire.
             pendingRequests.remove(requestId)
-            log.warn("[MCP Session $id] dropped outgoing request $method: $sent")
+            val reason = if (sent.isClosed) "channel closed" else "buffer full"
+            log.warn("[MCP Session $id] dropped outgoing request $method: $reason")
             return null
         }
 
