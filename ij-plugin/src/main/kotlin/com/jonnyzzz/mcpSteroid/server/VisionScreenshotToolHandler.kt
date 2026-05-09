@@ -2,21 +2,25 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
+import com.jonnyzzz.mcpSteroid.thisLogger
 import com.jonnyzzz.mcpSteroid.vision.VisionService
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.*
 
 /**
  * Handler for the steroid_take_screenshot MCP tool.
  */
-class VisionScreenshotToolHandler : McpTool {
+class VisionScreenshotToolSpec(val handler: VisionScreenshotToolHandler) : McpTool {
     override val name = "steroid_take_screenshot"
 
     override val description = """
@@ -65,41 +69,68 @@ class VisionScreenshotToolHandler : McpTool {
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val args = context.params.arguments
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: project_name")
+            ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
         val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: task_id")
+            ?: return ToolCallResult.errorResult("Missing required parameter: task_id")
         val reason = args["reason"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: reason")
+            ?: return ToolCallResult.errorResult("Missing required parameter: reason")
         val windowId = args["window_id"]?.jsonPrimitive?.contentOrNull
+
+        return handler.screenshotWindow(projectName, ScreenshotParams(taskId, reason, windowId), context.mcpProgressReporter)
+    }
+}
+
+@Serializable
+data class ScreenshotParams(
+    val taskId: String,
+    val reason: String,
+    val windowId: String? = null
+)
+
+interface VisionScreenshotToolHandler {
+    suspend fun screenshotWindow(
+        projectName: String,
+        screenshotParams: ScreenshotParams,
+        mcpProgressReporter: McpProgressReporter
+    ): ToolCallResult
+
+}
+
+@Service(Service.Level.APP)
+class VisionScreenshotToolHandlerIJ : VisionScreenshotToolHandler {
+    private val log = thisLogger()
+    private val json = Json { encodeDefaults = true }
+
+    override suspend fun screenshotWindow(
+        projectName: String,
+        screenshotParams: ScreenshotParams,
+        mcpProgressReporter: McpProgressReporter
+    ): ToolCallResult {
+        val taskId = screenshotParams.taskId
+        val reason = screenshotParams.reason
 
         val project = readAction {
             ProjectManager.getInstance().openProjects.find { it.name == projectName }
-        } ?: return errorResult("Project not found: $projectName")
+        } ?: return ToolCallResult.errorResult("Project not found: $projectName")
 
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_take_screenshot",
-            arguments = args,
+            arguments = json.encodeToJsonElement(screenshotParams).jsonObject,
             taskId = "screenshot-$taskId"
         )
         project.executionStorage.writeCodeExecutionData(executionId, "reason.txt", reason)
 
         val builder = ToolCallResult.builder()
-        suspend fun log(message: String) {
-            val text = message
-            builder.addTextContent(text)
-            context.mcpProgressReporter.report(text)
-            project.executionStorage.appendExecutionEvent(executionId, text)
-        }
 
         try {
-            log("execution_id: ${executionId.executionId}")
-            log("WARNING: Heavy endpoint. Prefer steroid_execute_code for regular automation.")
-
-            val artifacts = VisionService.capture(project, executionId, windowId)
+            val artifacts = VisionService.capture(project, executionId, screenshotParams.windowId)
             val imageBase64 = Base64.getEncoder().encodeToString(artifacts.imageBytes)
             builder.addContent(ContentItem.Image(data = imageBase64, mimeType = "image/png"))
 
-            artifacts.logMessages().forEach { log(it) }
+            artifacts.logMessages().forEach {
+                log.info("Captured window artifact: $it")
+                builder.addTextContent(it)
+            }
         } catch (e: Exception) {
             val message = "Screenshot capture failed: ${e.message}"
             builder.addTextContent("ERROR: $message").markAsError()
@@ -108,9 +139,4 @@ class VisionScreenshotToolHandler : McpTool {
 
         return builder.build()
     }
-
-    private fun errorResult(message: String) = ToolCallResult(
-        content = listOf(ContentItem.Text(text = "ERROR: $message")),
-        isError = true
-    )
 }

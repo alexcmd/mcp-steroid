@@ -14,6 +14,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 
 /**
  * Atomic multi-site literal-text patch for MCP Steroid agents.
@@ -39,8 +40,13 @@ import kotlinx.coroutines.withContext
  */
 class ApplyPatchException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
+@Serializable
+data class ApplyPatchRequest(val hunks: List<ApplyPatchHunk>)
+
+@Serializable
 data class ApplyPatchHunk(val filePath: String, val oldString: String, val newString: String)
 
+@Serializable
 data class AppliedHunk(
     val index: Int,
     val path: String,
@@ -50,6 +56,7 @@ data class AppliedHunk(
     val newLen: Int,
 )
 
+@Serializable
 data class ApplyPatchResult(val applied: List<AppliedHunk>) {
     val hunkCount: Int get() = applied.size
     val fileCount: Int get() = applied.map { it.path }.distinct().size

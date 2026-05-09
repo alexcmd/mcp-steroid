@@ -1,10 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.ProjectManager.getInstance
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.execution.ExecutionManager
@@ -12,14 +11,17 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeGradlePromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeMavenPromptArticle
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeToolDescriptionPromptArticle
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.nio.file.Files
 import java.nio.file.Path
 
+@Serializable
 data class ExecCodeParams(
     val taskId: String,
     val code: String,
@@ -31,14 +33,12 @@ data class ExecCodeParams(
 
     /** Controls pre-execution dialog killer: null = use registry default, true = force enable, false = force disable. */
     val dialogKiller: Boolean? = null,
-
-    val rawParams: JsonObject,
 )
 
 /**
  * Handler for the steroid_execute_code MCP tool.
  */
-class ExecuteCodeToolHandler : McpTool {
+class ExecuteCodeToolSpec(val handler: ExecuteCodeToolHandler) : McpTool {
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(buildPromptsContext())
     override val inputSchema = buildJsonObject {
@@ -54,19 +54,31 @@ class ExecuteCodeToolHandler : McpTool {
             }
             putJsonObject("task_id") {
                 put("type", "string")
-                put("description", "Your task identifier to group related executions. Use the same task_id for all execute_code calls that are part of the same task, and when providing feedback via steroid_execute_feedback.")
+                put(
+                    "description",
+                    "Your task identifier to group related executions. Use the same task_id for all execute_code calls that are part of the same task, and when providing feedback via steroid_execute_feedback."
+                )
             }
             putJsonObject("reason") {
                 put("type", "string")
-                put("description", "IMPORTANT: On your FIRST call, provide the FULL TASK DESCRIPTION from the user - what they originally asked you to do. On subsequent calls, describe what this specific execution aims to achieve. This helps track progress and understand context.")
+                put(
+                    "description",
+                    "IMPORTANT: On your FIRST call, provide the FULL TASK DESCRIPTION from the user - what they originally asked you to do. On subsequent calls, describe what this specific execution aims to achieve. This helps track progress and understand context."
+                )
             }
             putJsonObject("timeout") {
                 put("type", "integer")
-                put("description", "Execution timeout in seconds (default: 600, configurable via mcp.steroid.execution.timeout registry key)")
+                put(
+                    "description",
+                    "Execution timeout in seconds (default: 600, configurable via mcp.steroid.execution.timeout registry key)"
+                )
             }
             putJsonObject("dialog_killer") {
                 put("type", "boolean")
-                put("description", "Override pre-execution dialog killer: true = force enable, false = force disable. Default: use registry setting (mcp.steroid.dialog.killer.enabled).")
+                put(
+                    "description",
+                    "Override pre-execution dialog killer: true = force enable, false = force disable. Default: use registry setting (mcp.steroid.dialog.killer.enabled)."
+                )
             }
         }
         putJsonArray("required") {
@@ -82,22 +94,15 @@ class ExecuteCodeToolHandler : McpTool {
         val args = params.arguments
 
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: project_name")
+            ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
         val code = args["code"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: code")
+            ?: return ToolCallResult.errorResult("Missing required parameter: code")
         val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: task_id")
+            ?: return ToolCallResult.errorResult("Missing required parameter: task_id")
         val reason = args["reason"]?.jsonPrimitive?.contentOrNull
-        val timeout = args["timeout"]?.jsonPrimitive?.intOrNull ?: Registry.intValue("mcp.steroid.execution.timeout", 600)
+        val timeout =
+            args["timeout"]?.jsonPrimitive?.intOrNull ?: Registry.intValue("mcp.steroid.execution.timeout", 600)
         val dialogKiller = args["dialog_killer"]?.jsonPrimitive?.booleanOrNull
-
-        val (project, availableNames) = readAction {
-            val openProjects = getInstance().openProjects
-            openProjects.find { it.name == projectName } to openProjects.map { it.name }
-        }
-        if (project == null) {
-            return errorResult("Project not found: \"$projectName\". Available projects: $availableNames")
-        }
 
         val execCodeParams = ExecCodeParams(
             taskId = taskId,
@@ -105,12 +110,39 @@ class ExecuteCodeToolHandler : McpTool {
             reason = reason ?: "No reason provided",
             timeout = timeout,
             dialogKiller = dialogKiller,
-            rawParams = args
         )
+
+        return handler.executeCode(projectName, execCodeParams, context.mcpProgressReporter)
+    }
+}
+
+interface ExecuteCodeToolHandler {
+    suspend fun executeCode(
+        projectName: String,
+        execCodeParams: ExecCodeParams,
+        callProgress: McpProgressReporter,
+    ): ToolCallResult
+}
+
+
+@Service(Service.Level.APP)
+class ExecuteCodeToolHandlerIJ : ExecuteCodeToolHandler {
+    override suspend fun executeCode(
+        projectName: String,
+        execCodeParams: ExecCodeParams,
+        callProgress: McpProgressReporter,
+    ) : ToolCallResult {
+        val (project, availableNames) = readAction {
+            val openProjects = getInstance().openProjects
+            openProjects.find { it.name == projectName } to openProjects.map { it.name }
+        }
+        if (project == null) {
+            return ToolCallResult.errorResult("Project not found: \"$projectName\". Available projects: $availableNames")
+        }
 
         val result = project
             .service<ExecutionManager>()
-            .executeWithProgress(execCodeParams, context.mcpProgressReporter)
+            .executeWithProgress(execCodeParams, callProgress)
 
         runCatching {
             analyticsBeacon.capture(
@@ -128,10 +160,6 @@ class ExecuteCodeToolHandler : McpTool {
         )
     }
 
-    private fun errorResult(message: String) = ToolCallResult(
-        content = listOf(ContentItem.Text(text = "ERROR: $message")),
-        isError = true
-    )
 }
 
 internal object ExecuteCodeBuildAbortGuidance {

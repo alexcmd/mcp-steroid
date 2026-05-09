@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
@@ -9,6 +10,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.platform.backend.observation.Observation
 import com.jonnyzzz.mcpSteroid.execution.ApplyPatchException
 import com.jonnyzzz.mcpSteroid.execution.ApplyPatchHunk
+import com.jonnyzzz.mcpSteroid.execution.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.execution.McpEditingGuardException
 import com.jonnyzzz.mcpSteroid.execution.executeApplyPatch
 import com.jonnyzzz.mcpSteroid.execution.mcpEditingGuard
@@ -18,9 +20,12 @@ import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.mcp.successTextResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ApplyPatchToolDescriptionPromptArticle
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 
 /**
@@ -49,7 +54,7 @@ import kotlinx.serialization.json.*
  * all edits land as a single undoable [WriteCommandAction], PSI committed in
  * the same action, VFS async-refreshed on completion.
  */
-class ApplyPatchToolHandler : McpTool {
+class ApplyPatchToolSpec(val handler: ApplyPatchToolHandler) : McpTool {
     private val log = thisLogger()
 
     override val name = "steroid_apply_patch"
@@ -107,12 +112,12 @@ class ApplyPatchToolHandler : McpTool {
         val args = context.params.arguments
 
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: project_name")
+            ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
         args["task_id"]?.jsonPrimitive?.contentOrNull
-            ?: return errorResult("Missing required parameter: task_id")
+            ?: return ToolCallResult.errorResult("Missing required parameter: task_id")
 
         val rawHunks = args["hunks"]
-            ?: return errorResult("Missing required parameter: hunks (array)")
+            ?: return ToolCallResult.errorResult("Missing required parameter: hunks (array)")
         // Some MCP clients (Claude Code's tool-call envelope under certain
         // configurations) pass complex parameters as serialised JSON strings
         // instead of native arrays. `?.jsonArray` would have thrown
@@ -123,38 +128,58 @@ class ApplyPatchToolHandler : McpTool {
             is JsonArray -> rawHunks
             is JsonPrimitive -> {
                 if (!rawHunks.isString) {
-                    return errorResult("hunks must be a JSON array, got primitive: ${rawHunks.content}")
+                    return ToolCallResult.errorResult("hunks must be a JSON array, got primitive: ${rawHunks.content}")
                 }
                 val decoded = try {
                     McpJson.parseToJsonElement(rawHunks.content)
-                } catch (e: kotlinx.serialization.SerializationException) {
-                    return errorResult("hunks must be a JSON array — failed to parse string-encoded value: ${e.message}")
+                } catch (e: SerializationException) {
+                    return ToolCallResult.errorResult("hunks must be a JSON array — failed to parse string-encoded value: ${e.message}")
                 }
                 (decoded as? JsonArray)
-                    ?: return errorResult("hunks must be a JSON array — string-encoded value parsed to ${decoded::class.simpleName}")
+                    ?: return ToolCallResult.errorResult("hunks must be a JSON array — string-encoded value parsed to ${decoded::class.simpleName}")
             }
-            else -> return errorResult("hunks must be a JSON array, got ${rawHunks::class.simpleName}")
+            else -> return ToolCallResult.errorResult("hunks must be a JSON array, got ${rawHunks::class.simpleName}")
         }
-        if (hunksJson.isEmpty()) return errorResult("hunks array is empty")
+        if (hunksJson.isEmpty()) return ToolCallResult.errorResult("hunks array is empty")
 
         val hunks = hunksJson.mapIndexed { i, el ->
-            val o = (el as? JsonObject) ?: return errorResult("hunks[$i] is not an object")
+            val o = (el as? JsonObject)
+                ?: return ToolCallResult.errorResult("hunks[$i] is not an object")
             val filePath = o["file_path"]?.jsonPrimitive?.contentOrNull
-                ?: return errorResult("hunks[$i].file_path is required")
+                ?: return ToolCallResult.errorResult("hunks[$i].file_path is required")
             val oldString = o["old_string"]?.jsonPrimitive?.contentOrNull
-                ?: return errorResult("hunks[$i].old_string is required")
+                ?: return ToolCallResult.errorResult("hunks[$i].old_string is required")
             val newString = o["new_string"]?.jsonPrimitive?.contentOrNull
-                ?: return errorResult("hunks[$i].new_string is required")
+                ?: return ToolCallResult.errorResult("hunks[$i].new_string is required")
             ApplyPatchHunk(filePath = filePath, oldString = oldString, newString = newString)
         }
 
+        return handler.applyPatch(projectName, ApplyPatchRequest(hunks))
+    }
+}
+
+interface ApplyPatchToolHandler {
+    suspend fun applyPatch(projectName: String, applyPatchRequest: ApplyPatchRequest): ToolCallResult
+}
+
+@Service(Service.Level.APP)
+class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
+    private val log = thisLogger()
+
+    override suspend fun applyPatch(
+        projectName: String,
+        applyPatchRequest: ApplyPatchRequest
+    ): ToolCallResult {
         val (project, availableNames) = readAction {
             val openProjects = getInstance().openProjects
             openProjects.find { it.name == projectName } to openProjects.map { it.name }
         }
+
         if (project == null) {
-            return errorResult("Project not found: \"$projectName\". Available projects: $availableNames")
+            return ToolCallResult.errorResult("Project not found: \"$projectName\". Available projects: $availableNames")
         }
+
+        val hunks = applyPatchRequest.hunks
 
         val executionId = ExecutionId("apply-patch-${System.currentTimeMillis()}")
 
@@ -171,16 +196,7 @@ class ApplyPatchToolHandler : McpTool {
                 executionId = executionId,
                 logMessage = { log.info(it) },
             ) {
-                // Wait for IDE background configuration (project save, indexing, etc.)
-                // to settle before the write action. Without this, in a freshly-opened
-                // IDE the project-save activity that follows DialogKiller can hold the
-                // write-intent read lock for 10+ s, causing `WriteCommandAction` to
-                // time out before Claude's 60 s MCP tool cap. 5 s is a pragmatic upper
-                // bound: if configuration isn't done by then, proceed anyway — the
-                // write action retries on its own.
-                withTimeoutOrNull(5_000L) {
-                    Observation.awaitConfiguration(project)
-                }
+                Observation.awaitConfiguration(project)
 
                 executeApplyPatch(project, hunks) { path ->
                     LocalFileSystem.getInstance().findFileByPath(path)
@@ -188,23 +204,19 @@ class ApplyPatchToolHandler : McpTool {
             }
         } catch (e: McpEditingGuardException) {
             log.warn("[apply_patch] editing guard rejected the call: ${e.message}", e)
-            runCatching {
-                analyticsBeacon.capture(
-                    event = "apply_patch",
-                    project = project,
-                    properties = mapOf("result" to "modal-blocked"),
-                )
-            }
-            return errorResult(e.message ?: "MCP editing guard rejected the call")
+            analyticsBeacon.capture(
+                event = "apply_patch",
+                project = project,
+                properties = mapOf("result" to "modal-blocked"),
+            )
+            return ToolCallResult.errorResult(e.message ?: "MCP editing guard rejected the call")
         } catch (e: ApplyPatchException) {
-            runCatching {
-                analyticsBeacon.capture(
-                    event = "apply_patch",
-                    project = project,
-                    properties = mapOf("result" to "error"),
-                )
-            }
-            return errorResult(e.message ?: "apply-patch failed with no message")
+            analyticsBeacon.capture(
+                event = "apply_patch",
+                project = project,
+                properties = mapOf("result" to "error"),
+            )
+            return ToolCallResult.errorResult(e.message ?: "apply-patch failed with no message")
         } catch (e: ProcessCanceledException) {
             // Cancellation must propagate intact — never wrap or swallow.
             throw e
@@ -215,37 +227,24 @@ class ApplyPatchToolHandler : McpTool {
             // agent can re-issue or change strategy on a tool-error; a 500
             // looks like a transport failure and stalls the session.
             log.warn("[apply_patch] unexpected runtime failure: ${e.message}", e)
-            runCatching {
-                analyticsBeacon.capture(
-                    event = "apply_patch",
-                    project = project,
-                    properties = mapOf("result" to "runtime-error"),
-                )
-            }
-            return errorResult("apply-patch failed: ${e.javaClass.simpleName}: ${e.message ?: "<no message>"}")
-        }
-
-        runCatching {
             analyticsBeacon.capture(
                 event = "apply_patch",
                 project = project,
-                properties = mapOf(
-                    "result" to "success",
-                    "hunks" to result.hunkCount.toString(),
-                    "files" to result.fileCount.toString(),
-                ),
+                properties = mapOf("result" to "runtime-error"),
             )
+            return ToolCallResult.errorResult("apply-patch failed: ${e.javaClass.simpleName}: ${e.message ?: "<no message>"}")
         }
 
-        return ToolCallResult(
-            content = listOf(ContentItem.Text(text = result.toString())),
-            isError = false,
+        analyticsBeacon.capture(
+            event = "apply_patch",
+            project = project,
+            properties = mapOf(
+                "result" to "success",
+                "hunks" to result.hunkCount.toString(),
+                "files" to result.fileCount.toString(),
+            ),
         )
+
+        return ToolCallResult.successTextResult(result.toString())
     }
-
-    private fun errorResult(message: String) = ToolCallResult(
-        content = listOf(ContentItem.Text(text = "ERROR: $message")),
-        isError = true,
-    )
-
 }

@@ -115,7 +115,6 @@ fun testExecParams(
     reason = reason,
     timeout = timeout,
     cancelOnModal = cancelOnModal,
-    rawParams = buildJsonObject { }
 )
 
 

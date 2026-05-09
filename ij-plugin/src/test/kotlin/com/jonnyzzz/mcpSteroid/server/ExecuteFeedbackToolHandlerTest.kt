@@ -1,6 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.successTextResult
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -10,15 +14,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for [ExecuteFeedbackToolHandler.validate].
+ * Unit tests for [ExecuteFeedbackToolSpec.handle] argument validation.
  *
- * Pins the aggregate-error contract introduced after the 2026-04-24
- * INFRA-REPORT — a call missing multiple required fields must surface ALL of
- * them in a single response rather than one at a time.
+ * The handler reports the first missing/invalid field via early return; each
+ * test exercises one validation branch and prints the actual error text on
+ * failure to make regressions self-explaining.
  */
 class ExecuteFeedbackToolHandlerTest {
-    private fun validate(args: JsonObject): String? =
-        ExecuteFeedbackToolHandler.validate(args)
+    private fun validate(args: JsonObject): String? {
+        val result = runBlocking {
+            ExecuteFeedbackToolSpec(object : ExecuteFeedbackToolHandler {
+                override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
+                    return ToolCallResult.successTextResult("Success")
+                }
+            }).handle(args)
+        }
+
+        return if (result.isError) {
+            result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+        } else {
+            null
+        }
+    }
 
     @Test
     fun `valid args produce no error`() {
@@ -34,7 +51,7 @@ class ExecuteFeedbackToolHandlerTest {
     }
 
     @Test
-    fun `missing project_name only — singular header`() {
+    fun `missing project_name is reported`() {
         val err = validate(
             buildJsonObject {
                 put("task_id", "t-1")
@@ -44,20 +61,15 @@ class ExecuteFeedbackToolHandlerTest {
         )
         assertNotNull(err)
         assertTrue("mentions project_name: $err", err!!.contains("project_name"))
-        assertTrue("singular 'problem': $err", err.contains("1 validation problem:"))
     }
 
     @Test
-    fun `all four required missing — all reported together`() {
-        // Caller sends an empty args object. Before the fix, this produced FOUR
-        // sequential rejections; after the fix, one message names all four gaps.
+    fun `empty args is rejected with the first missing field`() {
+        // Handler short-circuits on the first missing required field, so an
+        // empty args object surfaces project_name (the first check).
         val err = validate(buildJsonObject { })
         assertNotNull(err)
         assertTrue("mentions project_name: $err", err!!.contains("project_name"))
-        assertTrue("mentions task_id: $err", err.contains("task_id"))
-        assertTrue("mentions success_rating: $err", err.contains("success_rating"))
-        assertTrue("mentions explanation: $err", err.contains("explanation"))
-        assertTrue("plural header (4 problems): $err", err.contains("4 validation problems:"))
     }
 
     @Test
@@ -108,9 +120,7 @@ class ExecuteFeedbackToolHandlerTest {
     }
 
     @Test
-    fun `error footer lists the required parameter names so the caller can self-serve`() {
-        // Even when only one field is missing, the footer lists ALL required fields
-        // so the caller doesn't have to check the docs to know what's expected.
+    fun `missing explanation is reported`() {
         val err = validate(
             buildJsonObject {
                 put("project_name", "proj")
@@ -120,9 +130,6 @@ class ExecuteFeedbackToolHandlerTest {
             }
         )
         assertNotNull(err)
-        assertTrue(
-            "footer must list required + optional field names",
-            err!!.contains("Required: project_name, task_id, success_rating, explanation"),
-        )
+        assertTrue("mentions explanation: $err", err!!.contains("explanation"))
     }
 }

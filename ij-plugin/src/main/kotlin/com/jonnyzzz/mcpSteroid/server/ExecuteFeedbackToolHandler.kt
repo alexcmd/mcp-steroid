@@ -2,17 +2,19 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager.getInstance
-import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
-import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.mcp.successTextResult
 import com.jonnyzzz.mcpSteroid.storage.ExecutionStorage
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 /**
@@ -23,15 +25,10 @@ import kotlinx.serialization.json.*
  * - Explanation of the rating
  * - Association with a task_id
  */
-class ExecuteFeedbackToolHandler : McpTool {
-    private val log = thisLogger()
-    private val json = Json {
-        prettyPrint = true
-    }
-
+class ExecuteFeedbackToolSpec(val handler: ExecuteFeedbackToolHandler) : McpTool {
     override val name = "steroid_execute_feedback"
     override val description = """
-            Provide feedback on the result of a steroid_execute_code call.
+            Provide feedback on the result of a steroid_execute_code call and suggestions to improve the service.
 
             Use this tool to rate execution results and track what worked or didn't work.
 
@@ -45,7 +42,7 @@ class ExecuteFeedbackToolHandler : McpTool {
               - 0.50-0.75: Partial success, achieved some goals
               - 0.75-1.00: Success, achieved the intended goal
             - explanation: Describe what worked, what didn't, and what you'll try next
-            - code (optional): The code snippet that was executed
+            - code (optional): The code snippet that illustrates the feedback the best way 
 
             Feedback helps track execution history and identify patterns for improvement.
         """.trimIndent()
@@ -73,7 +70,7 @@ class ExecuteFeedbackToolHandler : McpTool {
             }
             putJsonObject("explanation") {
                 put("type", "string")
-                put("description", "Explain why you gave this rating. What worked? What didn't? What will you try next?")
+                put("description", "Explain why you gave this rating. Provide improvements, suggestions, and critical thinking to improve this tool")
             }
             putJsonObject("code") {
                 put("type", "string")
@@ -88,113 +85,98 @@ class ExecuteFeedbackToolHandler : McpTool {
         }
     }
 
-    override suspend fun call(context: ToolCallContext): ToolCallResult = handle(context.params)
+    override suspend fun call(context: ToolCallContext): ToolCallResult {
+        val args = context.params.arguments
+        return handle(args)
+    }
 
-    private suspend fun handle(params: ToolCallParams): ToolCallResult {
-        val args = params.arguments
+    suspend fun handle(args: JsonObject): ToolCallResult {
+        val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
+        if (projectName.isNullOrBlank()) {
+            return ToolCallResult.errorResult("project_name is required (from steroid_list_projects)")
+        }
 
-        val aggregated = validate(args)
-        if (aggregated != null) return errorResult(aggregated)
-        // Past this point, validate() guarantees every required field is non-null.
-        val projectName = args["project_name"]!!.jsonPrimitive.content
-        val taskId = args["task_id"]!!.jsonPrimitive.content
-        val successRating = args["success_rating"]!!.jsonPrimitive.double
-        val explanation = args["explanation"]!!.jsonPrimitive.content
+        val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
+        if (taskId.isNullOrBlank()) {
+            return ToolCallResult.errorResult("task_id is required (same id you passed to steroid_execute_code)")
+        }
+
+        val successRating = args["success_rating"]?.jsonPrimitive?.doubleOrNull
+        if (successRating == null) {
+            return ToolCallResult.errorResult("success_rating is required (number in 0.00..1.00 — do NOT send `rating`)")
+        } else if (successRating !in 0.0..1.0) {
+            return ToolCallResult.errorResult("success_rating=$successRating is out of range (must be 0.00..1.00)")
+        }
+
+        val explanation = args["explanation"]?.jsonPrimitive?.contentOrNull
+        if (explanation.isNullOrBlank()) {
+            return ToolCallResult.errorResult("explanation is required (free-form: what worked, what didn't, what you'll try next)")
+        }
+
         // execution_id is optional — noted for context but value is not currently used
         val code = args["code"]?.jsonPrimitive?.contentOrNull
 
-        log.info("Feedback is submitted: " + json.encodeToString(params.rawArguments))
+        val params = FeedbackParams(
+            taskId = taskId,
+            successRating = successRating,
+            explanation = explanation,
+            code = code
+        )
+
+        return handler.handleFeedback(projectName, params)
+    }
+}
+
+@Serializable
+data class FeedbackParams(
+    val taskId: String,
+    val successRating: Double,
+    val explanation: String?,
+    val code: String?
+)
+
+
+interface ExecuteFeedbackToolHandler {
+    suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult
+}
+
+@Service(Service.Level.APP)
+class ExecuteFeedbackToolHandlerIJ: ExecuteFeedbackToolHandler {
+    private val log = thisLogger()
+    private val json = Json {
+        prettyPrint = true
+    }
+
+    override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
+        log.info("Feedback is submitted: " + json.encodeToString(params))
 
         val project = readAction {
             getInstance().openProjects.find { it.name == projectName }
-        } ?: return errorResult("Project not found: $projectName")
+        } ?: return ToolCallResult.errorResult("Project not found: $projectName")
 
         try {
             val executionStorage = project.service<ExecutionStorage>()
-            val executionId = executionStorage.writeExecutionFeedback(taskId = taskId, params)
-            if (code != null) {
+            val executionId = executionStorage.writeExecutionFeedback(taskId = params.taskId, params)
+            params.code?.let { code ->
                 executionStorage.writeCodeExecutionData(executionId, "script.kts", code)
             }
 
-            executionStorage.writeCodeExecutionData(executionId, "explanation.txt", explanation)
+            executionStorage.writeCodeExecutionData(executionId, "explanation.txt", params.explanation)
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
-            log.error("Failed to store execution feedback for task_id=$taskId", e)
+            log.error("Failed to store execution feedback for task_id=${params.taskId}", e)
         }
 
-        // Capture feedback event
-        analyticsBeacon.capture(
-            event = "execute_feedback",
-            project = project,
-            properties = mapOf(
-                "success_rating" to successRating,
-                "has_explanation" to explanation.isNotBlank(),
-                "has_code" to (code != null)
-            )
-        )
-
         // Capture status score (convert 0.0-1.0 to 0-100)
-        val score = (successRating * 100).toInt()
+        val score = (params.successRating * 100).toInt()
         analyticsBeacon.captureScore(
             score = score,
             context = "feedback",
             project = project,
-            properties = mapOf(
-                "task_id" to taskId
-            )
+            properties = mapOf()
         )
 
-        return ToolCallResult(
-            content = listOf(ContentItem.Text(text = "ACK!"))
-        )
-    }
-
-    private fun errorResult(message: String) = ToolCallResult(
-        content = listOf(ContentItem.Text(text = message)),
-        isError = true
-    )
-
-    internal companion object {
-        /**
-         * Aggregate every validation problem in [args] into one message, or return
-         * null when the input is fully valid. Surfaced as an internal function so
-         * `ExecuteFeedbackToolHandlerTest` can assert the contract without standing
-         * up the whole MCP transport. See the INFRA-REPORT note at the call site
-         * in `handle()` for the rationale (agents were losing 3+ round-trips on
-         * sequential rejections).
-         */
-        internal fun validate(args: JsonObject): String? {
-            val problems = mutableListOf<String>()
-
-            val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            if (projectName.isNullOrBlank()) {
-                problems += "project_name is required (from steroid_list_projects)"
-            }
-
-            val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
-            if (taskId.isNullOrBlank()) {
-                problems += "task_id is required (same id you passed to steroid_execute_code)"
-            }
-
-            val successRating = args["success_rating"]?.jsonPrimitive?.doubleOrNull
-            if (successRating == null) {
-                problems += "success_rating is required (number in 0.00..1.00 — do NOT send `rating`)"
-            } else if (successRating !in 0.0..1.0) {
-                problems += "success_rating=$successRating is out of range (must be 0.00..1.00)"
-            }
-
-            val explanation = args["explanation"]?.jsonPrimitive?.contentOrNull
-            if (explanation.isNullOrBlank()) {
-                problems += "explanation is required (free-form: what worked, what didn't, what you'll try next)"
-            }
-
-            if (problems.isEmpty()) return null
-            return buildString {
-                appendLine("steroid_execute_feedback: ${problems.size} validation problem${if (problems.size == 1) "" else "s"}:")
-                problems.forEach { appendLine("  - $it") }
-                append("Required: project_name, task_id, success_rating, explanation. Optional: execution_id, code.")
-            }
-        }
+        return ToolCallResult.successTextResult("ACK!")
     }
 }

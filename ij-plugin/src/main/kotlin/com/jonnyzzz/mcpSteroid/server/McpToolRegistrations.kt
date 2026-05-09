@@ -19,15 +19,16 @@ class McpToolRegistrations {
 
         tools.registerTool(ListProjectsToolSpec(service<ListProjectsToolHandlerIJ>()))
         tools.registerTool(ListWindowsToolSpec(service<ListWindowsToolHandlerIJ>()))
-        tools.registerTool(ExecuteCodeToolHandler())
-        tools.registerTool(ApplyPatchToolHandler())
-        tools.registerTool(ExecuteFeedbackToolHandler())
-        tools.registerTool(ActionDiscoveryToolHandler())
-        tools.registerTool(VisionScreenshotToolHandler())
-        tools.registerTool(VisionInputToolHandler())
-        tools.registerTool(OpenProjectToolHandler())
-        tools.registerTool(FetchResourceToolHandler(resources))
+        tools.registerTool(ExecuteCodeToolSpec(service<ExecuteCodeToolHandlerIJ>()))
+        tools.registerTool(ApplyPatchToolSpec(service<ApplyPatchToolHandlerIJ>()))
+        tools.registerTool(ExecuteFeedbackToolSpec(service<ExecuteFeedbackToolHandlerIJ>()))
+        tools.registerTool(ActionDiscoveryToolSpec(service<ActionDiscoveryToolHandlerIJ>())) // deprecate it
+        tools.registerTool(VisionScreenshotToolSpec(service<VisionScreenshotToolHandlerIJ>()))
+        tools.registerTool(VisionInputToolSpec(service<VisionInputToolHandlerIJ>()))
+        tools.registerTool(OpenProjectToolSpec(service<OpenProjectToolHandlerIJ>()))
 
+
+        tools.registerTool(FetchResourceToolHandler(resources))
         ResourceRegistrar().register(resources, prompts)
     }
 }

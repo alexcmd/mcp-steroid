@@ -1,8 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.vision
 
+import kotlinx.serialization.Serializable
 import java.awt.event.KeyEvent
 
+@Serializable
 enum class InputModifier {
     ALT,
     CTRL,
@@ -10,28 +12,35 @@ enum class InputModifier {
     META,
 }
 
+@Serializable
 enum class MouseButton {
     LEFT,
     RIGHT,
     MIDDLE,
 }
 
+@Serializable
 sealed class InputTarget {
-    data class ScreenshotPixel(val x: Int, val y: Int) : InputTarget()
-    data class ScreenPixel(val x: Int, val y: Int) : InputTarget()
-    data class Unsupported(val raw: String) : InputTarget()
+    @Serializable data class ScreenshotPixel(val x: Int, val y: Int) : InputTarget()
+    @Serializable data class ScreenPixel(val x: Int, val y: Int) : InputTarget()
+    @Serializable data class Unsupported(val raw: String) : InputTarget()
 }
 
+@Serializable
 sealed class InputStep {
-    data class Delay(val ms: Long) : InputStep()
-    data class StickKey(val keyCode: Int, val keyName: String) : InputStep()
+    @Serializable data class Delay(val ms: Long) : InputStep()
+    @Serializable data class StickKey(val keyCode: Int, val keyName: String) : InputStep()
+    @Serializable
     data class PressKey(
         val keyCode: Int,
         val keyName: String,
         val modifiers: Set<InputModifier>,
     ) : InputStep()
 
+    @Serializable
     data class TypeText(val text: String) : InputStep()
+
+    @Serializable
     data class Click(
         val button: MouseButton,
         val modifiers: Set<InputModifier>,
