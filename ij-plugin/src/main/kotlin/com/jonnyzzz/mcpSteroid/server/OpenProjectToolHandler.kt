@@ -60,6 +60,7 @@ class OpenProjectToolHandler : McpTool {
         - Other dialogs (project type, SDK selection, etc.) may still appear
         - Always check modalDialogShowing in steroid_list_windows response
     """.trimIndent()
+
     override val inputSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {

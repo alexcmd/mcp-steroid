@@ -20,6 +20,7 @@ import kotlinx.serialization.json.*
  */
 class VisionInputToolHandler : McpTool {
     override val name = "steroid_input"
+
     override val description = """
         Send input events (keyboard + mouse) to the IDE using a sequence string.
 
@@ -41,6 +42,7 @@ class VisionInputToolHandler : McpTool {
 
         The input is delivered to the window captured by steroid_take_screenshot (window_id from metadata) and the focus is forced to that window.
     """.trimIndent()
+
     override val inputSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {

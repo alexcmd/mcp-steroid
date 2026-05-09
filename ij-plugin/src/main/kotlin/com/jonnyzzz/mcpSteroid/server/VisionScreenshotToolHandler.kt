@@ -18,6 +18,7 @@ import java.util.*
  */
 class VisionScreenshotToolHandler : McpTool {
     override val name = "steroid_take_screenshot"
+
     override val description = """
         Capture a screenshot of the IDE and return an image payload.
 
@@ -33,6 +34,7 @@ class VisionScreenshotToolHandler : McpTool {
 
         After execution, call steroid_execute_feedback to log your feedback.
     """.trimIndent()
+
     override val inputSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
