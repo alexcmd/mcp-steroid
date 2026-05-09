@@ -9,35 +9,6 @@ mirroring how `mcp-http`'s `McpHttpTransport` does it for HTTP.
 `npx-kt` proxy logic stays as-is for now — breaking changes there are acceptable
 later but not in scope here.
 
-### Done
-- [x] **mcp-stdio: `McpStdioServer.kt`** — generic stdio transport wraps
-  `McpServerCore`. Constructor `(server, input, output)` with `System.in`/`System.out`
-  defaults; `suspend fun run()` reads frames via `FramingBuffer`, dispatches via
-  `server.handleMessage(text, session)`, drains `session.notifications()` +
-  `session.outgoingRequests()` to stdout, terminates on EOF.
-- [x] **mcp-stdio: `McpStdioServerProtocolTest`** — 151 tests against the generic
-  server with hand-rolled echo/boom tools, a resource, and a prompt. Coverage:
-  JSON-RPC 2.0 envelope (jsonrpc, id types incl. 0/negative/Long.MAX_VALUE/string,
-  notifications, parse errors), MCP 2025-11-25 (initialize/ping/tools/resources/prompts),
-  batch (incl. empty/all-notifications/duplicate-id), framing-mode parity (framed↔framed,
-  ndjson↔ndjson), UTF-8 multibyte (incl. byte-length vs char-length, frame split
-  byte-by-byte), server-initiated notifications round-tripping through stdout.
-- [x] **Edge-case research (RLM)** — three parallel agents surveyed TypeScript,
-  Python, and Rust (rmcp) MCP SDKs. Findings folded into the test suite as the
-  "Edge cases from MCP SDK references" section: id=0 preservation,
-  notifications-with-unknown-method silent ignore, cancel-of-unknown-id ignore,
-  empty-batch and all-notifications-batch spec edges, parse-error loop recovery,
-  stdout-clean-when-idle, _meta passthrough, mixed-id-type non-aliasing.
-  Surfaced one real spec bug: `McpServerCore.handleBatch` was emitting `[]` for
-  all-notification batches; per JSON-RPC 2.0 §6 it must omit the response entirely.
-  Fixed.
-- [x] **Port ij-plugin mcp tests** — `McpRootsServiceTest` moved wholesale to
-  `:mcp-core` (drops `UsefulTestCase` for JUnit Jupiter); pure JSON-shape sub-test
-  `testSamplingProtocolTypes` moved to a new `:mcp-core/McpSamplingProtocolTypesTest`.
-  HTTP-bound McpServerIntegrationTest tests stay in ij-plugin; analogous coverage
-  is now in `:mcp-stdio` for the stdio transport.
-- [x] **Verify** — `:mcp-stdio:test`, `:mcp-core:test`, and `:mcp-http:test` all
-  green. `:ij-plugin:compileTestKotlin` clean.
 
 ### Not in scope (per user)
 - npx-kt's `StdioServer.kt` left untouched. Migrating the proxy to the new
@@ -45,11 +16,13 @@ later but not in scope here.
   proxy-discovered tools/resources into `McpServerCore.toolRegistry` on every
   registry refresh — a real proxy refactor, not a transport one.
 
+
 ### Backlog (carried over)
 - [ ] add assert that mcp-core coroutines library is the same as in IntelliJ
 - [ ] add check that slf4j works in IntelliJ and logs are not lost
 - [ ] com.jonnyzzz.mcpSteroid.thisLogger should be internal to avoid usage from IntelliJ plugin code
 - [ ] `withTimeoutOrNull(5_000L) { Observation.awaitConfiguration(project) }` -- no need for timeout around patch application handler 
+- [ ] `CLAUDE_FETCH_RESOURCE_TOOL = "mcp__mcp-steroid__steroid_fetch_resource"` the incorrect named entities, use Spec to refer to them
 
 # TASKS
 
