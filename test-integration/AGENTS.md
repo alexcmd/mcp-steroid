@@ -282,7 +282,7 @@ for developing and debugging IDE-specific features.
 ### How to Start
 
 ```bash
-./gradlew :test-experiments:test --tests '*RiderPlaygroundTest*' \
+./gradlew :test-integration:test --tests '*RiderPlaygroundTest*' \
   -Dtest.integration.ide.product=rider
 ```
 
@@ -378,7 +378,7 @@ The frontend actions just serialize the editor context and send it to the backen
 ### Step 2: Start the Playground
 
 ```bash
-./gradlew :test-experiments:test --tests '*RiderPlaygroundTest*' \
+./gradlew :test-integration:test --tests '*RiderPlaygroundTest*' \
   -Dtest.integration.ide.product=rider
 ```
 
@@ -519,3 +519,228 @@ Set breakpoints first via `XDebuggerUtil.toggleLineBreakpoint()`.
 - `ApplicationConfiguration` / `ApplicationConfigurationType` — Java-only
 - `RunContentManager.allDescriptors` — empty for Rider test runs
 - `SMTRunnerConsoleView` — not used for .NET tests
+
+## Multi-Version Compatibility Tests
+
+Build the plugin against IntelliJ 2025.3 (253), then run the same binary against newer IDEs.
+
+| Test (lives in `test-integration`) | Validates | How |
+|------|------------------|-----|
+| `PluginBuildCompatibilityTest` | Plugin **compiles** against newer SDKs | Docker + `./gradlew buildPlugin` with patched versions |
+| `PluginVerificationTest` | Built binary is **API-compatible** | Docker + Plugin Verifier (`verifyPlugin`) |
+| `PluginRuntimeCompatibilityTest` | Plugin **runs** correctly in newer IDEs | Docker IDE container + MCP tool calls |
+
+`PluginRuntimeCompatibilityTest` exercises `list_windows`, which triggers mcp-steroid#18
+(ClassCastException on the `kotlin.Pair` vs `c.i.o.u.Pair` type change in 262).
+
+```bash
+./gradlew :test-integration:test --tests '*PluginBuildCompatibilityTest*'
+./gradlew :test-integration:test --tests '*PluginRuntimeCompatibilityTest*'
+./gradlew :test-integration:test --tests '*PluginVerificationTest*'
+./gradlew :test-integration:test --tests '*PluginBuildCompatibilityTest.build plugin with IntelliJ 2025_3*'
+```
+
+Note: `PluginVerificationTest` lives inside `PluginBuildCompatibilityTest.kt`, not its own file.
+
+Each compat test mounts the project read-only into a Docker container (`docker/build` image: Debian +
+JDK 21 + git), copies to a build dir, cleans with `git clean -fdx`, applies version patches via `sed`,
+then runs `./gradlew :ij-plugin:buildPlugin`. Persistent caches under `build/build-compat/` (Gradle
+home, `.intellijPlatform`) make re-runs fast.
+
+### Version patches
+
+| Target IDE | Patches needed |
+|------------|---------------|
+| 2025.3 | None (project default) |
+| 2026.1 | Kotlin → 2.4.0-Beta1 (IDE bundles metadata 2.4.0) |
+| 262-SNAPSHOT | Kotlin → 2.4.0-Beta1 + plugin 2.14.0 + `useInstaller = false` + `nightly()` repo |
+
+### IntelliJ Platform Gradle Plugin — snapshot resolution
+
+The plugin (v2.13.1 in project, v2.14.0 latest) resolves IDEs in two modes:
+- **Installer** (`useInstaller = true`, default): downloads `.zip` / `.dmg` from
+  `download.jetbrains.com`. Releases only.
+- **Maven** (`useInstaller = false`): resolves from Maven repos (`snapshots()`, `nightly()`).
+  Required for snapshot/nightly versions.
+
+Nightly builds (`262-SNAPSHOT`) need: (1) `nightly()` repo (may need auth/VPN), (2)
+`useInstaller = false`, (3) plugin version ≥ 2.14.0. Source: cloned at
+`~/Work/intellij-platform-gradle-plugin/` — key files
+`IntelliJPlatformDependenciesHelper.kt`, `IntelliJPlatformRepositoriesExtension.kt`,
+`RequestedIntelliJPlatformsService.kt`.
+
+## Docker-test CI gotchas (TeamCity, Linux)
+
+These rules govern how Docker-based tests behave on TeamCity Linux agents. Most surface only on Linux
+(macOS/Docker Desktop's virtiofs hides UID issues).
+
+### TeamCity DSL build wiring
+
+(Implemented in the separate `~/Work/mcp-steroid-teamcity` repo. See its own `CLAUDE.md` for the
+generate→edit→regenerate→commit workflow. Rules below describe what each Docker test build needs.)
+
+- **`BuildType.requireLinuxDocker()` helper** (`utils/LinuxDocker.kt`): every build that shells out to
+  `docker` applies `exists("docker.version")` + Linux_amd64 + `dockerSupport { loginToRegistry =
+  on(PROJECT_EXT_789) }`. Registry login routes pulls through `registry.jetbrains.team`, avoiding the
+  daemon mirror that occasionally 503s.
+- **`freeDiskSpace { requiredSpace = "20gb"; failBuild = true }`** on every Docker test build. IDE
+  image (~1.5 GB) + plugin + base layer + per-test run-dir easily hit 15 GB+; without the gate,
+  mid-build ENOSPC shows up as cryptic `docker cp: Could not find the file …` against `/mcp-run-dir`.
+- **`publishArtifacts` emission pattern.** Emit AT TEARDOWN (lifetime cleanup action), NOT at container
+  creation — TC processes the service message immediately, not at end-of-build. Use the recursive-glob
+  form (`<path>/<star><star> => <dest>`); a literal `<dir> => <zip>` spec on an empty dir yields
+  "Artifacts path '…' not found". Publish video + screenshots as standalone artifacts (per-run folders)
+  in addition to the zip so TC's in-browser MP4 / image preview works without downloading the zip.
+- **`-PtestFilter=<pattern>` in `build.gradle.kts`, NOT `--tests` on the CLI.** TC's Gradle runner emits
+  `gradleParams` BEFORE task names in the final invocation, which detaches `--tests` from its task. A
+  project-property applied programmatically via `Test#filter` is task-position-independent.
+- **`gradleParams` values are NOT shell-quoted.** TC passes them directly to gradle. Wrapping a value
+  in single quotes (e.g. `"-PtestFilter='*X'"`) makes the project property contain literal quotes,
+  which never match anything. Patterns must be whitespace-free single tokens — no quoting needed.
+- **Shared secrets at the root project**, not on individual builds. Declare via
+  `params { param("env.X", Ref(…).toString()) }` in `settings.kts`. TC param inheritance is parent →
+  child only (NOT peer-to-peer); declaring a `credentialsJSON:UUID` on a single build leaves peers
+  failing with "unresolved TeamCity reference". When a build's `properties.property` REST field shows
+  the literal `%credentialsJSON:…%` instead of `******`, the substitution failed and tests MUST fail
+  hard in that state — no `TestAbortedException` / `Assume.assumeTrue` to paper over it.
+
+### Linux bind-mount UID mismatch
+
+- **Bind mounts do NOT remap UIDs on Linux.** A host directory owned by the TC-agent user (uid e.g.
+  999) is still owned by that uid inside the container, so a container user `agent` (uid 1000) cannot
+  write to `/mcp-run-dir`. macOS/Docker Desktop's virtiofs VM handles UID mapping transparently, hiding
+  this locally.
+- **Fix pattern:** call `File.setReadable(true, false)` / `setWritable(true, false)` /
+  `setExecutable(true, false)` on the host dir after `mkdirs()` and before the container starts.
+  Ownership still mismatches; mode bits 777 let any uid write.
+- **`git`'s "dubious ownership" check** fires on the same UID mismatch when a read-only bind mount is
+  a git repo (e.g. `/repo-cache`). The only workaround that works on TC's git build is
+  `git config --global --add safe.directory <path>` as a SEPARATE exec before the clone. The
+  container's `~/.gitconfig` is ephemeral so this doesn't leak. `git -c safe.directory=*` and
+  `git -c safe.directory=<path>` were rejected by the TC-agent's git build.
+- **`escapeShellArgs` must quote glob/meta chars.** Args passed through
+  `docker exec … bash -c "<joined args>"` are subject to shell word-splitting; `*`, `?`, `[`, `]`, `$`,
+  `;`, `&`, `|`, `<`, `>`, `(`, `)`, `!` — quote every one or tokens get rewritten silently
+  (e.g. `safe.directory=*` → `safe.directory=<cwd-file-1>`).
+- **`SSH_AUTH_SOCK` is NOT set on TC agents.** Tests that default `mountSshAgent = true` must fall back
+  gracefully (log + skip the mount) when `SSH_AUTH_SOCK` is unset — not hard-fail. None of the DPAIA
+  arena / debugger / bright-scenario tests actually need SSH (public HTTPS clones, local Maven/Gradle
+  drivers).
+
+### Windows CI compatibility (per-OS Gradle test matrix)
+
+- `BufferedWriter.newLine()` writes `\r\n` on Windows — use `write("\n")` for protocol output (NDJSON,
+  MCP).
+- `File.readText()` preserves `\r\n` — normalize with `.replace("\r\n", "\n")` when comparing against
+  generated text.
+
+### API keys on TC
+
+Credentials stored as `credentialsJSON:*` on the TC server, referenced via `Tokens.kt` in the TC repo:
+
+| Token | Env var on agent | Used by |
+|-------|-----------------|---------|
+| `ANTHROPIC_TOKEN_KEY_REF` | `ANTHROPIC_API_KEY` | `test-integration` (Cli Claude tests) |
+| `OPENAI_TOKEN_KEY_REF` | `OPENAI_API_KEY` | `test-integration` (Cli Codex tests) |
+| `TBE_PLUGINS_TOKEN_REF` | — (inline in script) | `Deploy plugin to TBE` |
+
+**Missing:** `GEMINI_API_KEY` — no `credentialsJSON` ref exists yet. `CliGeminiIntegrationTest` opts
+into `skipTestWhenKeyMissing` (see root CLAUDE.md → BANNED → Gemini exception).
+
+## Agent output filters & NDJSON quirks
+
+Each agent is invoked with specific flags to produce NDJSON output piped through `agent-output-filter`:
+
+| Agent | Output flag | Auto-approve flag | Verbose |
+|-------|------------|-------------------|---------|
+| Claude | `--output-format stream-json` | `--permission-mode bypassPermissions` | **`--verbose` required** (without it, tool call details are not emitted) |
+| Codex | `--json` | `--dangerously-bypass-approvals-and-sandbox` | n/a |
+| Gemini | `--output-format stream-json` | `--approval-mode yolo` | n/a |
+
+### Design principle
+
+The output filters render NDJSON as human-readable text — they do NOT filter or suppress events. Every
+event must produce some output. The only legitimate silences are structural lifecycle events whose
+content arrives in a corresponding `completed` event:
+
+- `thread.started`, `turn.started` — no content, silenced.
+- `item.started` for `agent_message` — content arrives in `item.completed`.
+
+Unknown / future event types always fall through as raw JSON so no information is lost.
+
+### `toolDetail()` (`FilterUtils.kt`)
+
+Extracts a human-readable summary for `>> tool_name (detail)` lines. Handles:
+- `steroid_execute_code` → `reason`
+- `steroid_execute_feedback` → rating + first line of explanation
+- `steroid_open_project` → path
+- `Read` / `Glob` / `Write` → path
+- `Grep` → pattern
+- Generic fallback: first short (<80 chars, no newlines) primitive value from the input JSON.
+
+### Agent log files
+
+`ConsoleAwareAgentSession` writes two files per `runPrompt()` call into `logDir` (always = `runDir`):
+- `agent-{name}-{N}-raw.ndjson` — raw NDJSON lines from STDOUT (unfiltered).
+- `agent-{name}-{N}-decoded.txt` — human-readable decoded output + stderr/info lines.
+
+### `ClaudeOutputFilter`
+
+Claude Code 2.1.x switched from streaming events (`content_block_delta`, `tool_use`, `tool_result`) to
+structured `assistant` / `user` events with full `message.content` arrays. The `result.result` field is
+empty in the new format; actual output is in `assistant.message.content[].type=text` blocks. The filter
+handles **both formats** simultaneously for backward/forward compatibility.
+
+MCP tool names in the new format are fully qualified: `mcp__mcp-steroid__steroid_execute_code`.
+`toolDetail()` strips the prefix with `substringAfterLast("__")`.
+
+### `CodexOutputFilter`
+
+Codex `--json` uses different field names than Claude.
+
+`mcp_tool_call` items (Codex actual format):
+```json
+{"type": "item.started",
+ "item": {"id": "item_5", "type": "mcp_tool_call", "server": "mcp-steroid",
+          "tool": "steroid_execute_code",
+          "arguments": { "reason": "...", ... }}}
+```
+Note: `"tool"` (not `"name"`); `"arguments"` (not `"input"`). Completed `mcp_tool_call` result is a
+structured object (`{"content": [{"type":"text","text":"..."}], "structured_content": null}`), not a
+primitive.
+
+`reasoning` items (Codex emits thinking steps):
+```json
+{"type": "item.completed", "item": {"type": "reasoning", "text": "Planning to..."}}
+```
+Rendered as `[thinking] first-non-blank-line`.
+
+`resolveToolName()` checks `item["name"]` → `item["function"]["name"]` → `item["tool"]`.
+`resolveInputObject()` checks `item["input"]` → `item["arguments"]` → `item["function"]["arguments"]`.
+
+### Forcing agents to output required data
+
+Use explicit output markers so agents include required information in final text (not just internal
+reasoning):
+
+```kotlin
+appendLine("OUTPUT_MARKER: <required content description>")
+appendLine("BUG_LINE: <the exact buggy line of code>")
+appendLine("FILE_PATHS: <at least one file path ending in .java or .kt that you found>")
+```
+
+Agents (especially Gemini) sometimes find the right answer internally but omit it from final text —
+markers force explicit reporting.
+
+### Known agent quirks
+
+- **Gemini exit 137** (SIGKILL): treat as success when NDJSON confirms success — `DockerGeminiSession`
+  handles this automatically.
+- **Codex exit 137** (SIGKILL): same pattern. Tests already check for required output markers before
+  checking exit code.
+- **Codex MCP prefix**: tool names are NOT MCP-prefixed in Codex output (no `mcp__`). Codex uses bare
+  names like `steroid_execute_code`.
+- **Codex `mcp_tool_call` field names**: different from `tool_call` — uses `"tool"`, `"arguments"`,
+  result in `result.content[]` array. See `resolveToolName()` / `resolveInputObject()`.
+- **Claude new NDJSON**: since Claude Code 2.1.x, structured `assistant`/`user` events; filter handles
+  both old and new formats.
