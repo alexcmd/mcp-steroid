@@ -37,7 +37,12 @@ class McpServerCore(
         }
     }
 
-    private suspend fun handleBatch(batch: JsonArray, session: McpSession): String {
+    private suspend fun handleBatch(batch: JsonArray, session: McpSession): String? {
+        // JSON-RPC 2.0 §6: an empty batch is a single Invalid Request error response,
+        // not an empty array.
+        if (batch.isEmpty()) {
+            return encodeError(JsonNull, JsonRpcErrorCodes.INVALID_REQUEST, "Empty batch")
+        }
         val responses = batch.mapNotNull { element ->
             if (element is JsonObject) {
                 handleSingle(element, session)?.let { McpJson.parseToJsonElement(it) }
@@ -47,6 +52,10 @@ class McpServerCore(
                 )
             }
         }
+        // §6 again: if every entry was a notification, the response MUST be omitted
+        // entirely — return null, not "[]". The transport layer treats null as
+        // "write nothing".
+        if (responses.isEmpty()) return null
         return McpJson.encodeToString(JsonArray.serializer(), JsonArray(responses))
     }
 

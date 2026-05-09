@@ -1,28 +1,38 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
-package com.jonnyzzz.mcpSteroid
+package com.jonnyzzz.mcpSteroid.mcp
 
-import com.intellij.testFramework.UsefulTestCase
-import com.intellij.testFramework.common.timeoutRunBlocking
-import com.jonnyzzz.mcpSteroid.mcp.*
-import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 
 /**
- * Test suite for MCP Roots capability (2025-11-25 spec).
+ * Unit tests for the MCP Roots capability (spec 2025-11-25).
+ *
+ * Roots logic is transport-agnostic — these tests live in `:mcp-core` so they exercise
+ * the dispatcher and session layer directly without spinning up an HTTP/stdio harness.
+ *
+ * Ported from `ij-plugin/.../McpRootsServiceTest.kt` so that it does not require the
+ * IntelliJ Platform test framework (`UsefulTestCase`, `BasePlatformTestCase`) to run.
  */
-class McpRootsServiceTest : UsefulTestCase() {
+class McpRootsServiceTest {
 
-    fun testSupportsRootsReturnsFalseWhenNotDeclared() {
+    @Test
+    fun `supportsRoots is false when client did not declare roots`() {
         val session = McpSession()
         session.markInitialized(
             ClientInfo("test", "1.0"),
-            ClientCapabilities() // No roots capability
+            ClientCapabilities() // no roots
         )
 
         assertFalse(session.supportsRoots())
         assertFalse(session.supportsRootsListChanged())
     }
 
-    fun testSupportsRootsReturnsTrueWhenDeclared() {
+    @Test
+    fun `supportsRoots is true when client declared roots without listChanged`() {
         val session = McpSession()
         session.markInitialized(
             ClientInfo("test", "1.0"),
@@ -35,7 +45,8 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertFalse(session.supportsRootsListChanged())
     }
 
-    fun testSupportsRootsListChangedReturnsTrueWhenDeclared() {
+    @Test
+    fun `supportsRootsListChanged is true when client declared listChanged=true`() {
         val session = McpSession()
         session.markInitialized(
             ClientInfo("test", "1.0"),
@@ -48,11 +59,12 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertTrue(session.supportsRootsListChanged())
     }
 
-    fun testGetRootsReturnsNullWhenClientDoesNotSupportRoots(): Unit = timeoutRunBlocking(10.seconds) {
+    @Test
+    fun `getRoots returns null when client does not support roots`() = runBlocking {
         val session = McpSession()
         session.markInitialized(
             ClientInfo("test", "1.0"),
-            ClientCapabilities() // No roots
+            ClientCapabilities() // no roots
         )
 
         val service = McpRootsService()
@@ -62,7 +74,8 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertEquals(0, service.getCacheSize())
     }
 
-    fun testHandleRootsListChangedClearsCache() {
+    @Test
+    fun `handleRootsListChanged clears cache for the session`() {
         val service = McpRootsService()
         val session = McpSession()
         session.markInitialized(
@@ -72,28 +85,30 @@ class McpRootsServiceTest : UsefulTestCase() {
             )
         )
 
-        // Clear cache (which should be empty anyway)
+        // Clear cache (which should be empty anyway).
         service.handleRootsListChanged(session)
         assertFalse(service.hasCachedRoots(session.id))
     }
 
-    fun testClearCacheRemovesSessionRoots() {
+    @Test
+    fun `clearCache for unknown session id is a no-op`() {
         val service = McpRootsService()
         val session = McpSession()
 
-        // Clear cache for non-existent session (should not throw)
         service.clearCache(session.id)
         assertFalse(service.hasCachedRoots(session.id))
     }
 
-    fun testClearAllCachesRemovesAllRoots() {
+    @Test
+    fun `clearAllCaches removes all cached roots`() {
         val service = McpRootsService()
 
         service.clearAllCaches()
         assertEquals(0, service.getCacheSize())
     }
 
-    fun testRootDataClassSerialization() {
+    @Test
+    fun `Root data class round-trips through McpJson`() {
         val root = Root(
             uri = "file:///home/user/project",
             name = "My Project"
@@ -105,7 +120,8 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertEquals(root, deserialized)
     }
 
-    fun testRootWithNullName() {
+    @Test
+    fun `Root with null name round-trips`() {
         val root = Root(
             uri = "file:///home/user/project",
             name = null
@@ -117,7 +133,8 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertEquals(root, deserialized)
     }
 
-    fun testRootsListResultSerialization() {
+    @Test
+    fun `RootsListResult round-trips`() {
         val result = RootsListResult(
             roots = listOf(
                 Root("file:///project1", "Project 1"),
@@ -132,7 +149,8 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertEquals(2, deserialized.roots.size)
     }
 
-    fun testRootsListResultWithEmptyList() {
+    @Test
+    fun `RootsListResult with empty list round-trips`() {
         val result = RootsListResult(roots = emptyList())
 
         val json = McpJson.encodeToJsonElement(RootsListResult.serializer(), result)
@@ -142,4 +160,3 @@ class McpRootsServiceTest : UsefulTestCase() {
         assertTrue(deserialized.roots.isEmpty())
     }
 }
-
