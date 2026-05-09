@@ -77,9 +77,17 @@ class McpSession(
 
     /**
      * Send a notification to this session's SSE stream.
+     *
+     * Uses a non-suspending [Channel.trySend] so callers (often `progress.report`,
+     * inside hot tool-execution paths) never block. If the buffered channel is full
+     * or already closed, the notification is dropped and a warning is logged so the
+     * loss is observable in production rather than swallowed silently.
      */
     fun sendNotification(notification: JsonRpcNotification) {
-        notificationChannel.trySend(notification)
+        val result = notificationChannel.trySend(notification)
+        if (result.isFailure) {
+            log.warn("[MCP Session $id] dropped notification ${notification.method}: $result")
+        }
     }
 
     /**
@@ -119,7 +127,14 @@ class McpSession(
         )
 
         log.info("[MCP Session ${id}] Sending server-to-client request: $method (id: $requestId)")
-        outgoingRequestsChannel.trySend(request)
+        val sent = outgoingRequestsChannel.trySend(request)
+        if (sent.isFailure) {
+            // Don't leave the deferred parked waiting for a response that will
+            // never come — the request never reached the wire.
+            pendingRequests.remove(requestId)
+            log.warn("[MCP Session $id] dropped outgoing request $method: $sent")
+            return null
+        }
 
         return try {
             withTimeoutOrNull(timeout) {

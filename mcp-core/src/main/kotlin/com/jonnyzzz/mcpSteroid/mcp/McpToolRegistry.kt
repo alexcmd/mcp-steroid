@@ -81,6 +81,12 @@ class McpToolRegistry : McpToolRegistrar {
 
         return try {
             tool.call(toolCallContext)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Never swallow cancellation — propagate so the surrounding coroutine
+            // scope can shut down cleanly. Treating this as a tool error would surface
+            // as `isError=true` and let the client think the call merely failed, while
+            // the dispatcher would keep running on a cancelled context.
+            throw e
         } catch (e: Exception) {
             ToolCallResult.builder()
                 .addTextContent("Tool execution error: ${e.message}")

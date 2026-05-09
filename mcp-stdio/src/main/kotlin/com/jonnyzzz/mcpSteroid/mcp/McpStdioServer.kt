@@ -2,11 +2,13 @@
 package com.jonnyzzz.mcpSteroid.mcp
 
 import com.jonnyzzz.mcpSteroid.thisLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import java.io.IOException
@@ -31,15 +33,20 @@ import kotlin.coroutines.coroutineContext
  * `ByteArrayInputStream` / `ByteArrayOutputStream`.
  *
  * Lifecycle:
- *   1. Caller invokes [run], which creates a fresh [McpSession] and launches two
- *      coroutines that drain the session's outgoing notification and request
- *      channels into framed bytes on [output].
- *   2. The reader loop pulls bytes from [input] on [Dispatchers.IO], feeds them to a
- *      [FramingBuffer], and dispatches each parsed frame to [server].
+ *   1. Caller invokes [run]. A fresh [McpSession] is created. Two coroutines pump the
+ *      session's outgoing notification and outgoing-request channels into framed
+ *      bytes on [output].
+ *   2. The reader loop pulls bytes from [input] via `runInterruptible(Dispatchers.IO)`
+ *      so cancellation closes the read thread, feeds them to a [FramingBuffer], and
+ *      dispatches **each parsed frame in its own child coroutine**. Concurrent dispatch
+ *      is required to avoid deadlock when a tool handler suspends on a server-to-client
+ *      request (e.g. `sampling/createMessage`) — the reader must keep accepting the
+ *      client's response while the handler is parked.
  *   3. The output framing mode is locked on the **first inbound frame** ("framed" or
  *      "ndjson"); subsequent writes match that mode.
- *   4. On EOF (or [IOException]) the reader exits, the session is closed (which
- *      drains its channels), and the coroutine returns.
+ *   4. On EOF (or [IOException]) the reader exits and the session is closed (which
+ *      drains its channels). The surrounding `coroutineScope` waits for all in-flight
+ *      dispatch coroutines and pump coroutines to finish before returning.
  */
 class McpStdioServer(
     private val server: McpServerCore,
@@ -60,75 +67,95 @@ class McpStdioServer(
     suspend fun run(): Unit = coroutineScope {
         val session = server.sessionManager.createSession()
         try {
-            launchOutgoingPump(session)
-            withContext(Dispatchers.IO) { readLoop(session) }
+            launchOutgoingPumps(session)
+            readLoop(session)
         } finally {
             // Close the session: this closes the notification + outgoing-request
             // channels so the pump coroutines drain remaining items and exit cleanly.
+            // The enclosing `coroutineScope` waits for them before returning.
             server.sessionManager.removeSession(session.id)
         }
     }
 
-    private fun CoroutineScope.launchOutgoingPump(session: McpSession) {
+    private fun CoroutineScope.launchOutgoingPumps(session: McpSession) {
         launch {
             session.notifications().collect { notification ->
-                val text = McpJson.encodeToString(JsonRpcNotification.serializer(), notification)
-                writeFrame(text)
+                writeFrame(McpJson.encodeToString(JsonRpcNotification.serializer(), notification))
             }
         }
         launch {
             session.outgoingRequests().collect { request ->
-                val text = McpJson.encodeToString(JsonRpcRequest.serializer(), request)
-                writeFrame(text)
+                writeFrame(McpJson.encodeToString(JsonRpcRequest.serializer(), request))
             }
         }
     }
 
-    private suspend fun readLoop(session: McpSession) {
+    /**
+     * Reads frames until EOF and launches a child coroutine per frame for dispatch.
+     * The enclosing `coroutineScope` waits for every dispatch to finish before this
+     * function returns.
+     */
+    private suspend fun readLoop(session: McpSession): Unit = coroutineScope {
         val buffer = FramingBuffer()
         val buf = ByteArray(READ_BUFFER_SIZE)
         while (coroutineContext.isActive) {
-            val n = readSafely(buf)
+            val n = readChunk(buf)
             if (n < 0) break          // EOF
-            if (n == 0) continue       // shouldn't happen for blocking InputStream, but be defensive
+            if (n == 0) continue       // 0-byte read is unusual for blocking InputStream; defend against it
             buffer.append(buf, n)
-            drainBuffer(buffer, session)
+            while (true) {
+                val frame = buffer.readNextFrame() ?: break
+                if (outputMode == null) outputMode = frame.mode
+                if (frame.payloadText.isBlank()) continue
+                val payload = frame.payloadText
+                launch { dispatch(payload, session) }
+            }
         }
     }
 
-    private fun readSafely(buf: ByteArray): Int {
-        return try {
+    /**
+     * Performs the blocking [InputStream.read] on [Dispatchers.IO] inside
+     * [runInterruptible] so coroutine cancellation interrupts the read thread.
+     * Returns -1 on EOF or [IOException]; -1 also bubbles out as EOF on cancellation.
+     */
+    private suspend fun readChunk(buf: ByteArray): Int = runInterruptible(Dispatchers.IO) {
+        try {
             input.read(buf)
         } catch (e: IOException) {
-            log.info("[MCP stdio] read interrupted: ${e.message}")
+            log.info("[MCP stdio] read terminated: ${e.message}")
             -1
         }
     }
 
-    private suspend fun drainBuffer(buffer: FramingBuffer, session: McpSession) {
-        while (true) {
-            val frame = buffer.readNextFrame() ?: return
-            if (outputMode == null) outputMode = frame.mode
-            if (frame.payloadText.isBlank()) continue
-
-            val response = try {
-                server.handleMessage(frame.payloadText, session)
-            } catch (e: Exception) {
-                log.warn("[MCP stdio] handler failed", e)
-                encodeInternalError(e.message ?: "Internal error")
-            }
-            if (response != null) writeFrame(response)
+    private suspend fun dispatch(payload: String, session: McpSession) {
+        val response = try {
+            server.handleMessage(payload, session)
+        } catch (e: CancellationException) {
+            // Never swallow cancellation — propagate so the parent scope shuts down cleanly.
+            throw e
+        } catch (e: Exception) {
+            log.warn("[MCP stdio] handler failed", e)
+            encodeInternalError(e.message ?: "Internal error")
         }
+        if (response != null) writeFrame(response)
     }
 
-    private fun writeFrame(text: String) {
+    /**
+     * Serializes the framed bytes onto [output] under [outputLock] (so concurrent
+     * dispatchers and outgoing pumps don't interleave bytes), with the blocking
+     * `write`/`flush` itself dispatched on [Dispatchers.IO].
+     */
+    private suspend fun writeFrame(text: String) {
         val frame = when (outputMode) {
             "ndjson" -> encodeNdjsonMessage(text)
             else -> encodeFramedMessage(text)
         }
-        synchronized(outputLock) {
-            output.write(frame.toByteArray(Charsets.UTF_8))
-            output.flush()
+        val bytes = frame.toByteArray(Charsets.UTF_8)
+        withContext(Dispatchers.IO) {
+            synchronized(outputLock) {
+                output.write(bytes)
+                output.flush()
+            }
         }
     }
 
