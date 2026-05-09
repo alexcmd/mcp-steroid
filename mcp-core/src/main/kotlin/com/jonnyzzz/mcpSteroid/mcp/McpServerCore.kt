@@ -60,44 +60,96 @@ class McpServerCore(
     }
 
     private suspend fun handleSingle(json: JsonObject, session: McpSession): String? {
-        val id = json["id"]
-        val method = json["method"]?.jsonPrimitive?.contentOrNull
+        // Per JSON-RPC 2.0 §4: jsonrpc MUST be exactly "2.0".
+        // https://www.jsonrpc.org/specification#request_object
+        val jsonrpcField = json["jsonrpc"]
+        if (jsonrpcField !is JsonPrimitive || !jsonrpcField.isString || jsonrpcField.content != JSONRPC_VERSION) {
+            return encodeError(JsonNull, JsonRpcErrorCodes.INVALID_REQUEST,
+                "Invalid Request: jsonrpc must be \"$JSONRPC_VERSION\"")
+        }
 
-        // Check if this is a notification (no id)
-        if (id == null) {
-            if (method != null) {
-                handleNotification(method)
-            }
+        // id MUST be string, number, or null when present. Object/array/boolean ids are
+        // invalid. We tolerate fractional numbers (the spec only "discourages" them).
+        val rawId = json["id"]
+        val isNotification = rawId == null
+        if (rawId != null && !isValidJsonRpcId(rawId)) {
+            return encodeError(JsonNull, JsonRpcErrorCodes.INVALID_REQUEST,
+                "Invalid Request: id must be a string, number, or null")
+        }
+
+        // method MUST be a string. method-on-notification with non-string drops silently
+        // (notifications never produce error responses); method-on-request with non-string
+        // is a -32600.
+        val methodElement = json["method"]
+        val method = if (methodElement is JsonPrimitive && methodElement.isString) methodElement.content else null
+
+        // Notification path: no response under any circumstances.
+        if (isNotification) {
+            if (method != null) handleNotification(method)
             return null
         }
 
-        // Check if this is a response to a server-initiated request (has id but no method)
+        // No method-field at all: this might be a response to a server-initiated request
+        // (sampling/createMessage, roots/list). If the id matches a pending request, the
+        // session consumes the response and we emit no reply. Otherwise it's a malformed
+        // request (a request MUST have a method).
+        if (methodElement == null) {
+            val routed = tryRouteServerResponse(rawId!!, json, session)
+            if (routed) return null
+            return encodeError(rawId, JsonRpcErrorCodes.INVALID_REQUEST, "Missing method")
+        }
+        // method present but not a string
         if (method == null) {
-            // This might be a response to a server request (like sampling)
-            val idString = id.toString().trim('"')
-            val result = json["result"]
-            val error = json["error"]
-
-            if (result != null) {
-                if (session.handleResponse(idString, result)) {
-                    // Successfully routed the response, no need to reply
-                    return null
-                }
-            } else if (error != null) {
-                val rpcError = try {
-                    McpJson.decodeFromJsonElement<JsonRpcError>(error)
-                } catch (_: Exception) {
-                    JsonRpcError(code = -1, message = "Unknown error")
-                }
-                if (session.handleErrorResponse(idString, rpcError)) {
-                    return null
-                }
-            }
-
-            return encodeError(id, JsonRpcErrorCodes.INVALID_REQUEST, "Missing method")
+            return encodeError(rawId!!, JsonRpcErrorCodes.INVALID_REQUEST,
+                "Invalid Request: method must be a string")
         }
 
-        return handleRequest(id, method, json["params"]?.jsonObject, session)
+        // Per JSON-RPC 2.0 §4.2: params, when present, MUST be a structured value
+        // (object or array). MCP only uses object params, so we reject primitives /
+        // arrays as -32600. `null` and missing are equivalent to "no params".
+        val paramsElement = json["params"]
+        val params: JsonObject? = when {
+            paramsElement == null || paramsElement is JsonNull -> null
+            paramsElement is JsonObject -> paramsElement
+            else -> return encodeError(rawId!!, JsonRpcErrorCodes.INVALID_REQUEST,
+                "Invalid Request: params must be an object")
+        }
+
+        return handleRequest(rawId!!, method, params, session)
+    }
+
+    /**
+     * If [json] is a response to a pending server-initiated request, route it through
+     * the [session]'s response handler and return `true`. Otherwise return `false`.
+     * Stray responses (id matches no pending request) are silently dropped per JSON-RPC §5
+     * — also `true` to suppress an error reply we don't have the right id for.
+     */
+    private fun tryRouteServerResponse(id: JsonElement, json: JsonObject, session: McpSession): Boolean {
+        val result = json["result"]
+        val error = json["error"]
+        if (result == null && error == null) return false
+        val idString = (id as? JsonPrimitive)?.contentOrNull ?: id.toString().trim('"')
+
+        if (result != null) {
+            session.handleResponse(idString, result)
+            return true
+        }
+        if (error != null) {
+            val rpcError = try {
+                McpJson.decodeFromJsonElement<JsonRpcError>(error)
+            } catch (_: Exception) {
+                JsonRpcError(code = -1, message = "Unknown error")
+            }
+            session.handleErrorResponse(idString, rpcError)
+            return true
+        }
+        return false
+    }
+
+    private fun isValidJsonRpcId(id: JsonElement): Boolean = when (id) {
+        is JsonNull -> true
+        is JsonPrimitive -> id.isString || id.longOrNull != null || id.doubleOrNull != null
+        else -> false
     }
 
     private suspend fun handleRequest(
@@ -226,7 +278,7 @@ class McpServerCore(
         }
 
         val result = resourceRegistry.readResource(readParams.uri)
-            ?: return encodeError(id, JsonRpcErrorCodes.INVALID_PARAMS, "Resource not found: ${readParams.uri}")
+            ?: return encodeError(id, JsonRpcErrorCodes.RESOURCE_NOT_FOUND, "Resource not found: ${readParams.uri}")
 
         log.info("MCP resource read: ${readParams.uri}")
 

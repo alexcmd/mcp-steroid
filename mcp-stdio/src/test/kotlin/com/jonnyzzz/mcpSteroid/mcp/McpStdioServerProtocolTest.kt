@@ -553,19 +553,15 @@ class McpStdioServerProtocolTest {
     }
 
     @Test
-    fun `tools call without name parameter returns invalid params`() = runTest {
+    fun `tools call without name parameter returns -32602 invalid params`() = runTest {
+        // MCP 2025-11-25 ToolCallRequestParams.name is required. Missing the field is a
+        // protocol error (-32602), not a tool-error result (isError=true).
         val h = StdioHarness()
         h.sendFramed(req("1", "tools/call", """{"arguments":{}}"""))
         val resp = h.runAndGetObjects()[0]
-        // Missing required `name` field — InitializeParams parser fails
-        // → -32602 invalid params (or tool-not-found tool error). Either is a valid
-        // server choice; both must echo id and avoid leaking server crash details.
-        if (resp["error"] != null) {
-            assertEquals(-32602, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
-        } else {
-            val result = resp["result"] as JsonObject
-            assertEquals("true", result["isError"]?.jsonPrimitive?.content?.lowercase())
-        }
+        val error = resp["error"] as JsonObject
+        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals("1", resp["id"]?.jsonPrimitive?.content, "id must be echoed even on protocol error")
     }
 
     @Test
@@ -640,11 +636,13 @@ class McpStdioServerProtocolTest {
     }
 
     @Test
-    fun `resources read with unknown uri returns minus32602`() = runTest {
+    fun `resources read with unknown uri returns minus32002 RESOURCE_NOT_FOUND`() = runTest {
+        // MCP 2025-11-25 §Resources/Error-Handling assigns -32002 (server-error range)
+        // to "Resource not found", distinct from generic -32602 invalid params.
         val h = StdioHarness()
         h.sendFramed(req("1", "resources/read", """{"uri":"test://nonexistent"}"""))
         val error = h.runAndGetObjects()[0]["error"] as JsonObject
-        assertEquals(-32602, error["code"]?.jsonPrimitive?.int)
+        assertEquals(-32002, error["code"]?.jsonPrimitive?.int)
     }
 
     @Test
@@ -1131,23 +1129,16 @@ class McpStdioServerProtocolTest {
     // ---- Batch ---------------------------------------------------------------
 
     @Test
-    fun `empty batch array returns invalid request error`() = runTest {
-        // JSON-RPC 2.0 §6: empty array MUST yield a single Invalid Request error.
+    fun `empty batch array returns single -32600 error response per JSON-RPC 2dot0 section 6`() = runTest {
+        // JSON-RPC 2.0 §6: empty array MUST yield a single Invalid Request error response,
+        // not an empty array. The id MUST be null because no request id was extractable.
         val h = StdioHarness()
         h.sendFramed("[]")
         val elements = h.runAndGetElements()
         assertEquals(1, elements.size)
-        // Should be a single error object, not an empty array.
-        if (elements[0] is JsonObject) {
-            val resp = elements[0] as JsonObject
-            assertNotNull(resp["error"])
-            assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
-        } else {
-            // Some implementations return an empty array. Both are observed in the wild.
-            // Document the chosen behaviour explicitly:
-            assertTrue(elements[0] is JsonArray && (elements[0] as JsonArray).isEmpty(),
-                "Empty batch must produce either a single error response or an empty array")
-        }
+        val resp = elements[0] as JsonObject
+        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals("null", resp["id"].toString())
     }
 
     @Test
@@ -1268,6 +1259,140 @@ class McpStdioServerProtocolTest {
             .let { (it[0] as JsonObject)["text"]?.jsonPrimitive?.content }
         assertEquals("first", firstText)
         assertEquals("second", secondText)
+    }
+
+    // ---- Round-2 review fixes: JSON-RPC envelope validation ---------------
+
+    @Test
+    fun `request missing jsonrpc field returns -32600 invalid request`() = runTest {
+        // JSON-RPC 2.0 §4: jsonrpc MUST be present and equal to "2.0".
+        val h = StdioHarness()
+        h.sendFramed("""{"id":"1","method":"ping"}""")
+        val resp = h.runAndGetObjects()[0]
+        val error = resp["error"] as JsonObject
+        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with jsonrpc 1dot0 returns -32600 invalid request`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"1.0","id":"1","method":"ping"}""")
+        val error = h.runAndGetObjects()[0]["error"] as JsonObject
+        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with non-string jsonrpc returns -32600`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":2.0,"id":"1","method":"ping"}""")
+        val error = h.runAndGetObjects()[0]["error"] as JsonObject
+        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with boolean id returns -32600 with id=null`() = runTest {
+        // JSON-RPC 2.0 §4: id MUST be String, Number, or Null.
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":true,"method":"ping"}""")
+        val resp = h.runAndGetObjects()[0]
+        val error = resp["error"] as JsonObject
+        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+        assertEquals("null", resp["id"].toString(),
+            "Server cannot trust a structurally-invalid id, so the response id MUST be null")
+    }
+
+    @Test
+    fun `request with object id returns -32600 with id=null`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":{"x":1},"method":"ping"}""")
+        val resp = h.runAndGetObjects()[0]
+        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals("null", resp["id"].toString())
+    }
+
+    @Test
+    fun `request with array id returns -32600 with id=null`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":[1,2],"method":"ping"}""")
+        val resp = h.runAndGetObjects()[0]
+        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals("null", resp["id"].toString())
+    }
+
+    @Test
+    fun `request with non-string method returns -32600 echoing original id`() = runTest {
+        // method MUST be a string. method=true is not "ping" coerced to "true".
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":true}""")
+        val resp = h.runAndGetObjects()[0]
+        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+        assertEquals("1", resp["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `request with numeric method returns -32600`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":42}""")
+        val error = h.runAndGetObjects()[0]["error"] as JsonObject
+        assertEquals(-32600, error["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with array params returns -32600`() = runTest {
+        // MCP only uses object params. Per JSON-RPC 2.0 §4.2 params can be Array or
+        // Object generally, but our server rejects arrays as Invalid Request.
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":"ping","params":[1,2]}""")
+        val resp = h.runAndGetObjects()[0]
+        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with primitive params returns -32600`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":"ping","params":42}""")
+        val resp = h.runAndGetObjects()[0]
+        assertEquals(-32600, (resp["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with params=null is accepted as missing params`() = runTest {
+        // null is the only non-object/non-array value accepted; treated as "no params".
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":"ping","params":null}""")
+        val resp = h.runAndGetObjects()[0]
+        assertNull(resp["error"])
+        assertNotNull(resp["result"])
+    }
+
+    @Test
+    fun `notification with non-string method is silently ignored`() = runTest {
+        // Notifications never get error responses, even when malformed.
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","method":42}""")
+        h.sendFramed(req("after", "ping"))
+        val responses = h.runAndGetObjects()
+        assertEquals(1, responses.size, "Only the trailing ping should produce a response")
+        assertEquals("after", responses[0]["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `notification missing method is silently ignored`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0"}""")
+        h.sendFramed(req("after", "ping"))
+        val responses = h.runAndGetObjects()
+        assertEquals(1, responses.size)
+    }
+
+    @Test
+    fun `request with large positive Long id is preserved without precision loss`() = runTest {
+        // Long.MAX_VALUE is 9223372036854775807 — JSON libraries that decode large ints
+        // as Double would lose the trailing digits.
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":9223372036854775807,"method":"ping"}""")
+        val resp = h.runAndGetObjects()[0]
+        assertEquals(9223372036854775807L, resp["id"]?.jsonPrimitive?.long)
     }
 
     // ---- _meta passthrough on tool args -----------------------------------

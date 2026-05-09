@@ -54,6 +54,14 @@ object JsonRpcErrorCodes {
     const val INVALID_PARAMS = -32602
     @Suppress("unused")
     const val INTERNAL_ERROR = -32603
+
+    /**
+     * MCP-specific code for `resources/read` against an unknown URI. Defined in the
+     * MCP 2025-11-25 spec ("Resources → Error Handling") inside the JSON-RPC
+     * server-error reserved range (-32099..-32000).
+     * https://modelcontextprotocol.io/specification/2025-11-25/server/resources#error-handling
+     */
+    const val RESOURCE_NOT_FOUND = -32002
 }
 
 // ==================== MCP Initialize ====================
