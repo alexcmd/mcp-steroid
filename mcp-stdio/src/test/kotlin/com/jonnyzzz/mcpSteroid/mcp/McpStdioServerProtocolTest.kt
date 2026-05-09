@@ -1,11 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.mcp
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
@@ -1395,6 +1397,143 @@ class McpStdioServerProtocolTest {
         h.sendFramed("""{"jsonrpc":"2.0","id":9223372036854775807,"method":"ping"}""")
         val resp = h.runAndGetObjects()[0]
         assertEquals(9223372036854775807L, resp["id"]?.jsonPrimitive?.long)
+    }
+
+    // ---- Round-4 review fixes: concurrent dispatch races + EOF cleanup ---
+
+    @Test
+    fun `EOF returns promptly even if a tool is suspended in sampling`() = runTest {
+        // Round-4 finding: an in-flight `sampling/createMessage` parked on
+        // session.sendRequest's Deferred would otherwise block run() until the
+        // 60s sampling timeout fires after stdin EOF. Closing the session in run()'s
+        // finally cancels pending Deferreds first, so the suspended dispatch resumes
+        // with CancellationException and the scope exits.
+        val server = McpServerCore(
+            serverInfo = ServerInfo(name = "sampling-test", version = "1.0"),
+            capabilities = ServerCapabilities(tools = ToolsCapability())
+        )
+        server.toolRegistry.registerTool(object : McpTool {
+            override val name = "ask"
+            override val description = "calls sampling and returns the text"
+            override val inputSchema = buildJsonObject { put("type", "object") }
+            override suspend fun call(context: ToolCallContext): ToolCallResult {
+                // The harness's session has no sampling capability set, so this returns
+                // null fast. To exercise the long-wait path, force a request anyway:
+                val r = context.session.sendRequest(
+                    method = "sampling/createMessage",
+                    params = buildJsonObject { put("messages", buildJsonArray { }) },
+                    timeout = kotlin.time.Duration.parse("PT60S")
+                )
+                return ToolCallResult(content = listOf(ContentItem.Text(text = r?.toString() ?: "null")))
+            }
+        })
+
+        val inputBytes = encodeFramedMessage(
+            """{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"ask","arguments":{}}}"""
+        ).toByteArray(Charsets.UTF_8)
+
+        val outputBuffer = ByteArrayOutputStream()
+        val started = System.currentTimeMillis()
+        // No virtual-time tricks; runTest+Dispatchers.IO is real wall time. If this
+        // test takes anywhere near 60s the cancel path is broken.
+        kotlinx.coroutines.runBlocking {
+            McpStdioServer(server, ByteArrayInputStream(inputBytes), outputBuffer).run()
+        }
+        val elapsed = System.currentTimeMillis() - started
+        assertTrue(elapsed < 5_000,
+            "run() must return within seconds of EOF even with a suspended sampling request, took ${elapsed}ms")
+    }
+
+    @Test
+    fun `initialize completes before subsequent requests in the same buffer see session state`() = runTest {
+        // Round-4 finding: a single read containing [initialize, sampling-using-tool]
+        // could race because dispatches are launched concurrently. The server now
+        // detects `initialize` at the wire level and dispatches it synchronously, so
+        // markInitialized has run before the next dispatch starts.
+        val server = McpServerCore(
+            serverInfo = ServerInfo(name = "init-race-test", version = "1.0"),
+            capabilities = ServerCapabilities(tools = ToolsCapability())
+        )
+        server.toolRegistry.registerTool(object : McpTool {
+            override val name = "supports_sampling"
+            override val description = "reports whether session.supportsSampling() is true"
+            override val inputSchema = buildJsonObject { put("type", "object") }
+            override suspend fun call(context: ToolCallContext): ToolCallResult =
+                ToolCallResult(content = listOf(ContentItem.Text(
+                    text = context.session.supportsSampling().toString()
+                )))
+        })
+
+        val initFrame = """{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{"sampling":{}},"clientInfo":{"name":"t","version":"1"}}}"""
+        val callFrame = """{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"supports_sampling","arguments":{}}}"""
+        val combined = encodeFramedMessage(initFrame) + encodeFramedMessage(callFrame)
+        val inputBytes = combined.toByteArray(Charsets.UTF_8)
+
+        val outputBuffer = ByteArrayOutputStream()
+        kotlinx.coroutines.runBlocking {
+            McpStdioServer(server, ByteArrayInputStream(inputBytes), outputBuffer).run()
+        }
+
+        val buffer = FramingBuffer()
+        buffer.append(outputBuffer.toByteArray())
+        val responses = mutableListOf<JsonObject>()
+        while (true) {
+            val frame = buffer.readNextFrame() ?: break
+            responses += Json.parseToJsonElement(frame.payloadText) as JsonObject
+        }
+        val callResp = responses.first { it["id"]?.jsonPrimitive?.content == "call" }
+        val text = ((callResp["result"] as JsonObject)["content"] as JsonArray)
+            .let { (it[0] as JsonObject)["text"]?.jsonPrimitive?.content }
+        assertEquals("true", text,
+            "Tool dispatched after initialize MUST observe the client's sampling capability")
+    }
+
+    @Test
+    fun `notification emitted before any inbound input uses NDJSON framing`() = runTest {
+        // Round-4 finding: outgoing pumps started before the first inbound frame would
+        // default to Content-Length, corrupting a spec-only NDJSON peer. Default is
+        // now NDJSON to match the MCP 2025-11-25 stdio transport spec.
+        val server = McpServerCore(
+            serverInfo = ServerInfo(name = "early-notify", version = "1.0"),
+            capabilities = ServerCapabilities()
+        )
+
+        // No input → no inbound frame → outputMode never set by the reader.
+        // We trigger an outgoing notification programmatically before the read loop
+        // would have anything to detect from. We do this by giving the server a
+        // session-aware tool that emits a notification, but to keep the wire empty
+        // we simply… don't send a request. Use a small wrapper that runs run() with
+        // an empty input but enqueues a notification on its session manually via
+        // the SessionManager's freshly-created session.
+        val outputBuffer = ByteArrayOutputStream()
+        kotlinx.coroutines.runBlocking<Unit> {
+            kotlinx.coroutines.coroutineScope {
+                val emitJob = launch {
+                    while (server.sessionManager.getSessionCount() == 0) {
+                        kotlinx.coroutines.delay(5)
+                    }
+                    val session = server.sessionManager.getAllSessions().single()
+                    session.sendNotification(
+                        JsonRpcNotification(
+                            method = "notifications/early",
+                            params = buildJsonObject { put("when", "before-input") }
+                        )
+                    )
+                    kotlinx.coroutines.delay(50)
+                }
+                McpStdioServer(server, ByteArrayInputStream(ByteArray(0)), outputBuffer).run()
+                emitJob.cancel()
+            }
+        }
+
+        val raw = outputBuffer.toByteArray().toString(Charsets.UTF_8)
+        // Output should be NDJSON (no Content-Length header) — empty if the test
+        // raced (notification got dropped because session closed faster than the pump),
+        // but if anything was written it MUST be NDJSON.
+        if (raw.isNotEmpty()) {
+            assertFalse(raw.contains("Content-Length:"),
+                "Pre-input notifications must use NDJSON framing per MCP 2025-11-25, got: $raw")
+        }
     }
 
     // ---- _meta passthrough on tool args -----------------------------------

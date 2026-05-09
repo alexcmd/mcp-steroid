@@ -11,6 +11,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -68,11 +71,13 @@ class McpStdioServer(
         val session = server.sessionManager.createSession()
         try {
             launchOutgoingPumps(session)
-            readLoop(session)
+            readLoop(this, session)
         } finally {
-            // Close the session: this closes the notification + outgoing-request
-            // channels so the pump coroutines drain remaining items and exit cleanly.
-            // The enclosing `coroutineScope` waits for them before returning.
+            // Close the session BEFORE the enclosing scope's implicit "wait for
+            // children": closing cancels any pending Deferred in `session.sendRequest`,
+            // which unblocks tool handlers parked on `sampling/createMessage` so their
+            // dispatch coroutines can exit instead of holding `run()` open until the
+            // sampling timeout fires after stdin EOF.
             server.sessionManager.removeSession(session.id)
         }
     }
@@ -92,10 +97,15 @@ class McpStdioServer(
 
     /**
      * Reads frames until EOF and launches a child coroutine per frame for dispatch.
-     * The enclosing `coroutineScope` waits for every dispatch to finish before this
-     * function returns.
+     * Dispatches are launched into [scope] (the parent scope from [run]) so that
+     * EOF can flow through `finally → removeSession → channel close → Deferred cancel`
+     * without being blocked by an inner `coroutineScope`'s wait-for-children.
+     *
+     * The single exception is `initialize`: it MUST complete before subsequent
+     * dispatches read `clientCapabilities` from the session. We detect it cheaply at
+     * the wire level and run it synchronously.
      */
-    private suspend fun readLoop(session: McpSession): Unit = coroutineScope {
+    private suspend fun readLoop(scope: CoroutineScope, session: McpSession) {
         val buffer = FramingBuffer()
         val buf = ByteArray(READ_BUFFER_SIZE)
         while (coroutineContext.isActive) {
@@ -108,9 +118,28 @@ class McpStdioServer(
                 if (outputMode == null) outputMode = frame.mode
                 if (frame.payloadText.isBlank()) continue
                 val payload = frame.payloadText
-                launch { dispatch(payload, session) }
+                if (isInitializeRequest(payload)) {
+                    dispatch(payload, session)
+                } else {
+                    scope.launch { dispatch(payload, session) }
+                }
             }
         }
+    }
+
+    /**
+     * Cheap, parse-tolerant peek at the wire payload to detect an `initialize` request.
+     * Returns false on parse errors — those will go through the normal dispatch path
+     * and produce a `-32700` response.
+     */
+    private fun isInitializeRequest(payload: String): Boolean {
+        val element = try { McpJson.parseToJsonElement(payload) } catch (_: Exception) { return false }
+        if (element !is JsonObject) return false
+        val method = element["method"]?.jsonPrimitive?.contentOrNull ?: return false
+        // Notifications never affect session state in a way subsequent requests depend on,
+        // so only the request form of `initialize` needs serialization.
+        val hasId = element["id"] != null
+        return hasId && method == McpMethods.INITIALIZE
     }
 
     /**
@@ -146,9 +175,13 @@ class McpStdioServer(
      * `write`/`flush` itself dispatched on [Dispatchers.IO].
      */
     private suspend fun writeFrame(text: String) {
-        val frame = when (outputMode) {
-            FrameMode.NDJSON -> encodeNdjsonMessage(text)
-            else -> encodeFramedMessage(text)
+        // Default to NDJSON: the MCP 2025-11-25 stdio transport spec mandates NDJSON,
+        // and any peer that speaks Content-Length will set `outputMode` on its first
+        // inbound frame before responses are emitted. Defaulting to framed would corrupt
+        // a spec-only NDJSON peer if the server emits a notification before any input.
+        val frame = when (outputMode ?: FrameMode.NDJSON) {
+            FrameMode.FRAMED -> encodeFramedMessage(text)
+            else -> encodeNdjsonMessage(text)
         }
         val bytes = frame.toByteArray(Charsets.UTF_8)
         withContext(Dispatchers.IO) {
