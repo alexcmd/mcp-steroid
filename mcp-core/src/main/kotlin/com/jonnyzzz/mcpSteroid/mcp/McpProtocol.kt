@@ -173,6 +173,11 @@ data class ToolCallResult(
     //val structuredContent: JsonElement? = null,
 )
 
+fun ToolCallResult.Companion.errorResult(message: String) = ToolCallResult(
+    content = listOf(ContentItem.Text(text = "ERROR: $message")),
+    isError = true
+)
+
 // ==================== Content Types ====================
 
 @Serializable
