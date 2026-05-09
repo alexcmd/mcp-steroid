@@ -179,15 +179,21 @@ class McpServerCore(
     }
 
     private fun handleInitialize(id: JsonElement, params: JsonObject?, session: McpSession): String {
+        // Per MCP 2025-11-25 §Lifecycle/Initialization, initialize MUST carry params with
+        // protocolVersion, capabilities, and clientInfo. Treat missing params as -32602
+        // so the client gets a clear protocol error instead of silently returning an
+        // InitializeResult against an uninitialized session.
+        if (params == null) {
+            return encodeError(id, JsonRpcErrorCodes.INVALID_PARAMS,
+                "initialize requires params with protocolVersion, capabilities, clientInfo")
+        }
         val initParams = try {
-            params?.let { McpJson.decodeFromJsonElement<InitializeParams>(it) }
+            McpJson.decodeFromJsonElement<InitializeParams>(params)
         } catch (e: Exception) {
             return encodeError(id, JsonRpcErrorCodes.INVALID_PARAMS, "Invalid initialize params: ${e.message}")
         }
 
-        if (initParams != null) {
-            session.markInitialized(initParams.clientInfo, initParams.capabilities)
-        }
+        session.markInitialized(initParams.clientInfo, initParams.capabilities)
 
         val result = InitializeResult(
             protocolVersion = MCP_PROTOCOL_VERSION,

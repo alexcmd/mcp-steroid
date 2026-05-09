@@ -256,15 +256,15 @@ class McpStdioServerProtocolTest {
     }
 
     @Test
-    fun `initialize without params returns a valid response without crashing`() = runTest {
-        // Current behaviour: missing params is tolerated as an empty initialize, the
-        // server still emits an InitializeResult. The test pins this lenient choice;
-        // tightening to -32602 (per spec) would be a separate decision.
+    fun `initialize without params returns -32602 invalid params per MCP lifecycle`() = runTest {
+        // MCP 2025-11-25 §Lifecycle/Initialization mandates params (protocolVersion,
+        // capabilities, clientInfo). The server now rejects rather than silently
+        // succeeding against an uninitialized session.
         val h = StdioHarness()
         h.sendFramed(reqNoParams("1", "initialize"))
         val resp = h.runAndGetObjects()[0]
-        assertNotNull(resp["result"])
-        assertNull(resp["error"])
+        val error = resp["error"] as JsonObject
+        assertEquals(JsonRpcErrorCodes.INVALID_PARAMS, error["code"]?.jsonPrimitive?.int)
     }
 
     // =========================================================================
@@ -1534,6 +1534,87 @@ class McpStdioServerProtocolTest {
             assertFalse(raw.contains("Content-Length:"),
                 "Pre-input notifications must use NDJSON framing per MCP 2025-11-25, got: $raw")
         }
+    }
+
+    // ---- Round-5 review fixes: parse-tolerant initialize peek + spec gaps -
+
+    @Test
+    fun `request with object method does not crash isInitializeRequest peek`() = runTest {
+        // Round-5 finding: the wire-level initialize-detection peek used jsonPrimitive
+        // unguarded; method:{...} would throw IllegalArgumentException and abort the
+        // read loop instead of returning a -32600 to the client.
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":{"x":1}}""")
+        h.sendFramed(req("after", "ping"))
+        val responses = h.runAndGetObjects()
+        assertEquals(2, responses.size, "Loop must keep running after malformed method")
+        val first = responses.first { it["id"]?.jsonPrimitive?.content == "1" }
+        assertEquals(JsonRpcErrorCodes.INVALID_REQUEST,
+            (first["error"] as JsonObject)["code"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `request with array method does not crash isInitializeRequest peek`() = runTest {
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"1","method":["initialize"]}""")
+        h.sendFramed(req("after", "ping"))
+        val responses = h.runAndGetObjects()
+        assertEquals(2, responses.size)
+    }
+
+    @Test
+    fun `stray response with unknown id is silently consumed`() = runTest {
+        // JSON-RPC §5: a response targeting an id we never sent has no remediation
+        // path. Consuming it (no outbound error) is the standard choice; the
+        // alternative would risk response loops between misbehaving peers.
+        val h = StdioHarness()
+        h.sendFramed("""{"jsonrpc":"2.0","id":"server-999","result":{"role":"assistant","content":{"type":"text","text":"ghost"}}}""")
+        h.sendFramed(req("after", "ping"))
+        val responses = h.runAndGetObjects()
+        // Only the trailing ping should produce a response.
+        assertEquals(1, responses.size)
+        assertEquals("after", responses[0]["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `initialize notification without id does not mark session initialized`() = runTest {
+        // Per JSON-RPC §4.1, a notification (no id) carries no request semantics.
+        // Tools that read `session.initialized` MUST still see it as false even after
+        // an `initialize`-method notification arrives.
+        val server = McpServerCore(
+            serverInfo = ServerInfo(name = "init-notification-test", version = "1.0"),
+            capabilities = ServerCapabilities(tools = ToolsCapability())
+        )
+        server.toolRegistry.registerTool(object : McpTool {
+            override val name = "is_initialized"
+            override val description = "reports session.initialized"
+            override val inputSchema = buildJsonObject { put("type", "object") }
+            override suspend fun call(context: ToolCallContext): ToolCallResult =
+                ToolCallResult(content = listOf(ContentItem.Text(
+                    text = context.session.initialized.toString()
+                )))
+        })
+
+        val notif = """{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"$MCP_PROTOCOL_VERSION","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
+        val callFrame = """{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"is_initialized","arguments":{}}}"""
+        val combined = encodeFramedMessage(notif) + encodeFramedMessage(callFrame)
+        val outputBuffer = ByteArrayOutputStream()
+        kotlinx.coroutines.runBlocking<Unit> {
+            McpStdioServer(server, ByteArrayInputStream(combined.toByteArray(Charsets.UTF_8)), outputBuffer).run()
+        }
+
+        val buffer = FramingBuffer()
+        buffer.append(outputBuffer.toByteArray())
+        val responses = mutableListOf<JsonObject>()
+        while (true) {
+            val frame = buffer.readNextFrame() ?: break
+            responses += Json.parseToJsonElement(frame.payloadText) as JsonObject
+        }
+        val callResp = responses.first { it["id"]?.jsonPrimitive?.content == "call" }
+        val text = ((callResp["result"] as JsonObject)["content"] as JsonArray)
+            .let { (it[0] as JsonObject)["text"]?.jsonPrimitive?.content }
+        assertEquals("false", text,
+            "An initialize notification (no id) MUST NOT mark the session initialized")
     }
 
     // ---- _meta passthrough on tool args -----------------------------------

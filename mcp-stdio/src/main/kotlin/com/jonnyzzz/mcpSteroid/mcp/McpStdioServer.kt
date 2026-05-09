@@ -12,6 +12,7 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
@@ -129,15 +130,17 @@ class McpStdioServer(
 
     /**
      * Cheap, parse-tolerant peek at the wire payload to detect an `initialize` request.
-     * Returns false on parse errors — those will go through the normal dispatch path
-     * and produce a `-32700` response.
+     * Returns false on parse errors or when `method` is structurally invalid (object /
+     * array / boolean / etc.) — those go through the normal dispatch path and produce
+     * a JSON-RPC compliant error response. Notifications never affect session state in
+     * a way subsequent requests depend on, so only the request form (with `id`) needs
+     * serialization.
      */
     private fun isInitializeRequest(payload: String): Boolean {
         val element = try { McpJson.parseToJsonElement(payload) } catch (_: Exception) { return false }
         if (element !is JsonObject) return false
-        val method = element["method"]?.jsonPrimitive?.contentOrNull ?: return false
-        // Notifications never affect session state in a way subsequent requests depend on,
-        // so only the request form of `initialize` needs serialization.
+        val methodElement = element["method"] ?: return false
+        val method = (methodElement as? JsonPrimitive)?.contentOrNull ?: return false
         val hasId = element["id"] != null
         return hasId && method == McpMethods.INITIALIZE
     }
