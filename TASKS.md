@@ -1,3 +1,10 @@
+
+#MCP 4 TASKS
+- [ ] add assert that mcp-core coroutines library is the same as in IntelliJ
+- [ ] add check that slf4j works in IntelliJ and logs are not lost
+- [ ] com.jonnyzzz.mcpSteroid.thisLogger should be internal to avoid usage from IntelliJ plugin code
+- [ ] `withTimeoutOrNull(5_000L) { Observation.awaitConfiguration(project) }` -- no need for timeout around patch application handler 
+
 # TASKS
 
 Current focus: make MCP Steroid measurably better than vanilla agent runs on DPAIA Maven and Gradle projects by reducing tokens, tool errors, and wall-clock time.
