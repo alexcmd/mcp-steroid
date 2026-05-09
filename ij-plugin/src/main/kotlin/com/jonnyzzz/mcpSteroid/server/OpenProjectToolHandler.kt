@@ -202,28 +202,15 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
                 }
             }
 
-            builder.addTextContent(buildString {
-                appendLine("Project opening initiated. The process runs in the background.")
-                appendLine("")
-                appendLine("IMPORTANT: You MUST poll to verify the project is ready before using it.")
-                appendLine("")
-                appendLine("VERIFICATION WORKFLOW:")
-                appendLine("1. Poll steroid_list_windows every 2-3 seconds until:")
-                appendLine("   - The project appears in the windows list")
-                appendLine("   - modalDialogShowing is false")
-                appendLine("   - indexingInProgress is false")
-                appendLine("   - projectInitialized is true")
-                appendLine("2. If modalDialogShowing is true:")
-                appendLine("   - Call steroid_take_screenshot to see the dialog")
-                appendLine("   - Use steroid_input to interact with the dialog")
-                appendLine("3. Use steroid_take_screenshot to visually confirm project is loaded")
-                appendLine("4. Verify with steroid_list_projects that the project appears")
-                appendLine("")
-                if (!openProjectParams.trustProject) {
-                    appendLine("NOTE: trust_project was false. A 'Trust Project' dialog may appear.")
-                    appendLine("      Set trust_project=true to skip the trust dialog.")
-                }
-            })
+            builder.addTextContent(VERIFICATION_WORKFLOW)
+            if (!openProjectParams.trustProject) {
+                builder.addTextContent(
+                    """
+                        NOTE: trust_project was false. A 'Trust Project' dialog may appear.
+                              Set trust_project=true to skip the trust dialog.
+                    """.trimIndent()
+                )
+            }
         } catch (e: ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
@@ -235,3 +222,21 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
         return builder.build()
     }
 }
+
+private val VERIFICATION_WORKFLOW = """
+    Project opening initiated. The process runs in the background.
+
+    IMPORTANT: You MUST poll to verify the project is ready before using it.
+
+    VERIFICATION WORKFLOW:
+    1. Poll steroid_list_windows every 2-3 seconds until:
+       - The project appears in the windows list
+       - modalDialogShowing is false
+       - indexingInProgress is false
+       - projectInitialized is true
+    2. If modalDialogShowing is true:
+       - Call steroid_take_screenshot to see the dialog
+       - Use steroid_input to interact with the dialog
+    3. Use steroid_take_screenshot to visually confirm project is loaded
+    4. Verify with steroid_list_projects that the project appears
+""".trimIndent()

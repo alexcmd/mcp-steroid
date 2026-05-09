@@ -11,7 +11,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
-import com.jonnyzzz.mcpSteroid.thisLogger
+import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*

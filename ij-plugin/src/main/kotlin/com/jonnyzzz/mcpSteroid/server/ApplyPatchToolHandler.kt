@@ -15,7 +15,6 @@ import com.jonnyzzz.mcpSteroid.execution.McpEditingGuardException
 import com.jonnyzzz.mcpSteroid.execution.executeApplyPatch
 import com.jonnyzzz.mcpSteroid.execution.mcpEditingGuard
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
-import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
@@ -55,8 +54,6 @@ import kotlinx.serialization.json.*
  * the same action, VFS async-refreshed on completion.
  */
 class ApplyPatchToolSpec(val handler: ApplyPatchToolHandler) : McpTool {
-    private val log = thisLogger()
-
     override val name = "steroid_apply_patch"
     override val description get() = ApplyPatchToolDescriptionPromptArticle().readPayload(buildPromptsContext())
     override val inputSchema = buildJsonObject {
@@ -196,7 +193,16 @@ class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
                 executionId = executionId,
                 logMessage = { log.info(it) },
             ) {
-                Observation.awaitConfiguration(project)
+                // Wait for IDE background configuration (project save, indexing, etc.)
+                // to settle before the write action. Without this, in a freshly-opened
+                // IDE the project-save activity that follows DialogKiller can hold the
+                // write-intent read lock for 10+ s, causing `WriteCommandAction` to
+                // time out before Claude's 60 s MCP tool cap. 5 s is a pragmatic upper
+                // bound: if configuration isn't done by then, proceed anyway — the
+                // write action retries on its own.
+                withTimeoutOrNull(5_000L) {
+                    Observation.awaitConfiguration(project)
+                }
 
                 executeApplyPatch(project, hunks) { path ->
                     LocalFileSystem.getInstance().findFileByPath(path)

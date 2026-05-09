@@ -156,7 +156,9 @@ class ExecutionStorage(
     fun findExecutionId(executionId: String) : ExecutionId? {
         if (executionId.contains("/") || executionId.contains("..")) return null
 
-        val path = baseDir.resolve(executionId).resolve("params.json")
+        // tool.json is the universal sentinel: every writeToolMetadata() call writes it,
+        // covering writeNewExecution / writeExecutionFeedback / writeToolCall.
+        val path = baseDir.resolve(executionId).resolve("tool.json")
         if (!path.isRegularFile()) return null
 
         return ExecutionId(executionId)
