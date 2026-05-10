@@ -28,3 +28,21 @@ project-monitoring service (push-style HTTP, JSON PID markers).
   branch; the Kotlin readers are updated in lockstep with the writer.
 - `NoLargeInlineStringsTest` and the `mcp-steroid://` URI lint rules don't
   apply here — no prompt content, no `mcp-steroid://` URIs added.
+
+## Mid-flight clarifications (user, after PidMarker scaffold landed)
+
+- **Forward/backward compat is universal**: `ignoreUnknownKeys = true`
+  applies to **every** decoder we touch in this branch — JSON marker file,
+  NDJSON wire frames, any request/response body. PidMarker already does
+  this; the npx-kt monitor and the IDE-side stream parsers must follow
+  suit.
+- **Liveness**: IDE emits a `ping` envelope on the projects stream every N
+  seconds (target 5s) so the monitor can distinguish "no project changes"
+  from "TCP socket silently dead". Reading a `ping` resets a stale-watchdog
+  on the consumer; missing it past `N * 3` triggers a reconnect.
+- **Client identification**: npx-kt announces itself to the IDE on connect
+  (clientId, clientPid, clientVersion, platform/arch). Cleanest fit is a
+  `POST /npx/v1/projects/stream` whose request body carries the
+  client-info JSON; the response keeps the streaming NDJSON shape. IDE
+  logs the announcement and includes `clientInstanceId` on the streamed
+  envelopes for traceability.
