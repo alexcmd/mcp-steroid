@@ -1,4 +1,126 @@
 
+# Active focus — codify the agent-first design tenets across all .md (2026-05-10)
+
+Goal: every CLAUDE.md / AGENTS.md / agent-facing prompt resource in the repo
+explicitly reinforces three tenets that today are only implicit. After this
+iteration, an agent (or a human contributor) can read any one of these files
+and recover the same design philosophy.
+
+## Tenets (canonical wording will land in `docs/PHILOSOPHY.md`)
+
+1. **Minimal MCP tool surface.** MCP Steroid intentionally maintains a small
+   set of `steroid_*` tools (today: 10). New tools are not the lever for
+   "agents deliver more" — better prompts and better recipes are. A new tool
+   is added only when the IntelliJ-API path is genuinely intractable AND
+   reviewer quorum agrees.
+2. **Power lives in prompts and direct IntelliJ API usage.** Improvements
+   come from richer tool descriptions, richer `mcp-steroid://` skill
+   resources, and teaching the agent to call IntelliJ's native APIs
+   (`FilenameIndex`, `JavaPsiFacade`, `ProjectTaskManager`, `XDebuggerUtil`,
+   …) inside `steroid_execute_code`. Don't wrap APIs in helpers; teach the
+   API as IntelliJ exposes it.
+3. **`McpScriptContext` methods are last-resort.** The helpers exposed
+   inside `steroid_execute_code`'s Kotlin runtime (`project`, `params`,
+   `disposable`, `println()`, `printJson()`, `progress()`,
+   `waitForSmartMode()`) shall not grow casually. A new context method
+   requires (a) the IntelliJ-native path is genuinely intractable, (b)
+   explicit reviewer consensus.
+
+These harmonise the blog post ("comprehensive bridges to existing systems",
+"agents follow the same processes as humans, no shortcuts") with the
+strategy page ("Give AI the whole IDE, not just the files"): the **MCP tool**
+surface stays minimal; the **IntelliJ capability** surface stays full,
+exposed via `steroid_execute_code` + prompt resources.
+
+## Decisions (locked 2026-05-10)
+
+- Canonical home: **new** `docs/PHILOSOPHY.md`. Linked from root CLAUDE.md +
+  AGENTS.md, from each per-folder agent guide, and mirrored as
+  `mcp-steroid://skill/design-philosophy` so agents can read it at runtime
+  via `steroid_fetch_resource`.
+- Voice: **AI agents first, humans second** — imperative ("Don't propose new
+  tools casually. Teach the agent to call IntelliJ APIs directly.") with a
+  trailing rationale paragraph for human contributors.
+- Cadence: per-batch `run-agent.sh` quorum (codex + claude + gemini), commit
+  per batch. Same pattern as the rest of TASKS.md.
+- Scope: docs + prompt resources only. Tool-count contract test deferred —
+  see "Follow-ups" below.
+
+## RLM-style iteration plan
+
+Each batch: small set of related edits → 3-agent quorum review (codex /
+claude / gemini via `run-agent.sh`) → adjust → commit. Each batch is
+independently revertable.
+
+### Batch 1 — Canonical tenets
+- [ ] Create `docs/PHILOSOPHY.md` (agent-first imperative voice + human
+  rationale + cross-links to RLM, blog, strategy page).
+- [ ] Create `prompts/src/main/prompts/skill/design-philosophy.md` mirroring
+  it (so `steroid_fetch_resource` can deliver it).
+- [ ] Cross-link from root `CLAUDE.md` + `AGENTS.md` (one paragraph + the
+  link).
+- [ ] Quorum review.
+- Success: an agent reading any of the three locations recovers the same
+  three tenets. Quorum approves wording.
+
+### Batch 2 — Per-folder agent guides
+- [ ] `ij-plugin/CLAUDE.md` — preface "Adding new MCP tools" with the
+  T1 question ("Can this be done via `steroid_execute_code` + direct
+  IntelliJ APIs?"), and the McpScriptContext-expansion gate.
+- [ ] `prompts/AGENTS.md` — add the *why* under the ProcessBuilder ban
+  (it's not just a rule, it's the IntelliJ-API tenet) and an explicit
+  "McpScriptContext stays narrow" note.
+- [ ] `test-integration/AGENTS.md` — promote the existing "Configuring the
+  IDE — always via `mcpExecuteCode`, never via XML" section into a top-level
+  "Design principles" block that names the three tenets.
+- [ ] `test-experiments/CLAUDE.md` — minimal cross-link only; this module
+  is short and already well-aligned in spirit.
+- [ ] Quorum review.
+- Success: every per-folder guide states the tenets that apply to its
+  scope, with a back-link to `docs/PHILOSOPHY.md`.
+
+### Batch 3 — Runtime prompt resources (delivered to agents at runtime)
+- [ ] `prompts/src/main/prompts/skill/mcp-steroid-info.md` — short paragraph
+  that names the tenets and points to the new design-philosophy resource.
+- [ ] `prompts/src/main/prompts/skill/execute-code-tool-description.md` —
+  reinforce: prefer direct IntelliJ APIs over inventing new context methods;
+  prefer `steroid_apply_patch` over multi-file `Edit` chains; prefer richer
+  prompts over new tools.
+- [ ] `prompts/src/main/prompts/ide/apply-patch.md` — reorder so the
+  dedicated `steroid_apply_patch` tool leads, and the script-context
+  `applyPatch { }` DSL is demoted to "fallback when patch + other API
+  work share a script."
+- [ ] Update `prompts/src/main/prompts/skill/coding-with-intellij.md`
+  if it carries any wording that could be read as encouraging context-method
+  expansion (audit-first, edit only if needed).
+- [ ] Quorum review.
+- Success: agents that read these via `steroid_fetch_resource` recover the
+  tenets; recipes still teach IntelliJ APIs directly with no new wrappers.
+
+### Batch 4 — Public + meta docs
+- [ ] `README.md` — fix the "9 tools" → 10; add a one-paragraph design
+  preamble that links to `docs/PHILOSOPHY.md`.
+- [ ] `website/CLAUDE.md` — add a one-line note distinguishing site docs
+  (end-user) from agent docs (this iteration's scope).
+- [ ] Verify the link graph: every `.md` updated above resolves and
+  cross-links bidirectionally.
+- [ ] Final quorum review against the whole branch (codex + claude +
+  gemini, 200-word verdict each).
+- Success: net new contributor or agent can land on README, AGENTS.md, or
+  any prompt resource and recover the philosophy.
+
+## Follow-ups (deferred from this iteration)
+
+- [ ] Add a contract test (`McpToolSurfaceContractTest` in
+  `:mcp-steroid-server` or `:ij-plugin`) that asserts the registered
+  `steroid_*` tool surface matches `EXPECTED_STEROID_TOOL_NAMES` exactly,
+  so a stray addition fails CI. Codifies T1 mechanically.
+- [ ] Same shape for `McpScriptContext` method count (e.g. assert the
+  public method set is unchanged unless intentional).
+- [ ] Consider porting the `mcp2` Executor/Request-DTO refactor (see
+  earlier section in this file) — orthogonal but reinforces "narrow
+  surfaces" tenet.
+
 # MCP4
 
 ## Generic stdio MCP server — extract from npx-kt
