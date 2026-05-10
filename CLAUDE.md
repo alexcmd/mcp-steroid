@@ -2,7 +2,26 @@
 
 Guidance for Claude Code when working with this repository. **Instructions here override default behavior.**
 
-## Recursive context lookup (READ THIS FIRST)
+## Design philosophy
+
+Three tenets govern every change in this repo — to code, MCP tools, or
+prompts. **Read [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md)** (mirrored as
+`mcp-steroid://skill/design-philosophy` for runtime fetch via
+`steroid_fetch_resource`) before proposing any of:
+
+- a new `steroid_*` MCP tool
+- a new method on `McpScriptContext`
+- a "helper" that wraps an IntelliJ API
+
+Short version: the **MCP tool** surface (10 today) stays narrow on
+purpose; the **IntelliJ capability** surface stays full, exposed via
+`steroid_execute_code` plus prompt resources. The strategy page's
+"Give AI the whole IDE, not just the files" is delivered through that
+combination — `steroid_execute_code` reaches every IDE API, and the
+`mcp-steroid://` prompt corpus teaches the agent how. New tools and new
+context methods are not the lever.
+
+## Recursive context lookup (do this before sub-folder work)
 
 Before acting on any task that touches files in a sub-folder, **walk the directory tree from the changed
 file's folder up to the project root and read every `CLAUDE.md` and `AGENTS.md` you find on the way**
