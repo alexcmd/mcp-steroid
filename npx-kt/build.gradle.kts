@@ -54,6 +54,55 @@ kotlin {
     jvmToolchain(21)
 }
 
+// Dedicated source set for stdio MCP server integration tests
+// (CliMcpStdioIntegrationTest). The tests spawn `bin/mcp-steroid-proxy` from the
+// `installDist` output as a subprocess and exchange JSON-RPC frames over stdio.
+// They are NOT part of the default `:npx-kt:test` run — invoke explicitly via
+// `./gradlew :npx-kt:integrationTest`.
+val integrationTest: SourceSet by sourceSets.creating {
+    compileClasspath += sourceSets["main"].output + sourceSets["test"].output +
+            sourceSets["test"].compileClasspath
+    runtimeClasspath += output + compileClasspath + sourceSets["test"].runtimeClasspath
+}
+
+configurations["integrationTestImplementation"].extendsFrom(configurations["testImplementation"])
+configurations["integrationTestRuntimeOnly"].extendsFrom(configurations["testRuntimeOnly"])
+
+dependencies {
+    "integrationTestImplementation"(platform("org.junit:junit-bom:5.11.4"))
+    "integrationTestImplementation"("org.junit.jupiter:junit-jupiter")
+    "integrationTestRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+    "integrationTestImplementation"(kotlin("test-junit5"))
+
+    // Docker harness: ContainerDriver + buildDockerImage + AISessionBase, plus
+    // DockerClaudeSession / DockerCodexSession / DockerGeminiSession used by
+    // the Cli{Claude,Codex,Gemini}IntegrationTest classes.
+    "integrationTestImplementation"(project(":test-helper"))
+    // StdioMcpCommand + the agent MCP-add arg builders.
+    "integrationTestImplementation"(project(":ai-agents"))
+}
+
+val installDistTask = tasks.named<Sync>("installDist")
+
+tasks.register<Test>("integrationTest") {
+    description = "Stdio MCP server integration tests (subprocess-driven). Requires installDist."
+    group = "verification"
+    useJUnitPlatform()
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath = integrationTest.runtimeClasspath
+    dependsOn(installDistTask)
+    // Path to the launcher script produced by installDist. The application plugin
+    // names the install dir after `application.applicationName`, not the project,
+    // so resolve it via the task itself rather than hard-coding the directory.
+    val launcherProvider = installDistTask.map { sync ->
+        sync.destinationDir.resolve("bin/${application.applicationName}")
+    }
+    inputs.file(launcherProvider)
+    doFirst {
+        systemProperty("npx.kt.launcher", launcherProvider.get().absolutePath)
+    }
+}
+
 val npxKtPackageElements by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
