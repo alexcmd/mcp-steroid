@@ -45,6 +45,13 @@ class DockerGeminiSession(
         }
         val env = buildMap {
             put("GEMINI_API_KEY", apiKey)
+            // Newer Gemini CLI builds (>= late 2026) demote `--approval-mode yolo`
+            // to "default" when the working directory isn't on the trusted-folders
+            // list, then refuse to run with exit 55 + a "trusted directory" error.
+            // The headless contract for automated environments is to opt the
+            // workspace in via this env var (see Gemini docs at
+            // /docs/cli/trusted-folders/#headless-and-automated-environments).
+            put("GEMINI_CLI_TRUST_WORKSPACE", "true")
             if (debug) {
                 put("GEMINI_DEBUG", "1")
                 put("MCP_DEBUG", "1")
