@@ -4,6 +4,31 @@
 suite. Experimental / long-running tests live in the sibling `:test-experiments` module, which
 depends on this one for the infrastructure.
 
+## Design principles in this module
+
+The three repo-wide tenets (canonical: [`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md);
+runtime: `mcp-steroid://skill/design-philosophy`) show up here as concrete
+operational rules:
+
+- **Tenet 1 — narrow MCP tool surface.** This module does not add MCP
+  tools. It tests the existing `steroid_*` surface end-to-end through
+  Docker-isolated agent CLIs and `mcpExecuteCode`-driven fixtures. If a
+  test would be easier with a new tool, treat that as a recipe (prompt
+  resource or fixture script) gap first — only escalate to a tool
+  proposal after the gates in `docs/PHILOSOPHY.md` Tenet 1 pass.
+- **Tenet 2 — IntelliJ APIs over wrappers.** Every test fixture configures
+  the IDE through *typed IntelliJ APIs* via `steroid_execute_code` (see
+  "Configuring the IDE — always via `mcpExecuteCode`, never via XML"
+  later in this file). XML config writes are explicitly banned because
+  they're untyped and silently fragile.
+- **Tenet 3 — `McpScriptContext` is last-resort.** Tests that need a
+  helper inside `steroid_execute_code` must write the helper *as* an
+  IntelliJ API call, not as a request to extend the context class.
+
+Read [`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md) before proposing
+changes that would expand the tool surface or the script-context
+surface.
+
 ## Researching IntelliJ APIs — Use MCP Steroid + Debugger
 
 **The IntelliJ project is open in the IDE (`~/Work/intellij`).** Use `steroid_execute_code`

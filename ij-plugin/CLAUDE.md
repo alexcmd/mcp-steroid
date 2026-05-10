@@ -106,8 +106,29 @@ ProgramRunnerUtil.executeConfiguration(settings, DefaultRunExecutor.getRunExecut
 
 ## Adding new MCP tools
 
+**Don't, in almost every case.** Read [`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md)
+(canonical) or `mcp-steroid://skill/design-philosophy` (runtime mirror)
+first. The MCP tool surface is intentionally narrow (10 today); a new tool
+ships only when **all three** of:
+
+1. The need cannot be met by `steroid_execute_code` + a direct IntelliJ API
+   call. **Document the specific IntelliJ API path you ruled out.**
+2. It cannot be met by a richer `mcp-steroid://` recipe.
+3. Three independent reviewers (`run-agent.sh codex` / `claude` / `gemini`)
+   agree, after reading PHILOSOPHY.md. **One reviewer disagreeing kills
+   the proposal** — propose a recipe instead.
+
+If the gates pass, the wiring itself is two lines:
+
 1. Create `@Service(Service.Level.APP)` handler with a `register(server: McpServerCore)` method.
 2. Register in `SteroidsMcpServer.kt`: `service<MyToolHandler>().register(server)`.
+
+Same gate applies to **adding methods on `McpScriptContext`** (Tenet 3 in
+PHILOSOPHY.md): the IntelliJ API is the extension point; context methods
+are last-resort. The `applyPatch { }` DSL stayed in the context class but
+production guidance routes agents to the dedicated `steroid_apply_patch`
+MCP tool first — new context methods must arrive with a similar fallback
+story from day one.
 
 ## IDE control via execute_code
 
@@ -233,8 +254,12 @@ rm -rf ij-plugin/build/idea-sandbox/                            # corrupted inde
 
 - **ExecCodeParams**: `taskId`, `code`, `reason`, `timeout`, `rawParams`.
 - **ToolCallResult**: `content` (`List<ContentItem>`), `isError`. Use `ToolCallResult.builder()`.
-- **McpScriptContext**: `project`, `params`, `disposable`, `println()`, `printJson()`, `progress()`,
-  `waitForSmartMode()`.
+- **McpScriptContext**: in-script Kotlin runtime context (`project`, `disposable`, `printJson(...)`,
+  `progress(...)`, `applyPatch { }`, `findProjectFile(...)`, `projectScope()`, the inspection /
+  highlighting helpers, etc.). See
+  `ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/execution/McpScriptContext.kt` for the
+  current surface — not enumerated here on purpose, since growing the surface is gated by Tenet 3
+  in `docs/PHILOSOPHY.md`.
 
 ## Configuration
 

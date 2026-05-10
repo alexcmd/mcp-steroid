@@ -2,6 +2,13 @@
 
 This guide explains the prompt file format, build-time processing, and IDE-conditional content system.
 
+> **Read [`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md) first** (canonical) or
+> `mcp-steroid://skill/design-philosophy` (runtime mirror). Prompt edits are
+> the primary lever for "agents deliver more" under Tenet 2 — every change in
+> this folder either teaches the agent an IntelliJ API directly or routes it
+> to one. New `McpScriptContext` helpers and new `steroid_*` tools are
+> last-resort, not the default response to a recipe gap.
+
 ## Prompt Content Principles
 
 **Core goal: Promote IntelliJ where it makes a difference.**
@@ -27,10 +34,21 @@ refactoring, compilation, test execution, indexing. Prompts must steer agents to
 **ProcessBuilder / GeneralCommandLine ban:**
 - `ProcessBuilder` is banned in all prompt code examples — it spawns processes from the IDE JVM,
   bypasses IntelliJ's process management, causes classpath conflicts, and produces token-limit-busting output.
+  *Why this is a tenet, not a style preference: a `ProcessBuilder` snippet teaches the agent that
+  shell-out is the answer; the next time it sees a similar problem it'll reach for `ProcessBuilder` again
+  instead of the IntelliJ idiom. Recipes ship transferable skills.*
 - `GeneralCommandLine` (IntelliJ wrapper for external processes) is also discouraged for cases where
   native Java APIs exist (file checks, socket checks). Use `GeneralCommandLine` only when an external
   tool must genuinely be invoked AND no IDE API exists AND no native Java API exists.
 - Exception: `MavenRunner`, `ExternalSystemUtil` — these are IDE-managed process launchers, not raw process spawns.
+
+**`McpScriptContext` stays narrow.** The helpers exposed inside
+`steroid_execute_code`'s runtime (see the `McpScriptContext` source for
+the current surface) are *the* surface, not a growing one. Prompts must
+NOT teach agents to expect new context methods, and prompt authors must
+NOT request a new context method to make a recipe shorter. The IntelliJ
+API is the extension point. See Tenet 3 in PHILOSOPHY.md for the gate
+that any new context method has to pass before it ships.
 
 ## File Format
 

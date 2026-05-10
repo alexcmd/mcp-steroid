@@ -4,6 +4,12 @@
 root `CLAUDE.md` and `test-integration/AGENTS.md` (the shared infrastructure lives there) when
 changing files under `test-experiments/`.
 
+The three repo-wide design tenets ([`docs/PHILOSOPHY.md`](../docs/PHILOSOPHY.md);
+runtime mirror `mcp-steroid://skill/design-philosophy`) apply here too —
+arena prompts and debugger demos are exactly the surface that "agents
+deliver more" measurements run against, so prompt-quality wins land here.
+New `steroid_*` tools and new `McpScriptContext` methods do not.
+
 ## What lives here
 
 - `DpaiaArenaTest` and the DPAIA arena instance suite — agentic task scenarios.
