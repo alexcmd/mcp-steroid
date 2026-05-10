@@ -35,6 +35,10 @@ class DockerGeminiSession(
             .assertNoErrorsInOutput(message = "NPX MCP server registration")
     }
 
+    override fun registerNpxKtMcp(installDir: File, mcpName: String) {
+        registerNpxMcp(session.installNpxKtMcp(installDir), mcpName)
+    }
+
     fun runInContainer(args: List<String>, timeoutSeconds: Long = 120): StartedProcess {
         val geminiArgs = buildList {
             add("gemini")
