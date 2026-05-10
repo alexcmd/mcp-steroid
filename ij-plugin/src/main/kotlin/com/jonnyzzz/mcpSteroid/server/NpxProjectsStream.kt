@@ -5,81 +5,17 @@ import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondTextWriter
-import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-
-/**
- * Wire-protocol envelope for the `/npx/v1/projects/stream` NDJSON response.
- *
- * Backward/forward compatibility: decoders MUST use [NpxStreamJson] (which
- * sets `ignoreUnknownKeys = true`). New optional fields SHOULD be added with
- * a default so old writers stay compatible.
- *
- * Envelope shape uses one struct with optional fields rather than a sealed
- * polymorphic hierarchy — that keeps the wire format trivial to extend
- * without breaking strict decoders, and matches the `eventType()` style
- * already in use by [NpxBridgeService.streamToolCall].
- */
-@Serializable
-data class NpxStreamEnvelope(
-    /** "snapshot" | "ping" — newer servers may add types; clients ignore unknown values. */
-    val type: String,
-    val seq: Long,
-    val sentAt: String,
-    /** Stable per-IDE-process identifier so clients can multiplex concurrent IDE connections. */
-    val instanceId: String,
-    /** OS pid of the IDE process. */
-    val pid: Long,
-    /** Present when `type == "snapshot"`. Absent (null) for pings and other events. */
-    val projects: List<ProjectInfo>? = null,
-)
-
-/**
- * Client-side identification sent in the POST body of `/npx/v1/projects/stream`.
- * Logged on the IDE for debugging / monitoring.
- */
-@Serializable
-data class NpxStreamClientInfo(
-    val client: String = "unknown",
-    val clientPid: Long? = null,
-    val clientVersion: String? = null,
-    val clientInstanceId: String? = null,
-    val platform: String? = null,
-    val arch: String? = null,
-)
-
-/**
- * Tolerant codec for the wire protocol — `ignoreUnknownKeys = true` is the
- * forward-compat hook used on both ends of the stream.
- */
-object NpxStreamJson {
-    val json: Json = Json {
-        ignoreUnknownKeys = true
-        prettyPrint = false
-        encodeDefaults = true
-    }
-
-    fun encodeEnvelope(envelope: NpxStreamEnvelope): String =
-        json.encodeToString(NpxStreamEnvelope.serializer(), envelope)
-
-    fun decodeEnvelope(line: String): NpxStreamEnvelope =
-        json.decodeFromString(NpxStreamEnvelope.serializer(), line)
-
-    fun decodeClientInfo(body: String): NpxStreamClientInfo =
-        json.decodeFromString(NpxStreamClientInfo.serializer(), body)
-}
 
 /**
  * Streams the projects-stream NDJSON response into [ApplicationCall].
@@ -158,6 +94,7 @@ internal suspend fun ApplicationCall.streamProjectsNdjson(
     }
 }
 
-internal val NDJSON_CONTENT_TYPE: ContentType = ContentType("application", "x-ndjson")
+internal val NDJSON_CONTENT_TYPE: ContentType =
+    ContentType.parse(NPX_NDJSON_MIME_TYPE)
 
 private fun nowIso(): String = DateTimeFormatter.ISO_INSTANT.format(Instant.now())

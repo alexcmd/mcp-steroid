@@ -1,0 +1,74 @@
+/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
+package com.jonnyzzz.mcpSteroid.server
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/**
+ * Wire-protocol envelope for the `/npx/v1/projects/stream` NDJSON response.
+ *
+ * Backward/forward compatibility: decoders MUST use [NpxStreamJson] (which
+ * sets `ignoreUnknownKeys = true`). New optional fields SHOULD be added with
+ * a default so old writers stay compatible.
+ *
+ * Envelope shape uses one struct with optional fields rather than a sealed
+ * polymorphic hierarchy — that keeps the wire format trivial to extend
+ * without breaking strict decoders.
+ */
+@Serializable
+data class NpxStreamEnvelope(
+    /** "snapshot" | "ping" — newer servers may add types; clients ignore unknown values. */
+    val type: String,
+    val seq: Long,
+    val sentAt: String,
+    /** Stable per-IDE-process identifier so clients can multiplex concurrent IDE connections. */
+    val instanceId: String,
+    /** OS pid of the IDE process. */
+    val pid: Long,
+    /** Present when `type == "snapshot"`. Absent (null) for pings and other events. */
+    val projects: List<ProjectInfo>? = null,
+)
+
+/**
+ * Client-side identification sent in the POST body of `/npx/v1/projects/stream`.
+ * Logged on the IDE for debugging / monitoring.
+ */
+@Serializable
+data class NpxStreamClientInfo(
+    val client: String = "unknown",
+    val clientPid: Long? = null,
+    val clientVersion: String? = null,
+    val clientInstanceId: String? = null,
+    val platform: String? = null,
+    val arch: String? = null,
+)
+
+/**
+ * Tolerant codec for the wire protocol — `ignoreUnknownKeys = true` is the
+ * forward-compat hook used on both ends of the stream.
+ */
+object NpxStreamJson {
+    val json: Json = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = false
+        encodeDefaults = true
+    }
+
+    fun encodeEnvelope(envelope: NpxStreamEnvelope): String =
+        json.encodeToString(NpxStreamEnvelope.serializer(), envelope)
+
+    fun decodeEnvelope(line: String): NpxStreamEnvelope =
+        json.decodeFromString(NpxStreamEnvelope.serializer(), line)
+
+    fun encodeClientInfo(info: NpxStreamClientInfo): String =
+        json.encodeToString(NpxStreamClientInfo.serializer(), info)
+
+    fun decodeClientInfo(body: String): NpxStreamClientInfo =
+        json.decodeFromString(NpxStreamClientInfo.serializer(), body)
+}
+
+/** HTTP path served by the IDE for NDJSON project-stream subscribers. */
+const val NPX_PROJECTS_STREAM_PATH: String = "/npx/v1/projects/stream"
+
+/** MIME type the IDE responds with on the projects-stream endpoint. */
+const val NPX_NDJSON_MIME_TYPE: String = "application/x-ndjson"
