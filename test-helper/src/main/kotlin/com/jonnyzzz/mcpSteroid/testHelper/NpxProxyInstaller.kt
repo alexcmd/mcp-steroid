@@ -1,6 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.testHelper
 
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
@@ -81,7 +85,8 @@ private fun ContainerDriver.deployNpxProxy(
     val guestPackageJson = "$guestDir/package.json"
     val guestLockFile = "$guestDir/package-lock.json"
     val guestConfig = "$guestDir/proxy.json"
-    val markerPath = "$userHome/.1.mcp-steroid"
+    val markerPid = 1L
+    val markerPath = "$userHome/${PidMarker.fileNameFor(markerPid)}"
 
     mkdirs(guestDir)
     mkdirs(guestDistDir)
@@ -102,14 +107,25 @@ private fun ContainerDriver.deployNpxProxy(
         executable = false,
     )
 
+    val fakeMarker = PidMarker(
+        pid = markerPid,
+        mcpUrl = ideMcpUrl,
+        ide = IdeInfo(
+            name = "IntelliJ IDEA (test-helper fake)",
+            version = "0.0.0",
+            build = "test"
+        ),
+        plugin = PluginInfo(
+            id = "com.jonnyzzz.mcpSteroid",
+            name = "MCP Steroid (test-helper fake)",
+            version = "0.0.0"
+        ),
+        createdAt = "2026-01-01T00:00:00Z",
+    )
+
     writeFileInContainer(
         markerPath,
-        """
-        $ideMcpUrl
-
-        IntelliJ MCP Steroid Server
-URL: $ideMcpUrl
-        """.trimIndent() + "\n",
+        PidMarkerJson.encode(fakeMarker) + "\n",
         executable = false,
     )
 

@@ -1,6 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -30,25 +32,20 @@ data class MarkerEntry(
 
 data class ParsedMarker(val url: String, val label: String)
 
+/**
+ * Parses a `.<pid>.mcp-steroid` marker file's JSON content. Returns null on
+ * malformed JSON, schema mismatch, or any other decode failure — the legacy
+ * line-based text format is no longer supported.
+ */
 fun parseMarkerContent(content: String, pid: Long): ParsedMarker? {
-    val lines = content.split(Regex("\r?\n")).map { it.trim() }
-    val url = lines.firstOrNull() ?: return null
-    if (url.isEmpty()) return null
-
-    var label: String? = null
-    for (i in 1 until lines.size) {
-        val line = lines[i]
-        if (line.isEmpty()) continue
-        if (line.startsWith("URL:")) continue
-        if (line.startsWith("MCP Steroid Server")) continue
-        if (line.startsWith("Created:")) continue
-        if (line.startsWith("Plugin ")) continue
-        if (line.startsWith("IDE ")) continue
-        label = line
-        break
+    val marker = try {
+        PidMarkerJson.decode(content)
+    } catch (e: Exception) {
+        return null
     }
-
-    return ParsedMarker(url = url, label = label ?: "pid:$pid")
+    if (marker.mcpUrl.isBlank()) return null
+    val label = marker.ide.name.takeIf { it.isNotBlank() } ?: "pid:$pid"
+    return ParsedMarker(url = marker.mcpUrl, label = label)
 }
 
 fun isAllowedHost(urlValue: String, allowHosts: List<String>): Boolean {
@@ -61,12 +58,10 @@ fun isAllowedHost(urlValue: String, allowHosts: List<String>): Boolean {
 }
 
 fun scanMarkers(homeDir: java.io.File, allowHosts: List<String>): List<MarkerEntry> {
-    val pattern = Regex("""^\.(\d+)\.mcp-steroid$""")
     return homeDir.listFiles()
         ?.filter { it.isFile }
         ?.mapNotNull { file ->
-            val match = pattern.matchEntire(file.name) ?: return@mapNotNull null
-            val pid = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+            val pid = PidMarker.pidFromFileName(file.name) ?: return@mapNotNull null
             if (!isPidAlive(pid)) return@mapNotNull null
             val content = try { file.readText() } catch (e: Exception) { return@mapNotNull null }
             val parsed = parseMarkerContent(content, pid) ?: return@mapNotNull null
