@@ -138,10 +138,12 @@ When you read this file, you should be able to:
   change, and write the resource.
 
 Per-folder agent guides (`ij-plugin/CLAUDE.md`, `prompts/AGENTS.md`,
-`test-integration/AGENTS.md`, `docs/CLAUDE.md`) will cite these tenets
-and apply them in their local context — that propagation is tracked
-under "Active focus" in `TASKS.md` (Batches 2–4). For now, only the
-root `CLAUDE.md` / `AGENTS.md` link here.
+`test-integration/AGENTS.md`, `test-experiments/CLAUDE.md`,
+`docs/CLAUDE.md`, `website/CLAUDE.md`) cite these tenets and apply them
+in their local context. The root `CLAUDE.md` / `AGENTS.md`, the runtime
+mirror at `mcp-steroid://skill/design-philosophy`, the most-trafficked
+prompt resources (`mcp-steroid-info.md`, `execute-code-tool-description.md`,
+`coding-with-intellij.md`), and the public `README.md` all link here.
 
 ## For human contributors — rationale
 

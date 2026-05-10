@@ -25,8 +25,18 @@ refactoring, compilation, test execution, indexing. Prompts must steer agents to
 - Navigation → PSI, `GotoDeclarationHandler`, `DefinitionsScopedSearch`
 
 **Do NOT use IntelliJ (steroid_execute_code) for:**
-- Reading file content → use the MCP `Read` tool instead
-- Listing files → use the MCP `Glob` tool instead
+- Reading file content **as a one-shot read with no follow-up edit or
+  semantic query** → the MCP `Read` tool is shorter. *Caveat:* if the
+  same script also writes the file, runs an inspection, or walks PSI
+  for that file, keep both inside `steroid_execute_code`
+  (`String(vf.contentsToByteArray(), vf.charset)`) — the runtime guides
+  in `mcp-steroid-info.md` and `mcp-steroid://skill/execute-code-tool-description`
+  call this out explicitly because mixing native `Read` + IDE-side edits
+  leaves PSI stale.
+- Listing files **purely for shell-style display** → the MCP `Glob` tool
+  is shorter. For anything index-driven or scope-aware
+  (`getAllFilesByExt`, `getVirtualFilesByName`, `projectScope`), stay
+  inside `steroid_execute_code` — the index is canonical.
 - Running arbitrary processes → avoid process spawning from within the IDE JVM entirely
 - Checking Docker socket → `java.io.File("/var/run/docker.sock").exists()` is native Java, no IntelliJ needed
 - Simple file existence checks → `java.io.File(path).exists()` is fine as native Java
