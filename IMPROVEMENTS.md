@@ -29,6 +29,44 @@ project-monitoring service (push-style HTTP, JSON PID markers).
 - `NoLargeInlineStringsTest` and the `mcp-steroid://` URI lint rules don't
   apply here — no prompt content, no `mcp-steroid://` URIs added.
 
+## Closing notes (branch ready for review)
+
+Six commits on top of `main`, intentionally split so each is reviewable in
+isolation:
+
+1. `mcp-5: seed branch with IMPROVEMENTS.md`
+2. `mcp-5: pid marker file is now schema-versioned JSON`
+3. `mcp-5: legacy npx-kt + test-helper consume the JSON pid marker`
+4. `ij-plugin: NDJSON projects-stream endpoint + ProjectsStreamService`
+5. `npx-kt: IDE monitoring stack — discovery + per-IDE NDJSON consumer`
+6. `npx-kt: tests for IdeDiscoveryService + IdeMonitorService roundtrip`
+
+Test coverage:
+- `:mcp-steroid-server:test` — `PidMarkerTest` (5: roundtrip, pretty-print,
+  forward-compat unknown fields, required-field rejection, filename
+  contract).
+- `:npx-kt:test` — `MarkerScanTest` (7), `IdeDiscoveryServiceTest` (4),
+  `IdeMonitorServiceTest` (2 cross-side roundtrip cases against an
+  in-process Ktor server), legacy `StdioServerProtocolTest` (61, untouched).
+- `:ij-plugin:test` — `NpxProjectsStreamRouteTest` (4: initial snapshot,
+  flow update, periodic ping, client-info parse with future-field
+  tolerance), full pre-existing suite still green.
+
+## Out of scope (filed for follow-up)
+
+- The npm-distributed `npx/` TypeScript proxy still parses the legacy text
+  format. Updating it to consume the JSON marker (and the new streaming
+  endpoint) is a separate piece of work — different language, different
+  deploy pipeline.
+- The monitoring stack does not yet feed back into `legacyProxyMain`'s
+  `ServerRegistry`. Replacing the polling refresh loop with the push-based
+  state from `IdeMonitorService` is the natural next step but was kept out
+  of this branch to keep changesets small.
+- Reconnect-on-half-open: `IdeMonitorService` reconnects on stream close,
+  but does not yet treat "no envelope received in N×ping" as a hint to
+  proactively drop and reconnect. Trivial to add once we have telemetry on
+  how often the IDE actually pings under load.
+
 ## Mid-flight clarifications (user, after PidMarker scaffold landed)
 
 - **Forward/backward compat is universal**: `ignoreUnknownKeys = true`
