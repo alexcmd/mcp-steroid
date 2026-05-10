@@ -101,6 +101,25 @@ Once `UpstreamClient` lives in a shared module, the `handler()` overrides in
 delegate to upstream IDEs discovered by `ServerRegistry`. At that point delete
 `legacyProxyMain` from `Main.kt`.
 
+### Pending — port `mcp2` Executor/Request DTO refactors
+
+`origin/mcp2` (34 commits ahead, last touch 2026-04-27) carries an
+architectural pattern that did not land on main during the
+`:mcp-steroid-server` extraction series. Worth porting in a separate PR
+before the branch is deleted.
+
+| mcp2 commit | Idea |
+|---|---|
+| `3ca06d65` | Per-tool `Request` data classes + `parse(args)` helpers — typed parsing at the call boundary, replacing inline `args["foo"]?.jsonPrimitive?.content` plumbing inside every `call()`. |
+| `74851ffa` | Per-tool `fun interface FooExecutor` with a tool-specific signature (`ListWindowsExecutor.execute(): ToolCallResult`, `ExecuteCodeExecutor.execute(req, rawArgs, progress): …`) so the metadata stays decoupled from the IDE-dependent body. |
+| `57332c39` | Co-locate schema + description + `parseRequest` + `Request` in each handler; `parse(args)` takes non-null `JsonObject` (one missing-arguments check at the call site). |
+| `1cd12280` | Split each handler into `FooToolHandler(executor: FooExecutor)` (metadata + delegation) + `FooExecutorImpl` (IntelliJ-platform body). |
+| `6a90433d` | Mock-executor tests in `:mcp-steroid-server/src/test` — plain JUnit 5 + `runBlocking`, no `BasePlatformTestCase`, fast delegation coverage that runs without the IDE fixture. |
+| `26ef4a90` | "expose root resource index only" — narrow the `:mcp-steroid-server` resource API to a single root index entry point. |
+
+Once these patterns are ported, `origin/mcp2` and the local `mcp2` branch
+can be deleted. Until then keep the branch reachable.
+
 ### Backlog (carried over)
 - [ ] add assert that mcp-core coroutines library is the same as in IntelliJ
 - [ ] add check that slf4j works in IntelliJ and logs are not lost
