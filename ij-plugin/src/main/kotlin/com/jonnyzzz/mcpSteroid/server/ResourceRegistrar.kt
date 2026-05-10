@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.openapi.application.ApplicationInfo
 import com.jonnyzzz.mcpSteroid.mcp.McpPromptRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.McpResourceRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.Prompt
@@ -12,17 +11,6 @@ import com.jonnyzzz.mcpSteroid.prompts.PromptIndexBase
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
 
-/**
- * Builds the [PromptsContext] for the currently running IDE. Used by article rendering
- * to apply the correct per-product filters.
- */
-fun buildPromptsContext(): PromptsContext {
-    val buildInfo = ApplicationInfo.getInstance().build
-    return PromptsContext(
-        productCode = buildInfo.productCode,
-        baselineVersion = buildInfo.baselineVersion,
-    )
-}
 
 /**
  * Registers all generated prompt articles as MCP resources and prompts.
@@ -37,12 +25,12 @@ fun buildPromptsContext(): PromptsContext {
  * filtering and see-also filtering internally.
  */
 class ResourceRegistrar(
-    private val handler: () -> PromptsContext,
+    private val handler: () -> PromptsContextHandler,
 ) {
 
     fun register(resources: McpResourceRegistrar, prompts: McpPromptRegistrar) {
         val resourcesIndex = ResourcesIndex()
-        val context = handler()
+        val context = handler().buildPromptsContext()
 
         for ((folder, index) in resourcesIndex.roots) {
             registerArticleResources(resources, index, context)

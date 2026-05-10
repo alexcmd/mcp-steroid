@@ -76,7 +76,7 @@ class SteroidsMcpServer(
             if (port > 0) return
 
             // Register all MCP tools, resources, and prompts explicitly (no extension point).
-            McpToolRegistrations().registerAll(mcpServer)
+            McpSteroidToolsIJ().registerAll(mcpServer)
 
             val configuredPort = Registry.intValue("mcp.steroid.server.port")
 
@@ -222,19 +222,19 @@ class SteroidsMcpServer(
                 get("/") {
                     call.respondText(
                         contentType = ContentType.Text.Plain.withCharset(Charsets.UTF_8),
-                        text = SkillPromptArticle().readPayload(buildPromptsContext())
+                        text = SkillPromptArticle().readPayload(service<PromptsContextHandler>().buildPromptsContext())
                     )
                 }
                 get("/skill.md") {
                     call.respondText(
                         contentType = ContentType.Text.Plain.withCharset(Charsets.UTF_8),
-                        text = SkillPromptArticle().readPayload(buildPromptsContext())
+                        text = SkillPromptArticle().readPayload(service<PromptsContextHandler>().buildPromptsContext())
                     )
                 }
                 get("/SKILL.md") {
                     call.respondText(
                         contentType = ContentType.Text.Plain.withCharset(Charsets.UTF_8),
-                        text = SkillPromptArticle().readPayload(buildPromptsContext())
+                        text = SkillPromptArticle().readPayload(service<PromptsContextHandler>().buildPromptsContext())
                     )
                 }
         }

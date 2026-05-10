@@ -85,6 +85,9 @@
         <applicationService
             serviceInterface="com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandlerIJ"/>
+        <applicationService
+            serviceInterface="com.jonnyzzz.mcpSteroid.server.PromptsContextHandler"
+            serviceImplementation="com.jonnyzzz.mcpSteroid.server.PromptsContextHandlerIJ"/>
 
         <!-- Update checker notification group -->
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
