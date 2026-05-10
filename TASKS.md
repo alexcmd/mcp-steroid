@@ -17,6 +17,90 @@ later but not in scope here.
   registry refresh — a real proxy refactor, not a transport one.
 
 
+### npx-kt — real stdio MCP server (in progress, 2026-05-10)
+
+Goal: turn npx-kt into a first-class stdio MCP server backed by `:mcp-stdio` +
+`:mcp-steroid-server`'s `McpSteroidTools`. The legacy proxy/registry/beacon
+stack stays in tree but unreachable from `main()` until real handlers land.
+
+#### Done
+- [x] **Step 1 — boot `McpStdioServer` from `npx-kt/main()`** with tools
+  registered via `StubMcpSteroidTools` (every `handler<T>()` throws
+  `TODO("not yet ready: …")`). Old proxy startup is moved to `legacyProxyMain`
+  and unreferenced. (`npx-kt/build.gradle.kts`,
+  `npx-kt/.../proxy/server/StubStdioMcpServer.kt`,
+  `npx-kt/.../proxy/server/StubMcpSteroidTools.kt`,
+  `npx-kt/.../proxy/Main.kt`)
+- [x] **Step 2 — `integrationTest` source set** mirroring `:ij-plugin`. Spawns
+  `bin/mcp-steroid-proxy` from `installDist`, exchanges NDJSON JSON-RPC over
+  stdio. Asserts: initialize handshake, `tools/list` covers all 10 steroid_*
+  tools, `prompts/list`, `resources/list`, `ping`, method-not-found error code,
+  notification silence. Run via `./gradlew :npx-kt:integrationTest`. (7/7 pass.)
+- [x] **Logback as the slf4j impl (stderr-only).** `runtimeOnly` on
+  `logback-classic`. `npx-kt/src/main/resources/logback.xml` pins a single
+  ConsoleAppender → System.err. No more "No SLF4J providers found" noise.
+- [x] **`main()` — swap `System.out` → `System.err`**. First action of
+  `main()`: capture `System.in` + `System.out` into local refs, run
+  `System.setOut(System.err)`, pass the saved refs to
+  `runStubStdioMcpServer(input = …, output = …)`. Stdout is now exclusively
+  MCP NDJSON frames; logback + stray prints land on stderr.
+- [x] **stdout-cleanliness integration test** (host + Docker variants).
+  Asserts every non-blank stdout line parses as a JSON-RPC 2.0 envelope.
+  Host variant covers whichever OS the test JVM runs on (Mac/Linux/Windows).
+  Docker variant uses a dedicated `mcp-cli` Dockerfile under
+  `test-helper/src/main/docker/` so all test containers go through the same
+  test-helper Docker pipeline. Windows coverage TODO when a Windows runner
+  exists.
+- [x] **`Cli{Claude,Codex,Gemini}IntegrationTest`** — Docker AI agent
+  registers npx-kt as a stdio MCP, runs a "list MCP tools" prompt, asserts the
+  agent enumerated every tool in `EXPECTED_STEROID_TOOL_NAMES`. Tools list
+  only — no invocations (handlers TODO). Required infra changes:
+  - `temurin-21-jre` added to `claude/codex/gemini-cli` Dockerfiles via the
+    Adoptium APT repo (matches `:test-integration:ide-base`'s pattern).
+  - `AiAgentSession.containerDriver: ContainerDriver` exposed so tests can
+    `copyToContainer(installDist, "/tmp")` before registering the stdio MCP.
+  - `DockerGeminiSession` now sets `GEMINI_CLI_TRUST_WORKSPACE=true` —
+    Gemini CLI's new trusted-folder check otherwise rejects `--approval-mode
+    yolo` in headless mode (exit 55).
+- [x] **Codex review feedback applied** (run-agent.sh review on 2026-05-10):
+  - `StubMcpSteroidTools.handler()` throws `UnsupportedOperationException`
+    instead of `TODO()` so it goes through `McpToolRegistry`'s
+    `catch (Exception)` path as `ToolCallResult(isError=true)` rather than
+    escaping as a `NotImplementedError` and tearing down the stdio server.
+  - `StdioMcpProcess.drainNoMore(timeoutMs)` lets the
+    "notifications-without-id receive no response" test fail loudly on stray
+    frames; the previous version silently discarded them.
+  - `EXPECTED_STEROID_TOOL_NAMES` shared between protocol-level and
+    agent-level integration tests so a missing tool surfaces from both sides.
+  - Empty `catch (_: Exception) {}` in `StdioMcpProcess.close()` replaced
+    with a `System.err.println` (project policy: no empty catch).
+  - Stale "default-jre-headless" comment in `NpxKtMcpInstaller` updated to
+    Temurin 21.
+
+#### Step 3 — move/consolidate npx-kt → mcp* modules (deferred)
+
+The npx-kt module mixes (a) MCP transport/framing, already covered by
+`:mcp-core` + `:mcp-stdio`, with (b) proxy/discovery/aggregation. After the
+real handlers land, prefer this layout:
+
+| Class / file                              | Move to                | Notes                                      |
+|-------------------------------------------|------------------------|--------------------------------------------|
+| `npx-kt/.../proxy/StdioServer.kt`         | **delete**             | Superseded by `:mcp-stdio` `McpStdioServer`. |
+| `npx-kt/.../proxy/Protocol.kt`            | rewrite as `McpTool` impls in `:mcp-steroid-server` (or new `:mcp-steroid-proxy`) | Aggregator tools become real `McpTool`s; the per-method `when (method)` branch goes away. |
+| `npx-kt/.../proxy/UpstreamClient.kt`      | `:mcp-http` (as a *client*) or new `:mcp-http-client` | HTTP MCP client (talks to `localhost:NNNN/mcp`) is reusable beyond the proxy. |
+| `npx-kt/.../proxy/SseParser.kt`           | `:mcp-http`            | Generic SSE framing.                       |
+| `npx-kt/.../proxy/ServerRegistry.kt`      | stays in `:npx-kt`     | Discovery is proxy-specific.               |
+| `npx-kt/.../proxy/NpxBeacon.kt`           | stays in `:npx-kt`     | Telemetry is proxy-specific.               |
+| `npx-kt/.../proxy/TrafficLogger.kt`       | stays in `:npx-kt`     | Traffic capture is proxy-specific.         |
+| `npx-kt/.../proxy/UpdateCheck.kt`         | stays in `:npx-kt`     | Self-update is proxy-specific.             |
+| `npx-kt/.../proxy/Config.kt`              | stays in `:npx-kt`     | Proxy config — only npx-kt reads it.       |
+| `npx-kt/.../proxy/Constants.kt`           | split — keep `BeaconEvents` / `AGGREGATE_TOOL_*` here, drop `SESSION_HEADER` (lives in `:mcp-http`). | |
+
+Once `UpstreamClient` lives in a shared module, the `handler()` overrides in
+`StubMcpSteroidTools` are replaced one-by-one with concrete handlers that
+delegate to upstream IDEs discovered by `ServerRegistry`. At that point delete
+`legacyProxyMain` from `Main.kt`.
+
 ### Backlog (carried over)
 - [ ] add assert that mcp-core coroutines library is the same as in IntelliJ
 - [ ] add check that slf4j works in IntelliJ and logs are not lost
