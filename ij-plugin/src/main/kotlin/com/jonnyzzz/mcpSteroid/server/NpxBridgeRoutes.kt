@@ -50,6 +50,17 @@ fun Route.installNpxBridgeRoutes(
             call.respondJson(payload, NpxBridgeProjectsResponse.serializer())
         }
 
+        post("/projects/stream") {
+            val service = ProjectsStreamService.getInstance()
+            call.streamProjectsNdjson(
+                projectsFlow = service.projects,
+                instanceId = service.ideInstanceId,
+                pid = service.idePid,
+                nextSeq = { service.nextSeq() },
+                onClientInfo = { service.clientConnected(it) },
+            )
+        }
+
         get("/windows") {
             val bridge = NpxBridgeService.getInstance()
             val payload = bridge.buildWindows(mcpUrlProvider())
