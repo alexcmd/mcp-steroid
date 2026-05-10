@@ -39,6 +39,15 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // Spin up an in-process Ktor server in monitor round-trip tests so the
+    // monitor's HTTP client talks to a real socket. testImplementation only —
+    // the production `mcp-steroid-proxy` binary stays a pure ktor-client.
+    testImplementation("io.ktor:ktor-server-core:$ktorVersion")
+    testImplementation("io.ktor:ktor-server-cio:$ktorVersion")
+
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 application {
