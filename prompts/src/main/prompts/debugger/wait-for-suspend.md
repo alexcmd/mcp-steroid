@@ -1,6 +1,8 @@
 Wait for Debugger Suspend
 
-Wait until the debugger suspends at a breakpoint or after a step. Uses XDebugSessionListener for event-driven detection (no polling).
+Wait for one suspension via XDebugSessionListener (event-driven). For multi-event monitoring across calls, see `mcp-steroid://debugger/monitor-debug-events`.
+
+This script waits for a **single** suspension within the current `steroid_execute_code` call (breakpoint hit or step completion), then returns. When you need to observe many events across multiple scripts, register a file-based listener via `mcp-steroid://debugger/monitor-debug-events` and read the NDJSON file from outside the IDE.
 
 ```kotlin
 import com.intellij.xdebugger.XDebuggerManager
@@ -94,6 +96,7 @@ Related debugger operations:
 - [Set Line Breakpoint](mcp-steroid://debugger/set-line-breakpoint) - Set breakpoint before waiting
 - [Debug Run Configuration](mcp-steroid://debugger/debug-run-configuration) - Start debug session
 - [Evaluate Expression](mcp-steroid://debugger/evaluate-expression) - Evaluate variables once suspended
+- [Monitor Debug Events](mcp-steroid://debugger/monitor-debug-events) - Watch many events across many calls via a file
 
 Overview resources:
 - [Debugger Skill Guide](mcp-steroid://prompt/debugger-skill) - Essential debugger knowledge
