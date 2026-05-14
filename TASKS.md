@@ -287,7 +287,7 @@ can be deleted. Until then keep the branch reachable.
 - [ ] deprecate ActionDiscoveryToolHandler
 - [ ] VisionService -> IntelliJ Service
 - [ ] OpenProject does not log to execution service
-- [ ] include `--scope user` to Claude default configuration suggestion
+- [x] include `--scope user` to Claude default configuration suggestion
 - [ ] declutter VcsRefresh and related features which may cause problems with tests
 - [ ] carefully review apply patch code with respect to threading, locks, VFS, EDT (or just drop it)
 - [ ] Input should use direct window_id instead of screenshot_execution_id

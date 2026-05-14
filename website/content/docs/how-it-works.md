@@ -39,7 +39,7 @@ Because the server runs **inside the IDE's JVM**, it has direct access to Intell
 To connect Claude Code, add the server to its MCP config:
 
 ```bash
-claude mcp add --transport http mcp-steroid http://127.0.0.1:6315/mcp
+claude mcp add --transport http --scope user mcp-steroid http://127.0.0.1:6315/mcp
 ```
 
 Or add it directly to your `claude_desktop_config.json`:

@@ -88,7 +88,7 @@ When the plugin starts, it writes the server URL to `.idea/mcp-steroid.md` in ea
 
 ```bash
 # Claude Code
-claude mcp add --transport http mcp-steroid http://127.0.0.1:6315/mcp
+claude mcp add --transport http --scope user mcp-steroid http://127.0.0.1:6315/mcp
 
 # Or verify with any agent
 claude -p "List all open projects using steroid_list_projects"
