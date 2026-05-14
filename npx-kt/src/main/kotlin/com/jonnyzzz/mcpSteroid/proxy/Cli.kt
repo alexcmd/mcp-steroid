@@ -11,7 +11,7 @@ internal const val BRAND_NAME: String = "devrig"
 internal const val BRAND_TAGLINE: String =
     "the AI-empowered development environment for your project."
 
-internal const val NO_IDES_DETECTED_MESSAGE: String = "No IDEs detected."
+internal const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
 /**
  * What the user asked the launcher to do. Resolved by [parseCliMode] BEFORE any
@@ -247,11 +247,11 @@ private fun printHelp(out: PrintStream) {
         Usage:
           mcp-steroid-proxy --mcp                    run as an MCP stdio server
                                                      (stdin / stdout reserved for the MCP transport)
-          mcp-steroid-proxy backend [--json]         list discovered IDEs (with versions) and the
+          mcp-steroid-proxy backend [--json]         list discovered backends (with versions) and the
                                                      projects each one has open. `--json` emits a
                                                      single machine-readable object on stdout
                                                      (pipe through `jq`); default is human text.
-          mcp-steroid-proxy project [--json]         list open projects across discovered IDEs.
+          mcp-steroid-proxy project [--json]         list open projects across discovered backends.
                                                      `--json` emits a single machine-readable
                                                      object on stdout; default is human text.
           mcp-steroid-proxy backend download <id>    download and install a managed backend under

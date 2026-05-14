@@ -2,17 +2,12 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import java.io.PrintStream
 
 internal data class ProjectListing(
     val markerRows: List<BackendRow.FromMarker>,
     val portRows: List<BackendRow.FromPort>,
+    val managedRows: List<BackendRow.FromManaged> = emptyList(),
 )
 
 internal fun runProjectCommand(
@@ -30,6 +25,7 @@ internal fun runProjectCommand(
 internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = ProjectListing(
     markerRows = rows.filterIsInstance<BackendRow.FromMarker>(),
     portRows = rows.filterIsInstance<BackendRow.FromPort>(),
+    managedRows = rows.filterIsInstance<BackendRow.FromManaged>(),
 )
 
 /**
@@ -39,12 +35,12 @@ internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = Pr
  * ```
  * devrig v<version> — <tagline>
  *
- * Listing N open project(s) across M IDE(s):
+ * Listing N open project(s) across M backend(s):
  *
  *   [1] <project-name>  →  <project-path>
  *         <IDE name> <version> (pid <pid>)
  *
- * Skipped K IDE(s) with no mcp-steroid plugin:
+ * Skipped K backend(s) with no mcp-steroid plugin:
  *   - <IDE display> (build <build>, port <port>)
  *
  * ```
@@ -57,8 +53,8 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
     out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
     out.println()
 
-    if (listing.markerRows.isEmpty() && listing.portRows.isEmpty()) {
-        out.println(NO_IDES_DETECTED_MESSAGE)
+    if (listing.markerRows.isEmpty() && listing.portRows.isEmpty() && listing.managedRows.isEmpty()) {
+        out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
         return
     }
@@ -69,19 +65,19 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
     }
 
     if (projectEntries.isEmpty()) {
-        out.println("No open projects across ${reachableRows.size} IDE(s).")
+        out.println("No open projects across ${reachableRows.size} backend(s).")
         renderSkippedProjectFooter(listing, out, leadingBlank = true)
         out.println()
         return
     }
 
-    out.println("Listing ${projectEntries.size} open project(s) across ${reachableRows.size} IDE(s):")
+    out.println("Listing ${projectEntries.size} open project(s) across ${reachableRows.size} backend(s):")
     out.println()
     val padWidth = projectEntries.maxOf { it.project.name.length }.coerceAtMost(40)
     for ((index, entry) in projectEntries.withIndex()) {
         val paddedName = entry.project.name.padEnd(padWidth)
         out.println("  [${index + 1}] $paddedName  →  ${entry.project.path}")
-        out.println("        ${formatMarkerBackendIdentity(entry.row.ide)}")
+        out.println("        ${backendDisplayName(entry.row)} (${backendLocatorLabel(entry.row)})")
         if (index < projectEntries.lastIndex) out.println()
     }
 
@@ -96,75 +92,27 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
  * ```
  * {
  *   "tool": { "name": "devrig", "version": "..." },
- *   "ides": [
- *     { "id": "ide-0", "name": "...", "version": "...", "build": "...", "pid": 123, "mcpUrl": "..." }
+ *   "backends": [
+ *     { "id": "backend-0", "type": "intellij", "source": "marker", "name": "...", "version": "..." }
  *   ],
  *   "projects": [
- *     { "ide": "ide-0", "name": "myproject", "path": "/Users/me/myproject" }
- *   ],
- *   "skipped": [
- *     { "reason": "port-discovered, no mcp-steroid plugin", "port": 63342, "displayName": "IntelliJ IDEA" }
+ *     { "backend": "backend-0", "name": "myproject", "path": "/Users/me/myproject" }
  *   ]
  * }
  * ```
  *
- * `projects[].ide` references `ides[].id`. The IDE identity field names match
- * `backend --json` marker rows exactly (`name`, `version`, `build`, `pid`,
- * `mcpUrl`) so scripts can share display/selection logic across subcommands.
+ * Delegates to [renderBackendJson] so `project --json` is byte-for-byte
+ * identical to `backend --json` for the same discovery rows.
  */
 internal fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
-    val reachableRows = listing.markerRows.filter { it.projects != null }
-    val rowIds = reachableRows.withIndex().associate { (index, row) -> row to "ide-$index" }
-    val json = Json { prettyPrint = true; encodeDefaults = true }
-    val payload = buildJsonObject {
-        put("tool", buildJsonObject {
-            put("name", BRAND_NAME)
-            put("version", loadProxyVersion())
-        })
-        put("ides", buildJsonArray {
-            for (row in reachableRows) {
-                add(buildJsonObject {
-                    put("id", rowIds.getValue(row))
-                    putJsonFields(markerBackendIdentityJson(row.ide))
-                })
-            }
-        })
-        put("projects", buildJsonArray {
-            for (row in reachableRows) {
-                val ideId = rowIds.getValue(row)
-                for (project in row.projects.orEmpty()) {
-                    add(projectToJson(ideId, project))
-                }
-            }
-        })
-        put("skipped", buildJsonArray {
-            for (row in listing.markerRows.filter { it.projects == null }) {
-                add(buildJsonObject {
-                    put("reason", "unreachable: ${row.errorMessage ?: "unreachable"}")
-                    putJsonFields(markerBackendIdentityJson(row.ide))
-                })
-            }
-            for (row in listing.portRows) {
-                add(buildJsonObject {
-                    put("reason", "port-discovered, no mcp-steroid plugin")
-                    putJsonFields(portBackendIdentityJson(row.ide))
-                })
-            }
-        })
-    }
-    out.println(json.encodeToString(JsonObject.serializer(), payload))
+    val rows: List<BackendRow> = listing.markerRows + listing.portRows + listing.managedRows
+    renderBackendJson(rows, out)
 }
 
 private data class ProjectEntry(
     val row: BackendRow.FromMarker,
     val project: ProjectInfo,
 )
-
-private fun projectToJson(ideId: String, project: ProjectInfo): JsonObject = buildJsonObject {
-    put("ide", ideId)
-    put("name", project.name)
-    put("path", project.path)
-}
 
 private fun renderSkippedProjectFooter(
     listing: ProjectListing,
@@ -178,17 +126,19 @@ private fun renderSkippedProjectFooter(
     if (leadingBlank) out.println()
 
     if (unreachableRows.isNotEmpty()) {
-        out.println("Skipped ${unreachableRows.size} IDE(s) that did not return a project snapshot:")
+        out.println("Skipped ${unreachableRows.size} ${backendNoun(unreachableRows.size)} that did not return a project snapshot:")
         for (row in unreachableRows) {
-            out.println("  - ${formatMarkerBackendIdentity(row.ide)}: unreachable: ${row.errorMessage ?: "unreachable"}")
+            out.println("  - ${backendDisplayName(row)} (${backendLocatorLabel(row)}): unreachable: ${row.errorMessage ?: "unreachable"}")
         }
         if (portRows.isNotEmpty()) out.println()
     }
 
     if (portRows.isNotEmpty()) {
-        out.println("Skipped ${portRows.size} IDE(s) with no mcp-steroid plugin:")
+        out.println("Skipped ${portRows.size} ${backendNoun(portRows.size)} with no mcp-steroid plugin:")
         for (row in portRows) {
-            out.println("  - ${formatPortBackendIdentity(row.ide)}")
+            out.println("  - ${backendDisplayName(row)} (${backendLocatorLabel(row)})")
         }
     }
 }
+
+private fun backendNoun(count: Int): String = if (count == 1) "backend" else "backends"

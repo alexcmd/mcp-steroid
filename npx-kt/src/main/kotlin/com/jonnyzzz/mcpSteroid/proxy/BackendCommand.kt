@@ -405,7 +405,7 @@ private suspend fun fetchFirstSnapshot(
  * ```
  * devrig v<version> — <tagline>
  *
- * Discovered N IDE(s):
+ * Discovered N backend(s):
  *
  *   [1] <IDE name> <version> (<locator>)
  *         <project-name>  →  <project-path>
@@ -423,15 +423,15 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
     out.println()
     if (rows.isEmpty()) {
-        out.println(NO_IDES_DETECTED_MESSAGE)
+        out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
         return
     }
-    val noun = if (rows.size == 1) "IDE" else "IDEs"
+    val noun = if (rows.size == 1) "backend" else "backends"
     out.println("Discovered ${rows.size} $noun:")
     out.println()
     for ((index, row) in rows.withIndex()) {
-        out.println("  [${index + 1}] ${row.displayName} (${row.locatorLabel})")
+        out.println("  [${index + 1}] ${backendDisplayName(row)} (${backendLocatorLabel(row)})")
         when (row) {
             is BackendRow.FromMarker -> renderMarkerProjects(row, out)
             is BackendRow.FromPort -> out.println(
@@ -450,17 +450,13 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
  * Pretty-printed JSON renderer for the `backend --json` form. Designed for
  * scripted consumption (`mcp-steroid-proxy backend --json | jq …`):
  *  - **No banner** — stdout is one JSON document, nothing else.
- *  - **Top-level object** with `tool` (meta) + `ides` (data array). Same shape
- *    pattern `kubectl get … -o json` uses, so jq-savvy users feel at home.
- *  - **`source` discriminator** (`"marker"` | `"port"`) on every IDE — lets
- *    jq filter by discovery path without checking which fields are present.
- *  - **Source-specific fields are present only on the matching source** so
- *    `.projects` is reliably a list (or null) on marker rows, never confused
- *    with port-only rows that have no project list to begin with.
+ *  - **Top-level object** with `tool`, `backends`, and flat `projects`.
+ *  - **Backend ids** are synthetic `backend-N` keys, stable within this
+ *    document and referenced by `projects[].backend`.
  *  - **Pretty-printed**: humans can read without `jq -P`, scripts don't care.
  *
  * Example query:
- *   mcp-steroid-proxy backend --json | jq '.ides[] | select(.source=="marker") | .projects[]?'
+ *   mcp-steroid-proxy backend --json | jq '.backends[] | select(.source=="marker")'
  */
 internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
     val json = Json { prettyPrint = true; encodeDefaults = true }
@@ -469,67 +465,29 @@ internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
             put("name", BRAND_NAME)
             put("version", loadProxyVersion())
         })
-        put("ides", buildJsonArray {
-            for (row in rows) {
-                add(rowToJson(row))
+        put("backends", buildJsonArray {
+            for ((index, row) in rows.withIndex()) {
+                add(backendEntryJson("backend-$index", row))
+            }
+        })
+        put("projects", buildJsonArray {
+            for ((index, row) in rows.withIndex()) {
+                if (row is BackendRow.FromMarker && row.projects != null) {
+                    val backendId = "backend-$index"
+                    for (project in row.projects) {
+                        add(projectToBackendJson(backendId, project))
+                    }
+                }
             }
         })
     }
     out.println(json.encodeToString(JsonObject.serializer(), payload))
 }
 
-private fun rowToJson(row: BackendRow): JsonObject = when (row) {
-    is BackendRow.FromMarker -> buildJsonObject {
-        put("source", "marker")
-        put("managed", row.managed)
-        putJsonFields(markerBackendIdentityJson(row.ide))
-        // Projects shape mirrors the wire `ProjectInfo` — `name` + `path` per entry.
-        // `null` (not absent) when fetch failed; `unreachable` carries the reason.
-        if (row.projects != null) {
-            put("projects", buildJsonArray {
-                for (p in row.projects) add(buildJsonObject {
-                    put("name", p.name)
-                    put("path", p.path)
-                })
-            })
-        } else {
-            // Explicit null so `.projects` is always present on marker rows;
-            // jq users can `select(.projects == null)` to filter unreachable ones.
-            putJsonNull("projects")
-            put("unreachable", row.errorMessage ?: "unreachable")
-        }
-    }
-    is BackendRow.FromPort -> buildJsonObject {
-        put("source", "port")
-        put("managed", row.managed)
-        // `/api/about` reports the marketing version mashed into the product
-        // name (e.g. "IntelliJ IDEA 2026.1.1") and the bare build number as
-        // a separate field. Surface the full name as `displayName` so scripts
-        // have one composite string to render, and keep the raw fields below
-        // so structured consumers can still slice on `buildNumber`, etc.
-        putJsonFields(portBackendIdentityJson(row.ide))
-        // Hard signal: no plugin ⇒ no project list. The CLI text renderer says
-        // this in prose; the JSON form is explicit so scripts don't have to
-        // guess from "no projects field".
-    }
-    is BackendRow.FromManaged -> buildJsonObject {
-        val info = row.info
-        put("source", "managed")
-        put("managed", true)
-        put("id", info.id)
-        put("productKey", info.productKey)
-        put("productCode", info.productCode)
-        put("version", info.version)
-        info.buildNumber?.let { put("buildNumber", it) }
-        put("state", info.state.name.lowercase())
-        put("installPath", info.installPath.toString())
-        put("cachePath", info.cachePath.toString())
-        info.runningPid?.let { put("runningPid", it) } ?: putJsonNull("runningPid")
-    }
-}
-
-private fun kotlinx.serialization.json.JsonObjectBuilder.putJsonNull(key: String) {
-    put(key, kotlinx.serialization.json.JsonNull)
+private fun projectToBackendJson(backendId: String, project: ProjectInfo): JsonObject = buildJsonObject {
+    put("backend", backendId)
+    put("name", project.name)
+    put("path", project.path)
 }
 
 private fun renderMarkerProjects(row: BackendRow.FromMarker, out: PrintStream) {

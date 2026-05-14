@@ -49,8 +49,52 @@ internal fun backendLocatorLabel(row: BackendRow): String = when (row) {
     is BackendRow.FromManaged -> row.locatorLabel
 }
 
+internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
+    put("id", id)
+    put("type", BACKEND_TYPE_INTELLIJ)
+    put("source", backendSource(row))
+    put("displayName", backendDisplayName(row))
+    put("locator", backendLocatorLabel(row))
+    when (row) {
+        is BackendRow.FromMarker -> {
+            put("pluginInstalled", true)
+            val reachable = row.projects != null
+            put("reachable", reachable)
+            putJsonFields(markerBackendIdentityJson(row.ide))
+            if (!reachable) {
+                put("error", row.errorMessage ?: "unreachable")
+            }
+        }
+        is BackendRow.FromPort -> {
+            put("pluginInstalled", false)
+            put("reachable", true)
+            putJsonFields(portBackendIdentityJson(row.ide))
+        }
+        is BackendRow.FromManaged -> {
+            val info = row.info
+            put("pluginInstalled", false)
+            put("reachable", info.state == ManagedBackendState.RUNNING)
+            put("managed", true)
+            put("managedId", info.id)
+            put("productKey", info.productKey)
+            put("productCode", info.productCode)
+            put("version", info.version)
+            info.buildNumber?.let { put("buildNumber", it) }
+            put("state", info.state.name.lowercase())
+            put("installPath", info.installPath.toString())
+            put("cachePath", info.cachePath.toString())
+            info.runningPid?.let { put("runningPid", it) }
+        }
+    }
+}
+
+private fun backendSource(row: BackendRow): String = when (row) {
+    is BackendRow.FromMarker -> "marker"
+    is BackendRow.FromPort -> "port"
+    is BackendRow.FromManaged -> "managed"
+}
+
 internal fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = buildJsonObject {
-    put("displayName", portBackendDisplayName(ide))
     put("port", ide.port)
     put("baseUrl", ide.baseUrl)
     ide.productName?.let { put("productName", it) }
@@ -58,7 +102,6 @@ internal fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = bui
     ide.edition?.let { put("edition", it) }
     ide.baselineVersion?.let { put("baselineVersion", it) }
     ide.buildNumber?.let { put("buildNumber", it) }
-    put("pluginInstalled", false)
 }
 
 internal fun JsonObjectBuilder.putJsonFields(fields: JsonObject) {

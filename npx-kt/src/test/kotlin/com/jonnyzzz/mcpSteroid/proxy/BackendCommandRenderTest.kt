@@ -94,19 +94,19 @@ class BackendCommandRenderTest {
             "output must end with a blank line; got tail: '${text.takeLast(8).replace("\n", "\\n")}'")
     }
 
-    // -------------------------- empty / no-IDE branch ----------------------
+    // -------------------------- empty / no-backend branch ----------------------
 
     @Test
-    fun `empty row list prints banner + the no-IDEs message + trailing blank`() {
+    fun `empty row list prints banner + the no-backends message + trailing blank`() {
         val text = render(emptyList())
-        assertTrue(text.contains("No IDEs detected."), "missing message; got:\n$text")
+        assertTrue(text.contains("No backends detected."), "missing message; got:\n$text")
         // Three structural pieces: banner / blank / message / trailing blank.
         val lines = text.lines()
-        // Layout: [0]=banner, [1]="", [2]="No IDEs detected.", [3]="", [4]=""
+        // Layout: [0]=banner, [1]="", [2]="No backends detected.", [3]="", [4]=""
         // (the [4] is the empty tail after the final \n).
         assertTrue(lines[0].startsWith("devrig v"), lines[0])
         assertEquals("", lines[1])
-        assertEquals("No IDEs detected.", lines[2])
+        assertEquals("No backends detected.", lines[2])
     }
 
     // --------------------- marker rows: happy paths ------------------------
@@ -120,7 +120,7 @@ class BackendCommandRenderTest {
             )
         )
         val text = render(rows)
-        assertTrue(text.contains("Discovered 1 IDE:"),
+        assertTrue(text.contains("Discovered 1 backend:"),
             "expected list header for one IDE (singular); got:\n$text")
         assertTrue(text.contains("[1] IntelliJ IDEA 2025.3.3 (pid 1234)"),
             "expected numbered list entry with version+locator; got:\n$text")
@@ -156,7 +156,7 @@ class BackendCommandRenderTest {
             BackendRow.FromMarker(markerIde("PyCharm", "2025.3.1", 2L), listOf(ProjectInfo("b", "/b"))),
         )
         val text = render(rows)
-        assertTrue(text.contains("Discovered 2 IDEs:"),
+        assertTrue(text.contains("Discovered 2 backends:"),
             "expected plural list header; got:\n$text")
         assertTrue(text.contains("[1] IntelliJ IDEA"), "got:\n$text")
         assertTrue(text.contains("[2] PyCharm"), "got:\n$text")

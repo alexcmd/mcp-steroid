@@ -76,13 +76,15 @@ class BackendListTest {
         )
 
         val root = Json.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject
-        val ide = root["ides"]!!.jsonArray.single().jsonObject
-        assertEquals("managed", ide["source"]!!.jsonPrimitive.content)
-        assertEquals(true, ide["managed"]!!.jsonPrimitive.boolean)
-        assertEquals("idea-community-2025.3.3", ide["id"]!!.jsonPrimitive.content)
-        assertEquals("2025.3.3", ide["version"]!!.jsonPrimitive.content)
-        assertEquals("/managed/idea-community-2025.3.3", ide["installPath"]!!.jsonPrimitive.contentOrNull)
-        assertEquals("/caches/idea-community-2025.3.3", ide["cachePath"]!!.jsonPrimitive.contentOrNull)
+        val backend = root["backends"]!!.jsonArray.single().jsonObject
+        assertEquals("backend-0", backend["id"]!!.jsonPrimitive.content)
+        assertEquals("intellij", backend["type"]!!.jsonPrimitive.content)
+        assertEquals("managed", backend["source"]!!.jsonPrimitive.content)
+        assertEquals(true, backend["managed"]!!.jsonPrimitive.boolean)
+        assertEquals("idea-community-2025.3.3", backend["managedId"]!!.jsonPrimitive.content)
+        assertEquals("2025.3.3", backend["version"]!!.jsonPrimitive.content)
+        assertEquals("/managed/idea-community-2025.3.3", backend["installPath"]!!.jsonPrimitive.contentOrNull)
+        assertEquals("/caches/idea-community-2025.3.3", backend["cachePath"]!!.jsonPrimitive.contentOrNull)
     }
 
     private fun managed(

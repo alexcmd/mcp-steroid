@@ -88,16 +88,16 @@ class ProjectCommandRenderTest {
             "output must end with a blank line; got tail: '${text.takeLast(8).replace("\n", "\\n")}'")
     }
 
-    // -------------------------- empty / no-IDE branch ----------------------
+    // -------------------------- empty / no-backend branch ----------------------
 
     @Test
-    fun `empty listing prints banner + the no-IDEs message + trailing blank`() {
+    fun `empty listing prints banner + the no-backends message + trailing blank`() {
         val text = render(ProjectListing(emptyList(), emptyList()))
-        assertTrue(text.contains("No IDEs detected."), "missing message; got:\n$text")
+        assertTrue(text.contains("No backends detected."), "missing message; got:\n$text")
         val lines = text.lines()
         assertTrue(lines[0].startsWith("devrig v"), lines[0])
         assertEquals("", lines[1])
-        assertEquals("No IDEs detected.", lines[2])
+        assertEquals("No backends detected.", lines[2])
     }
 
     // ----------------------------- projects --------------------------------
@@ -114,7 +114,7 @@ class ProjectCommandRenderTest {
             portRows = emptyList(),
         )
         val text = render(listing)
-        assertTrue(text.contains("Listing 1 open project(s) across 1 IDE(s):"),
+        assertTrue(text.contains("Listing 1 open project(s) across 1 backend(s):"),
             "expected list header for one project; got:\n$text")
         assertTrue(text.contains("[1] my-app") && text.contains("→") && text.contains("/Users/x/Work/my-app"),
             "expected project to render as name → path; got:\n$text")
@@ -160,7 +160,7 @@ class ProjectCommandRenderTest {
             portRows = emptyList(),
         )
         val text = render(listing)
-        assertTrue(text.contains("Listing 3 open project(s) across 2 IDE(s):"),
+        assertTrue(text.contains("Listing 3 open project(s) across 2 backend(s):"),
             "expected project+IDE count header; got:\n$text")
         val aIndex = text.indexOf("[1] a")
         val bIndex = text.indexOf("[2] b")
@@ -179,7 +179,7 @@ class ProjectCommandRenderTest {
             portRows = emptyList(),
         )
         val text = render(listing)
-        assertTrue(text.contains("Listing 1 open project(s) across 2 IDE(s):"),
+        assertTrue(text.contains("Listing 1 open project(s) across 2 backend(s):"),
             "empty-project IDE should still count as queried; got:\n$text")
         assertTrue(!text.contains("GoLand 2025.3.3 (pid 2)"),
             "empty-project IDE should not get a project entry; got:\n$text")
@@ -192,7 +192,7 @@ class ProjectCommandRenderTest {
             portRows = emptyList(),
         )
         val text = render(listing)
-        assertTrue(text.contains("No open projects across 1 IDE(s)."),
+        assertTrue(text.contains("No open projects across 1 backend(s)."),
             "expected explicit empty-projects message; got:\n$text")
         assertTrue(!text.contains("→"), "no project rows should render; got:\n$text")
     }
@@ -212,7 +212,7 @@ class ProjectCommandRenderTest {
             portRows = emptyList(),
         )
         val text = render(listing)
-        assertTrue(text.contains("Skipped 1 IDE(s) that did not return a project snapshot:"),
+        assertTrue(text.contains("Skipped 1 backend that did not return a project snapshot:"),
             "expected unreachable footer; got:\n$text")
         assertTrue(text.contains("WebStorm 2025.3.0 (pid 7): unreachable: timed out after 8s"),
             "expected unreachable identity + reason; got:\n$text")
@@ -226,7 +226,7 @@ class ProjectCommandRenderTest {
             portRows = listOf(BackendRow.FromPort(portIde(port = 63342))),
         )
         val text = render(listing)
-        assertTrue(text.contains("Skipped 1 IDE(s) with no mcp-steroid plugin:"),
+        assertTrue(text.contains("Skipped 1 backend with no mcp-steroid plugin:"),
             "expected no-plugin footer; got:\n$text")
         assertTrue(text.contains("IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342)"),
             "expected port IDE identity; got:\n$text")
