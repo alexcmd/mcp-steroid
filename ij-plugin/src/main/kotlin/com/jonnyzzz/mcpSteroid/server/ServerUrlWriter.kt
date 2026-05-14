@@ -33,6 +33,11 @@ class ServerUrlWriter : Disposable {
      * Write the MCP server URL to the user home as a JSON marker file.
      * Stale marker files from dead processes are cleaned up first.
      *
+     * The marker carries the IntelliJ-hosted MCP server's port (matches
+     * [SteroidsMcpServer.port]) and bearer auth token (matches
+     * [NpxBridgeService.token]) so external monitors can address the
+     * server without parsing the URL or guessing the token.
+     *
      * @param serverUrl The MCP server URL (e.g., "http://localhost:<port>/mcp")
      */
     fun writeServerUrlToUserHome(serverUrl: String) {
@@ -46,6 +51,8 @@ class ServerUrlWriter : Disposable {
         val marker = PidMarker(
             pid = pid,
             mcpUrl = serverUrl,
+            port = SteroidsMcpServer.getInstance().port,
+            token = NpxBridgeService.getInstance().token,
             ide = IdeInfo.ofApplication(),
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),

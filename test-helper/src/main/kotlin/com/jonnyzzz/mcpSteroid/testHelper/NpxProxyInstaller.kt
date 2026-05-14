@@ -12,8 +12,15 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.mkdirs
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import java.io.File
 import java.io.InputStream
+import java.net.URI
 import java.nio.file.Files
 import java.util.zip.ZipInputStream
+
+private fun parsePortOrZero(url: String): Int = try {
+    URI(url).port.takeIf { it > 0 } ?: 0
+} catch (e: Exception) {
+    0
+}
 
 private fun ContainerDriver.copyIfPresent(localFile: File, containerPath: String) {
     if (localFile.isFile) {
@@ -107,9 +114,12 @@ private fun ContainerDriver.deployNpxProxy(
         executable = false,
     )
 
+    val fakeMarkerPort = parsePortOrZero(ideMcpUrl)
     val fakeMarker = PidMarker(
         pid = markerPid,
         mcpUrl = ideMcpUrl,
+        port = fakeMarkerPort,
+        token = "test-helper-fake-token",
         ide = IdeInfo(
             name = "IntelliJ IDEA (test-helper fake)",
             version = "0.0.0",

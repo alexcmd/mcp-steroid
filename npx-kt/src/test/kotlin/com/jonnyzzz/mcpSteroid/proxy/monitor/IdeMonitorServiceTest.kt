@@ -69,12 +69,16 @@ class IdeMonitorServiceTest {
     /** Per-test handle that tells the server which envelopes to emit and when. */
     private val script = mutableListOf<NpxStreamEnvelope>()
 
+    /** Authorization headers seen by the fake server, indexed by request. */
+    private val receivedAuthHeaders = mutableListOf<String?>()
+
     @BeforeEach
     fun setUp() {
         port = freePort()
         server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
             routing {
                 post(NPX_PROJECTS_STREAM_PATH) {
+                    receivedAuthHeaders += call.request.headers["Authorization"]
                     val body = call.receiveText()
                     val info = NpxStreamJson.decodeClientInfo(body)
                     receivedClientInfos += info
@@ -151,6 +155,42 @@ class IdeMonitorServiceTest {
         assertNotNull(ide.lastSeenAt)
 
         assertTrue(receivedClientInfos.any { it.client == "test-suite" && it.clientPid == 4242L })
+        assertTrue(
+            receivedAuthHeaders.any { it == "Bearer deadbeef" },
+            "expected the monitor to send Authorization: Bearer <token>; saw: $receivedAuthHeaders"
+        )
+    }
+
+    @Test
+    fun `monitor sends no Authorization header when the marker carries an empty token`(
+        @TempDir homeDir: Path,
+    ) = runBlocking {
+        writeMarker(homeDir, port, token = "")
+        script += snapshot(listOf(ProjectInfo("alpha", "/p/alpha")))
+
+        val discovery = IdeDiscoveryService(
+            homeDir = homeDir.toFile(),
+            allowHosts = listOf("127.0.0.1"),
+            scanInterval = 200.milliseconds,
+        )
+        val monitor = IdeMonitorService(
+            httpClient = httpClient,
+            discovery = discovery,
+            clientInfo = NpxStreamClientInfo(client = "test-suite"),
+            reconnectBackoff = 200.milliseconds,
+        )
+        discovery.start(scope)
+        monitor.start(scope)
+
+        withTimeout(10.seconds) {
+            monitor.states.first { it[ourPid]?.lastSnapshot?.isNotEmpty() == true }
+        }
+        // The fake server records every incoming Authorization; an empty token
+        // path must not emit a header at all (not even "Bearer ").
+        assertTrue(
+            receivedAuthHeaders.all { it == null },
+            "expected no Authorization header for empty token; saw: $receivedAuthHeaders"
+        )
     }
 
     @Test
@@ -187,10 +227,12 @@ class IdeMonitorServiceTest {
         assertEquals(listOf(ProjectInfo("b", "/p/b")), finalState.getValue(ourPid).lastSnapshot)
     }
 
-    private fun writeMarker(homeDir: Path, port: Int) {
+    private fun writeMarker(homeDir: Path, port: Int, token: String = "deadbeef") {
         val marker = PidMarker(
             pid = ourPid,
             mcpUrl = "http://127.0.0.1:$port/mcp",
+            port = port,
+            token = token,
             ide = IdeInfo(name = "FakeIDE", version = "x", build = "y"),
             plugin = PluginInfo(id = "x", name = "y", version = "z"),
             createdAt = "2026-05-10T12:34:56Z",

@@ -133,9 +133,15 @@ class IdeMonitorService(
     private suspend fun connectAndStream(ide: DiscoveredIde) {
         val url = streamUrlFor(ide.mcpUrl, streamPath)
         val body = NpxStreamJson.encodeClientInfo(clientInfo)
+        val token = ide.marker.token
 
         httpClient.preparePost(url) {
-            headers { append(HttpHeaders.ContentType, "application/json") }
+            headers {
+                append(HttpHeaders.ContentType, "application/json")
+                if (token.isNotEmpty()) {
+                    append(HttpHeaders.Authorization, "Bearer $token")
+                }
+            }
             setBody(body)
         }.execute { response ->
             if (!response.status.value.let { it in 200..299 }) {

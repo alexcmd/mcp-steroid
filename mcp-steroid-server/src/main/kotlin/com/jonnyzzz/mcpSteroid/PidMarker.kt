@@ -15,11 +15,19 @@ import kotlinx.serialization.json.JsonObject
  * tolerate missing optional fields. New optional fields ship with a default
  * so old writers remain compatible.
  */
+// `port` mirrors the TCP port already embedded in [PidMarker.mcpUrl], surfaced
+// as a typed field so consumers don't need to parse the URL. `token` is the
+// MCP server's bearer auth token — clients SHOULD send
+// `Authorization: Bearer <token>` on every request to the IntelliJ-hosted
+// server. Both default to safe sentinels (0 / "") so older writers remain
+// decodable.
 @Serializable
 data class PidMarker(
     val schema: Int = SCHEMA_VERSION,
     val pid: Long,
     val mcpUrl: String,
+    val port: Int = 0,
+    val token: String = "",
     val ide: IdeInfo,
     val plugin: PluginInfo,
     val createdAt: String,

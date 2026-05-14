@@ -10,6 +10,8 @@ class PidMarkerTest {
     private val sample = PidMarker(
         pid = 12345,
         mcpUrl = "http://localhost:64531/mcp",
+        port = 64531,
+        token = "deadbeefcafebabe",
         ide = IdeInfo(name = "IntelliJ IDEA", version = "2025.3.3", build = "IU-253.1.1"),
         plugin = PluginInfo(id = "com.jonnyzzz.mcpSteroid", name = "MCP Steroid", version = "1.0.0"),
         createdAt = "2026-05-10T12:34:56Z",
@@ -29,6 +31,26 @@ class PidMarkerTest {
         assertTrue(text.contains("\"schema\": 1"), "schema field missing: $text")
         assertTrue(text.contains("\"pid\": 12345"), "pid field missing: $text")
         assertTrue(text.contains("\"mcpUrl\": \"http://localhost:64531/mcp\""), "mcpUrl field missing: $text")
+        assertTrue(text.contains("\"port\": 64531"), "port field missing: $text")
+        assertTrue(text.contains("\"token\": \"deadbeefcafebabe\""), "token field missing: $text")
+    }
+
+    @Test
+    fun `decode of legacy marker without port + token falls back to defaults`() {
+        val legacy = """
+            {
+              "schema": 1,
+              "pid": 12345,
+              "mcpUrl": "http://localhost:64531/mcp",
+              "ide": {"name":"IntelliJ IDEA","version":"x","build":"y"},
+              "plugin": {"id":"x","name":"y","version":"z"},
+              "createdAt": "2026-05-10T12:34:56Z"
+            }
+        """.trimIndent()
+        val decoded = PidMarkerJson.decode(legacy)
+        assertEquals(0, decoded.port)
+        assertEquals("", decoded.token)
+        assertEquals(12345L, decoded.pid)
     }
 
     @Test
