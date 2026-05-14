@@ -31,7 +31,7 @@ project-monitoring service (push-style HTTP, JSON PID markers).
 
 ## Closing notes (branch ready for review)
 
-Six commits on top of `main`, intentionally split so each is reviewable in
+Eight commits on top of `main`, intentionally split so each is reviewable in
 isolation:
 
 1. `mcp-5: seed branch with IMPROVEMENTS.md`
@@ -40,17 +40,49 @@ isolation:
 4. `ij-plugin: NDJSON projects-stream endpoint + ProjectsStreamService`
 5. `npx-kt: IDE monitoring stack — discovery + per-IDE NDJSON consumer`
 6. `npx-kt: tests for IdeDiscoveryService + IdeMonitorService roundtrip`
+7. `mcp-5: close out IMPROVEMENTS.md with test summary + follow-up list`
+8. `mcp-5: pid marker carries the IDE's MCP port + bearer token`
 
 Test coverage:
-- `:mcp-steroid-server:test` — `PidMarkerTest` (5: roundtrip, pretty-print,
-  forward-compat unknown fields, required-field rejection, filename
-  contract).
+- `:mcp-steroid-server:test` — `PidMarkerTest` (6: roundtrip, pretty-print
+  includes new port + token fields, forward-compat unknown fields,
+  required-field rejection, filename contract, legacy marker without
+  port/token falls back to defaults).
 - `:npx-kt:test` — `MarkerScanTest` (7), `IdeDiscoveryServiceTest` (4),
-  `IdeMonitorServiceTest` (2 cross-side roundtrip cases against an
-  in-process Ktor server), legacy `StdioServerProtocolTest` (61, untouched).
+  `IdeMonitorServiceTest` (3: roundtrip snapshots, multi-snapshot updates,
+  Authorization header sent / suppressed), legacy `StdioServerProtocolTest`
+  (61, untouched).
 - `:ij-plugin:test` — `NpxProjectsStreamRouteTest` (4: initial snapshot,
   flow update, periodic ping, client-info parse with future-field
   tolerance), full pre-existing suite still green.
+
+## Self-review findings (after the initial 6-commit drop)
+
+- **PidMarker omits the MCP server's port and bearer token.** The IDE
+  already owns both (`SteroidsMcpServer.port` and
+  `NpxBridgeService.token`); without them on the marker, npx-kt must
+  parse the URL and has no way to authenticate. Addressed by commit 8 —
+  the new `port: Int` + `token: String` fields are optional (defaults
+  `0` / `""`) so older markers still decode. npx-kt's
+  `IdeMonitorService` now sets `Authorization: Bearer <token>` when the
+  marker carries a non-empty token.
+- **`IdeMonitorService` does not detect when a marker is rewritten with
+  a different `mcpUrl` for the same pid.** Workers are keyed by pid; if
+  an IDE restarts its MCP server on a different port within the same
+  process, the worker keeps reconnecting to the old URL. Discovery polls
+  the file every 2 s and picks up the new `DiscoveredIde` value, but the
+  orchestrator's `if (workers.containsKey(pid)) continue` skips
+  respawn. Filed as a follow-up; not load-bearing for the current
+  open/close push goal.
+- **The `/projects/stream` route is not yet auth-gated.** With the token
+  now on the marker, the IDE can enforce
+  `NpxBridgeService.isAuthorized()` on the projects-stream route
+  whenever it wants — `IdeMonitorService` already sends the header. Not
+  in this branch to keep the behaviour change focused.
+- **`NpxBridgeService.markerTokenLine()` is now dead code.** It produced
+  the "NPX Token: $token" line for the legacy text marker; the JSON
+  marker carries the token as a typed field. Left in place for now to
+  avoid churning unrelated callers; flagged for a follow-up cleanup.
 
 ## Out of scope (filed for follow-up)
 
