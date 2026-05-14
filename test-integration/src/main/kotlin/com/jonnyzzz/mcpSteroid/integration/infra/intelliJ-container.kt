@@ -6,8 +6,10 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ImageDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.RunningContainerProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.commitContainerToImage
+import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import java.io.File
 
 /**
@@ -78,6 +80,71 @@ class IntelliJContainer(
     private val openFileOnStart: String? = null,
 ) {
     val pid by intellij::pid
+
+    fun execAndAssert(
+        description: String,
+        script: String,
+        timeoutSeconds: Long = 300,
+    ): ProcessResult {
+        return scope.startProcessInContainer {
+            this
+                .args("bash", "-lc", script)
+                .timeoutSeconds(timeoutSeconds)
+                .description(description)
+        }.awaitForProcessFinish()
+            .assertExitCode(0) { "$description failed\nstdout=$stdout\nstderr=$stderr" }
+    }
+
+    fun deployDevrigLauncher(packageZip: File = IdeTestFolders.npxKtPackageZip): String {
+        require(packageZip.isFile) { "devrig distribution ZIP does not exist: ${packageZip.absolutePath}" }
+
+        val launcherPath = "/home/agent/devrig"
+        scope.copyToContainer(packageZip, "/tmp/mcp-steroid-proxy.zip")
+        execAndAssert(
+            description = "install devrig launcher",
+            timeoutSeconds = 120,
+            script = """
+                set -euo pipefail
+                rm -rf /home/agent/devrig-cli "$launcherPath"
+                mkdir -p /home/agent/devrig-cli
+                unzip -q /tmp/mcp-steroid-proxy.zip -d /home/agent/devrig-cli
+                app_dir="${'$'}(find /home/agent/devrig-cli -mindepth 1 -maxdepth 1 -type d -name 'mcp-steroid-proxy-*' | head -1)"
+                test -n "${'$'}app_dir"
+                mv "${'$'}app_dir" /home/agent/devrig-cli/app
+                chmod +x /home/agent/devrig-cli/app/bin/mcp-steroid-proxy
+                ln -sfn mcp-steroid-proxy /home/agent/devrig-cli/app/bin/devrig
+                ln -sfn /home/agent/devrig-cli/app/bin/devrig "$launcherPath"
+                "$launcherPath" --version
+            """.trimIndent(),
+        )
+        return launcherPath
+    }
+
+    fun waitForIntelliJBuiltInHttpServer(timeoutSeconds: Long = 180): ProcessResult {
+        val result = execAndAssert(
+            description = "wait for IntelliJ built-in HTTP server",
+            timeoutSeconds = timeoutSeconds + 15L,
+            script = """
+                set -euo pipefail
+                deadline=${'$'}((SECONDS + $timeoutSeconds))
+                while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
+                  for port in ${'$'}(seq 63342 63361); do
+                    body="${'$'}(curl -fsS --max-time 2 "http://127.0.0.1:${'$'}port/api/about" 2>/dev/null || true)"
+                    if echo "${'$'}body" | grep -Eq '"productName"[[:space:]]*:[[:space:]]*"(IDEA|IntelliJ)'; then
+                      echo "port=${'$'}port"
+                      echo "${'$'}body"
+                      exit 0
+                    fi
+                  done
+                  sleep 2
+                done
+                echo "IntelliJ IDEA did not answer /api/about on ports 63342..63361 within ${timeoutSeconds}s" >&2
+                exit 1
+            """.trimIndent(),
+        )
+        console.writeSuccess("IntelliJ built-in HTTP server is reachable")
+        return result
+    }
 
     private fun latestScreenshotPath(): String? =
         File(runDirInContainer, "screenshot")
