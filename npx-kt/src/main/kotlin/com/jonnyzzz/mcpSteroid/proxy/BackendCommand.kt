@@ -89,7 +89,7 @@ internal sealed interface BackendRow {
         override val displayName: String get() = "${info.productKey} ${info.version}"
         override val locatorLabel: String get() = when (info.state) {
             ManagedBackendState.INSTALLED -> "managed, installed"
-            ManagedBackendState.RUNNING -> "managed, running pid ${info.runningPid}"
+            ManagedBackendState.RUNNING -> "managed, pid ${info.runningPid}"
             ManagedBackendState.UNREACHABLE -> "managed, unreachable"
         }
         override val managed: Boolean get() = true
@@ -191,6 +191,9 @@ internal fun runBackendStartCommand(
     val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
     val result = runBlocking(Dispatchers.IO) {
         BackendManager(homePaths).start(backendId)
+    }
+    if (result.alreadyRunning) {
+        out.println("already running: ${result.id} (pid ${result.pid})")
     }
     out.println("pid: ${result.pid}")
     out.println("log: ${result.ideaLogPath}")

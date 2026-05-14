@@ -51,6 +51,7 @@ internal data class StartResult(
     val pid: Long,
     val ideaLogPath: Path,
     val configPath: Path,
+    val alreadyRunning: Boolean = false,
 )
 
 internal data class StopResult(
@@ -97,6 +98,30 @@ internal interface ManagedBackendDownloader {
 internal interface BundledPluginResolver {
     fun resolveBundledPluginDir(): Path
 }
+
+internal data class ProcessSnapshot(
+    val pid: Long,
+    val command: String?,
+)
+
+internal interface ManagedProcessInspector {
+    fun isAlive(pid: Long): Boolean
+    fun allProcesses(): List<ProcessSnapshot>
+}
+
+internal object DefaultManagedProcessInspector : ManagedProcessInspector {
+    override fun isAlive(pid: Long): Boolean =
+        ProcessHandle.of(pid).getOrNull()?.isAlive == true
+
+    override fun allProcesses(): List<ProcessSnapshot> =
+        ProcessHandle.allProcesses().use { stream ->
+            stream.asSequence()
+                .map { handle -> ProcessSnapshot(handle.pid(), handle.info().command().orElse(null)) }
+                .toList()
+        }
+}
+
+internal class ManagedBackendLockException(message: String) : RuntimeException(message)
 
 internal class ClasspathBundledPluginResolver(
     private val anchorClass: Class<*> = BackendManager::class.java,
@@ -162,6 +187,7 @@ internal class BackendManager(
     ),
     private val launcherResolver: LauncherResolver = LauncherResolver(),
     private val bundledPluginResolver: BundledPluginResolver = ClasspathBundledPluginResolver(),
+    private val processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
     private val stopGracePeriodMillis: Long = 5_000L,
 ) {
     suspend fun download(id: BackendId, acceptPaid: Boolean = false): DownloadResult {
@@ -211,18 +237,23 @@ internal class BackendManager(
         homePaths.mkdirsAll()
         val resolved = resolveConcreteId(id)
         val descriptor = loadDescriptor(resolved)
-        val pidFile = homePaths.pidFile(resolved.id)
-        readPid(pidFile)?.let { existingPid ->
-            if (isProcessAlive(existingPid)) {
-                return StartResult(
-                    id = resolved.id,
-                    pid = existingPid,
-                    ideaLogPath = homePaths.cacheDir(resolved.id).resolve("logs/idea.log"),
-                    configPath = homePaths.cacheDir(resolved.id).resolve("config"),
-                )
-            }
+        val running = scanRunningManagedProcesses()
+        val other = running.firstOrNull { it.backendId != resolved.id }
+        if (other != null) {
+            throw ManagedBackendLockException(lockConflictMessage(other))
+        }
+        val existing = running.firstOrNull { it.backendId == resolved.id }
+        if (existing != null) {
+            return StartResult(
+                id = resolved.id,
+                pid = existing.pid,
+                ideaLogPath = homePaths.cacheDir(resolved.id).resolve("logs/idea.log"),
+                configPath = homePaths.cacheDir(resolved.id).resolve("config"),
+                alreadyRunning = true,
+            )
         }
 
+        val pidFile = homePaths.pidFile(resolved.id)
         val bundleDir = homePaths.backendDir(resolved.id).resolve(descriptor.bundleDirName)
         val launcher = bundleDir.resolve(descriptor.launcherPath)
         require(Files.isExecutable(launcher)) { "Launcher is not executable: $launcher" }
@@ -288,7 +319,7 @@ internal class BackendManager(
                     try {
                         val descriptor = readDescriptorOrNull(descriptorPath(dir)) ?: return@mapNotNull null
                         val pid = readPid(homePaths.pidFile(descriptor.id))
-                        val alivePid = pid?.takeIf { isProcessAlive(it) }
+                        val alivePid = pid?.takeIf { processInspector.isAlive(it) }
                         val state = when {
                             alivePid != null -> ManagedBackendState.RUNNING
                             pid != null -> ManagedBackendState.UNREACHABLE
@@ -326,7 +357,67 @@ internal class BackendManager(
         return readDescriptorOrNull(path)
             ?: error("Managed backend '${id.id}' is not installed. Run `devrig backend download ${id.product.id}` first.")
     }
+
+    private fun scanRunningManagedProcesses(): List<RunningManagedProcess> {
+        val byId = mutableListOf<RunningManagedProcess>()
+        val trackedPids = mutableSetOf<Long>()
+        val trackedIds = mutableSetOf<String>()
+        if (Files.isDirectory(homePaths.stateDir)) {
+            Files.list(homePaths.stateDir).use { stream ->
+                stream.asSequence()
+                    .filter { it.fileName.toString().endsWith(".pid") }
+                    .forEach { pidFile ->
+                        val backendId = pidFile.fileName.toString().removeSuffix(".pid")
+                        val pid = readPid(pidFile)
+                        if (pid != null && processInspector.isAlive(pid)) {
+                            trackedPids += pid
+                            trackedIds += backendId
+                            byId += RunningManagedProcess(backendId, pid, untracked = false)
+                        } else {
+                            Files.deleteIfExists(pidFile)
+                        }
+                    }
+            }
+        }
+
+        for (process in processInspector.allProcesses()) {
+            if (process.pid in trackedPids) continue
+            val backendId = backendIdFromCommand(process.command) ?: continue
+            if (backendId in trackedIds) continue
+            byId += RunningManagedProcess(backendId, process.pid, untracked = true)
+        }
+
+        return byId.sortedWith(compareBy({ it.backendId }, { it.pid }))
+    }
+
+    private fun backendIdFromCommand(command: String?): String? {
+        if (command.isNullOrBlank()) return null
+        val backendsRoot = homePaths.backendsDir.toAbsolutePath().normalize().toString().pathKey() + "/"
+        val commandPath = Path.of(command).toAbsolutePath().normalize().toString().pathKey()
+        val index = commandPath.indexOf(backendsRoot)
+        if (index < 0) return null
+        val rest = commandPath.substring(index + backendsRoot.length)
+        return rest.substringBefore('/').takeIf { it.isNotBlank() }
+    }
+
+    private fun lockConflictMessage(process: RunningManagedProcess): String = buildString {
+        appendLine("error: another managed backend is already running: ${process.backendId} (pid ${process.pid})")
+        append("stop it first:  devrig backend stop ${process.backendId}")
+        if (process.untracked) {
+            appendLine()
+            append("cleanup stale state under ${homePaths.stateDir} if this process is no longer managed")
+        }
+    }
 }
+
+private data class RunningManagedProcess(
+    val backendId: String,
+    val pid: Long,
+    val untracked: Boolean,
+)
+
+private fun String.pathKey(): String =
+    replace('\\', '/').trimEnd('/').lowercase()
 
 internal fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: String): Path {
     val cacheDir = homePaths.cacheDir(id).toAbsolutePath().normalize()
@@ -398,10 +489,6 @@ private fun readPid(path: Path): Long? {
     val text = Files.readString(path).trim()
     if (text.isBlank()) return null
     return text.toLongOrNull()
-}
-
-private fun isProcessAlive(pid: Long): Boolean {
-    return ProcessHandle.of(pid).getOrNull()?.isAlive == true
 }
 
 private fun waitForExit(handle: ProcessHandle, timeoutMillis: Long): Boolean {

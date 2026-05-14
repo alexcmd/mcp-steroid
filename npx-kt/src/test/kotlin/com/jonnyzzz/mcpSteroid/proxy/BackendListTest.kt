@@ -87,6 +87,35 @@ class BackendListTest {
         assertEquals("/caches/idea-community-2025.3.3", backend["cachePath"]!!.jsonPrimitive.contentOrNull)
     }
 
+    @Test
+    fun `managed rows render running and stopped annotations`() {
+        val running = BackendRow.FromManaged(
+            managed("idea-community-2025.3.3", state = ManagedBackendState.RUNNING, runningPid = 44),
+        )
+        val stopped = BackendRow.FromManaged(
+            managed("idea-community-2025.3.2", state = ManagedBackendState.INSTALLED),
+        )
+
+        assertEquals("managed, pid 44", running.locatorLabel)
+        assertEquals("managed, installed", stopped.locatorLabel)
+    }
+
+    @Test
+    fun `json marks every backend with managed boolean`() {
+        val buf = ByteArrayOutputStream()
+        renderBackendJson(
+            listOf(
+                BackendRow.FromMarker(markerIde(pid = 11, build = "IC-253.1"), projects = emptyList(), managed = false),
+                BackendRow.FromPort(portIde(buildNumber = "IC-253.2"), managed = true),
+            ),
+            PrintStream(buf, true, Charsets.UTF_8),
+        )
+
+        val backends = Json.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject["backends"]!!.jsonArray
+        assertEquals(false, backends[0].jsonObject["managed"]!!.jsonPrimitive.boolean)
+        assertEquals(true, backends[1].jsonObject["managed"]!!.jsonPrimitive.boolean)
+    }
+
     private fun managed(
         id: String,
         state: ManagedBackendState,

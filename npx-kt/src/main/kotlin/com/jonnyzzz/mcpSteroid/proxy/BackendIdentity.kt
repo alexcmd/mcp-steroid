@@ -55,6 +55,7 @@ internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJs
     put("source", backendSource(row))
     put("displayName", backendDisplayName(row))
     put("locator", backendLocatorLabel(row))
+    put("managed", row.managed)
     when (row) {
         is BackendRow.FromMarker -> {
             put("pluginInstalled", true)
@@ -74,7 +75,6 @@ internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJs
             val info = row.info
             put("pluginInstalled", false)
             put("reachable", info.state == ManagedBackendState.RUNNING)
-            put("managed", true)
             put("managedId", info.id)
             put("productKey", info.productKey)
             put("productCode", info.productCode)

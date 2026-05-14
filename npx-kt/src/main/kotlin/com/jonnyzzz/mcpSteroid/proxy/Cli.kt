@@ -219,14 +219,19 @@ internal fun runCli(
         0
     }
     is CliMode.Backend -> {
-        when (mode) {
-            CliMode.Backend.Text -> runBackendCommand(System.out, json = false, homePaths = homePaths)
-            CliMode.Backend.Json -> runBackendCommand(System.out, json = true, homePaths = homePaths)
-            is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
-            is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
-            is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
+        try {
+            when (mode) {
+                CliMode.Backend.Text -> runBackendCommand(System.out, json = false, homePaths = homePaths)
+                CliMode.Backend.Json -> runBackendCommand(System.out, json = true, homePaths = homePaths)
+                is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
+                is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
+                is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
+            }
+            0
+        } catch (e: ManagedBackendLockException) {
+            System.err.println(e.message)
+            64
         }
-        0
     }
     is CliMode.Project -> {
         runProjectCommand(System.out, json = mode is CliMode.Project.Json)
