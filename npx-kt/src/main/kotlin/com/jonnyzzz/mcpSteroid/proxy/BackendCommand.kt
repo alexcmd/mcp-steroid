@@ -5,6 +5,12 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.jonnyzzz.mcpSteroid.server.NPX_PROJECTS_STREAM_PATH
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
@@ -76,8 +82,12 @@ internal sealed interface BackendRow {
  *
  * Renders one block per IDE on [out]. Exit status is always 0: "no IDE was
  * running" is a steady state on most machines, not a CLI error.
+ *
+ * @param json `true` ⇒ emit a single machine-readable JSON object instead of
+ *  the human-readable banner+list. The JSON is pretty-printed so a human can
+ *  still read it without `jq`; `jq` accepts both forms equally.
  */
-internal fun runBackendCommand(out: PrintStream) {
+internal fun runBackendCommand(out: PrintStream, json: Boolean = false) {
     val homeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     val discovery = IdeDiscoveryService(homeDir = homeDir, allowHosts = allowHosts)
@@ -112,7 +122,11 @@ internal fun runBackendCommand(out: PrintStream) {
             val portIdes = portIdesAsync.await()
             mergeRows(markerRows, portIdes)
         }
-        renderBackendOutput(rows, out)
+        if (json) {
+            renderBackendJson(rows, out)
+        } else {
+            renderBackendOutput(rows, out)
+        }
     } finally {
         portDiscovery.close()
         httpClient.close()
@@ -247,44 +261,148 @@ private suspend fun fetchFirstSnapshot(
  * Pure renderer — separated from [runBackendCommand] so a unit test can
  * exercise every formatting branch without touching the network.
  *
- * Format:
- *   <IDE name>  version <version>  (<locator>)
- *     <project-name> -> <project-path>
- *     ...
- *   (no open projects)                              ← FromMarker, empty list
- *   (unreachable: <reason>)                         ← FromMarker, null projects
- *   (mcp-steroid plugin not installed — project list unavailable)
- *                                                   ← FromPort variant
+ * Output shape:
+ * ```
+ * devrig v<version> — <tagline>
+ *
+ * Discovered N IDE(s):
+ *
+ *   [1] <IDE name> <version> (<locator>)
+ *         <project-name>  →  <project-path>
+ *         …
+ *
+ *   [2] <IDE name> <version> (<locator>)
+ *         (mcp-steroid plugin not installed — project list unavailable)
+ *
+ * ```
+ * The opening banner identifies the tool, a blank line separates banner from
+ * list, the list itself uses `[N]` index markers so it visibly is a list,
+ * and the trailing blank line gives shells a clean separator.
  */
 internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
+    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    out.println()
     if (rows.isEmpty()) {
         out.println("No IDEs detected.")
+        out.println()
         return
     }
+    val noun = if (rows.size == 1) "IDE" else "IDEs"
+    out.println("Discovered ${rows.size} $noun:")
+    out.println()
     for ((index, row) in rows.withIndex()) {
-        if (index > 0) out.println()
-        out.println("${row.name}  version ${row.version}  (${row.locatorLabel})")
+        out.println("  [${index + 1}] ${row.name} ${row.version} (${row.locatorLabel})")
         when (row) {
             is BackendRow.FromMarker -> renderMarkerProjects(row, out)
             is BackendRow.FromPort -> out.println(
-                "  (mcp-steroid plugin not installed — project list unavailable)"
+                "        (mcp-steroid plugin not installed — project list unavailable)"
             )
         }
+        if (index < rows.lastIndex) out.println()
     }
+    // Trailing blank line so piped consumers / terminals don't glue the
+    // next prompt to the last project line.
+    out.println()
+}
+
+/**
+ * Pretty-printed JSON renderer for the `backend --json` form. Designed for
+ * scripted consumption (`mcp-steroid-proxy backend --json | jq …`):
+ *  - **No banner** — stdout is one JSON document, nothing else.
+ *  - **Top-level object** with `tool` (meta) + `ides` (data array). Same shape
+ *    pattern `kubectl get … -o json` uses, so jq-savvy users feel at home.
+ *  - **`source` discriminator** (`"marker"` | `"port"`) on every IDE — lets
+ *    jq filter by discovery path without checking which fields are present.
+ *  - **Source-specific fields are present only on the matching source** so
+ *    `.projects` is reliably a list (or null) on marker rows, never confused
+ *    with port-only rows that have no project list to begin with.
+ *  - **Pretty-printed**: humans can read without `jq -P`, scripts don't care.
+ *
+ * Example query:
+ *   mcp-steroid-proxy backend --json | jq '.ides[] | select(.source=="marker") | .projects[]?'
+ */
+internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
+    val json = Json { prettyPrint = true; encodeDefaults = true }
+    val payload = buildJsonObject {
+        put("tool", buildJsonObject {
+            put("name", BRAND_NAME)
+            put("version", loadProxyVersion())
+        })
+        put("ides", buildJsonArray {
+            for (row in rows) {
+                add(rowToJson(row))
+            }
+        })
+    }
+    out.println(json.encodeToString(JsonObject.serializer(), payload))
+}
+
+private fun rowToJson(row: BackendRow): JsonObject = when (row) {
+    is BackendRow.FromMarker -> buildJsonObject {
+        put("source", "marker")
+        put("name", row.ide.marker.ide.name)
+        put("version", row.ide.marker.ide.version)
+        put("build", row.ide.marker.ide.build)
+        put("pid", row.ide.pid)
+        put("mcpUrl", row.ide.mcpUrl)
+        // Projects shape mirrors the wire `ProjectInfo` — `name` + `path` per entry.
+        // `null` (not absent) when fetch failed; `unreachable` carries the reason.
+        if (row.projects != null) {
+            put("projects", buildJsonArray {
+                for (p in row.projects) add(buildJsonObject {
+                    put("name", p.name)
+                    put("path", p.path)
+                })
+            })
+        } else {
+            // Explicit null so `.projects` is always present on marker rows;
+            // jq users can `select(.projects == null)` to filter unreachable ones.
+            putJsonNull("projects")
+            put("unreachable", row.errorMessage ?: "unreachable")
+        }
+    }
+    is BackendRow.FromPort -> buildJsonObject {
+        put("source", "port")
+        put("name", row.name)
+        put("version", row.version)
+        put("port", row.ide.port)
+        put("baseUrl", row.ide.baseUrl)
+        // Keep the raw /api/about fields too — operators sometimes need the full
+        // shape (e.g. to distinguish EAP / RC builds via `buildNumber`).
+        row.ide.productName?.let { put("productName", it) }
+        row.ide.productFullName?.let { put("productFullName", it) }
+        row.ide.edition?.let { put("edition", it) }
+        row.ide.baselineVersion?.let { put("baselineVersion", it) }
+        row.ide.buildNumber?.let { put("buildNumber", it) }
+        // Hard signal: no plugin ⇒ no project list. The CLI text renderer says
+        // this in prose; the JSON form is explicit so scripts don't have to
+        // guess from "no projects field".
+        put("pluginInstalled", false)
+    }
+}
+
+private fun kotlinx.serialization.json.JsonObjectBuilder.putJsonNull(key: String) {
+    put(key, kotlinx.serialization.json.JsonNull)
 }
 
 private fun renderMarkerProjects(row: BackendRow.FromMarker, out: PrintStream) {
     when {
         row.projects == null -> {
             val reason = row.errorMessage ?: "unreachable"
-            out.println("  (unreachable: $reason)")
+            out.println("        (unreachable: $reason)")
         }
         row.projects.isEmpty() -> {
-            out.println("  (no open projects)")
+            out.println("        (no open projects)")
         }
         else -> {
+            // Right-pad project names so `→` arrows line up — turns the inner
+            // list into a small two-column table when more than one project
+            // is open. Cap the pad so a single unusually long name doesn't
+            // push every other row's path off the screen.
+            val padWidth = row.projects.maxOf { it.name.length }.coerceAtMost(40)
             for (p in row.projects) {
-                out.println("  ${p.name} -> ${p.path}")
+                val paddedName = p.name.padEnd(padWidth)
+                out.println("        $paddedName  →  ${p.path}")
             }
         }
     }

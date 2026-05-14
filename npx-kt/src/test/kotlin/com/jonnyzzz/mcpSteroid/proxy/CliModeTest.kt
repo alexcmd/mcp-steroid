@@ -48,8 +48,35 @@ class CliModeTest {
     }
 
     @Test
-    fun `bare backend subcommand routes to Backend`() {
-        assertEquals(CliMode.Backend, parseCliMode(arrayOf("backend")))
+    fun `bare backend subcommand routes to Backend Text`() {
+        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("backend")))
+    }
+
+    @Test
+    fun `backend --json routes to Backend Json`() {
+        assertEquals(CliMode.Backend.Json, parseCliMode(arrayOf("backend", "--json")))
+        // Order doesn't matter — `--json backend` is the same thing.
+        assertEquals(CliMode.Backend.Json, parseCliMode(arrayOf("--json", "backend")))
+    }
+
+    @Test
+    fun `--json without backend is ignored at the mode level`() {
+        // `--json` only modifies the backend subcommand; on any other mode it's
+        // filtered out by the parser, just like `--debug`. So `--json` alone
+        // routes to Help (same as no args).
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("--json")))
+        // And combined with another mode it doesn't override it.
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--json")))
+        assertEquals(CliMode.Version, parseCliMode(arrayOf("--version", "--json")))
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("--help", "--json")))
+    }
+
+    @Test
+    fun `--json with --help still routes to Help (help wins over backend)`() {
+        // Subtle: `backend --json --help` could be interpreted as "JSON help".
+        // We deliberately keep Help text-only for now — pin that decision so
+        // a future JSON-help feature doesn't sneak in by accident.
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("backend", "--json", "--help")))
     }
 
     // ----------------------------- precedence ------------------------------
@@ -103,8 +130,8 @@ class CliModeTest {
         // We don't yet validate subcommand args strictly — extra tokens are accepted
         // so the door stays open for future `backend --json` style options without
         // breaking compatibility.
-        assertEquals(CliMode.Backend, parseCliMode(arrayOf("backend", "extra")))
-        assertEquals(CliMode.Backend, parseCliMode(arrayOf("extra", "backend")))
+        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("backend", "extra")))
+        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("extra", "backend")))
     }
 
     @Test
@@ -230,7 +257,7 @@ class CliModeTest {
         assertSame(CliMode.Help, parseCliMode(emptyArray()))
         assertSame(CliMode.Help, parseCliMode(arrayOf("--help")))
         assertSame(CliMode.Version, parseCliMode(arrayOf("--version")))
-        assertSame(CliMode.Backend, parseCliMode(arrayOf("backend")))
+        assertSame(CliMode.Backend.Text, parseCliMode(arrayOf("backend")))
     }
 
     // ----------------------------- runCli contract ------------------------
@@ -249,6 +276,39 @@ class CliModeTest {
     fun `runCli Unknown returns exit 64`() {
         // 64 is sysexits.h's EX_USAGE — the canonical "bad CLI invocation" code.
         assertEquals(64, runCli(CliMode.Unknown(listOf("--no-such"))))
+    }
+
+    @Test
+    fun `parseDebugFlag detects --debug and ignores everything else`() {
+        assertTrue(parseDebugFlag(arrayOf("--debug")))
+        assertTrue(parseDebugFlag(arrayOf("--mcp", "--debug")))
+        assertTrue(parseDebugFlag(arrayOf("--debug", "backend")))
+        assertTrue(parseDebugFlag(arrayOf("backend", "--debug", "--json")))
+        // Off cases.
+        assertTrue(!parseDebugFlag(emptyArray()))
+        assertTrue(!parseDebugFlag(arrayOf("--mcp")))
+        assertTrue(!parseDebugFlag(arrayOf("--Debug")), "case-sensitive like the rest of the parser")
+        assertTrue(!parseDebugFlag(arrayOf("--debug-foo")), "exact-match only, no prefix")
+    }
+
+    @Test
+    fun `applyDebugLogging sets proxy_log_level system property only when --debug is true`() {
+        val key = "proxy.log.level"
+        val original = System.getProperty(key)
+        try {
+            // --debug off ⇒ property is left as-is. We pre-set a sentinel to
+            // confirm the function doesn't overwrite externally-supplied levels.
+            System.setProperty(key, "INFO")
+            applyDebugLogging(false)
+            assertEquals("INFO", System.getProperty(key),
+                "applyDebugLogging(false) must NOT overwrite an externally-set value")
+
+            // --debug on ⇒ property is forced to DEBUG.
+            applyDebugLogging(true)
+            assertEquals("DEBUG", System.getProperty(key))
+        } finally {
+            if (original == null) System.clearProperty(key) else System.setProperty(key, original)
+        }
     }
 
     @Test

@@ -69,18 +69,50 @@ class BackendCommandRenderTest {
         buildNumber = buildNumber,
     )
 
+    // ------------------------------ banner ---------------------------------
+
+    @Test
+    fun `output always starts with the devrig banner + blank line`() {
+        // The banner is a contract: every backend run identifies the tool
+        // first, before any data. Pin both shape and trailing-blank-line.
+        val text = render(emptyList())
+        val lines = text.lines()
+        assertTrue(lines[0].startsWith("devrig v"),
+            "first line must be the devrig banner; got: ${lines[0]}")
+        assertTrue(lines[0].contains("the AI-empowered"),
+            "banner must include the tagline; got: ${lines[0]}")
+        assertEquals("", lines[1], "second line must be blank to separate banner from body")
+    }
+
+    @Test
+    fun `output ends with a trailing blank line so shells separate the prompt cleanly`() {
+        val rows = listOf(
+            BackendRow.FromMarker(markerIde("IntelliJ IDEA", "1", 1L), listOf(ProjectInfo("p", "/p")))
+        )
+        val text = render(rows)
+        assertTrue(text.endsWith("\n\n"),
+            "output must end with a blank line; got tail: '${text.takeLast(8).replace("\n", "\\n")}'")
+    }
+
     // -------------------------- empty / no-IDE branch ----------------------
 
     @Test
-    fun `empty row list prints the no-IDEs message`() {
+    fun `empty row list prints banner + the no-IDEs message + trailing blank`() {
         val text = render(emptyList())
-        assertEquals("No IDEs detected.\n", text)
+        assertTrue(text.contains("No IDEs detected."), "missing message; got:\n$text")
+        // Three structural pieces: banner / blank / message / trailing blank.
+        val lines = text.lines()
+        // Layout: [0]=banner, [1]="", [2]="No IDEs detected.", [3]="", [4]=""
+        // (the [4] is the empty tail after the final \n).
+        assertTrue(lines[0].startsWith("devrig v"), lines[0])
+        assertEquals("", lines[1])
+        assertEquals("No IDEs detected.", lines[2])
     }
 
     // --------------------- marker rows: happy paths ------------------------
 
     @Test
-    fun `single marker IDE with one project prints version, pid, and name to path mapping`() {
+    fun `single marker IDE shows index, name, version, locator, and project mapping`() {
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L),
@@ -88,38 +120,49 @@ class BackendCommandRenderTest {
             )
         )
         val text = render(rows)
-        assertTrue(text.contains("IntelliJ IDEA"), "ide name missing: $text")
-        assertTrue(text.contains("version 2025.3.3"), "version missing: $text")
-        assertTrue(text.contains("pid 1234"), "pid missing: $text")
-        assertTrue(text.contains("  my-app -> /Users/x/Work/my-app"), "project line missing: $text")
+        assertTrue(text.contains("Discovered 1 IDE:"),
+            "expected list header for one IDE (singular); got:\n$text")
+        assertTrue(text.contains("[1] IntelliJ IDEA 2025.3.3 (pid 1234)"),
+            "expected numbered list entry with version+locator; got:\n$text")
+        assertTrue(text.contains("my-app") && text.contains("→") && text.contains("/Users/x/Work/my-app"),
+            "expected project to render as name → path; got:\n$text")
     }
 
     @Test
-    fun `marker IDE with multiple projects lists every name and path`() {
+    fun `marker IDE with multiple projects renders an aligned name to path table`() {
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = markerIde("PyCharm", "2025.3.1", pid = 4242L),
                 projects = listOf(
                     ProjectInfo(name = "alpha", path = "/p/alpha"),
-                    ProjectInfo(name = "beta", path = "/p/beta"),
+                    ProjectInfo(name = "bravo", path = "/p/bravo"),
                 ),
             )
         )
         val text = render(rows)
-        assertTrue(text.contains("  alpha -> /p/alpha"), "alpha missing: $text")
-        assertTrue(text.contains("  beta -> /p/beta"), "beta missing: $text")
+        // Both projects MUST appear.
+        assertTrue(text.contains("alpha") && text.contains("/p/alpha"), text)
+        assertTrue(text.contains("bravo") && text.contains("/p/bravo"), text)
+        // Arrows MUST line up: pad both names to the same width.
+        val arrowColumns = text.lines().filter { it.contains("→") }.map { it.indexOf('→') }
+        assertEquals(arrowColumns.toSet().size, 1,
+            "all project-list arrows must be in the same column; got columns: $arrowColumns in:\n$text")
     }
 
     @Test
-    fun `multiple IDEs are separated by a blank line so scripts can group them`() {
+    fun `multiple IDE entries are numbered sequentially and separated by blank lines`() {
         val rows = listOf(
             BackendRow.FromMarker(markerIde("IntelliJ IDEA", "2025.3.3", 1L), listOf(ProjectInfo("a", "/a"))),
             BackendRow.FromMarker(markerIde("PyCharm", "2025.3.1", 2L), listOf(ProjectInfo("b", "/b"))),
         )
         val text = render(rows)
-        val sections = text.trimEnd().split("\n\n")
-        assertEquals(2, sections.size,
-            "expected exactly one blank-line separator between IDE blocks, got: $text")
+        assertTrue(text.contains("Discovered 2 IDEs:"),
+            "expected plural list header; got:\n$text")
+        assertTrue(text.contains("[1] IntelliJ IDEA"), "got:\n$text")
+        assertTrue(text.contains("[2] PyCharm"), "got:\n$text")
+        val firstIdx = text.indexOf("[1]")
+        val secondIdx = text.indexOf("[2]")
+        assertTrue(firstIdx < secondIdx, "list items must keep input order; got:\n$text")
     }
 
     // --------------------- marker rows: edge cases -------------------------
@@ -167,15 +210,7 @@ class BackendCommandRenderTest {
     }
 
     @Test
-    fun `output ends with a newline`() {
-        // Convention: a CLI tool's output is terminated so `tool | head -1` has
-        // a clean last line. Pin it explicitly.
-        val rows = listOf(BackendRow.FromMarker(markerIde("IntelliJ IDEA", "1", 1L), emptyList()))
-        assertTrue(render(rows).endsWith("\n"), "must end with newline; got: ${render(rows)}")
-    }
-
-    @Test
-    fun `marker IDE name and version are NOT mangled even when they contain spaces`() {
+    fun `marker IDE name and version with spaces are not mangled in the entry line`() {
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = markerIde("IntelliJ IDEA Ultimate", "2025.3.3 EAP", 1L),
@@ -183,7 +218,7 @@ class BackendCommandRenderTest {
             )
         )
         val text = render(rows)
-        assertTrue(text.contains("IntelliJ IDEA Ultimate  version 2025.3.3 EAP"),
+        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate 2025.3.3 EAP (pid 1)"),
             "got: $text")
     }
 
@@ -195,7 +230,7 @@ class BackendCommandRenderTest {
         // built-in HTTP server reachable, but no `.mcp-steroid` marker.
         val rows = listOf(BackendRow.FromPort(portIde(port = 63342)))
         val text = render(rows)
-        assertTrue(text.contains("IntelliJ IDEA Ultimate  version IU-253.21581.142  (port 63342)"),
+        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate IU-253.21581.142 (port 63342)"),
             "expected the full IDE header line; got:\n$text")
         assertTrue(text.contains("mcp-steroid plugin not installed"),
             "must explain why projects are unavailable; got:\n$text")
@@ -205,14 +240,14 @@ class BackendCommandRenderTest {
     fun `port-discovered IDE falls back to productName when productFullName is null`() {
         val rows = listOf(BackendRow.FromPort(portIde(productFullName = null, productName = "IDEA")))
         val text = render(rows)
-        assertTrue(text.contains("IDEA  version "), "expected fallback to productName; got:\n$text")
+        assertTrue(text.contains("[1] IDEA "), "expected fallback to productName; got:\n$text")
     }
 
     @Test
     fun `port-discovered IDE falls back to baselineVersion when buildNumber is null`() {
         val rows = listOf(BackendRow.FromPort(portIde(buildNumber = null, baselineVersion = 253)))
         val text = render(rows)
-        assertTrue(text.contains("version 253"), "expected baseline fallback; got:\n$text")
+        assertTrue(text.contains(" 253 "), "expected baseline fallback; got:\n$text")
     }
 
     @Test
@@ -248,9 +283,13 @@ class BackendCommandRenderTest {
             BackendRow.FromPort(portIde(port = 63342)),
         )
         val text = render(rows)
-        val sections = text.trimEnd().split("\n\n")
-        assertEquals(2, sections.size,
-            "expected one blank-line separator between marker and port rows; got:\n$text")
+        // Numbered entries with an exclusive blank-line separator between them.
+        val entry1 = text.indexOf("[1]")
+        val entry2 = text.indexOf("[2]")
+        assertTrue(entry1 >= 0 && entry2 > entry1, "expected two numbered entries; got:\n$text")
+        val between = text.substring(entry1, entry2)
+        assertTrue(between.contains("\n\n"),
+            "expected at least one blank line between [1] and [2]; got slice:\n$between")
     }
 
     // ----------------------- deduplication (mergeRows) ---------------------

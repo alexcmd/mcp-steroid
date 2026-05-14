@@ -50,6 +50,11 @@ fun main(args: Array<String>) {
     //
     // `parseCliMode` is intentionally pure and does not touch System.out.
     val mode = parseCliMode(args)
+    // `--debug` is orthogonal to the mode and must be honoured even in MCP
+    // mode. Apply BEFORE any class load that might trigger logback init —
+    // logback reads the `proxy.log.level` system property on first use and
+    // pins the level for the JVM lifetime.
+    applyDebugLogging(parseDebugFlag(args))
 
     if (mode !is CliMode.Mcp) {
         runCliAndExit(mode)

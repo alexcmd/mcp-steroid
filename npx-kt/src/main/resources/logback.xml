@@ -6,6 +6,11 @@
   target System.err — a stray log line on stdout would corrupt the JSON-RPC
   stream. The `target` attribute on ConsoleAppender pins this; downstream
   configurations layered on top should keep the same invariant.
+
+  Root level is controlled by `proxy.log.level` system property:
+    - default: WARN (only WARN and ERROR reach the operator)
+    - `--debug` on the CLI sets it to DEBUG before the first log call
+  See `parseDebugFlag` / `applyDebugLogging` in com.jonnyzzz.mcpSteroid.proxy.Main.
 -->
 <configuration>
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
@@ -15,7 +20,7 @@
         </encoder>
     </appender>
 
-    <root level="INFO">
+    <root level="${proxy.log.level:-WARN}">
         <appender-ref ref="STDERR" />
     </root>
 </configuration>

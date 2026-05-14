@@ -4,6 +4,13 @@ package com.jonnyzzz.mcpSteroid.proxy
 import java.io.PrintStream
 import kotlin.system.exitProcess
 
+/** Brand presented in CLI banners — see [BRAND_TAGLINE] for the full slogan. */
+internal const val BRAND_NAME: String = "devrig"
+
+/** Tagline used by the help banner and the `backend` subcommand's header. */
+internal const val BRAND_TAGLINE: String =
+    "the AI-empowered development environment for your project."
+
 /**
  * What the user asked the launcher to do. Resolved by [parseCliMode] BEFORE any
  * other code runs — the MCP path must redirect `System.out` to stderr before
@@ -23,8 +30,17 @@ internal sealed interface CliMode {
     /**
      * `backend` subcommand — print the set of discovered IDEs (version + open
      * projects) on stdout and exit 0. One-shot snapshot, no streaming.
+     *
+     * Output format is selected by the `--json` flag: omitted ⇒ [Text] (human
+     * banner + numbered list), present ⇒ [Json] (single object on stdout
+     * suitable for `jq` / scripting). Sealed interface so callers can pattern-
+     * match without losing the format-orthogonal "this is the backend mode"
+     * signal.
      */
-    object Backend : CliMode
+    sealed interface Backend : CliMode {
+        data object Text : Backend
+        data object Json : Backend
+    }
 
     /** Unknown arg(s). Print usage on stderr and exit non-zero. */
     data class Unknown(val args: List<String>) : CliMode
@@ -39,18 +55,55 @@ internal sealed interface CliMode {
  * win over `backend` so `backend --help` prints help instead of opening
  * connections, and `--mcp` wins over everything so a wrapper that accidentally
  * combines flags still keeps MCP framing intact.
+ *
+ * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
+ * [parseDebugFlag]) and is filtered out here so e.g. `--debug` alone routes
+ * to Help, not Unknown, and `--debug backend` routes to Backend.
  */
 internal fun parseCliMode(args: Array<String>): CliMode {
-    if (args.any { it == "--mcp" }) return CliMode.Mcp
-    if (args.isEmpty() || args.any { it == "--help" || it == "-h" }) return CliMode.Help
-    if (args.any { it == "--version" || it == "-v" }) return CliMode.Version
-    if (args.any { it == "backend" }) return CliMode.Backend
-    return CliMode.Unknown(args.toList())
+    // `--debug` is a logging-verbosity toggle; `--json` is a backend-only output
+    // format selector. Both are orthogonal to mode selection and filtered out
+    // here so e.g. `--debug` alone routes to Help, not Unknown.
+    val modeArgs = args.filterNot { it == "--debug" || it == "--json" }.toTypedArray()
+    if (modeArgs.any { it == "--mcp" }) return CliMode.Mcp
+    if (modeArgs.isEmpty() || modeArgs.any { it == "--help" || it == "-h" }) return CliMode.Help
+    if (modeArgs.any { it == "--version" || it == "-v" }) return CliMode.Version
+    if (modeArgs.any { it == "backend" }) {
+        return if (args.any { it == "--json" }) CliMode.Backend.Json else CliMode.Backend.Text
+    }
+    return CliMode.Unknown(modeArgs.toList())
 }
 
 /**
- * Runs the non-MCP CLI surface (help / version / unknown). Returns the
- * process exit code the caller should propagate.
+ * `--debug` toggles verbose stderr logging (DEBUG instead of WARN). Pure and
+ * orthogonal to [parseCliMode] — `--debug` is valid in EVERY mode, including
+ * `--mcp` where it still goes to stderr (stdout stays reserved for NDJSON).
+ */
+internal fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
+
+/**
+ * Wire the `--debug` flag into the bundled logback configuration. Reads the
+ * `proxy.log.level` system property at logback-init time (see `logback.xml`):
+ *  - default: WARN
+ *  - `--debug`: DEBUG
+ *
+ * MUST run before the first SLF4J call — logback initialises lazily on first
+ * use and pins the level. [main] calls this right after [parseDebugFlag] for
+ * exactly that reason.
+ */
+internal fun applyDebugLogging(debug: Boolean) {
+    // Only set the property when --debug is requested — leaving it unset lets
+    // operators override the WARN default from the outside with
+    // `-Dproxy.log.level=INFO` etc. The hard-coded default in logback.xml
+    // (`${proxy.log.level:-WARN}`) handles the no-flag case.
+    if (debug) {
+        System.setProperty("proxy.log.level", "DEBUG")
+    }
+}
+
+/**
+ * Runs the non-MCP CLI surface (help / version / backend / unknown). Returns
+ * the process exit code the caller should propagate.
  *
  * `System.out` here is the real stdout because the MCP redirect only fires
  * on the `--mcp` branch — that's the whole point of the early split in
@@ -67,8 +120,8 @@ internal fun runCli(mode: CliMode): Int = when (mode) {
         System.out.println(loadProxyVersion())
         0
     }
-    CliMode.Backend -> {
-        runBackendCommand(System.out)
+    is CliMode.Backend -> {
+        runBackendCommand(System.out, json = mode is CliMode.Backend.Json)
         0
     }
     is CliMode.Unknown -> {
@@ -81,15 +134,21 @@ internal fun runCli(mode: CliMode): Int = when (mode) {
 private fun printHelp(out: PrintStream) {
     out.print(
         """
-        mcp-steroid-proxy — MCP-Steroid stdio proxy + IDE monitor.
+        $BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE
 
         Usage:
-          mcp-steroid-proxy --mcp           run as an MCP stdio server
-                                            (stdin / stdout reserved for the MCP transport)
-          mcp-steroid-proxy backend         list discovered IDEs (with versions) and
-                                            the projects each one has open
-          mcp-steroid-proxy --version | -v  print the proxy version and exit
-          mcp-steroid-proxy --help    | -h  print this help and exit
+          mcp-steroid-proxy --mcp                    run as an MCP stdio server
+                                                     (stdin / stdout reserved for the MCP transport)
+          mcp-steroid-proxy backend [--json]         list discovered IDEs (with versions) and the
+                                                     projects each one has open. `--json` emits a
+                                                     single machine-readable object on stdout
+                                                     (pipe through `jq`); default is human text.
+          mcp-steroid-proxy --version | -v           print the proxy version and exit
+          mcp-steroid-proxy --help    | -h           print this help and exit
+
+        Options applicable to every mode:
+          --debug                                    enable verbose stderr logging (DEBUG)
+                                                     — without it, only WARN+ are shown.
 
         The MCP mode is intentionally opt-in: the launcher behaves like a regular CLI by
         default so it can be inspected (`--help`, `--version`, `backend`) without consuming
