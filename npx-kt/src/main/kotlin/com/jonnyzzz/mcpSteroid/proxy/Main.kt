@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
+import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.proxy.server.runStubStdioMcpServer
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import io.ktor.client.HttpClient
@@ -70,6 +71,12 @@ fun main(@Suppress("unused_parameter") args: Array<String>) {
         clientInfo = clientInfo,
     )
 
+    // Active port-scan discovery, independent of (and parallel to) the
+    // marker-based path. Probes common IntelliJ HTTP-server ports on the
+    // dedicated `mcp-steroid-port-scan-*` thread pool so a slow TCP
+    // connect never stalls the stdio MCP server.
+    val portDiscovery = IntelliJPortDiscovery(httpClient = httpClient)
+
     // npx-kt boots a real MCP stdio server backed by McpStdioServer +
     // McpSteroidTools (with stub handlers — see StubMcpSteroidTools). The legacy
     // proxy path that aggregates discovered IDE MCP servers lives in
@@ -84,11 +91,14 @@ fun main(@Suppress("unused_parameter") args: Array<String>) {
         coroutineScope {
             val discoveryJob = discovery.start(this)
             val monitorJob = monitor.start(this)
+            val portDiscoveryJob = portDiscovery.start(this)
             try {
                 runStubStdioMcpServer(input = mcpStdin, output = mcpStdout)
             } finally {
+                portDiscoveryJob.cancel()
                 monitorJob.cancel()
                 discoveryJob.cancel()
+                portDiscovery.close()
                 httpClient.close()
             }
         }
