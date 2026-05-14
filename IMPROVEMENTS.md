@@ -42,6 +42,8 @@ isolation:
 6. `npx-kt: tests for IdeDiscoveryService + IdeMonitorService roundtrip`
 7. `mcp-5: close out IMPROVEMENTS.md with test summary + follow-up list`
 8. `mcp-5: pid marker carries the IDE's MCP port + bearer token`
+9. `mcp-5: log self-review findings + port/token addition in IMPROVEMENTS`
+10. `mcp-5: attach IntelliJ's bundled MCP server to pid marker via optional descriptor`
 
 Test coverage:
 - `:mcp-steroid-server:test` — `PidMarkerTest` (6: roundtrip, pretty-print
@@ -83,6 +85,36 @@ Test coverage:
   the "NPX Token: $token" line for the legacy text marker; the JSON
   marker carries the token as a typed field. Left in place for now to
   avoid churning unrelated callers; flagged for a follow-up cleanup.
+
+## Branch findings — IntelliJ's HTTP servers (research follow-up)
+
+- **`docs/intellij-builtin-servers.md`** catalogues both the platform's
+  always-on Netty HTTP server (REST under `/api/*` — `about`, `file`,
+  `settings`, `installPlugin`, `toolbox`, `projectSet`, `logs`,
+  `startUpMeasurement`, plus plugin-provided handlers) and the
+  optional MCP Server plugin (`com.intellij.mcpServer`). Use the doc
+  before adding any cross-process integration that talks to the IDE
+  outside of the `mcp-steroid` ktor server.
+- **MCP Server plugin** is bundled in IDEA 2025.3+ but **off by
+  default**. Default port 64342, bound to 127.0.0.1, exposes `/sse`
+  (and `/stream` in 2026.1+). Force-enable system properties:
+  `-Didea.mcp.server.force.enable=true`,
+  `-Didea.mcp.server.force.port=<int>`.
+- **Optional dependency wiring (no reflection).** We expose the
+  bundled MCP server's endpoint shape on `PidMarker.intellijMcpServer`
+  via the canonical IntelliJ optional-plugin pattern:
+  `bundledPlugin("com.intellij.mcpServer")` in Gradle for compile
+  access, `<depends optional="true" config-file="mcpServer-integration.xml">`
+  in `plugin.xml`, and `mcpServer-integration.xml` registering
+  `IntelliJMcpServerProbeImpl` only when the dep is satisfied. When
+  the dep is missing the class is never loaded, so there's no
+  `NoClassDefFoundError` window and no reflection involved.
+- **API version skew.** The 253 bundle of `McpServerService` exposes
+  `isRunning`, `getPort`, `getServerSseUrl`; `getServerStreamUrl` was
+  added later. The probe derives the streamable HTTP URL from the SSE
+  URL (same listener, sibling path) so the marker carries both. If
+  the `/stream` endpoint isn't live on an older bundle, the client
+  observes that and falls back to SSE.
 
 ## Out of scope (filed for follow-up)
 
