@@ -134,7 +134,7 @@ class BackendCommandJsonRenderTest {
     }
 
     @Test
-    fun `marker row with empty projects list serialises projects as []`() {
+    fun `marker row with empty projects list serialises projects as an empty array`() {
         val rows = listOf(BackendRow.FromMarker(markerIde(), projects = emptyList()))
         val ide = render(rows)["ides"]!!.jsonArray.single().jsonObject
         val projects = ide["projects"]!!.jsonArray
