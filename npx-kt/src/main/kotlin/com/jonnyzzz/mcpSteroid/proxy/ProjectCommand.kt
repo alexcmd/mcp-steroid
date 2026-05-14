@@ -2,6 +2,12 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.PrintStream
 
 internal data class ProjectListing(
@@ -15,7 +21,7 @@ internal fun runProjectCommand(
 ) {
     val listing = projectListingFromRows(collectBackendRows())
     if (json) {
-        out.println("{}")
+        renderProjectJson(listing, out)
     } else {
         renderProjectOutput(listing, out)
     }
@@ -83,10 +89,82 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
     out.println()
 }
 
+/**
+ * Pretty-printed JSON renderer for `mcp-steroid-proxy project --json`.
+ *
+ * Output shape:
+ * ```
+ * {
+ *   "tool": { "name": "devrig", "version": "..." },
+ *   "ides": [
+ *     { "id": "ide-0", "name": "...", "version": "...", "build": "...", "pid": 123, "mcpUrl": "..." }
+ *   ],
+ *   "projects": [
+ *     { "ide": "ide-0", "name": "myproject", "path": "/Users/me/myproject" }
+ *   ],
+ *   "skipped": [
+ *     { "reason": "port-discovered, no mcp-steroid plugin", "port": 63342, "displayName": "IntelliJ IDEA" }
+ *   ]
+ * }
+ * ```
+ *
+ * `projects[].ide` references `ides[].id`. The IDE identity field names match
+ * `backend --json` marker rows exactly (`name`, `version`, `build`, `pid`,
+ * `mcpUrl`) so scripts can share display/selection logic across subcommands.
+ */
+internal fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
+    val reachableRows = listing.markerRows.filter { it.projects != null }
+    val rowIds = reachableRows.withIndex().associate { (index, row) -> row to "ide-$index" }
+    val json = Json { prettyPrint = true; encodeDefaults = true }
+    val payload = buildJsonObject {
+        put("tool", buildJsonObject {
+            put("name", BRAND_NAME)
+            put("version", loadProxyVersion())
+        })
+        put("ides", buildJsonArray {
+            for (row in reachableRows) {
+                add(buildJsonObject {
+                    put("id", rowIds.getValue(row))
+                    putJsonFields(markerIdeIdentityJson(row.ide))
+                })
+            }
+        })
+        put("projects", buildJsonArray {
+            for (row in reachableRows) {
+                val ideId = rowIds.getValue(row)
+                for (project in row.projects.orEmpty()) {
+                    add(projectToJson(ideId, project))
+                }
+            }
+        })
+        put("skipped", buildJsonArray {
+            for (row in listing.markerRows.filter { it.projects == null }) {
+                add(buildJsonObject {
+                    put("reason", "unreachable: ${row.errorMessage ?: "unreachable"}")
+                    putJsonFields(markerIdeIdentityJson(row.ide))
+                })
+            }
+            for (row in listing.portRows) {
+                add(buildJsonObject {
+                    put("reason", "port-discovered, no mcp-steroid plugin")
+                    putJsonFields(portIdeIdentityJson(row.ide))
+                })
+            }
+        })
+    }
+    out.println(json.encodeToString(JsonObject.serializer(), payload))
+}
+
 private data class ProjectEntry(
     val row: BackendRow.FromMarker,
     val project: ProjectInfo,
 )
+
+private fun projectToJson(ideId: String, project: ProjectInfo): JsonObject = buildJsonObject {
+    put("ide", ideId)
+    put("name", project.name)
+    put("path", project.path)
+}
 
 private fun renderSkippedProjectFooter(
     listing: ProjectListing,
