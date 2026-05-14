@@ -127,19 +127,25 @@ class IntelliJContainer(
             script = """
                 set -euo pipefail
                 deadline=${'$'}((SECONDS + $timeoutSeconds))
+                found=0
                 while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
                   for port in ${'$'}(seq 63342 63361); do
                     body="${'$'}(curl -fsS --max-time 2 "http://127.0.0.1:${'$'}port/api/about" 2>/dev/null || true)"
-                    if echo "${'$'}body" | grep -Eq '"productName"[[:space:]]*:[[:space:]]*"(IDEA|IntelliJ)'; then
+                    if [ -n "${'$'}body" ] && printf '%s\n' "${'$'}body" | jq -e '.productName == "IDEA" or ((.productName // "") | test("IntelliJ"))' >/dev/null 2>&1; then
                       echo "port=${'$'}port"
                       echo "${'$'}body"
-                      exit 0
+                      found=1
+                      break 2
                     fi
                   done
                   sleep 2
                 done
+                if [ "${'$'}found" = "1" ]; then
+                  :
+                else
                 echo "IntelliJ IDEA did not answer /api/about on ports 63342..63361 within ${timeoutSeconds}s" >&2
                 exit 1
+                fi
             """.trimIndent(),
         )
         console.writeSuccess("IntelliJ built-in HTTP server is reachable")

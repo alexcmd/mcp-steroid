@@ -39,6 +39,14 @@ class VmOptionsWriterTest {
             "-Dmcp.steroid.idea.description.enabled=false",
             "-Dmcp.steroid.dialog.killer.enabled=true",
             "-Dmcp.steroid.storage.path=${cacheDir.resolve("execution-storage")}",
+            "-Djb.consents.confirmation.enabled=false",
+            "-Djb.privacy.policy.text=<!--999.999-->",
+            "-Djb.privacy.policy.ai.assistant.text=<!--999.999-->",
+            "-Dmarketplace.eula.reviewed.and.accepted=true",
+            "-Dwriterside.eula.reviewed.and.accepted=true",
+            "-Didea.initially.ask.config=never",
+            "-Dide.newUsersOnboarding=false",
+            "-Dnosplash=true",
             "",
         ).joinToString("\n")
 

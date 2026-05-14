@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.infra
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.ideStartupConfigFiles
+import com.jonnyzzz.mcpSteroid.ideDownloader.ideUserStartupConfigFiles
 import com.jonnyzzz.mcpSteroid.integration.infra.McpSteroidDriver.Companion.MCP_STEROID_PORT
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
@@ -68,8 +69,7 @@ class IntelliJDriver(
                 .description("ls -la $intelliJGuestHomeDir")
         }.awaitForProcessFinish()
 
-        writeEulaAcceptance()
-        writeConsentOptions()
+        writeUserStartupConfigFiles()
         writeTrustedPaths()
         writeStartupConfigFiles()
         generateVmOptions()
@@ -246,31 +246,10 @@ class IntelliJDriver(
         driver.writeFileInContainer("$intelliJGuestHomeDir.vmoptions", opts)
     }
 
-    private fun writeEulaAcceptance() {
-        val prefsXml = buildString {
-            appendLine("""<?xml version="1.0" encoding="UTF-8" standalone="no"?>""")
-            appendLine("""<!DOCTYPE map SYSTEM "http://java.sun.com/dtd/preferences.dtd">""")
-            appendLine("""<map MAP_XML_VERSION="1.0">""")
-            appendLine("""  <entry key="accepted_version" value="999.999"/>""")
-            appendLine("""  <entry key="privacy_policy_accepted_version" value="999.999"/>""")
-            appendLine("""  <entry key="eua_accepted_version" value="999.999"/>""")
-            appendLine("""  <entry key="euaCommunity_accepted_version" value="999.999"/>""")
-            appendLine("""  <entry key="ij_euaEap_accepted_version" value="999.999"/>""")
-            appendLine("""</map>""")
+    private fun writeUserStartupConfigFiles() {
+        for (file in ideUserStartupConfigFiles()) {
+            driver.writeFileInContainer("/home/agent/${file.relativePath}", file.content)
         }
-
-        driver.writeFileInContainer(
-            "/home/agent/.java/.userPrefs/jetbrains/privacy_policy/prefs.xml",
-            prefsXml,
-        )
-    }
-
-    private fun writeConsentOptions() {
-        val timestamp = System.currentTimeMillis() - 1000
-        driver.writeFileInContainer(
-            "/home/agent/.config/JetBrains/consentOptions/accepted",
-            "rsch.send.usage.stat:1.1:0:${timestamp}",
-        )
     }
 
     private fun writeStartupConfigFiles() {

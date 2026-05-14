@@ -10,6 +10,7 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.resolveArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.unpackIdeArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeStartupConfigFiles
+import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeUserStartupConfigFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -189,6 +190,7 @@ internal class BackendManager(
     private val launcherResolver: LauncherResolver = LauncherResolver(),
     private val bundledPluginResolver: BundledPluginResolver = ClasspathBundledPluginResolver(),
     private val processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
+    private val ideUserHome: Path = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
     private val stopGracePeriodMillis: Long = 5_000L,
 ) {
     suspend fun download(id: BackendId, acceptPaid: Boolean = false): DownloadResult {
@@ -264,6 +266,7 @@ internal class BackendManager(
         val logDir = cacheDir.resolve("logs")
         listOf("config", "system", "logs", "plugins").forEach { Files.createDirectories(cacheDir.resolve(it)) }
         writeIdeStartupConfigFiles(cacheDir.resolve("config"))
+        writeIdeUserStartupConfigFiles(ideUserHome)
 
         val stdoutLog = logDir.resolve("devrig-launcher.out.log").toFile()
         val stderrLog = logDir.resolve("devrig-launcher.err.log").toFile()
@@ -440,6 +443,14 @@ internal fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirNa
         appendLine("-Dmcp.steroid.idea.description.enabled=false")
         appendLine("-Dmcp.steroid.dialog.killer.enabled=true")
         appendLine("-Dmcp.steroid.storage.path=${cacheDir.resolve("execution-storage")}")
+        appendLine("-Djb.consents.confirmation.enabled=false")
+        appendLine("-Djb.privacy.policy.text=<!--999.999-->")
+        appendLine("-Djb.privacy.policy.ai.assistant.text=<!--999.999-->")
+        appendLine("-Dmarketplace.eula.reviewed.and.accepted=true")
+        appendLine("-Dwriterside.eula.reviewed.and.accepted=true")
+        appendLine("-Didea.initially.ask.config=never")
+        appendLine("-Dide.newUsersOnboarding=false")
+        appendLine("-Dnosplash=true")
     }
     Files.writeString(path, content)
     return path

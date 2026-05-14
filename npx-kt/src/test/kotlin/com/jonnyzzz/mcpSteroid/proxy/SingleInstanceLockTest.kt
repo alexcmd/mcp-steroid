@@ -92,7 +92,11 @@ class SingleInstanceLockTest {
         Files.createDirectories(homePaths.stateDir)
         Files.writeString(homePaths.pidFile("idea-community-2025.3.2"), "$deadPid\n")
 
-        val manager = BackendManager(homePaths, downloader = StaticDownloader)
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+        )
         val started = manager.start(parseBackendId("idea-community-2025.3.3"))
         try {
             assertTrue(started.pid > 0)
@@ -116,6 +120,7 @@ class SingleInstanceLockTest {
         val manager = BackendManager(
             homePaths = homePaths,
             downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
             processInspector = FakeProcessInspector(
                 snapshots = listOf(ProcessSnapshot(pid = 4242L, command = orphanCommand)),
             ),

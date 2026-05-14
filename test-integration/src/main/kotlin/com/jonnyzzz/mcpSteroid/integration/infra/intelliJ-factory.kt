@@ -320,6 +320,7 @@ fun IntelliJContainer.Companion.create(
         lifetime,
         StartContainerRequest()
             .image(imageId)
+            .enableInit()
             .extraEnvVars(containerEnv)
             .volumes(volumes)
             .ports(

@@ -62,6 +62,15 @@ class ManagedBackendGuiIntegrationTest {
                 grep -F -- "-Didea.system.path=/tmp/mcp-home/caches/$id/system" "${'$'}vmoptions"
                 grep -F -- "-Didea.log.path=/tmp/mcp-home/caches/$id/logs" "${'$'}vmoptions"
                 grep -F -- "-Didea.plugins.path=/tmp/mcp-home/caches/$id/plugins" "${'$'}vmoptions"
+                grep -F -- "-Dmcp.steroid.review.mode=NEVER" "${'$'}vmoptions"
+                grep -F -- "-Dmcp.steroid.updates.enabled=false" "${'$'}vmoptions"
+                grep -F -- "-Dmcp.steroid.analytics.enabled=false" "${'$'}vmoptions"
+                grep -F -- "-Dmcp.steroid.idea.description.enabled=false" "${'$'}vmoptions"
+                grep -F -- "-Dmcp.steroid.dialog.killer.enabled=true" "${'$'}vmoptions"
+                grep -F -- "-Dmcp.steroid.storage.path=/tmp/mcp-home/caches/$id/execution-storage" "${'$'}vmoptions"
+                grep -F -- "-Djb.consents.confirmation.enabled=false" "${'$'}vmoptions"
+                test -d "/tmp/mcp-home/caches/$id/plugins/mcp-steroid/lib"
+                test -f "/tmp/mcp-home/caches/$id/plugins/mcp-steroid/EULA"
             """.trimIndent(),
         )
 
@@ -76,7 +85,49 @@ class ManagedBackendGuiIntegrationTest {
         val pid = Regex("""pid: (\d+)""").find(start.stdout)?.groupValues?.get(1)
             ?: error("No pid in backend start output: ${start.stdout}")
 
+        container.execAndAssert(
+            description = "assert managed backend pid and startup config",
+            script = """
+                set -euo pipefail
+                test -f "/tmp/mcp-home/state/$id.pid"
+                test "${'$'}(cat "/tmp/mcp-home/state/$id.pid")" = "$pid"
+                kill -0 "$pid"
+                grep -F -- "experimental.ui.onboarding.proposed.version" "/tmp/mcp-home/caches/$id/config/options/other.xml"
+                grep -F -- "switched.from.classic.to.islands" "/tmp/mcp-home/caches/$id/config/early-access-registry.txt"
+                grep -F -- 'option name="wasShown" value="true"' "/tmp/mcp-home/caches/$id/config/options/AIOnboardingPromoWindowAdvisor.xml"
+                grep -F -- 'entry key="euacommunity_accepted_version" value="999.999"' "/home/agent/.java/.userPrefs/jetbrains/privacy_policy/prefs.xml"
+                grep -F -- 'entry key="euacommunity_accepted_version" value="999.999"' "/home/agent/.java/.userPrefs/jetbrains/_!(!!cg\"p!(}!}@\"j!(k!|w\"w!'8!b!\"p!':!e@==/prefs.xml"
+                grep -F -- 'rsch.send.usage.stat:1.1:0:' "/home/agent/.config/JetBrains/consentOptions/accepted"
+            """.trimIndent(),
+        )
+
         container.waitForIntelliJBuiltInHttpServer(timeoutSeconds = 180)
+
+        container.execAndAssert(
+            description = "wait for MCP Steroid pid marker",
+            timeoutSeconds = 180,
+            script = """
+                set -euo pipefail
+                marker="/home/agent/.$pid.mcp-steroid"
+                deadline=${'$'}((SECONDS + 180))
+                found=0
+                while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
+                  if [ -f "${'$'}marker" ] && jq -e --argjson pid "$pid" '.pid == ${'$'}pid and (.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "${'$'}marker" >/dev/null; then
+                    cat "${'$'}marker"
+                    found=1
+                    break
+                  fi
+                  sleep 2
+                done
+                if [ "${'$'}found" = "1" ]; then
+                  :
+                else
+                echo "MCP Steroid marker did not appear at ${'$'}marker" >&2
+                find /home/agent -maxdepth 1 -name '.*.mcp-steroid' -print -exec cat {} \; >&2 || true
+                exit 1
+                fi
+            """.trimIndent(),
+        )
 
         container.execAndAssert(
             description = "assert managed backend cache paths",
@@ -97,7 +148,14 @@ class ManagedBackendGuiIntegrationTest {
                 set -euo pipefail
                 "$devrig" --home /tmp/mcp-home backend stop idea-community
                 test ! -f "/tmp/mcp-home/state/$id.pid"
-                ! kill -0 $pid 2>/dev/null
+                deadline=${'$'}((SECONDS + 30))
+                while kill -0 $pid 2>/dev/null && [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
+                  sleep 1
+                done
+                if kill -0 $pid 2>/dev/null; then
+                  ps -fp $pid >&2 || true
+                  exit 1
+                fi
             """.trimIndent(),
         )
     }

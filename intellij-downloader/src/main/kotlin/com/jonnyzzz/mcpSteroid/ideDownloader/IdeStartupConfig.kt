@@ -3,10 +3,19 @@ package com.jonnyzzz.mcpSteroid.ideDownloader
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.prefs.Preferences
 
 data class IdeStartupConfigFile(
     val relativePath: String,
     val content: String,
+)
+
+private val eulaPreferenceKeys = listOf(
+    "accepted_version",
+    "privacy_policy_accepted_version",
+    "eua_accepted_version",
+    "euacommunity_accepted_version",
+    "ij_euaeap_accepted_version",
 )
 
 /**
@@ -40,10 +49,70 @@ fun ideStartupConfigFiles(): List<IdeStartupConfigFile> = listOf(
     ),
 )
 
+fun ideUserStartupConfigFiles(
+    timestampMillis: Long = System.currentTimeMillis() - 1_000L,
+): List<IdeStartupConfigFile> = listOf(
+    IdeStartupConfigFile(
+        relativePath = ".java/.userPrefs/jetbrains/prefs.xml",
+        content = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE map SYSTEM "http://java.sun.com/dtd/preferences.dtd">
+<map MAP_XML_VERSION="1.0"/>
+""",
+    ),
+    IdeStartupConfigFile(
+        relativePath = ".java/.userPrefs/jetbrains/privacy_policy/prefs.xml",
+        content = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE map SYSTEM "http://java.sun.com/dtd/preferences.dtd">
+<map MAP_XML_VERSION="1.0">
+  <entry key="accepted_version" value="999.999"/>
+  <entry key="privacy_policy_accepted_version" value="999.999"/>
+  <entry key="eua_accepted_version" value="999.999"/>
+  <entry key="euacommunity_accepted_version" value="999.999"/>
+  <entry key="ij_euaeap_accepted_version" value="999.999"/>
+</map>
+""",
+    ),
+    IdeStartupConfigFile(
+        // java.util.prefs.FileSystemPreferences encodes node names containing
+        // underscores on Linux; this is the actual backing path for
+        // Preferences.userRoot().node("jetbrains/privacy_policy").
+        relativePath = """.java/.userPrefs/jetbrains/_!(!!cg"p!(}!}@"j!(k!|w"w!'8!b!"p!':!e@==/prefs.xml""",
+        content = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE map SYSTEM "http://java.sun.com/dtd/preferences.dtd">
+<map MAP_XML_VERSION="1.0">
+  <entry key="accepted_version" value="999.999"/>
+  <entry key="privacy_policy_accepted_version" value="999.999"/>
+  <entry key="eua_accepted_version" value="999.999"/>
+  <entry key="euacommunity_accepted_version" value="999.999"/>
+  <entry key="ij_euaeap_accepted_version" value="999.999"/>
+</map>
+""",
+    ),
+    IdeStartupConfigFile(
+        relativePath = ".config/JetBrains/consentOptions/accepted",
+        content = "rsch.send.usage.stat:1.1:0:$timestampMillis",
+    ),
+)
+
 fun writeIdeStartupConfigFiles(configDir: Path) {
     for (file in ideStartupConfigFiles()) {
         val target = configDir.resolve(file.relativePath)
         Files.createDirectories(target.parent)
         Files.writeString(target, file.content)
+    }
+}
+
+fun writeIdeUserStartupConfigFiles(userHome: Path) {
+    for (file in ideUserStartupConfigFiles()) {
+        val target = userHome.resolve(file.relativePath)
+        Files.createDirectories(target.parent)
+        Files.writeString(target, file.content)
+    }
+    if (userHome.toAbsolutePath().normalize() == Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()) {
+        val prefs = Preferences.userRoot().node("jetbrains/privacy_policy")
+        for (key in eulaPreferenceKeys) {
+            prefs.put(key, "999.999")
+        }
+        prefs.flush()
     }
 }

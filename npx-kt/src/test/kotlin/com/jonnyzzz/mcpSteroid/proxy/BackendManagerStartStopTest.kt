@@ -19,7 +19,11 @@ class BackendManagerStartStopTest {
     ) = kotlinx.coroutines.runBlocking {
         val homePaths = HomePaths(tempDir.resolve("home"))
         installStubBackend(homePaths, launcherBody = gracefulLauncher())
-        val manager = BackendManager(homePaths, downloader = StaticDownloader)
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+        )
 
         val started = manager.start(parseBackendId("idea-community-2025.3.3"))
 
@@ -40,7 +44,12 @@ class BackendManagerStartStopTest {
     ) = kotlinx.coroutines.runBlocking {
         val homePaths = HomePaths(tempDir.resolve("home"))
         installStubBackend(homePaths, launcherBody = sleepyLauncher())
-        val manager = BackendManager(homePaths, downloader = StaticDownloader, stopGracePeriodMillis = 0L)
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+            stopGracePeriodMillis = 0L,
+        )
 
         val started = manager.start(parseBackendId("idea-community-2025.3.3"))
         assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
@@ -68,7 +77,12 @@ class BackendManagerStartStopTest {
     ) = kotlinx.coroutines.runBlocking {
         val homePaths = HomePaths(tempDir.resolve("home"))
         installStubBackend(homePaths, launcherBody = gracefulLauncher())
-        val manager = BackendManager(homePaths, downloader = StaticDownloader)
+        val userHome = tempDir.resolve("user-home")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = userHome,
+        )
 
         val started = manager.start(parseBackendId("idea-community-2025.3.3"))
         try {
@@ -84,6 +98,14 @@ class BackendManagerStartStopTest {
             assertTrue(
                 Files.readString(configDir.resolve("options/AIOnboardingPromoWindowAdvisor.xml"))
                     .contains("""<option name="wasShown" value="true" />"""),
+            )
+            assertTrue(
+                Files.readString(userHome.resolve(".java/.userPrefs/jetbrains/privacy_policy/prefs.xml"))
+                    .contains("""<entry key="euacommunity_accepted_version" value="999.999"/>"""),
+            )
+            assertTrue(
+                Files.readString(userHome.resolve(".config/JetBrains/consentOptions/accepted"))
+                    .startsWith("rsch.send.usage.stat:1.1:0:"),
             )
         } finally {
             manager.stop(parseBackendId("idea-community-2025.3.3"))
