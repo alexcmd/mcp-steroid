@@ -56,6 +56,7 @@ class ServerUrlWriter : Disposable {
             ide = IdeInfo.ofApplication(),
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
+            intellijMcpServer = IntelliJMcpServerProbe.getInstanceOrNull()?.probe(),
         )
         val content = PidMarkerJson.encode(marker)
         log.info("Writing MCP Steroid marker (pid=$pid)\n$content")

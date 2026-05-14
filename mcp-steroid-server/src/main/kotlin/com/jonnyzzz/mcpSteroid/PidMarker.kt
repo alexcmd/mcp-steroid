@@ -31,6 +31,7 @@ data class PidMarker(
     val ide: IdeInfo,
     val plugin: PluginInfo,
     val createdAt: String,
+    val intellijMcpServer: IntelliJMcpServerInfo? = null,
 ) {
     companion object {
         const val SCHEMA_VERSION: Int = 1

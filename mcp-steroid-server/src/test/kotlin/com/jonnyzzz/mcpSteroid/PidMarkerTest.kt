@@ -36,6 +36,30 @@ class PidMarkerTest {
     }
 
     @Test
+    fun `intellijMcpServer roundtrips when present`() {
+        val withIde = sample.copy(
+            intellijMcpServer = IntelliJMcpServerInfo(
+                enabled = true,
+                port = 64342,
+                streamUrl = "http://127.0.0.1:64342/stream",
+                sseUrl = "http://127.0.0.1:64342/sse",
+            )
+        )
+        val text = PidMarkerJson.encode(withIde)
+        val decoded = PidMarkerJson.decode(text)
+        assertEquals(withIde, decoded)
+        assertTrue(text.contains("\"intellijMcpServer\""), "intellijMcpServer field missing: $text")
+        assertTrue(text.contains("\"streamUrl\": \"http://127.0.0.1:64342/stream\""), "streamUrl missing")
+    }
+
+    @Test
+    fun `decode tolerates absent intellijMcpServer field (defaults to null)`() {
+        val text = PidMarkerJson.encode(sample.copy(intellijMcpServer = null))
+        val decoded = PidMarkerJson.decode(text)
+        assertEquals(null, decoded.intellijMcpServer)
+    }
+
+    @Test
     fun `decode of legacy marker without port + token falls back to defaults`() {
         val legacy = """
             {

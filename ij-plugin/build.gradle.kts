@@ -75,6 +75,12 @@ dependencies {
         // LanguageSupportExecutionTest (Java/Kotlin language support actions)
         bundledPlugin("com.intellij.java")
         bundledPlugin("org.jetbrains.kotlin")
+        // Direct (compile-time) access to IntelliJ's bundled MCP server plugin so
+        // `IntelliJMcpServerProbe` can call McpServerService.getInstance() without
+        // reflection. The plugin is bundled in IDEA 2025.3+ but the **user can
+        // disable it at runtime**, so the probe still gates every call site behind
+        // `PluginManagerCore.getPluginSet().enabledPlugins`.
+        bundledPlugin("com.intellij.mcpServer")
         testFramework(TestFrameworkType.Platform)
     }
 
