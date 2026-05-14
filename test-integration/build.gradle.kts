@@ -30,10 +30,20 @@ val npxPackageDist by configurations.creating {
     }
 }
 
+// Resolvable configuration to get the Kotlin devrig CLI distribution zip from :npx-kt.
+val npxKtPackageDist by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "npx-kt-package"))
+    }
+}
+
 dependencies {
     pluginZip(project(":ij-plugin"))
     agentOutputFilterDist(project(path = ":agent-output-filter", configuration = "executableDistribution"))
     npxPackageDist(project(":npx"))
+    npxKtPackageDist(project(":npx-kt"))
 
     // Infrastructure code lives in src/main/kotlin so it can be reused by :test-experiments.
     implementation(project(":test-helper"))
@@ -54,19 +64,25 @@ kotlin {
     jvmToolchain(21)
 }
 
+val tartTestSourceSet = sourceSets.create("tartTest") {
+    compileClasspath += sourceSets["main"].output + sourceSets["test"].output + configurations["testRuntimeClasspath"]
+    runtimeClasspath += output + compileClasspath
+}
+
 /**
  * Applies shared configuration to any integration test task:
  * classpath, logging, timeout, artifact dependencies, and common system properties.
  * Additional task-specific system properties are set in each task's own doFirst block.
  */
-fun Test.configureIntegrationTest() {
+fun Test.configureIntegrationTest(sourceSetName: String = "test") {
+    val sourceSet = sourceSets[sourceSetName]
     useJUnitPlatform()
-    testClassesDirs = sourceSets["test"].output.classesDirs
-    classpath = sourceSets["test"].runtimeClasspath
+    testClassesDirs = sourceSet.output.classesDirs
+    classpath = sourceSet.runtimeClasspath
     testLogging { showStandardStreams = true }
     systemProperty("junit.jupiter.execution.timeout.default", "15m")
 
-    dependsOn(pluginZip, agentOutputFilterDist, npxPackageDist)
+    dependsOn(pluginZip, agentOutputFilterDist, npxPackageDist, npxKtPackageDist)
     doFirst {
         delete(layout.buildDirectory.dir("test-results/${this@configureIntegrationTest.name}/binary"))
         val testOutDir = layout.buildDirectory
@@ -95,9 +111,73 @@ fun Test.configureIntegrationTest() {
             npxPackageDist.singleFile.absolutePath,
         )
         systemProperty(
+            "test.integration.npx.kt.package.zip",
+            npxKtPackageDist.singleFile.absolutePath,
+        )
+        systemProperty(
             "test.integration.repo.cache.dir",
             layout.buildDirectory.dir("repo-cache").get().asFile.absolutePath,
         )
+    }
+}
+
+fun dockerAvailable(): Boolean {
+    return try {
+        val exitCode = ProcessBuilder("docker", "info")
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+            .waitFor()
+        if (exitCode != 0) {
+            logger.lifecycle("Docker is not available for managed-backend smoke tests: docker info exited with $exitCode")
+        }
+        exitCode == 0
+    } catch (e: Exception) {
+        logger.lifecycle("Docker is not available for managed-backend smoke tests: ${e.message}")
+        false
+    }
+}
+
+val testManagedBackendsDocker by tasks.registering(Test::class) {
+    description = "Linux Docker smoke test for devrig managed backends"
+    group = "verification"
+    configureIntegrationTest()
+    filter { includeTestsMatching("*ManagedBackendDockerIntegrationTest*") }
+    onlyIf("Docker must be available for the managed-backend Docker smoke test") {
+        dockerAvailable()
+    }
+}
+
+fun tartAvailableOnAppleSilicon(): Boolean {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    if (!os.contains("mac") || arch != "aarch64") {
+        logger.lifecycle("Tart managed-backend smoke test requires Apple Silicon macOS; current host is $os/$arch")
+        return false
+    }
+    return try {
+        val exitCode = ProcessBuilder("tart", "--version")
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+            .waitFor()
+        if (exitCode != 0) {
+            logger.lifecycle("Tart is not available for managed-backend smoke tests: tart --version exited with $exitCode")
+        }
+        exitCode == 0
+    } catch (e: Exception) {
+        logger.lifecycle("Tart is not available for managed-backend smoke tests: ${e.message}")
+        false
+    }
+}
+
+val testManagedBackendsTart by tasks.registering(Test::class) {
+    description = "macOS Tart smoke test for devrig managed backends"
+    group = "verification"
+    configureIntegrationTest(tartTestSourceSet.name)
+    filter { includeTestsMatching("*ManagedBackendTartIntegrationTest*") }
+    onlyIf("Apple Silicon host with tart on PATH is required for the managed-backend Tart smoke test") {
+        tartAvailableOnAppleSilicon()
     }
 }
 

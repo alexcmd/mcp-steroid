@@ -40,6 +40,22 @@ class LauncherResolverTest {
     }
 
     @Test
+    fun `resolves macOS launcher relative to Contents Resources when product-info uses parent path`(
+        @TempDir tempDir: Path,
+    ) {
+        val bundle = tempDir.resolve("IntelliJ IDEA.app")
+        writeProductInfo(
+            path = bundle.resolve("Contents/Resources/product-info.json"),
+            macLauncherPath = "../MacOS/idea",
+        )
+
+        val resolved = LauncherResolver(HostOs.MAC).resolve(bundle)
+
+        assertEquals("Contents/MacOS/idea", resolved.launcherPath)
+        assertEquals(bundle.resolve("Contents/MacOS/idea").normalize(), resolved.launcherAbsolutePath)
+    }
+
+    @Test
     fun `resolves windows launcher from synthetic product-info`(
         @TempDir tempDir: Path,
     ) {
@@ -85,7 +101,7 @@ class LauncherResolverTest {
         return bundle
     }
 
-    private fun writeProductInfo(path: Path) {
+    private fun writeProductInfo(path: Path, macLauncherPath: String = "Contents/MacOS/idea") {
         Files.createDirectories(path.parent)
         Files.writeString(
             path,
@@ -94,7 +110,7 @@ class LauncherResolverTest {
               "productCode": "IC",
               "buildNumber": "IC-253.1",
               "launch": [
-                { "os": "macOS", "launcherPath": "Contents/MacOS/idea", "javaExecutablePath": "Contents/jbr/Contents/Home/bin/java" },
+                { "os": "macOS", "launcherPath": "$macLauncherPath", "javaExecutablePath": "Contents/jbr/Contents/Home/bin/java" },
                 { "os": "Linux", "launcherPath": "bin/idea.sh", "javaExecutablePath": "jbr/bin/java" },
                 { "os": "Windows", "launcherPath": "bin/idea64.exe", "javaExecutablePath": "jbr/bin/java.exe" }
               ]

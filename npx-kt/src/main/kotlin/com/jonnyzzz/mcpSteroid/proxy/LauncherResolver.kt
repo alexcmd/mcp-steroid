@@ -31,12 +31,27 @@ internal class LauncherResolver(
         require(launch.launcherPath.isNotBlank()) {
             "product-info.json at $productInfoPath has an empty launcherPath for $osName"
         }
+        val bundleRoot = bundleDir.normalize()
+        val launcherAbsolutePath = resolveLauncherPath(bundleRoot, productInfoPath, launch.launcherPath)
+        val launcherPath = bundleRoot.relativize(launcherAbsolutePath).toString()
         return LauncherResolution(
-            launcherPath = launch.launcherPath,
-            launcherAbsolutePath = bundleDir.resolve(launch.launcherPath).normalize(),
+            launcherPath = launcherPath,
+            launcherAbsolutePath = launcherAbsolutePath,
             productCode = productInfo.productCode,
             buildNumber = productInfo.buildNumber,
         )
+    }
+
+    private fun resolveLauncherPath(bundleRoot: Path, productInfoPath: Path, launcherPath: String): Path {
+        val absolutePath = if (productInfoPath.parent != bundleRoot && launcherPath.startsWith("..")) {
+            productInfoPath.parent.resolve(launcherPath).normalize()
+        } else {
+            bundleRoot.resolve(launcherPath).normalize()
+        }
+        require(absolutePath.startsWith(bundleRoot)) {
+            "product-info.json at $productInfoPath points launcherPath outside bundle: $launcherPath"
+        }
+        return absolutePath
     }
 
     private fun productInfoPath(bundleDir: Path): Path {
