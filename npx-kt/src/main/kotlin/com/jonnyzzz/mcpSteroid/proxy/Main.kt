@@ -24,24 +24,37 @@ import java.io.PrintStream
 import java.util.UUID
 import kotlin.system.exitProcess
 
+/**
+ * Resolved CLI input + the captured stdio streams reserved for the MCP transport.
+ *
+ * Constructed exclusively by [main] on the `--mcp` branch — the [args] field carries
+ * the original argv so [mainImpl] (and any future MCP-side feature flag) can read it
+ * without re-parsing.
+ */
 data class MainContext(
+    val args: List<String>,
     val mcpStdin: InputStream,
     val mcpStdout: PrintStream,
 )
 
-fun main(@Suppress("unused_parameter") args: Array<String>) {
-    // STDOUT IS RESERVED FOR MCP NDJSON FRAMES.
+fun main(args: Array<String>) {
+    // FIRST ACTION OF THE PROCESS — no logger, no class init that prints, nothing.
     //
-    // First action of the process: capture the real stdin / stdout, then
-    // reroute the global `System.out` to stderr so any stray `println` from
-    // application or third-party code (logback fallbacks before logback.xml
-    // loads, kotlinx.coroutines warnings, posthog client noise, etc.) lands
-    // on stderr instead of corrupting the JSON-RPC stream. The MCP transport
-    // uses the saved-aside originals exclusively.
+    // The MCP-stdio convention reserves stdout for NDJSON JSON-RPC frames. Once the
+    // process commits to that mode it cannot un-commit, and any earlier println from
+    // a logger fallback, kotlinx-coroutines warning, or posthog noise would corrupt
+    // the very first frame. So we branch on `--mcp` BEFORE anything else: the MCP
+    // path captures stdin/stdout and redirects the global System.out → stderr; every
+    // other path (help / version / unknown) runs like a normal CLI tool with stdout
+    // intact.
     //
-    // Order matters: this redirect runs BEFORE any class touches a logger or
-    // System.out — that's why it lives ahead of the runBlocking entry. The
-    // stdout-cleanliness integration test pins this invariant.
+    // `parseCliMode` is intentionally pure and does not touch System.out.
+    val mode = parseCliMode(args)
+
+    if (mode !is CliMode.Mcp) {
+        runCliAndExit(mode)
+    }
+
     val mcpStdin: InputStream = System.`in`
     val mcpStdout: PrintStream = System.out
 
@@ -49,9 +62,10 @@ fun main(@Suppress("unused_parameter") args: Array<String>) {
 
     try {
         MainContext(
+            args = args.toList(),
             mcpStdin = mcpStdin,
             mcpStdout = mcpStdout,
-        ).mainImpl(args)
+        ).mainImpl()
     } catch (t: Throwable) {
         System.err.println("Unexpected error ${t.message}")
         t.printStackTrace(System.err)
@@ -59,7 +73,7 @@ fun main(@Suppress("unused_parameter") args: Array<String>) {
     }
 }
 
-fun MainContext.mainImpl(@Suppress("unused_parameter") args: Array<String>) {
+fun MainContext.mainImpl() {
     // Construct every dependent service explicitly here — the npx-kt module
     // does not use any DI framework, so main.kt is the wiring root.
     val proxyVersion = loadProxyVersion()
