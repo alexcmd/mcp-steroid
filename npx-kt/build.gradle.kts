@@ -64,10 +64,52 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+    // Hand the build's project.version through to ProxyVersionResourceTest so it can
+    // end-to-end-assert the value `loadProxyVersion()` returns at runtime.
+    systemProperty("npx-kt.expected.version", version.toString())
 }
 
 kotlin {
     jvmToolchain(21)
+}
+
+// `project.version` rendered as a String once so both the version-resource generator
+// (just below) and the bundled-libraries verifier (further down) can use it without
+// re-evaluating Gradle's Provider chain.
+val proxyVersion: String = version.toString()
+
+// Bake `project.version` into a classpath resource (`proxy-version.txt`) consumed by
+// `loadProxyVersion()` in src/main/.../Config.kt. Mirrors how :ij-plugin wires
+// `project.version` through `intellijPlatform.version` → `patchPluginXml` → the
+// `<version>` element in plugin.xml — same idea, different consumer surface.
+//
+// The generated file is the single source of truth for runtime version reporting:
+// it shows up in MCP server-info handshakes, posthog events, and CLI banners. Without
+// the generator the fallback in `loadProxyVersion()` ("0.1.0") would mask the actual
+// build version everywhere it's used.
+//
+// `proxyVersion` is declared further down for the verifier and shared here.
+val generateProxyVersionResource by tasks.registering {
+    group = "build"
+    description = "Write project.version into proxy-version.txt for loadProxyVersion()"
+
+    val outputDir = layout.buildDirectory.dir("generated/resources/proxy-version")
+    inputs.property("proxyVersion", proxyVersion)
+    outputs.dir(outputDir)
+
+    doLast {
+        val file = outputDir.get().asFile.resolve("proxy-version.txt")
+        file.parentFile.mkdirs()
+        file.writeText(proxyVersion)
+    }
+}
+
+sourceSets.named("main") {
+    resources.srcDir(generateProxyVersionResource)
+}
+
+tasks.named("processResources") {
+    dependsOn(generateProxyVersionResource)
 }
 
 // Dedicated source set for stdio MCP server integration tests
@@ -139,7 +181,6 @@ tasks.named("assemble") {
 // transitive-dependency churn (a coroutine update, a Ktor bump, a new internal module)
 // fails the build instead of silently changing what end users `npx`-install. Update
 // `expectedFiles` below when the change is intentional.
-val proxyVersion = version.toString()
 val verifyBundledLibraries by tasks.registering {
     group = "verification"
     description = "List and verify libraries bundled in the npx-kt distZip"
