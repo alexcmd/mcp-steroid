@@ -51,8 +51,11 @@ internal fun ContainerDriver.installNpxKtMcp(installDir: File): StdioMcpCommand 
     // applicationName, set in npx-kt/build.gradle.kts.
     copyToContainer(installDir, "/tmp")
     val launcher = "/tmp/${installDir.name}/bin/mcp-steroid-proxy"
+    // `--mcp` is npx-kt's opt-in flag to run as the stdio MCP server. Without it the
+    // launcher behaves like a normal CLI (`--help`, `--version`) and won't read MCP
+    // frames off stdin — see `com.jonnyzzz.mcpSteroid.proxy.parseCliMode`.
     return StdioMcpCommand(
         command = launcher,
-        args = emptyList(),
+        args = listOf("--mcp"),
     )
 }

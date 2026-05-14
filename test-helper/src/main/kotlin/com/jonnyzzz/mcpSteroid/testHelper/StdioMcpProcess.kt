@@ -164,8 +164,18 @@ class StdioMcpProcess internal constructor(
  * itself) as a separate cleanup action on it, in the order
  * collectors-first → stdin-EOF → process-shutdown so the server gets a
  * graceful exit when possible and a forced kill otherwise.
+ *
+ * [args] are forwarded to the launcher unchanged. The default `["--mcp"]`
+ * matches the npx-kt launcher's opt-in MCP-mode flag — see
+ * `com.jonnyzzz.mcpSteroid.proxy.parseCliMode`. Pass an explicit list when
+ * driving a different launcher or exercising the CLI surface (`--help`,
+ * `--version`).
  */
-fun startStdioMcpProcess(launcher: File, lifetime: CloseableStack): StdioMcpProcess {
+fun startStdioMcpProcess(
+    launcher: File,
+    lifetime: CloseableStack,
+    args: List<String> = listOf("--mcp"),
+): StdioMcpProcess {
     require(launcher.canExecute()) {
         "Launcher script is not executable: ${launcher.absolutePath}"
     }
@@ -185,7 +195,7 @@ fun startStdioMcpProcess(launcher: File, lifetime: CloseableStack): StdioMcpProc
     val responseQueue = LinkedBlockingQueue<JsonObject>()
 
     val request = RunProcessRequest()
-        .command(launcher.absolutePath)
+        .command(listOf(launcher.absolutePath) + args)
         .withStdin(stdinChannel.consumeAsFlow())
         .logPrefix("stdio-mcp:${launcher.name}")
         .description("MCP stdio client harness for ${launcher.name}")
