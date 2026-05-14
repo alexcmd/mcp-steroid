@@ -67,6 +67,11 @@ dependencies {
     // the production `mcp-steroid-proxy` binary stays a pure ktor-client.
     testImplementation("io.ktor:ktor-server-core:$ktorVersion")
     testImplementation("io.ktor:ktor-server-cio:$ktorVersion")
+    // Compile-time access to logback's ListAppender / Logger so tests can pin
+    // log-level routing (e.g. legacy markers must NOT log at WARN). Logback is
+    // already on the runtime classpath via the `runtimeOnly` line above; this
+    // additional declaration just makes the API visible to test source.
+    testImplementation("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")

@@ -89,6 +89,16 @@ class IdeDiscoveryService(
                 log.warn("Failed to read marker file {}: {}", file.absolutePath, e.message)
                 continue
             }
+            // Cheap legacy-format sniff: a current marker is a JSON object so the first
+            // non-whitespace byte is '{'. Older plugin builds wrote a plain-text marker
+            // (URL on line 1 + human-readable info below) — that's a known historical
+            // format we can't read, NOT an error worth alarming the operator about.
+            // Skip it at DEBUG level. Only WARN on text that LOOKS like JSON but fails
+            // to parse — that signals real corruption (truncated write, bit-flip, etc.).
+            if (text.trimStart().firstOrNull() != '{') {
+                log.debug("Skipping non-JSON marker file {} (legacy text format?)", file.absolutePath)
+                continue
+            }
             val marker = try {
                 PidMarkerJson.decode(text)
             } catch (e: Exception) {
