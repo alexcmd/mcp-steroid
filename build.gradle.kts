@@ -231,6 +231,7 @@ val pluginCoreSubprojects = setOf(
     "mcp-http",
     "mcp-stdio",
     "mcp-steroid-server",
+    "execution-storage",
     "ai-agents",
 )
 

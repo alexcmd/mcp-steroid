@@ -23,6 +23,7 @@ include(":mcp-core")
 include(":mcp-http")
 include(":mcp-stdio")
 include(":mcp-steroid-server")
+include(":execution-storage")
 
 include(":ocr-common")
 include(":ocr-tesseract")
