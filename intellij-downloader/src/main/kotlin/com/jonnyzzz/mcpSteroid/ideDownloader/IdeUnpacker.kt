@@ -60,7 +60,7 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
     unpackDir.mkdirs()
-    println("[IDE-DOWNLOAD] Unpacking ${archiveFile.name} -> $unpackDir")
+    System.err.println("[IDE-DOWNLOAD] Unpacking ${archiveFile.name} -> $unpackDir")
 
     var entryCount = 0
     var lastPrinted = System.currentTimeMillis()
@@ -92,7 +92,7 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
             entryCount++
             val now = System.currentTimeMillis()
             if (now - lastPrinted >= 5_000) {
-                println("[IDE-DOWNLOAD] Unpacking: $entryCount entries extracted...")
+                System.err.println("[IDE-DOWNLOAD] Unpacking: $entryCount entries extracted...")
                 lastPrinted = now
             }
 
@@ -100,7 +100,7 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
         }
     }
 
-    println("[IDE-DOWNLOAD] Unpacked $entryCount entries to $unpackDir")
+    System.err.println("[IDE-DOWNLOAD] Unpacked $entryCount entries to $unpackDir")
 }
 
 /**
@@ -119,7 +119,7 @@ fun unpackZip(archiveFile: File, unpackDir: File) {
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
     unpackDir.mkdirs()
-    println("[IDE-DOWNLOAD] Unpacking ${archiveFile.name} -> $unpackDir")
+    System.err.println("[IDE-DOWNLOAD] Unpacking ${archiveFile.name} -> $unpackDir")
 
     var entryCount = 0
     var lastPrinted = System.currentTimeMillis()
@@ -143,7 +143,7 @@ fun unpackZip(archiveFile: File, unpackDir: File) {
             entryCount++
             val now = System.currentTimeMillis()
             if (now - lastPrinted >= 5_000) {
-                println("[IDE-DOWNLOAD] Unpacking: $entryCount entries extracted...")
+                System.err.println("[IDE-DOWNLOAD] Unpacking: $entryCount entries extracted...")
                 lastPrinted = now
             }
 
@@ -151,7 +151,7 @@ fun unpackZip(archiveFile: File, unpackDir: File) {
         }
     }
 
-    println("[IDE-DOWNLOAD] Unpacked $entryCount entries to $unpackDir")
+    System.err.println("[IDE-DOWNLOAD] Unpacked $entryCount entries to $unpackDir")
 }
 
 /**
@@ -185,7 +185,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
     val hdiutil = File("/usr/bin/hdiutil").takeIf { it.canExecute() }?.absolutePath ?: "hdiutil"
     val mountPoint = Files.createTempDirectory("ide-downloader-dmg-${archiveFile.nameWithoutExtension}-").toFile()
 
-    println("[IDE-DOWNLOAD] Mounting ${archiveFile.name} at $mountPoint")
+    System.err.println("[IDE-DOWNLOAD] Mounting ${archiveFile.name} at $mountPoint")
     try {
         runOrThrow(
             listOf(
@@ -198,7 +198,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
         )
 
         val sourceDir = resolveDmgPayloadDir(mountPoint)
-        println("[IDE-DOWNLOAD] Copying $sourceDir -> $unpackDir")
+        System.err.println("[IDE-DOWNLOAD] Copying $sourceDir -> $unpackDir")
         // Use `cp -R` (or ditto) so symlinks / extended attributes survive — Java's
         // Files.copy doesn't preserve xattrs which matters for code-signed .app bundles.
         val copySource = if (sourceDir.name.endsWith(".app")) sourceDir.absolutePath else "${sourceDir.absolutePath}/."
@@ -206,7 +206,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
             listOf("/bin/cp", "-R", copySource, unpackDir.absolutePath),
             timeoutMinutes = 10,
         )
-        println("[IDE-DOWNLOAD] Unpacked DMG into $unpackDir")
+        System.err.println("[IDE-DOWNLOAD] Unpacked DMG into $unpackDir")
     } finally {
         try {
             runOrThrow(
@@ -262,7 +262,7 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     )
 
     unpackDir.mkdirs()
-    println("[IDE-DOWNLOAD] Extracting ${archiveFile.name} with $sevenZip -> $unpackDir")
+    System.err.println("[IDE-DOWNLOAD] Extracting ${archiveFile.name} with $sevenZip -> $unpackDir")
     runOrThrow(
         listOf(sevenZip, "x", "-y", "-o${unpackDir.absolutePath}", archiveFile.absolutePath),
         timeoutMinutes = 10,
@@ -273,13 +273,13 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     val nsisScratch = File(unpackDir, "\$PLUGINSDIR")
     if (nsisScratch.isDirectory) nsisScratch.deleteRecursively()
 
-    println("[IDE-DOWNLOAD] Unpacked .exe into $unpackDir")
+    System.err.println("[IDE-DOWNLOAD] Unpacked .exe into $unpackDir")
 }
 
 private fun unpackDirAlreadyPopulated(unpackDir: File): Boolean {
     val existing = unpackDir.listFiles()?.firstOrNull { it.isDirectory || it.length() > 0 }
     if (existing != null) {
-        println("[IDE-DOWNLOAD] Already unpacked: $existing")
+        System.err.println("[IDE-DOWNLOAD] Already unpacked: $existing")
         return true
     }
     return false

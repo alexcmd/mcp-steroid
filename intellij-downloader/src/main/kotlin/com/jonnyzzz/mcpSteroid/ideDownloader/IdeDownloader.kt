@@ -27,11 +27,11 @@ fun IdeDistribution.resolveAndDownload(
     val destFile = File(downloadDir, fileName)
 
     if (destFile.exists()) {
-        println("[IDE-DOWNLOAD] Using cached archive: $destFile")
+        System.err.println("[IDE-DOWNLOAD] Using cached archive: $destFile")
         return destFile
     }
 
-    println("[IDE-DOWNLOAD] Downloading $url -> $destFile")
+    System.err.println("[IDE-DOWNLOAD] Downloading $url -> $destFile")
     downloadFile(url, destFile)
     return destFile
 }
@@ -90,14 +90,14 @@ private fun downloadFile(url: String, dest: File) {
                         val now = System.currentTimeMillis()
                         if (now - lastPrinted >= 5_000) {
                             val progress = if (totalBytes > 0) " (${downloaded * 100 / totalBytes}%)" else ""
-                            println("[IDE-DOWNLOAD] Progress: ${downloaded / 1024 / 1024} MB$progress")
+                            System.err.println("[IDE-DOWNLOAD] Progress: ${downloaded / 1024 / 1024} MB$progress")
                             lastPrinted = now
                         }
                     }
                 }
             }
             tempFile.renameTo(dest)
-            println("[IDE-DOWNLOAD] Downloaded ${downloaded / 1024 / 1024} MB to $dest")
+            System.err.println("[IDE-DOWNLOAD] Downloaded ${downloaded / 1024 / 1024} MB to $dest")
         } catch (e: Exception) {
             tempFile.delete()
             throw e

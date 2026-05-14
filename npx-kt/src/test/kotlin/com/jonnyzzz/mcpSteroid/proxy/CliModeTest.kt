@@ -81,6 +81,10 @@ class CliModeTest {
             parseCliMode(arrayOf("backend", "download", "idea-community")),
         )
         assertEquals(
+            CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false, json = true),
+            parseCliMode(arrayOf("backend", "download", "idea-community", "--json")),
+        )
+        assertEquals(
             CliMode.Backend.Download("idea", versionOverride = "2025.3.3", acceptPaid = true),
             parseCliMode(arrayOf("backend", "download", "idea", "--version", "2025.3.3", "--allow-paid")),
         )
@@ -95,10 +99,25 @@ class CliModeTest {
     }
 
     @Test
-    fun `backend lifecycle subcommands without id are Unknown`() {
-        assertTrue(parseCliMode(arrayOf("backend", "download")) is CliMode.Unknown)
+    fun `backend download without id routes to default listing`() {
+        assertEquals(CliMode.Backend.DownloadList(json = false), parseCliMode(arrayOf("backend", "download")))
+        assertEquals(CliMode.Backend.DownloadList(json = true), parseCliMode(arrayOf("backend", "download", "--json")))
+        assertEquals(CliMode.Backend.DownloadList(json = true), parseCliMode(arrayOf("backend", "download", "--json", "--allow-paid")))
+    }
+
+    @Test
+    fun `backend lifecycle subcommands without id are Unknown except download`() {
         assertTrue(parseCliMode(arrayOf("backend", "start", "--version", "2025.3.3")) is CliMode.Unknown)
         assertTrue(parseCliMode(arrayOf("backend", "stop")) is CliMode.Unknown)
+    }
+
+    @Test
+    fun `backend download rejects unknown product key with list hint`() {
+        val mode = parseCliMode(arrayOf("backend", "download", "foo"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals(listOf("backend", "download", "foo"), mode.args)
+        assertEquals("Run `devrig backend download` with no id to list valid backend ids.", mode.hint)
     }
 
     @Test

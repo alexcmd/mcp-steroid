@@ -49,7 +49,7 @@ fun resolveAndroidStudioArchive(
     }
 
     val pageUrl = "https://developer.android.com/studio"
-    println("[IDE-DOWNLOAD] Fetching Android Studio downloads from $pageUrl")
+    System.err.println("[IDE-DOWNLOAD] Fetching Android Studio downloads from $pageUrl")
     val html = readUrlText(pageUrl)
 
     // Each download is an absolute https URL into edgedl.me.gvt1.com/android/studio/...

@@ -103,7 +103,7 @@ fun resolveArchive(
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
     val url = "https://data.services.jetbrains.com/products?code=${product.code}&release.type=$releaseType"
 
-    println("[IDE-DOWNLOAD] Fetching products info from $url")
+    System.err.println("[IDE-DOWNLOAD] Fetching products info from $url")
     val payload = readUrlText(url)
 
     val json = Json { ignoreUnknownKeys = true }

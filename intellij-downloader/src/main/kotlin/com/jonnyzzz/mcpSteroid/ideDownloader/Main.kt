@@ -56,7 +56,7 @@ fun main(args: Array<String>) {
     }
 
     val archiveFile = distribution.resolveAndDownload(outputDir, os, preferWindowsZip = preferWindowsZip)
-    println("[IDE-DOWNLOAD] Archive: ${archiveFile.absolutePath}")
+    System.err.println("[IDE-DOWNLOAD] Archive: ${archiveFile.absolutePath}")
 
     val unpackDir = argsMap["--unpack-dir"]
     if (unpackDir != null) {

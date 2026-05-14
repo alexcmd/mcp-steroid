@@ -42,18 +42,22 @@ internal sealed interface CliMode {
     sealed interface Backend : CliMode {
         data object Text : Backend
         data object Json : Backend
+        data class DownloadList(val json: Boolean) : Backend
         data class Download(
             val id: String,
             val versionOverride: String?,
             val acceptPaid: Boolean,
+            val json: Boolean = false,
         ) : Backend
         data class Start(
             val id: String,
             val versionOverride: String?,
+            val json: Boolean = false,
         ) : Backend
         data class Stop(
             val id: String,
             val versionOverride: String?,
+            val json: Boolean = false,
         ) : Backend
     }
 
@@ -71,7 +75,7 @@ internal sealed interface CliMode {
     }
 
     /** Unknown arg(s). Print usage on stderr and exit non-zero. */
-    data class Unknown(val args: List<String>) : CliMode
+    data class Unknown(val args: List<String>, val hint: String? = null) : CliMode
 }
 
 /**
@@ -94,12 +98,16 @@ internal fun parseCliMode(args: Array<String>): CliMode {
     // are orthogonal to mode selection and filtered out here so e.g. `--debug`
     // alone routes to Help, not Unknown.
     val modeArgs = args.withoutGlobalValueFlag("--home")
-        .filterNot { it == "--debug" || it == "--json" }
+        .filterNot { it == "--debug" || it == "--json" || it == "--allow-paid" }
         .toTypedArray()
     if (modeArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (modeArgs.isEmpty() || modeArgs.any { it == "--help" || it == "-h" }) return CliMode.Help
     if (modeArgs.any { it == "backend" }) {
-        parseBackendLifecycleMode(modeArgs)?.let { return it }
+        parseBackendLifecycleMode(
+            args.withoutGlobalValueFlag("--home")
+                .filterNot { it == "--debug" }
+                .toTypedArray(),
+        )?.let { return it }
     }
     if (modeArgs.any { it == "--version" || it == "-v" }) return CliMode.Version
     if (modeArgs.any { it == "backend" }) {
@@ -125,6 +133,10 @@ internal fun parseHomeOverride(args: Array<String>): String? {
 }
 
 private fun Array<String>.withoutGlobalValueFlag(flag: String): List<String> {
+    return toList().withoutValueFlag(flag)
+}
+
+private fun List<String>.withoutValueFlag(flag: String): List<String> {
     val result = mutableListOf<String>()
     var skipNext = false
     for (arg in this) {
@@ -142,14 +154,31 @@ private fun Array<String>.withoutGlobalValueFlag(flag: String): List<String> {
 }
 
 private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
-    val backendIndex = args.indexOf("backend")
-    if (backendIndex < 0 || backendIndex == args.lastIndex) return null
-    val subcommand = args.getOrNull(backendIndex + 1) ?: return null
+    val resolutionArgs = args.toList()
+        .withoutValueFlag("--version")
+        .filterNot { it == "--json" || it == "--allow-paid" }
+        .toTypedArray()
+    val backendIndex = resolutionArgs.indexOf("backend")
+    if (backendIndex < 0 || backendIndex == resolutionArgs.lastIndex) return null
+    val subcommand = resolutionArgs.getOrNull(backendIndex + 1) ?: return null
     if (subcommand !in setOf("download", "start", "stop")) return null
-    val id = args.getOrNull(backendIndex + 2)
-        ?: return CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+    val json = args.any { it == "--json" }
+    val id = resolutionArgs.getOrNull(backendIndex + 2)
+        ?: return when (subcommand) {
+            "download" -> CliMode.Backend.DownloadList(json = json)
+            else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+        }
     if (id.startsWith("--")) {
-        return CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+        return when (subcommand) {
+            "download" -> CliMode.Backend.DownloadList(json = json)
+            else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+        }
+    }
+    if (!isSupportedBackendLifecycleId(id)) {
+        return CliMode.Unknown(
+            args = listOf("backend", subcommand, id),
+            hint = "Run `devrig backend $subcommand` with no id to list valid backend ids.",
+        )
     }
     val versionOverride = valueAfter(args, "--version")
     return when (subcommand) {
@@ -157,17 +186,43 @@ private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
             id = id,
             versionOverride = versionOverride,
             acceptPaid = args.any { it == "--allow-paid" },
+            json = json,
         )
         "start" -> CliMode.Backend.Start(
             id = id,
             versionOverride = versionOverride,
+            json = json,
         )
         "stop" -> CliMode.Backend.Stop(
             id = id,
             versionOverride = versionOverride,
+            json = json,
         )
         else -> null
     }
+}
+
+private fun isSupportedBackendLifecycleId(raw: String): Boolean {
+    if (raw.isBlank()) return false
+    val colonParts = raw.split(':')
+    if (colonParts.size > 2) return false
+    if (colonParts.size == 2) {
+        return isKnownProductKey(colonParts[0]) && isSupportedBackendVersion(colonParts[1])
+    }
+    if (isKnownProductKey(raw)) return true
+    val product = com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts
+        .sortedByDescending { it.id.length }
+        .firstOrNull { raw.startsWith("${it.id}-") }
+        ?: return false
+    return isSupportedBackendVersion(raw.removePrefix("${product.id}-"))
+}
+
+private fun isKnownProductKey(raw: String): Boolean =
+    com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts.any { it.id == raw }
+
+private fun isSupportedBackendVersion(raw: String): Boolean {
+    val version = raw.trim()
+    return version.isNotBlank() && version.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
 }
 
 private fun valueAfter(args: Array<String>, flag: String): String? {
@@ -223,6 +278,7 @@ internal fun runCli(
             when (mode) {
                 CliMode.Backend.Text -> runBackendCommand(System.out, json = false, homePaths = homePaths)
                 CliMode.Backend.Json -> runBackendCommand(System.out, json = true, homePaths = homePaths)
+                is CliMode.Backend.DownloadList -> runBackendDownloadListCommand(System.out, json = mode.json)
                 is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
@@ -239,6 +295,7 @@ internal fun runCli(
     }
     is CliMode.Unknown -> {
         System.err.println("Unknown argument(s): ${mode.args.joinToString(" ")}")
+        mode.hint?.let { System.err.println(it) }
         printHelp(System.err)
         64
     }
