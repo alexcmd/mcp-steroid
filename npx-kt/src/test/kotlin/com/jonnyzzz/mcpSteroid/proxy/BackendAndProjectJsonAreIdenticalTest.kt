@@ -100,7 +100,7 @@ class BackendAndProjectJsonAreIdenticalTest {
         assertEquals(setOf("tool", "backends", "projects"), root.keys)
         val backends = root["backends"]!!.jsonArray
         assertEquals(4, backends.size)
-        assertTrue(backends.all { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == BACKEND_TYPE_INTELLIJ },
+        assertTrue(backends.all { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "intellij" },
             "every current backend must carry type=intellij: $backends")
 
         val markerReachable = backends[0].jsonObject

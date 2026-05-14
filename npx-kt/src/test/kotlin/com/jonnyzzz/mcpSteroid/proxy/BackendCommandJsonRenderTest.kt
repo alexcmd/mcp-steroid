@@ -108,7 +108,7 @@ class BackendCommandJsonRenderTest {
         )
         val backends = render(rows)["backends"]!!.jsonArray
         assertEquals(rows.size, backends.size)
-        assertTrue(backends.all { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == BACKEND_TYPE_INTELLIJ },
+        assertTrue(backends.all { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "intellij" },
             "every current backend is an IntelliJ-family backend: $backends")
     }
 
@@ -125,7 +125,7 @@ class BackendCommandJsonRenderTest {
 
         assertTrue(Regex("^backend-\\d+$").matches(backend["id"]!!.jsonPrimitive.content))
         assertEquals("backend-0", backend["id"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(BACKEND_TYPE_INTELLIJ, backend["type"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("intellij", backend["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("marker", backend["source"]?.jsonPrimitive?.contentOrNull)
         assertEquals(true, backend["pluginInstalled"]?.jsonPrimitive?.boolean)
         assertEquals(true, backend["reachable"]?.jsonPrimitive?.boolean)
@@ -190,7 +190,7 @@ class BackendCommandJsonRenderTest {
 
         assertTrue(Regex("^backend-\\d+$").matches(backend["id"]!!.jsonPrimitive.content))
         assertEquals("backend-0", backend["id"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(BACKEND_TYPE_INTELLIJ, backend["type"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("intellij", backend["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("port", backend["source"]?.jsonPrimitive?.contentOrNull)
         assertEquals(false, backend["pluginInstalled"]?.jsonPrimitive?.boolean)
         assertEquals(true, backend["reachable"]?.jsonPrimitive?.boolean)
