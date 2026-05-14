@@ -124,21 +124,17 @@ distributions {
             from(rootProject.layout.projectDirectory.file("EULA"))
 
             // Unpacked :ij-plugin contents — sits under `ij-plugin/` with no
-            // outer wrapper directory. The kotlinc and ocr-tesseract POSIX
-            // launchers need the executable bit re-applied: Gradle's distZip
-            // reads the on-disk mode (which the Sync extract did preserve),
-            // but the application-plugin distZip resets it to 0o644 unless we
-            // restate it here. Mirrors `:ij-plugin:buildPlugin`'s filesMatching
-            // block — same source files, same rules.
+            // outer wrapper directory. The Sync extract preserved every entry's
+            // POSIX mode on disk; distZip then rewrites file modes to 0o644 by
+            // default and drops the executable bit. Re-apply +x for any source
+            // file the OS reports as executable, so every executable inside
+            // the plugin (kotlinc launchers, ocr-tesseract binary, plus any
+            // new ones :ij-plugin starts shipping) survives without a narrow
+            // per-pattern allowlist.
             into("ij-plugin") {
                 from(extractIjPluginZip) {
-                    filesMatching("kotlinc/bin/*") {
-                        if (!name.endsWith(".bat")) {
-                            permissions { unix("rwxr-xr-x") }
-                        }
-                    }
-                    filesMatching("ocr-tesseract/bin/*") {
-                        if (!name.endsWith(".bat")) {
+                    eachFile {
+                        if (file.canExecute()) {
                             permissions { unix("rwxr-xr-x") }
                         }
                     }
@@ -323,14 +319,38 @@ val verifyBundledLibraries by tasks.registering {
         }
         // POSIX launchers inside the plugin must keep their executable bit through
         // the unpack + repack. The `.bat` siblings stay non-executable — Windows
-        // ignores the bit and Gradle's filesMatching block excludes them.
+        // ignores the bit and the `eachFile` rule only promotes files whose source
+        // mode already had +x. The exact 6-file list mirrors what the plugin zip
+        // ships today; a future plugin launcher landing here without +x in the
+        // dist will fail this check loudly, prompting an investigation rather
+        // than silently shipping a broken script.
         listOf(
+            "ij-plugin/kotlinc/bin/kapt:X",
+            "ij-plugin/kotlinc/bin/kotlin:X",
             "ij-plugin/kotlinc/bin/kotlinc:X",
+            "ij-plugin/kotlinc/bin/kotlinc-js:X",
+            "ij-plugin/kotlinc/bin/kotlinc-jvm:X",
             "ij-plugin/ocr-tesseract/bin/ocr-tesseract:X",
         ).forEach { sentinel ->
             check(sentinel in ijPluginFiles) {
                 "ij-plugin/ subtree is missing executable sentinel '$sentinel'. " +
-                        "Check that distZip's filesMatching block preserves the +x bit on POSIX launchers."
+                        "Check that distZip's eachFile { permissions { … } } block " +
+                        "preserves the +x bit on POSIX launchers."
+            }
+        }
+        // Conversely, the `.bat` siblings MUST NOT carry +x — Windows ignores it
+        // but a stray bit would mean our eachFile rule mis-promoted a non-source-
+        // executable file, signaling a regression in the rule itself.
+        listOf(
+            "ij-plugin/kotlinc/bin/kotlinc.bat",
+            "ij-plugin/ocr-tesseract/bin/ocr-tesseract.bat",
+        ).forEach { batPath ->
+            check(batPath in ijPluginFiles) {
+                "ij-plugin/ subtree is missing '$batPath' (expected as non-executable .bat sibling)."
+            }
+            check("$batPath:X" !in ijPluginFiles) {
+                "ij-plugin/ subtree wrongly marked '$batPath' executable; eachFile { } rule " +
+                        "should only promote files whose source mode had +x."
             }
         }
         allFiles = (allFiles - ijPluginFiles).toSortedSet()
