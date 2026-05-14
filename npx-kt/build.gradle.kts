@@ -29,6 +29,12 @@ dependencies {
     // Brings :mcp-core and :prompts transitively.
     implementation(project(":mcp-steroid-server"))
 
+    // IDE-free ExecutionStorage core. Lets the proxy persist execution
+    // history with the same on-disk layout the IntelliJ plugin uses, so
+    // downstream tooling that reads .idea/mcp-steroid/{eid}/ artefacts
+    // works against both backends without conditional logic.
+    implementation(project(":execution-storage"))
+
     // SLF4J binding for the launcher. We use Logback (not slf4j-simple) so
     // operators can drop in a `logback.xml` to add appenders, change levels,
     // or route specific loggers — slf4j-simple has no real configuration
