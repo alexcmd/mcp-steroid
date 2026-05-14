@@ -7,20 +7,28 @@ import java.io.File
  * CLI entry point for downloading and optionally unpacking IDE archives.
  *
  * Usage:
- *   java -jar intellij-downloader.jar --product idea --channel stable --output-dir /path/to/dir
+ *   java -jar intellij-downloader.jar --product idea-community --channel stable --output-dir /path/to/dir
  *
  * Arguments:
- *   --product     IDE product: idea, pycharm, goland, webstorm, rider, clion (default: idea)
- *   --channel     Release channel: stable, eap (default: stable)
- *   --output-dir  Directory to store downloaded archives (required)
- *   --url         Direct download URL (overrides --product/--channel resolution)
- *   --os          Target OS: linux, mac, windows (default: auto-detected)
- *   --unpack-dir  Directory to unpack the archive into (optional, .tar.gz only)
+ *   --product            IDE product: idea, idea-community, pycharm, pycharm-community,
+ *                        goland, webstorm, rider, clion (default: idea)
+ *   --channel            Release channel: stable, eap (default: stable)
+ *   --output-dir         Directory to store downloaded archives (required)
+ *   --url                Direct download URL (overrides --product/--channel resolution)
+ *   --os                 Target OS: linux, mac, windows (default: auto-detected)
+ *   --unpack-dir         Directory to unpack the archive into (optional). Dispatches by
+ *                        archive extension: .tar.gz / .tgz / .zip / .dmg (mac host only) / .exe
+ *   --allow-paid         Required to download paid IDEs (IntelliJ IDEA Ultimate, PyCharm Pro).
+ *                        Free + free-for-non-commercial IDEs don't need this flag.
+ *   --prefer-windows-zip on Windows, prefer the .win.zip variant over the .exe installer
+ *                        (default: true; pass `false` to force the .exe path).
  */
 fun main(args: Array<String>) {
     val argsMap = parseArgs(args)
     val outputDir = File(argsMap["--output-dir"] ?: error("--output-dir is required"))
     val url = argsMap["--url"]
+    val allowPaid = argsMap["--allow-paid"]?.toBooleanStrictOrNull() ?: false
+    val preferWindowsZip = argsMap["--prefer-windows-zip"]?.toBooleanStrictOrNull() ?: true
 
     val os = argsMap["--os"]?.let { raw ->
         when (raw.trim().lowercase()) {
@@ -44,16 +52,15 @@ fun main(args: Array<String>) {
             "eap" -> IdeChannel.EAP
             else -> error("Unknown channel '$channelRaw'. Use 'stable' or 'eap'.")
         }
-        IdeDistribution.Latest(product = product, channel = channel)
+        IdeDistribution.Latest(product = product, channel = channel, acceptPaid = allowPaid)
     }
 
-    val archiveFile = distribution.resolveAndDownload(outputDir, os)
+    val archiveFile = distribution.resolveAndDownload(outputDir, os, preferWindowsZip = preferWindowsZip)
     println("[IDE-DOWNLOAD] Archive: ${archiveFile.absolutePath}")
 
     val unpackDir = argsMap["--unpack-dir"]
     if (unpackDir != null) {
-        val unpackDirFile = File(unpackDir)
-        unpackTarGz(archiveFile, unpackDirFile)
+        unpackIdeArchive(archiveFile, File(unpackDir))
     }
 }
 

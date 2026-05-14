@@ -11,12 +11,19 @@ import java.net.URI
  *
  * @param downloadDir the directory to store downloaded archives
  * @param os the target operating system (default: auto-detected)
+ * @param preferWindowsZip on Windows, prefer the `.win.zip` over the `.exe` installer
+ *  (avoids the need for 7zip on the host). Defaults to true.
  * @return the local file containing the IDE archive
  */
-fun IdeDistribution.resolveAndDownload(downloadDir: File, os: HostOs = resolveHostOs()): File {
+fun IdeDistribution.resolveAndDownload(
+    downloadDir: File,
+    os: HostOs = resolveHostOs(),
+    preferWindowsZip: Boolean = true,
+): File {
+    requirePaidConsent()
     downloadDir.mkdirs()
 
-    val (url, fileName) = resolveUrlAndFileName(os)
+    val (url, fileName) = resolveUrlAndFileName(os, preferWindowsZip)
     val destFile = File(downloadDir, fileName)
 
     if (destFile.exists()) {
@@ -29,14 +36,17 @@ fun IdeDistribution.resolveAndDownload(downloadDir: File, os: HostOs = resolveHo
     return destFile
 }
 
-private fun IdeDistribution.resolveUrlAndFileName(os: HostOs): Pair<String, String> {
+private fun IdeDistribution.resolveUrlAndFileName(
+    os: HostOs,
+    preferWindowsZip: Boolean,
+): Pair<String, String> {
     return when (this) {
         is IdeDistribution.FromUrl -> {
             val resolvedName = fileName ?: archiveFileNameFromUrl(url, "${product.id}.tar.gz")
             url to resolvedName
         }
         is IdeDistribution.Latest -> {
-            val resolvedUrl = resolveArchiveUrl(product, channel, os)
+            val resolvedUrl = resolveArchiveUrl(product, channel, os, preferWindowsZip = preferWindowsZip)
             val arch = resolveHostArchitecture()
             val fallbackName = if (arch.isArmArch) "${product.id}-${channel.name.lowercase()}-arm.tar.gz"
                                else "${product.id}-${channel.name.lowercase()}-x86.tar.gz"

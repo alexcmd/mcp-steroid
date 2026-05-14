@@ -12,23 +12,60 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 /**
- * Returns the JetBrains API download key for the given OS and architecture combination.
+ * Returns the JetBrains products-API download key for the given OS / architecture combo.
+ *
+ * When [preferWindowsZip] is `true`, Windows downloads resolve to the `windowsZip` /
+ * `windowsZipARM64` variant. That avoids the NSIS .exe → 7zip extraction path entirely
+ * for IDEs that publish a plain `.win.zip` (Community editions, all 2024.x+ IDEs).
+ * Fallback to the .exe download key happens at lookup time if `windowsZip` is missing.
  *
  * @see <a href="https://data.services.jetbrains.com/products">JetBrains Products API</a>
  */
-fun resolveDownloadKey(os: HostOs, architecture: HostArchitecture): String = when (os) {
+fun resolveDownloadKey(
+    os: HostOs,
+    architecture: HostArchitecture,
+    preferWindowsZip: Boolean = false,
+): String = when (os) {
     HostOs.LINUX -> if (architecture.isArmArch) "linuxARM64" else "linux"
     HostOs.MAC -> if (architecture.isArmArch) "macM1" else "mac"
-    HostOs.WINDOWS -> if (architecture.isArmArch) "windowsARM64" else "windows"
+    HostOs.WINDOWS -> when {
+        preferWindowsZip && architecture.isArmArch -> "windowsZipARM64"
+        preferWindowsZip -> "windowsZip"
+        architecture.isArmArch -> "windowsARM64"
+        else -> "windows"
+    }
 }
 
 /**
- * Resolves the download URL for the latest IDE archive from JetBrains products API.
+ * Returns the preferred + fallback download keys for the given OS / architecture.
+ *
+ * Used by [resolveArchiveUrl] when [preferWindowsZip] is on: if the products API
+ * doesn't list the zip variant for this combo (e.g. older releases), the resolver
+ * silently falls back to the .exe.
+ */
+private fun downloadKeyCandidates(
+    os: HostOs,
+    architecture: HostArchitecture,
+    preferWindowsZip: Boolean,
+): List<String> {
+    if (os != HostOs.WINDOWS || !preferWindowsZip) {
+        return listOf(resolveDownloadKey(os, architecture, preferWindowsZip = preferWindowsZip))
+    }
+    // Windows + preferZip: try zip first, then exe.
+    return listOf(
+        resolveDownloadKey(os, architecture, preferWindowsZip = true),
+        resolveDownloadKey(os, architecture, preferWindowsZip = false),
+    )
+}
+
+/**
+ * Resolves the download URL for the latest IDE archive from the public products API.
  *
  * @param product the IDE product to look up
  * @param channel the release channel (stable or EAP)
  * @param os the target operating system (default: auto-detected)
  * @param architecture the host architecture for platform-specific archive selection
+ * @param preferWindowsZip on Windows, prefer the `.win.zip` (no 7zip needed) over the `.exe` installer
  * @return the direct download URL for the archive
  */
 fun resolveArchiveUrl(
@@ -36,9 +73,15 @@ fun resolveArchiveUrl(
     channel: IdeChannel,
     os: HostOs = resolveHostOs(),
     architecture: HostArchitecture = resolveHostArchitecture(),
+    preferWindowsZip: Boolean = true,
 ): String {
+    // Android Studio is a Google product and lives on a different feed.
+    if (product === IdeProduct.AndroidStudio) {
+        return resolveAndroidStudioArchiveUrl(channel, os, architecture, preferWindowsZip)
+    }
+
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
-    val url = "https://data.services.jetbrains.com/products?code=${product.jetbrainsProductCode}&release.type=$releaseType"
+    val url = "https://data.services.jetbrains.com/products?code=${product.code}&release.type=$releaseType"
 
     println("[IDE-DOWNLOAD] Fetching products info from $url")
     val payload = readUrlText(url)
@@ -48,36 +91,39 @@ fun resolveArchiveUrl(
 
     val matchingProduct = products
         .filterIsInstance<JsonObject>()
-        .firstOrNull { obj ->
-            (obj["code"] as? JsonPrimitive)?.content == product.jetbrainsProductCode
-        }
-        ?: error("Products response does not contain '${product.jetbrainsProductCode}' entry")
+        .firstOrNull { obj -> (obj["code"] as? JsonPrimitive)?.content == product.code }
+        ?: error("Products response does not contain '${product.code}' entry")
 
     val releases = (matchingProduct["releases"] as? JsonArray) ?: JsonArray(emptyList())
+    val candidates = downloadKeyCandidates(os, architecture, preferWindowsZip)
 
-    val downloadKey = resolveDownloadKey(os, architecture)
-    val release = releases
-        .filterIsInstance<JsonObject>()
-        .firstOrNull { candidate ->
-            val type = (candidate["type"] as? JsonPrimitive)?.content
-            val version = (candidate["version"] as? JsonPrimitive)?.content
-            val build = (candidate["build"] as? JsonPrimitive)?.content
-            val downloads = candidate["downloads"] as? JsonObject
-            val link = (downloads?.get(downloadKey) as? JsonObject)?.get("link")?.let { (it as? JsonPrimitive)?.content }
+    for (downloadKey in candidates) {
+        val release = releases
+            .filterIsInstance<JsonObject>()
+            .firstOrNull { candidate ->
+                val type = (candidate["type"] as? JsonPrimitive)?.content
+                val version = (candidate["version"] as? JsonPrimitive)?.content
+                val build = (candidate["build"] as? JsonPrimitive)?.content
+                val downloads = candidate["downloads"] as? JsonObject
+                val link = (downloads?.get(downloadKey) as? JsonObject)?.get("link")?.let { (it as? JsonPrimitive)?.content }
 
-            type.equals(channel.apiValue, ignoreCase = true) &&
-                    !version.isNullOrBlank() &&
-                    !build.isNullOrBlank() &&
-                    !link.isNullOrBlank()
-        }
-        ?: error("Unable to resolve latest '${channel.apiValue}' release for product '${product.jetbrainsProductCode}' (download key '$downloadKey') from $url")
+                type.equals(channel.apiValue, ignoreCase = true) &&
+                        !version.isNullOrBlank() &&
+                        !build.isNullOrBlank() &&
+                        !link.isNullOrBlank()
+            }
+            ?: continue
 
-    val downloads = release["downloads"] as? JsonObject
-        ?: error("Missing 'downloads' in release")
-    val platformDownload = downloads[downloadKey] as? JsonObject
-        ?: error("Missing '$downloadKey' in downloads")
-    return (platformDownload["link"] as? JsonPrimitive)?.content
-        ?: error("Missing 'link' in $downloadKey download")
+        val downloads = release["downloads"] as? JsonObject ?: continue
+        val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
+        val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
+        return link
+    }
+
+    error(
+        "Unable to resolve latest '${channel.apiValue}' release for product '${product.code}' " +
+            "(tried download keys ${candidates.joinToString()}) from $url"
+    )
 }
 
 internal fun readUrlText(url: String): String {
