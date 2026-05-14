@@ -47,6 +47,11 @@ class CliModeTest {
         assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp")))
     }
 
+    @Test
+    fun `bare backend subcommand routes to Backend`() {
+        assertEquals(CliMode.Backend, parseCliMode(arrayOf("backend")))
+    }
+
     // ----------------------------- precedence ------------------------------
 
     @Test
@@ -70,6 +75,36 @@ class CliModeTest {
         // older binaries in CLI mode; presence of `--mcp` is enough.
         assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--config", "foo.json")))
         assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--config", "foo.json", "--mcp")))
+    }
+
+    @Test
+    fun `--mcp wins over backend subcommand`() {
+        // Defensive: a misconfigured wrapper that combines them should not start
+        // the backend listing inside an MCP-framed transport — MCP mode comes first.
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("backend", "--mcp")))
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "backend")))
+    }
+
+    @Test
+    fun `--help wins over backend subcommand`() {
+        // `mcp-steroid-proxy backend --help` should print help, NOT open connections
+        // to discovered IDEs. Help asks "what does this do?" and the answer is text.
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("backend", "--help")))
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("-h", "backend")))
+    }
+
+    @Test
+    fun `--version wins over backend subcommand`() {
+        assertEquals(CliMode.Version, parseCliMode(arrayOf("backend", "--version")))
+    }
+
+    @Test
+    fun `backend with extra unknown args still routes to Backend`() {
+        // We don't yet validate subcommand args strictly — extra tokens are accepted
+        // so the door stays open for future `backend --json` style options without
+        // breaking compatibility.
+        assertEquals(CliMode.Backend, parseCliMode(arrayOf("backend", "extra")))
+        assertEquals(CliMode.Backend, parseCliMode(arrayOf("extra", "backend")))
     }
 
     @Test
@@ -125,6 +160,17 @@ class CliModeTest {
     }
 
     @Test
+    fun `backend subcommand is exact-match - 'BACKEND' or 'Backend' are not accepted`() {
+        // Same strictness as the flags: case-mismatch lands in Unknown so the
+        // user sees an actionable error instead of a silent no-op.
+        assertTrue(parseCliMode(arrayOf("BACKEND")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("Backend")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("back")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("backends")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("--backend")) is CliMode.Unknown)
+    }
+
+    @Test
     fun `positional arg without any recognised flag routes to Unknown`() {
         val mode = parseCliMode(arrayOf("foo"))
         assertTrue(mode is CliMode.Unknown)
@@ -177,13 +223,14 @@ class CliModeTest {
 
     @Test
     fun `CliMode objects are singletons`() {
-        // `Mcp`, `Help`, `Version` are sealed-interface `object` instances —
-        // pinning identity avoids accidental data-class conversions that would
-        // break `===` and `when (mode) { CliMode.Mcp -> ... }` exhaustiveness.
+        // `Mcp`, `Help`, `Version`, `Backend` are sealed-interface `object`
+        // instances — pinning identity avoids accidental data-class conversions
+        // that would break `===` and `when` exhaustiveness.
         assertSame(CliMode.Mcp, parseCliMode(arrayOf("--mcp")))
         assertSame(CliMode.Help, parseCliMode(emptyArray()))
         assertSame(CliMode.Help, parseCliMode(arrayOf("--help")))
         assertSame(CliMode.Version, parseCliMode(arrayOf("--version")))
+        assertSame(CliMode.Backend, parseCliMode(arrayOf("backend")))
     }
 
     // ----------------------------- runCli contract ------------------------

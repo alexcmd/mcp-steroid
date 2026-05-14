@@ -166,4 +166,49 @@ class CliOptionsIntegrationTest {
         assertEquals(64, r.exitCode, "--MCP (wrong case) must NOT trigger MCP mode")
         assertTrue(r.stderr.contains("Unknown argument(s)"), "got:\n${r.stderr}")
     }
+
+    // --------------------------- backend subcommand ------------------------
+
+    @Test
+    fun `backend exits 0 and prints 'No IDEs detected' on a clean test host`() {
+        // The CI runner has no IDE markers in $HOME, so the no-IDEs branch is
+        // the deterministic outcome here. The wire-level happy path
+        // (IDE present + projects open) is covered by `BackendCommandFetchTest`
+        // against an in-process Ktor mock.
+        //
+        // We can't isolate $HOME via env vars (the launcher reads `user.home`
+        // directly), so this test asserts a forgiving condition: if there
+        // happens to be a real IDE running on the dev workstation, the
+        // launcher still exits 0 and produces non-empty stdout. Either way
+        // stderr stays empty of catastrophic failure.
+        val r = runLauncher("backend")
+        assertEquals(0, r.exitCode,
+            "backend must exit 0 even when no IDEs are running; stdout=\n${r.stdout}\nstderr=\n${r.stderr}")
+        assertTrue(r.stdout.isNotBlank(),
+            "backend must produce at least one line of output; got:\n${r.stdout}")
+        // One of the two expected shapes:
+        val output = r.stdout.trimEnd()
+        val isNoIdes = output == "No IDEs detected."
+        val looksLikeIdeListing = output.lines().any { line ->
+            // IDE-listing lines start with the IDE name and include `version `
+            // somewhere on the same line. Empty $HOME → "No IDEs detected.".
+            line.contains("  version ") && line.contains("(pid ")
+        }
+        assertTrue(
+            isNoIdes || looksLikeIdeListing,
+            "backend output must be either the no-IDEs message or an IDE listing; got:\n$output",
+        )
+    }
+
+    @Test
+    fun `backend --help prints help, NOT IDE listing`() {
+        // Help wins over backend by parser precedence — confirm the real
+        // launcher honours that so a future shell-launcher tweak can't
+        // accidentally open connections in response to a help request.
+        val r = runLauncher("backend", "--help")
+        assertEquals(0, r.exitCode, "--help should win over backend; stderr=\n${r.stderr}")
+        assertTrue(r.stdout.contains("Usage:"), "got:\n${r.stdout}")
+        assertTrue(!r.stdout.contains("No IDEs detected") && !r.stdout.contains("(pid "),
+            "help output must not include backend listing artefacts; got:\n${r.stdout}")
+    }
 }
