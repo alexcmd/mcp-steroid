@@ -121,33 +121,6 @@ fun Test.configureIntegrationTest(sourceSetName: String = "test") {
     }
 }
 
-fun dockerAvailable(): Boolean {
-    return try {
-        val exitCode = ProcessBuilder("docker", "info")
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start()
-            .waitFor()
-        if (exitCode != 0) {
-            logger.lifecycle("Docker is not available for managed-backend smoke tests: docker info exited with $exitCode")
-        }
-        exitCode == 0
-    } catch (e: Exception) {
-        logger.lifecycle("Docker is not available for managed-backend smoke tests: ${e.message}")
-        false
-    }
-}
-
-val testManagedBackendsDocker by tasks.registering(Test::class) {
-    description = "Linux Docker smoke test for devrig managed backends"
-    group = "verification"
-    configureIntegrationTest()
-    filter { includeTestsMatching("*ManagedBackendDockerIntegrationTest*") }
-    onlyIf("Docker must be available for the managed-backend Docker smoke test") {
-        dockerAvailable()
-    }
-}
-
 fun tartAvailableOnAppleSilicon(): Boolean {
     val os = System.getProperty("os.name").lowercase()
     val arch = System.getProperty("os.arch").lowercase()
