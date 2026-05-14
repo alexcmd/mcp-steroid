@@ -44,6 +44,8 @@ isolation:
 8. `mcp-5: pid marker carries the IDE's MCP port + bearer token`
 9. `mcp-5: log self-review findings + port/token addition in IMPROVEMENTS`
 10. `mcp-5: attach IntelliJ's bundled MCP server to pid marker via optional descriptor`
+11. `mcp-5: log IntelliJ HTTP-server research + optional-descriptor pattern in IMPROVEMENTS`
+12. `npx-kt: active port-scan discovery of IntelliJ-family IDEs`
 
 Test coverage:
 - `:mcp-steroid-server:test` — `PidMarkerTest` (6: roundtrip, pretty-print
@@ -115,6 +117,48 @@ Test coverage:
   URL (same listener, sibling path) so the marker carries both. If
   the `/stream` endpoint isn't live on an older bundle, the client
   observes that and falls back to SSE.
+
+## Branch findings — active port-scan discovery (commit 12)
+
+- **Why active scan, on top of marker discovery?** The
+  `.<pid>.mcp-steroid` marker only fires for IDEs that have the
+  `mcp-steroid` plugin installed and started. Active port scanning
+  finds **any** JetBrains IDE running on localhost (vanilla IntelliJ,
+  PyCharm without our plugin, etc.) by probing `/api/about` on the
+  IntelliJ Platform's known port ranges.
+- **Default scan ranges**: `63342..63361` (Netty built-in HTTP server,
+  the platform picks the first free port in that 20-port window) and
+  `64342..64361` (bundled MCP Server plugin's
+  `DEFAULT_MCP_PORT + 19` fallback range).
+- **Threading model**: a fixed-size daemon-thread pool named
+  `mcp-steroid-port-scan-<n>` is wrapped as a `CoroutineDispatcher`
+  via `Executors.asCoroutineDispatcher()`. Probes are launched with
+  `async(scanDispatcher)` + `awaitAll()`. This keeps a slow TCP
+  connect on one port from stalling the stdio MCP server's
+  dispatcher or the marker discovery's polling.
+- **Failure modes are normal**: connection-refused on a port (no IDE
+  listening) and JSON-200-without-IDE-fields (a non-IDE web server
+  happens to share the port) both filter to `null` without
+  propagating. The scan is a probe, not a contract — a non-IDE port
+  is not an error.
+- **Shutdown discipline**: `IntelliJPortDiscovery` implements
+  `Closeable`. `Main.kt` calls `close()` after cancelling the scan
+  loop; the executor is also drained inside the `start { … }` job's
+  `finally` block (on `NonCancellable`) so in-flight probes don't
+  leak when the parent scope is cancelled.
+
+## Out-of-scope follow-ups (logged for later)
+
+- The port-discovery output is currently informational only — it
+  isn't consumed by `IdeMonitorService` (which still streams projects
+  only from `mcp-steroid`-aware IDEs). Future work: cross-reference
+  the two flows so the monitor can also surface "IntelliJ detected
+  at :63344 but no `mcp-steroid` plugin loaded" states.
+- We don't yet probe the MCP server plugin's `/sse` endpoint
+  directly to confirm it's enabled. The `/api/about` probe only
+  tells us the IDE itself is alive. A second pass on the bundled
+  MCP server port range that does a HEAD on `/sse` would close
+  that gap.
 
 ## Out of scope (filed for follow-up)
 
