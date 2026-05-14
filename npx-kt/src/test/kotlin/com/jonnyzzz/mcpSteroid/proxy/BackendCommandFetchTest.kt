@@ -42,7 +42,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Wire-level coverage for the `backend` subcommand's fetcher. Spins up an
  * in-process Ktor server that mimics the IDE's `/npx/v1/projects/stream`
- * endpoint, then drives [collectBackendSnapshots] against it.
+ * endpoint, then drives [collectMarkerSnapshots] against it.
  *
  * Pattern lifted from `IdeMonitorServiceTest` — same fake-server shape, but
  * here we want the one-shot semantics: connect, read until the first snapshot,
@@ -141,7 +141,7 @@ class BackendCommandFetchTest {
     fun `collects the first snapshot from a responsive IDE`() = runBlocking {
         script += snapshotEnv(listOf(ProjectInfo("alpha", "/p/alpha")))
 
-        val rows = collectBackendSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)
+        val rows = collectMarkerSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)
 
         assertEquals(1, rows.size)
         val row = rows.single()
@@ -157,7 +157,7 @@ class BackendCommandFetchTest {
         script += pingEnv()
         script += snapshotEnv(listOf(ProjectInfo("beta", "/p/beta")))
 
-        val rows = collectBackendSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)
+        val rows = collectMarkerSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)
         assertEquals(listOf(ProjectInfo("beta", "/p/beta")), rows.single().projects)
     }
 
@@ -167,7 +167,7 @@ class BackendCommandFetchTest {
         // is the renderer's job; the fetcher must preserve that signal.
         script += snapshotEnv(emptyList())
 
-        val row = collectBackendSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds).single()
+        val row = collectMarkerSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds).single()
         assertEquals(emptyList<ProjectInfo>(), row.projects, "must distinguish empty from null")
         assertNull(row.errorMessage)
     }
@@ -177,7 +177,7 @@ class BackendCommandFetchTest {
     @Test
     fun `sends Bearer auth header from marker token`() = runBlocking {
         script += snapshotEnv(emptyList())
-        collectBackendSnapshots(httpClient, listOf(ide(token = "secret-123")), perIdeTimeout = 5.seconds)
+        collectMarkerSnapshots(httpClient, listOf(ide(token = "secret-123")), perIdeTimeout = 5.seconds)
         assertTrue(receivedAuthHeaders.any { it == "Bearer secret-123" },
             "expected the fetcher to send the bearer token; saw: $receivedAuthHeaders")
     }
@@ -185,7 +185,7 @@ class BackendCommandFetchTest {
     @Test
     fun `sends no Authorization header when marker token is empty`() = runBlocking {
         script += snapshotEnv(emptyList())
-        collectBackendSnapshots(httpClient, listOf(ide(token = "")), perIdeTimeout = 5.seconds)
+        collectMarkerSnapshots(httpClient, listOf(ide(token = "")), perIdeTimeout = 5.seconds)
         assertTrue(receivedAuthHeaders.all { it == null },
             "expected NO Authorization header for empty token; saw: $receivedAuthHeaders")
     }
@@ -193,7 +193,7 @@ class BackendCommandFetchTest {
     @Test
     fun `identifies itself in NpxStreamClientInfo`() = runBlocking {
         script += snapshotEnv(emptyList())
-        collectBackendSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)
+        collectMarkerSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)
         // The 'backend' subcommand should announce itself so IDE-side logs
         // distinguish backend pulls from MCP-proxy stream subscribers.
         val info = receivedClientInfos.single()
@@ -211,7 +211,7 @@ class BackendCommandFetchTest {
         val deadPort = ServerSocket(0).use { it.localPort }
         val deadIde = ide(overrideUrl = "http://127.0.0.1:$deadPort/mcp")
 
-        val row = collectBackendSnapshots(httpClient, listOf(deadIde), perIdeTimeout = 5.seconds).single()
+        val row = collectMarkerSnapshots(httpClient, listOf(deadIde), perIdeTimeout = 5.seconds).single()
         assertNull(row.projects, "projects must be null when fetch fails; got: ${row.projects}")
         assertNotNull(row.errorMessage, "errorMessage must be populated when fetch fails")
     }
@@ -224,7 +224,7 @@ class BackendCommandFetchTest {
         script += pingEnv()
 
         val started = System.nanoTime()
-        val row = collectBackendSnapshots(httpClient, listOf(ide()), perIdeTimeout = 500.milliseconds).single()
+        val row = collectMarkerSnapshots(httpClient, listOf(ide()), perIdeTimeout = 500.milliseconds).single()
         val elapsedMs = (System.nanoTime() - started) / 1_000_000L
         assertNull(row.projects, "timeout must surface as null projects; got: ${row.projects}")
         assertTrue(row.errorMessage?.contains("timed out") == true,
@@ -242,7 +242,7 @@ class BackendCommandFetchTest {
         val second = ide().copy(pid = 2L)
         val third = ide().copy(pid = 3L)
 
-        val rows = collectBackendSnapshots(httpClient, listOf(first, second, third), perIdeTimeout = 5.seconds)
+        val rows = collectMarkerSnapshots(httpClient, listOf(first, second, third), perIdeTimeout = 5.seconds)
         assertEquals(listOf(1L, 2L, 3L), rows.map { it.ide.pid },
             "result list must keep input order so the renderer's output is stable")
     }
