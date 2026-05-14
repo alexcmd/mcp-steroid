@@ -68,19 +68,16 @@ internal sealed interface BackendRow {
         val errorMessage: String? = null,
     ) : BackendRow {
         override val displayName: String
-            get() = "${ide.marker.ide.name} ${ide.marker.ide.version}".trim()
-        override val locatorLabel: String get() = "pid ${ide.pid}"
+            get() = markerIdeDisplayName(ide)
+        override val locatorLabel: String get() = markerIdeLocatorLabel(ide)
     }
 
     data class FromPort(
         val ide: DiscoveredIdeByPort,
     ) : BackendRow {
         override val displayName: String
-            get() = ide.productFullName ?: ide.productName ?: "(unknown JetBrains IDE)"
-        override val locatorLabel: String get() = buildString {
-            ide.buildNumber?.let { append("build ").append(it).append(", ") }
-            append("port ").append(ide.port)
-        }
+            get() = portIdeDisplayName(ide)
+        override val locatorLabel: String get() = portIdeLocatorLabel(ide)
     }
 }
 
@@ -376,11 +373,7 @@ internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
 private fun rowToJson(row: BackendRow): JsonObject = when (row) {
     is BackendRow.FromMarker -> buildJsonObject {
         put("source", "marker")
-        put("name", row.ide.marker.ide.name)
-        put("version", row.ide.marker.ide.version)
-        put("build", row.ide.marker.ide.build)
-        put("pid", row.ide.pid)
-        put("mcpUrl", row.ide.mcpUrl)
+        putJsonFields(markerIdeIdentityJson(row.ide))
         // Projects shape mirrors the wire `ProjectInfo` — `name` + `path` per entry.
         // `null` (not absent) when fetch failed; `unreachable` carries the reason.
         if (row.projects != null) {
@@ -404,18 +397,10 @@ private fun rowToJson(row: BackendRow): JsonObject = when (row) {
         // a separate field. Surface the full name as `displayName` so scripts
         // have one composite string to render, and keep the raw fields below
         // so structured consumers can still slice on `buildNumber`, etc.
-        put("displayName", row.displayName)
-        put("port", row.ide.port)
-        put("baseUrl", row.ide.baseUrl)
-        row.ide.productName?.let { put("productName", it) }
-        row.ide.productFullName?.let { put("productFullName", it) }
-        row.ide.edition?.let { put("edition", it) }
-        row.ide.baselineVersion?.let { put("baselineVersion", it) }
-        row.ide.buildNumber?.let { put("buildNumber", it) }
+        putJsonFields(portIdeIdentityJson(row.ide))
         // Hard signal: no plugin ⇒ no project list. The CLI text renderer says
         // this in prose; the JSON form is explicit so scripts don't have to
         // guess from "no projects field".
-        put("pluginInstalled", false)
     }
 }
 
