@@ -8,31 +8,33 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 
-/** Pins the normalized graph emitted by `mcp-steroid-proxy project --json`. */
-class ProjectCommandJsonRenderTest {
+/** Pins the contract that `backend --json` and `project --json` are byte-for-byte identical. */
+class BackendAndProjectJsonAreIdenticalTest {
 
     private val parser = Json {
         ignoreUnknownKeys = true
         isLenient = true
     }
 
-    private fun render(listing: ProjectListing) = ByteArrayOutputStream().let { buf ->
+    private fun captureBackendJson(rows: List<BackendRow>): String = ByteArrayOutputStream().let { buf ->
+        renderBackendJson(rows, PrintStream(buf, true, Charsets.UTF_8))
+        buf.toString(Charsets.UTF_8)
+    }
+
+    private fun captureProjectJson(listing: ProjectListing): String = ByteArrayOutputStream().let { buf ->
         renderProjectJson(listing, PrintStream(buf, true, Charsets.UTF_8))
-        parser.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject
+        buf.toString(Charsets.UTF_8)
     }
 
     private fun markerIde(
@@ -57,7 +59,7 @@ class ProjectCommandJsonRenderTest {
     }
 
     private fun portIde(
-        port: Int = 63342,
+        port: Int,
         productFullName: String? = "IntelliJ IDEA Ultimate",
         productName: String? = "IDEA",
         buildNumber: String? = "IU-253.21581.142",
@@ -74,114 +76,50 @@ class ProjectCommandJsonRenderTest {
     )
 
     @Test
-    fun `output is valid JSON with tool ides projects and skipped at the top level`() {
-        val root = render(ProjectListing(emptyList(), emptyList()))
-        assertNotNull(root["tool"], "tool block must be present")
-        assertNotNull(root["ides"], "ides array must be present")
-        assertNotNull(root["projects"], "projects array must be present")
-        assertNotNull(root["skipped"], "skipped array must be present")
-        val tool = root["tool"]!!.jsonObject
-        assertEquals("devrig", tool["name"]?.jsonPrimitive?.contentOrNull)
-        assertNotNull(tool["version"]?.jsonPrimitive?.contentOrNull,
-            "tool.version must be non-null so scripts can correlate against changelog")
-        assertEquals(0, root["skipped"]!!.jsonArray.size,
-            "skipped must serialise as [] when nothing was skipped")
-    }
-
-    @Test
-    fun `ide ids are synthetic ide-N keys`() {
-        val root = render(
-            ProjectListing(
-                markerRows = listOf(
-                    BackendRow.FromMarker(markerIde(pid = 1L), emptyList()),
-                    BackendRow.FromMarker(markerIde(name = "PyCharm", pid = 2L), emptyList()),
-                ),
-                portRows = emptyList(),
-            )
+    fun `backend and project json renderers emit byte-for-byte identical documents`() {
+        val rows = listOf(
+            BackendRow.FromMarker(
+                ide = markerIde(name = "IntelliJ IDEA", pid = 1L, mcpUrl = "http://localhost:6315/mcp"),
+                projects = listOf(ProjectInfo("alpha", "/work/alpha"), ProjectInfo("bravo", "/work/bravo")),
+            ),
+            BackendRow.FromMarker(
+                ide = markerIde(name = "PyCharm", version = "2025.3.1", pid = 2L, build = "PC-253.99"),
+                projects = null,
+                errorMessage = "timed out after 8s",
+            ),
+            BackendRow.FromPort(portIde(port = 63342, productFullName = "IntelliJ IDEA Ultimate")),
+            BackendRow.FromPort(portIde(port = 63343, productFullName = "GoLand", productName = "GoLand", buildNumber = "GO-253.2")),
         )
-        val ids = root["ides"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.contentOrNull!! }
-        assertEquals(listOf("ide-0", "ide-1"), ids)
-        assertTrue(ids.all { Regex("^ide-\\d+$").matches(it) },
-            "every id must match ide-N; got: $ids")
-    }
+        val listing = projectListingFromRows(rows)
 
-    @Test
-    fun `every project ide reference resolves to an ides entry`() {
-        val root = render(
-            ProjectListing(
-                markerRows = listOf(
-                    BackendRow.FromMarker(markerIde(pid = 1L), listOf(ProjectInfo("a", "/a"))),
-                    BackendRow.FromMarker(markerIde(name = "PyCharm", pid = 2L), listOf(ProjectInfo("b", "/b"))),
-                ),
-                portRows = emptyList(),
-            )
-        )
-        val ids = root["ides"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.contentOrNull!! }.toSet()
-        val projectRefs = root["projects"]!!.jsonArray.map { it.jsonObject["ide"]!!.jsonPrimitive.contentOrNull!! }
-        assertEquals(listOf("ide-0", "ide-1"), projectRefs)
-        assertTrue(projectRefs.all { it in ids },
-            "every projects[].ide must resolve to ides[].id; ids=$ids refs=$projectRefs")
-    }
+        val backendJson = captureBackendJson(rows)
+        val projectJson = captureProjectJson(listing)
+        assertEquals(backendJson, projectJson, "backend --json and project --json must be byte-for-byte identical")
 
-    @Test
-    fun `reachable marker IDE uses backend marker field names inside ides`() {
-        val root = render(
-            ProjectListing(
-                markerRows = listOf(
-                    BackendRow.FromMarker(
-                        ide = markerIde(pid = 1234L, mcpUrl = "http://localhost:6315/mcp"),
-                        projects = listOf(ProjectInfo("my-app", "/Users/x/my-app")),
-                    )
-                ),
-                portRows = emptyList(),
-            )
-        )
-        val ide = root["ides"]!!.jsonArray.single().jsonObject
-        assertEquals("IntelliJ IDEA", ide["name"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("2025.3.3", ide["version"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("IU-253.21581.142", ide["build"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(1234L, ide["pid"]?.jsonPrimitive?.long)
-        assertEquals("http://localhost:6315/mcp", ide["mcpUrl"]?.jsonPrimitive?.contentOrNull)
-    }
+        val root = parser.parseToJsonElement(backendJson).jsonObject
+        assertEquals(setOf("tool", "backends", "projects"), root.keys)
+        val backends = root["backends"]!!.jsonArray
+        assertEquals(4, backends.size)
+        assertTrue(backends.all { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == BACKEND_TYPE_INTELLIJ },
+            "every current backend must carry type=intellij: $backends")
 
-    @Test
-    fun `unreachable marker IDE appears in skipped not projects and not ides`() {
-        val root = render(
-            ProjectListing(
-                markerRows = listOf(
-                    BackendRow.FromMarker(
-                        ide = markerIde(name = "WebStorm", pid = 7L),
-                        projects = null,
-                        errorMessage = "timed out after 8s",
-                    )
-                ),
-                portRows = emptyList(),
-            )
-        )
-        assertEquals(0, root["ides"]!!.jsonArray.size,
-            "unreachable marker IDE must not be in ides because projects cannot reference it")
-        assertEquals(0, root["projects"]!!.jsonArray.size,
-            "unreachable marker IDE must not produce project rows")
-        val skipped = root["skipped"]!!.jsonArray.single().jsonObject
-        assertEquals("unreachable: timed out after 8s", skipped["reason"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("WebStorm", skipped["name"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(7L, skipped["pid"]?.jsonPrimitive?.long)
-    }
+        val markerReachable = backends[0].jsonObject
+        assertEquals("marker", markerReachable["source"]!!.jsonPrimitive.content)
+        assertEquals(true, markerReachable["pluginInstalled"]!!.jsonPrimitive.boolean)
+        assertEquals(true, markerReachable["reachable"]!!.jsonPrimitive.boolean)
 
-    @Test
-    fun `port-discovered IDE appears in skipped with port set and ide absent`() {
-        val root = render(
-            ProjectListing(
-                markerRows = emptyList(),
-                portRows = listOf(BackendRow.FromPort(portIde(port = 63342))),
-            )
-        )
-        assertEquals(0, root["ides"]!!.jsonArray.size)
-        assertEquals(0, root["projects"]!!.jsonArray.size)
-        val skipped = root["skipped"]!!.jsonArray.single().jsonObject
-        assertEquals("port-discovered, no mcp-steroid plugin", skipped["reason"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(63342, skipped["port"]?.jsonPrimitive?.int)
-        assertEquals("IntelliJ IDEA Ultimate", skipped["displayName"]?.jsonPrimitive?.contentOrNull)
-        assertNull(skipped["ide"], "port-discovered skipped entries must not carry an ide id: $skipped")
+        val markerUnreachable = backends[1].jsonObject
+        assertEquals("marker", markerUnreachable["source"]!!.jsonPrimitive.content)
+        assertEquals(true, markerUnreachable["pluginInstalled"]!!.jsonPrimitive.boolean)
+        assertEquals(false, markerUnreachable["reachable"]!!.jsonPrimitive.boolean)
+        assertEquals("timed out after 8s", markerUnreachable["error"]!!.jsonPrimitive.content)
+
+        val portBackends = backends.drop(2).map { it.jsonObject }
+        assertTrue(portBackends.all { it["source"]!!.jsonPrimitive.content == "port" }, "last two rows are port rows: $backends")
+        assertTrue(portBackends.all { it["pluginInstalled"]!!.jsonPrimitive.boolean == false }, "port rows have no plugin: $backends")
+        assertTrue(portBackends.all { it["reachable"]!!.jsonPrimitive.boolean }, "port rows are reachable because the probe succeeded: $backends")
+
+        val projects = root["projects"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("backend-0", "backend-0"), projects.map { it["backend"]!!.jsonPrimitive.content })
     }
 }
