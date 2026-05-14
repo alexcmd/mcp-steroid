@@ -57,6 +57,19 @@ internal sealed interface CliMode {
         ) : Backend
     }
 
+    /**
+     * `project` subcommand — print every open project across discovered IDEs
+     * that have the mcp-steroid plugin installed. One-shot snapshot, no
+     * streaming.
+     *
+     * Output format mirrors [Backend]: omitted `--json` ⇒ [Text], present
+     * `--json` ⇒ [Json].
+     */
+    sealed interface Project : CliMode {
+        data object Text : Project
+        data object Json : Project
+    }
+
     /** Unknown arg(s). Print usage on stderr and exit non-zero. */
     data class Unknown(val args: List<String>) : CliMode
 }
@@ -66,10 +79,10 @@ internal sealed interface CliMode {
  * stdout redirection or any class init.
  *
  * Precedence (highest first): `--mcp` → `--help` / `-h` / empty → `--version`
- * / `-v` → `backend` → Unknown. The "info" modes (help, version)
- * intentionally win over `backend` so `backend --help` prints help instead of
- * opening connections, and `--mcp` wins over everything so a wrapper that
- * accidentally combines flags still keeps MCP framing intact.
+ * / `-v` → `backend` → `project` → Unknown. The "info" modes (help, version)
+ * intentionally win over data subcommands so `backend --help` prints help
+ * instead of opening connections, and `--mcp` wins over everything so a wrapper
+ * that accidentally combines flags still keeps MCP framing intact.
  *
  * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
  * [parseDebugFlag]) and is filtered out here so e.g. `--debug` alone routes
@@ -91,6 +104,9 @@ internal fun parseCliMode(args: Array<String>): CliMode {
     if (modeArgs.any { it == "--version" || it == "-v" }) return CliMode.Version
     if (modeArgs.any { it == "backend" }) {
         return if (args.any { it == "--json" }) CliMode.Backend.Json else CliMode.Backend.Text
+    }
+    if (modeArgs.any { it == "project" }) {
+        return if (args.any { it == "--json" }) CliMode.Project.Json else CliMode.Project.Text
     }
     return CliMode.Unknown(modeArgs.toList())
 }
@@ -181,8 +197,8 @@ internal fun applyDebugLogging(debug: Boolean) {
 }
 
 /**
- * Runs the non-MCP CLI surface (help / version / backend / unknown). Returns
- * the process exit code the caller should propagate.
+ * Runs the non-MCP CLI surface (help / version / backend / project / unknown).
+ * Returns the process exit code the caller should propagate.
  *
  * `System.out` here is the real stdout because the MCP redirect only fires
  * on the `--mcp` branch — that's the whole point of the early split in
@@ -212,6 +228,10 @@ internal fun runCli(
         }
         0
     }
+    is CliMode.Project -> {
+        runProjectCommand(System.out, json = mode is CliMode.Project.Json)
+        0
+    }
     is CliMode.Unknown -> {
         System.err.println("Unknown argument(s): ${mode.args.joinToString(" ")}")
         printHelp(System.err)
@@ -231,6 +251,9 @@ private fun printHelp(out: PrintStream) {
                                                      projects each one has open. `--json` emits a
                                                      single machine-readable object on stdout
                                                      (pipe through `jq`); default is human text.
+          mcp-steroid-proxy project [--json]         list open projects across discovered IDEs.
+                                                     `--json` emits a single machine-readable
+                                                     object on stdout; default is human text.
           mcp-steroid-proxy backend download <id>    download and install a managed backend under
                                                      the devrig home. Accepts <product>,
                                                      <product>:<version>, or <product>-<version>.
@@ -250,8 +273,8 @@ private fun printHelp(out: PrintStream) {
                                                      — without it, only WARN+ are shown.
 
         The MCP mode is intentionally opt-in: the launcher behaves like a regular CLI by
-        default so it can be inspected (`--help`, `--version`, `backend`) without consuming
-        stdin or committing stdout to the JSON-RPC framing convention.
+        default so it can be inspected (`--help`, `--version`, `backend`, `project`) without
+        consuming stdin or committing stdout to the JSON-RPC framing convention.
         """.trimIndent() + "\n"
     )
 }

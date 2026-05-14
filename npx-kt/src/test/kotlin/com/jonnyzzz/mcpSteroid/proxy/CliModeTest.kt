@@ -60,6 +60,21 @@ class CliModeTest {
     }
 
     @Test
+    fun `bare project subcommand routes to Project Text`() {
+        assertEquals(CliMode.Project.Text, parseCliMode(arrayOf("project")))
+    }
+
+    @Test
+    fun `project --json routes to Project Json`() {
+        assertEquals(CliMode.Project.Json, parseCliMode(arrayOf("project", "--json")))
+    }
+
+    @Test
+    fun `--json project routes to Project Json`() {
+        assertEquals(CliMode.Project.Json, parseCliMode(arrayOf("--json", "project")))
+    }
+
+    @Test
     fun `backend lifecycle subcommands route to concrete backend modes`() {
         assertEquals(
             CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false),
@@ -88,7 +103,7 @@ class CliModeTest {
 
     @Test
     fun `--json without backend is ignored at the mode level`() {
-        // `--json` only modifies the backend subcommand; on any other mode it's
+        // `--json` only modifies data subcommands; on any other mode it's
         // filtered out by the parser, just like `--debug`. So `--json` alone
         // routes to Help (same as no args).
         assertEquals(CliMode.Help, parseCliMode(arrayOf("--json")))
@@ -156,11 +171,21 @@ class CliModeTest {
     }
 
     @Test
+    fun `--mcp wins over project subcommand`() {
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "project", "--json")))
+    }
+
+    @Test
     fun `--help wins over backend subcommand`() {
         // `mcp-steroid-proxy backend --help` should print help, NOT open connections
         // to discovered IDEs. Help asks "what does this do?" and the answer is text.
         assertEquals(CliMode.Help, parseCliMode(arrayOf("backend", "--help")))
         assertEquals(CliMode.Help, parseCliMode(arrayOf("-h", "backend")))
+    }
+
+    @Test
+    fun `--help wins over project subcommand`() {
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("project", "--help")))
     }
 
     @Test
@@ -306,6 +331,7 @@ class CliModeTest {
         assertSame(CliMode.Help, parseCliMode(arrayOf("--help")))
         assertSame(CliMode.Version, parseCliMode(arrayOf("--version")))
         assertSame(CliMode.Backend.Text, parseCliMode(arrayOf("backend")))
+        assertSame(CliMode.Project.Text, parseCliMode(arrayOf("project")))
     }
 
     // ----------------------------- runCli contract ------------------------
