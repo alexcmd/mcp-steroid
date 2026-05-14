@@ -20,6 +20,12 @@ internal sealed interface CliMode {
     /** `--version` or `-v` — print the proxy version on stdout and exit 0. */
     object Version : CliMode
 
+    /**
+     * `backend` subcommand — print the set of discovered IDEs (version + open
+     * projects) on stdout and exit 0. One-shot snapshot, no streaming.
+     */
+    object Backend : CliMode
+
     /** Unknown arg(s). Print usage on stderr and exit non-zero. */
     data class Unknown(val args: List<String>) : CliMode
 }
@@ -27,11 +33,18 @@ internal sealed interface CliMode {
 /**
  * Pure arg parser. Touches nothing but its input — safe to call before
  * stdout redirection or any class init.
+ *
+ * Precedence (highest first): `--mcp` → `--help` / `-h` / empty → `--version`
+ * / `-v` → `backend` → Unknown. The "info" modes (help, version) intentionally
+ * win over `backend` so `backend --help` prints help instead of opening
+ * connections, and `--mcp` wins over everything so a wrapper that accidentally
+ * combines flags still keeps MCP framing intact.
  */
 internal fun parseCliMode(args: Array<String>): CliMode {
     if (args.any { it == "--mcp" }) return CliMode.Mcp
     if (args.isEmpty() || args.any { it == "--help" || it == "-h" }) return CliMode.Help
     if (args.any { it == "--version" || it == "-v" }) return CliMode.Version
+    if (args.any { it == "backend" }) return CliMode.Backend
     return CliMode.Unknown(args.toList())
 }
 
@@ -54,6 +67,10 @@ internal fun runCli(mode: CliMode): Int = when (mode) {
         System.out.println(loadProxyVersion())
         0
     }
+    CliMode.Backend -> {
+        runBackendCommand(System.out)
+        0
+    }
     is CliMode.Unknown -> {
         System.err.println("Unknown argument(s): ${mode.args.joinToString(" ")}")
         printHelp(System.err)
@@ -69,12 +86,14 @@ private fun printHelp(out: PrintStream) {
         Usage:
           mcp-steroid-proxy --mcp           run as an MCP stdio server
                                             (stdin / stdout reserved for the MCP transport)
+          mcp-steroid-proxy backend         list discovered IDEs (with versions) and
+                                            the projects each one has open
           mcp-steroid-proxy --version | -v  print the proxy version and exit
           mcp-steroid-proxy --help    | -h  print this help and exit
 
         The MCP mode is intentionally opt-in: the launcher behaves like a regular CLI by
-        default so it can be inspected (`--help`, `--version`) without consuming stdin or
-        committing stdout to the JSON-RPC framing convention.
+        default so it can be inspected (`--help`, `--version`, `backend`) without consuming
+        stdin or committing stdout to the JSON-RPC framing convention.
         """.trimIndent() + "\n"
     )
 }
