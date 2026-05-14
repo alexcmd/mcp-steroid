@@ -81,7 +81,7 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
     for ((index, entry) in projectEntries.withIndex()) {
         val paddedName = entry.project.name.padEnd(padWidth)
         out.println("  [${index + 1}] $paddedName  →  ${entry.project.path}")
-        out.println("        ${formatMarkerIdeIdentity(entry.row.ide)}")
+        out.println("        ${formatMarkerBackendIdentity(entry.row.ide)}")
         if (index < projectEntries.lastIndex) out.println()
     }
 
@@ -125,7 +125,7 @@ internal fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
             for (row in reachableRows) {
                 add(buildJsonObject {
                     put("id", rowIds.getValue(row))
-                    putJsonFields(markerIdeIdentityJson(row.ide))
+                    putJsonFields(markerBackendIdentityJson(row.ide))
                 })
             }
         })
@@ -141,13 +141,13 @@ internal fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
             for (row in listing.markerRows.filter { it.projects == null }) {
                 add(buildJsonObject {
                     put("reason", "unreachable: ${row.errorMessage ?: "unreachable"}")
-                    putJsonFields(markerIdeIdentityJson(row.ide))
+                    putJsonFields(markerBackendIdentityJson(row.ide))
                 })
             }
             for (row in listing.portRows) {
                 add(buildJsonObject {
                     put("reason", "port-discovered, no mcp-steroid plugin")
-                    putJsonFields(portIdeIdentityJson(row.ide))
+                    putJsonFields(portBackendIdentityJson(row.ide))
                 })
             }
         })
@@ -180,7 +180,7 @@ private fun renderSkippedProjectFooter(
     if (unreachableRows.isNotEmpty()) {
         out.println("Skipped ${unreachableRows.size} IDE(s) that did not return a project snapshot:")
         for (row in unreachableRows) {
-            out.println("  - ${formatMarkerIdeIdentity(row.ide)}: unreachable: ${row.errorMessage ?: "unreachable"}")
+            out.println("  - ${formatMarkerBackendIdentity(row.ide)}: unreachable: ${row.errorMessage ?: "unreachable"}")
         }
         if (portRows.isNotEmpty()) out.println()
     }
@@ -188,7 +188,7 @@ private fun renderSkippedProjectFooter(
     if (portRows.isNotEmpty()) {
         out.println("Skipped ${portRows.size} IDE(s) with no mcp-steroid plugin:")
         for (row in portRows) {
-            out.println("  - ${formatPortIdeIdentity(row.ide)}")
+            out.println("  - ${formatPortBackendIdentity(row.ide)}")
         }
     }
 }

@@ -70,8 +70,8 @@ internal sealed interface BackendRow {
         override val managed: Boolean = false,
     ) : BackendRow {
         override val displayName: String
-            get() = markerIdeDisplayName(ide)
-        override val locatorLabel: String get() = markerIdeLocatorLabel(ide) + if (managed) ", managed" else ""
+            get() = markerBackendDisplayName(ide)
+        override val locatorLabel: String get() = markerBackendLocatorLabel(ide) + if (managed) ", managed" else ""
     }
 
     data class FromPort(
@@ -79,8 +79,8 @@ internal sealed interface BackendRow {
         override val managed: Boolean = false,
     ) : BackendRow {
         override val displayName: String
-            get() = portIdeDisplayName(ide)
-        override val locatorLabel: String get() = portIdeLocatorLabel(ide) + if (managed) ", managed" else ""
+            get() = portBackendDisplayName(ide)
+        override val locatorLabel: String get() = portBackendLocatorLabel(ide) + if (managed) ", managed" else ""
     }
 
     data class FromManaged(
@@ -482,7 +482,7 @@ private fun rowToJson(row: BackendRow): JsonObject = when (row) {
     is BackendRow.FromMarker -> buildJsonObject {
         put("source", "marker")
         put("managed", row.managed)
-        putJsonFields(markerIdeIdentityJson(row.ide))
+        putJsonFields(markerBackendIdentityJson(row.ide))
         // Projects shape mirrors the wire `ProjectInfo` — `name` + `path` per entry.
         // `null` (not absent) when fetch failed; `unreachable` carries the reason.
         if (row.projects != null) {
@@ -507,7 +507,7 @@ private fun rowToJson(row: BackendRow): JsonObject = when (row) {
         // a separate field. Surface the full name as `displayName` so scripts
         // have one composite string to render, and keep the raw fields below
         // so structured consumers can still slice on `buildNumber`, etc.
-        putJsonFields(portIdeIdentityJson(row.ide))
+        putJsonFields(portBackendIdentityJson(row.ide))
         // Hard signal: no plugin ⇒ no project list. The CLI text renderer says
         // this in prose; the JSON form is explicit so scripts don't have to
         // guess from "no projects field".
