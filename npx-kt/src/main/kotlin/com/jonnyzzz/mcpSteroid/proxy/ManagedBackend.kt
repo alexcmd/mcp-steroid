@@ -9,6 +9,7 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndDownload
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.unpackIdeArchive
+import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeStartupConfigFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -262,6 +263,7 @@ internal class BackendManager(
         val cacheDir = homePaths.cacheDir(resolved.id)
         val logDir = cacheDir.resolve("logs")
         listOf("config", "system", "logs", "plugins").forEach { Files.createDirectories(cacheDir.resolve(it)) }
+        writeIdeStartupConfigFiles(cacheDir.resolve("config"))
 
         val stdoutLog = logDir.resolve("devrig-launcher.out.log").toFile()
         val stderrLog = logDir.resolve("devrig-launcher.err.log").toFile()

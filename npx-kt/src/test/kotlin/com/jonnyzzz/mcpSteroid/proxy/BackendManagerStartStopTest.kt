@@ -62,6 +62,35 @@ class BackendManagerStartStopTest {
         assertEquals("not running", stopped.outcome)
     }
 
+    @Test
+    fun `start seeds first-run startup config before launching IDE`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = gracefulLauncher())
+        val manager = BackendManager(homePaths, downloader = StaticDownloader)
+
+        val started = manager.start(parseBackendId("idea-community-2025.3.3"))
+        try {
+            val configDir = homePaths.cacheDir("idea-community-2025.3.3").resolve("config")
+            assertTrue(
+                Files.readString(configDir.resolve("options/other.xml"))
+                    .contains("experimental.ui.onboarding.proposed.version"),
+            )
+            assertEquals(
+                "switched.from.classic.to.islands\nfalse\n",
+                Files.readString(configDir.resolve("early-access-registry.txt")),
+            )
+            assertTrue(
+                Files.readString(configDir.resolve("options/AIOnboardingPromoWindowAdvisor.xml"))
+                    .contains("""<option name="wasShown" value="true" />"""),
+            )
+        } finally {
+            manager.stop(parseBackendId("idea-community-2025.3.3"))
+        }
+        assertFalse(ProcessHandle.of(started.pid).map { it.isAlive }.orElse(false))
+    }
+
     private fun installStubBackend(homePaths: HomePaths, launcherBody: String) {
         val id = "idea-community-2025.3.3"
         val backendDir = homePaths.backendDir(id)
