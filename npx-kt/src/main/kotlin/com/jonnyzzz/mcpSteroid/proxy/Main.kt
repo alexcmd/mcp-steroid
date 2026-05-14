@@ -21,6 +21,8 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.system.exitProcess
 
@@ -31,11 +33,14 @@ import kotlin.system.exitProcess
  * the original argv so [mainImpl] (and any future MCP-side feature flag) can read it
  * without re-parsing.
  */
-data class MainContext(
+internal data class MainContext(
     val args: List<String>,
     val mcpStdin: InputStream,
     val mcpStdout: PrintStream,
+    val homePaths: HomePaths,
 )
+
+private val LOG_SESSION_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss")
 
 fun main(args: Array<String>) {
     // FIRST ACTION OF THE PROCESS — no logger, no class init that prints, nothing.
@@ -50,6 +55,10 @@ fun main(args: Array<String>) {
     //
     // `parseCliMode` is intentionally pure and does not touch System.out.
     val mode = parseCliMode(args)
+    val homePaths = resolveHomePaths(parseHomeOverride(args))
+    homePaths.mkdirsAll()
+    System.setProperty("proxy.log.dir", homePaths.logsDir.toString())
+    System.setProperty("proxy.log.session", LocalDateTime.now().format(LOG_SESSION_FORMAT))
     // `--debug` is orthogonal to the mode and must be honoured even in MCP
     // mode. Apply BEFORE any class load that might trigger logback init —
     // logback reads the `proxy.log.level` system property on first use and
@@ -57,7 +66,7 @@ fun main(args: Array<String>) {
     applyDebugLogging(parseDebugFlag(args))
 
     if (mode !is CliMode.Mcp) {
-        runCliAndExit(mode)
+        exitProcess(runCli(mode, homePaths))
     }
 
     val mcpStdin: InputStream = System.`in`
@@ -70,6 +79,7 @@ fun main(args: Array<String>) {
             args = args.toList(),
             mcpStdin = mcpStdin,
             mcpStdout = mcpStdout,
+            homePaths = homePaths,
         ).mainImpl()
     } catch (t: Throwable) {
         System.err.println("Unexpected error ${t.message}")
@@ -78,7 +88,7 @@ fun main(args: Array<String>) {
     }
 }
 
-fun MainContext.mainImpl() {
+internal fun MainContext.mainImpl() {
     // Construct every dependent service explicitly here — the npx-kt module
     // does not use any DI framework, so main.kt is the wiring root.
     val proxyVersion = loadProxyVersion()

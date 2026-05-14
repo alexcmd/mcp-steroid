@@ -72,6 +72,22 @@ class CliModeTest {
     }
 
     @Test
+    fun `--home value is ignored at the mode level`() {
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("--home", "/tmp/devrig-home")))
+        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("--home", "/tmp/devrig-home", "backend")))
+        assertEquals(CliMode.Backend.Json, parseCliMode(arrayOf("backend", "--home", "/tmp/devrig-home", "--json")))
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--home", "/tmp/devrig-home", "--mcp")))
+    }
+
+    @Test
+    fun `parseHomeOverride returns the value immediately after --home`() {
+        assertEquals("/tmp/devrig-home", parseHomeOverride(arrayOf("--home", "/tmp/devrig-home")))
+        assertEquals("relative", parseHomeOverride(arrayOf("backend", "--home", "relative", "--json")))
+        assertEquals(null, parseHomeOverride(emptyArray()))
+        assertEquals(null, parseHomeOverride(arrayOf("--home")))
+    }
+
+    @Test
     fun `--json with --help still routes to Help (help wins over backend)`() {
         // Subtle: `backend --json --help` could be interpreted as "JSON help".
         // We deliberately keep Help text-only for now — pin that decision so

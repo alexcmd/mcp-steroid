@@ -62,9 +62,12 @@ internal sealed interface CliMode {
  */
 internal fun parseCliMode(args: Array<String>): CliMode {
     // `--debug` is a logging-verbosity toggle; `--json` is a backend-only output
-    // format selector. Both are orthogonal to mode selection and filtered out
-    // here so e.g. `--debug` alone routes to Help, not Unknown.
-    val modeArgs = args.filterNot { it == "--debug" || it == "--json" }.toTypedArray()
+    // format selector. `--home <path>` is a storage-root override. All three
+    // are orthogonal to mode selection and filtered out here so e.g. `--debug`
+    // alone routes to Help, not Unknown.
+    val modeArgs = args.withoutGlobalValueFlag("--home")
+        .filterNot { it == "--debug" || it == "--json" }
+        .toTypedArray()
     if (modeArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (modeArgs.isEmpty() || modeArgs.any { it == "--help" || it == "-h" }) return CliMode.Help
     if (modeArgs.any { it == "--version" || it == "-v" }) return CliMode.Version
@@ -80,6 +83,29 @@ internal fun parseCliMode(args: Array<String>): CliMode {
  * `--mcp` where it still goes to stderr (stdout stays reserved for NDJSON).
  */
 internal fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
+
+internal fun parseHomeOverride(args: Array<String>): String? {
+    val idx = args.indexOf("--home")
+    if (idx < 0 || idx == args.lastIndex) return null
+    return args[idx + 1]
+}
+
+private fun Array<String>.withoutGlobalValueFlag(flag: String): List<String> {
+    val result = mutableListOf<String>()
+    var skipNext = false
+    for (arg in this) {
+        if (skipNext) {
+            skipNext = false
+            continue
+        }
+        if (arg == flag) {
+            skipNext = true
+            continue
+        }
+        result += arg
+    }
+    return result
+}
 
 /**
  * Wire the `--debug` flag into the bundled logback configuration. Reads the
@@ -110,7 +136,10 @@ internal fun applyDebugLogging(debug: Boolean) {
  * [main]. Help and version go to stdout (standard CLI convention); the
  * error variant goes to stderr.
  */
-internal fun runCli(mode: CliMode): Int = when (mode) {
+internal fun runCli(
+    mode: CliMode,
+    homePaths: HomePaths = resolveHomePaths(override = null),
+): Int = when (mode) {
     CliMode.Mcp -> error("runCli called with CliMode.Mcp — caller should branch to mainImpl instead")
     CliMode.Help -> {
         printHelp(System.out)
@@ -121,7 +150,7 @@ internal fun runCli(mode: CliMode): Int = when (mode) {
         0
     }
     is CliMode.Backend -> {
-        runBackendCommand(System.out, json = mode is CliMode.Backend.Json)
+        runBackendCommand(System.out, json = mode is CliMode.Backend.Json, homePaths = homePaths)
         0
     }
     is CliMode.Unknown -> {
@@ -147,6 +176,9 @@ private fun printHelp(out: PrintStream) {
           mcp-steroid-proxy --help    | -h           print this help and exit
 
         Options applicable to every mode:
+          --home <path>                              store devrig logs, managed backends, caches,
+                                                     and state under <path> instead of
+                                                     ${'$'}MCP_STEROID_HOME / ~/.mcp-steroid
           --debug                                    enable verbose stderr logging (DEBUG)
                                                      — without it, only WARN+ are shown.
 

@@ -99,7 +99,11 @@ internal sealed interface BackendRow {
  *  the human-readable banner+list. The JSON is pretty-printed so a human can
  *  still read it without `jq`; `jq` accepts both forms equally.
  */
-internal fun runBackendCommand(out: PrintStream, json: Boolean = false) {
+internal fun runBackendCommand(
+    out: PrintStream,
+    json: Boolean = false,
+    homePaths: HomePaths = resolveHomePaths(override = null),
+) {
     val homeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     val discovery = IdeDiscoveryService(homeDir = homeDir, allowHosts = allowHosts)
