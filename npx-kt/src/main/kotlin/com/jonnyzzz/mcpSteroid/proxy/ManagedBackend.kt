@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.io.path.exists
@@ -93,6 +94,28 @@ internal interface ManagedBackendDownloader {
     ): String?
 }
 
+internal interface BundledPluginResolver {
+    fun resolveBundledPluginDir(): Path
+}
+
+internal class ClasspathBundledPluginResolver(
+    private val anchorClass: Class<*> = BackendManager::class.java,
+) : BundledPluginResolver {
+    override fun resolveBundledPluginDir(): Path {
+        val location = anchorClass.protectionDomain?.codeSource?.location
+            ?: error("Cannot locate bundled ij-plugin/: ${anchorClass.name} has no code source")
+        val jarPath = Path.of(location.toURI()).toAbsolutePath().normalize()
+        val installRoot = jarPath.parent?.parent
+            ?: error("Cannot locate installDist root from proxy jar location: $jarPath")
+        val pluginDir = installRoot.resolve("ij-plugin").toAbsolutePath().normalize()
+        require(Files.isDirectory(pluginDir)) {
+            "Bundled ij-plugin/ directory is missing: $pluginDir. " +
+                "Build and launch devrig from :npx-kt:installDist so extractIjPluginZip runs."
+        }
+        return pluginDir
+    }
+}
+
 internal class DefaultManagedBackendDownloader(
     private val archiveDownloadDir: Path,
     private val os: HostOs = resolveHostOs(),
@@ -138,6 +161,7 @@ internal class BackendManager(
         archiveDownloadDir = homePaths.cachesDir.resolve("_archives"),
     ),
     private val launcherResolver: LauncherResolver = LauncherResolver(),
+    private val bundledPluginResolver: BundledPluginResolver = ClasspathBundledPluginResolver(),
     private val stopGracePeriodMillis: Long = 5_000L,
 ) {
     suspend fun download(id: BackendId, acceptPaid: Boolean = false): DownloadResult {
@@ -170,7 +194,17 @@ internal class BackendManager(
             sourceArchiveSha256 = archiveSha,
         )
         writeDescriptor(descriptorPath, descriptor)
+        deployMcpSteroidPlugin(resolved.id)
         return DownloadResult(resolved.id, descriptor, backendDir, vmOptionsPath)
+    }
+
+    fun deployMcpSteroidPlugin(id: String): Path {
+        val source = bundledPluginResolver.resolveBundledPluginDir()
+        require(Files.isDirectory(source)) { "Bundled ij-plugin/ directory is missing: $source" }
+        val target = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        deleteRecursively(target)
+        copyDirectory(source, target)
+        return target
     }
 
     suspend fun start(id: BackendId): StartResult {
@@ -377,6 +411,30 @@ private fun waitForExit(handle: ProcessHandle, timeoutMillis: Long): Boolean {
         Thread.sleep(200L)
     }
     return !handle.isAlive
+}
+
+private fun copyDirectory(source: Path, target: Path) {
+    Files.walk(source).use { stream ->
+        stream.asSequence().forEach { path ->
+            val relative = source.relativize(path)
+            val destination = target.resolve(relative)
+            if (Files.isDirectory(path)) {
+                Files.createDirectories(destination)
+            } else {
+                Files.createDirectories(destination.parent)
+                Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+            }
+        }
+    }
+}
+
+private fun deleteRecursively(path: Path) {
+    if (!path.exists()) return
+    Files.walk(path).use { stream ->
+        stream.asSequence()
+            .sortedWith(compareByDescending { it.nameCount })
+            .forEach { Files.deleteIfExists(it) }
+    }
 }
 
 private fun nullDevice(): File {
