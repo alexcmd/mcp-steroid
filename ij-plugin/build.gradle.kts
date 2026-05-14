@@ -91,6 +91,11 @@ dependencies {
     // classes will migrate across from :ij-plugin in the steps 6-13 refactor series).
     implementation(project(":mcp-steroid-server"))
 
+    // IDE-free file-storage core for ExecutionStorage. The IntelliJ-side
+    // IjExecutionStorage service wraps the generic class with project-scoped
+    // path + identity providers.
+    implementation(project(":execution-storage"))
+
     // Prompt base classes + generated prompt code
     implementation(project(":prompts"))
 
@@ -411,6 +416,7 @@ val verifyBundledLibraries by tasks.registering {
             "lib/ij-plugin-$pluginVersion.jar",
             "lib/kotlin-cli-$pluginVersion.jar",
             "lib/ocr-common-$pluginVersion.jar",
+            "lib/execution-storage-$pluginVersion.jar",
             "lib/mcp-core-$pluginVersion.jar",
             "lib/mcp-http-$pluginVersion.jar",
             "lib/mcp-steroid-server-$pluginVersion.jar",

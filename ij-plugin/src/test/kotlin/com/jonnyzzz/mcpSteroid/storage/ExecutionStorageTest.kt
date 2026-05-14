@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.storage
 
-import com.intellij.openapi.components.service
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
@@ -26,7 +25,7 @@ class ExecutionStorageTest : BasePlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
-        storage = project.service()
+        storage = project.executionStorage
     }
 
     fun testWriteNewExecution(): Unit = timeoutRunBlocking(10.seconds) {
