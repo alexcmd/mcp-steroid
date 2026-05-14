@@ -195,7 +195,7 @@ open class ExecutionStorage(
     suspend fun writeToolCall(toolName: String, arguments: JsonObject, taskId: String? = null): ExecutionId {
         val executionId = newExecutionId(taskId ?: "tool-$toolName")
         writeToolMetadata(executionId, toolName, arguments, taskId)
-        writeCodeExecutionData(executionId, "params.json", arguments ?: buildJsonObject { })
+        writeCodeExecutionData(executionId, "params.json", arguments)
         writeCodeExecutionData(executionId, "execution-id.txt", executionId.executionId)
         writeProjectInfo(executionId)
         return executionId
@@ -236,9 +236,10 @@ open class ExecutionStorage(
 
     suspend fun removeCodeReviewFile(executionId: ExecutionId) {
         withContext(Dispatchers.IO) {
-            runCatching {
-                executionId.dir.resolve("review.kts").deleteIfExists()
-            }
+            // deleteIfExists() returns false for a missing file (no throw),
+            // so the only failures left — permission errors and the like —
+            // are real I/O problems the caller should hear about.
+            executionId.dir.resolve("review.kts").deleteIfExists()
         }
     }
 
