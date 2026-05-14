@@ -174,6 +174,10 @@ class BackendCommandJsonRenderTest {
         val ide = render(rows)["ides"]!!.jsonArray.single().jsonObject
 
         assertEquals("port", ide["source"]?.jsonPrimitive?.contentOrNull)
+        // displayName is the productFullName (which carries the marketing version
+        // baked in by /api/about). Scripts that want one composite string for
+        // display use this; structured consumers slice on the raw fields below.
+        assertEquals("IntelliJ IDEA Ultimate", ide["displayName"]?.jsonPrimitive?.contentOrNull)
         assertEquals(63342, ide["port"]?.jsonPrimitive?.int)
         assertEquals("http://127.0.0.1:63342", ide["baseUrl"]?.jsonPrimitive?.contentOrNull)
         assertEquals("IDEA", ide["productName"]?.jsonPrimitive?.contentOrNull)

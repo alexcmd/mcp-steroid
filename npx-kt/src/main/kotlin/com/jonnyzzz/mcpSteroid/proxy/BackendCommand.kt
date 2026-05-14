@@ -46,9 +46,20 @@ import kotlin.time.Duration.Companion.seconds
  *    sees the full picture.
  */
 internal sealed interface BackendRow {
-    val name: String
-    val version: String
-    /** Short locator shown after the IDE header, e.g. "pid 1234" or "port 63342". */
+    /**
+     * Full IDE identifier for the text header — includes the marketing version
+     * already. Examples:
+     *  - Marker: `"IntelliJ IDEA 2025.3.3"` (name + version concatenated)
+     *  - Port:   `"IntelliJ IDEA 2026.1.1"` (productFullName already has the
+     *            version baked in by `/api/about`)
+     */
+    val displayName: String
+
+    /**
+     * Short locator shown after [displayName] in parens. Carries the most
+     * useful "how do I reach this IDE" hint per source — `pid` for markers,
+     * `build` + `port` for port-discovered.
+     */
     val locatorLabel: String
 
     data class FromMarker(
@@ -56,19 +67,20 @@ internal sealed interface BackendRow {
         val projects: List<ProjectInfo>?,
         val errorMessage: String? = null,
     ) : BackendRow {
-        override val name: String get() = ide.marker.ide.name
-        override val version: String get() = ide.marker.ide.version
+        override val displayName: String
+            get() = "${ide.marker.ide.name} ${ide.marker.ide.version}".trim()
         override val locatorLabel: String get() = "pid ${ide.pid}"
     }
 
     data class FromPort(
         val ide: DiscoveredIdeByPort,
     ) : BackendRow {
-        override val name: String
+        override val displayName: String
             get() = ide.productFullName ?: ide.productName ?: "(unknown JetBrains IDE)"
-        override val version: String
-            get() = ide.buildNumber ?: ide.baselineVersion?.toString() ?: "(unknown)"
-        override val locatorLabel: String get() = "port ${ide.port}"
+        override val locatorLabel: String get() = buildString {
+            ide.buildNumber?.let { append("build ").append(it).append(", ") }
+            append("port ").append(ide.port)
+        }
     }
 }
 
@@ -158,14 +170,34 @@ internal fun mergeRows(
     markerRows: List<BackendRow.FromMarker>,
     portIdes: Set<DiscoveredIdeByPort>,
 ): List<BackendRow> {
-    val markerBuilds: Set<String> = markerRows.mapNotNull { it.ide.marker.ide.build }.toSet()
+    // PidMarker writes `IdeInfo.build = "IU-261.23567.138"` (with the product
+    // code prefix), while `/api/about` returns `"261.23567.138"` (without).
+    // Normalise both ends to the same shape before comparing — otherwise the
+    // same running IDE is never deduplicated.
+    val markerBuilds: Set<String> = markerRows
+        .mapNotNull { normaliseBuildForDedup(it.ide.marker.ide.build) }
+        .toSet()
     val deduplicatedPortRows = portIdes
         .asSequence()
-        .filter { it.buildNumber == null || it.buildNumber !in markerBuilds }
+        .filter { ide ->
+            val key = normaliseBuildForDedup(ide.buildNumber)
+            key == null || key !in markerBuilds
+        }
         .sortedBy { it.port }
         .map { BackendRow.FromPort(it) }
         .toList()
     return markerRows + deduplicatedPortRows
+}
+
+/**
+ * Strip a leading product-code prefix (letters + hyphen, e.g. `IU-`, `PC-`,
+ * `GO-`) so marker builds (`IU-261.23567.138`) compare equal to `/api/about`
+ * builds (`261.23567.138`). Returns `null` for null/blank input so callers
+ * can use it as a Map key without further filtering.
+ */
+private fun normaliseBuildForDedup(build: String?): String? {
+    if (build.isNullOrBlank()) return null
+    return build.replaceFirst(Regex("^[A-Z]+-"), "")
 }
 
 /**
@@ -291,7 +323,7 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     out.println("Discovered ${rows.size} $noun:")
     out.println()
     for ((index, row) in rows.withIndex()) {
-        out.println("  [${index + 1}] ${row.name} ${row.version} (${row.locatorLabel})")
+        out.println("  [${index + 1}] ${row.displayName} (${row.locatorLabel})")
         when (row) {
             is BackendRow.FromMarker -> renderMarkerProjects(row, out)
             is BackendRow.FromPort -> out.println(
@@ -363,12 +395,14 @@ private fun rowToJson(row: BackendRow): JsonObject = when (row) {
     }
     is BackendRow.FromPort -> buildJsonObject {
         put("source", "port")
-        put("name", row.name)
-        put("version", row.version)
+        // `/api/about` reports the marketing version mashed into the product
+        // name (e.g. "IntelliJ IDEA 2026.1.1") and the bare build number as
+        // a separate field. Surface the full name as `displayName` so scripts
+        // have one composite string to render, and keep the raw fields below
+        // so structured consumers can still slice on `buildNumber`, etc.
+        put("displayName", row.displayName)
         put("port", row.ide.port)
         put("baseUrl", row.ide.baseUrl)
-        // Keep the raw /api/about fields too — operators sometimes need the full
-        // shape (e.g. to distinguish EAP / RC builds via `buildNumber`).
         row.ide.productName?.let { put("productName", it) }
         row.ide.productFullName?.let { put("productFullName", it) }
         row.ide.edition?.let { put("edition", it) }

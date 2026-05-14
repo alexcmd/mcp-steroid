@@ -230,7 +230,11 @@ class BackendCommandRenderTest {
         // built-in HTTP server reachable, but no `.mcp-steroid` marker.
         val rows = listOf(BackendRow.FromPort(portIde(port = 63342)))
         val text = render(rows)
-        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate IU-253.21581.142 (port 63342)"),
+        // Port-discovered IDEs surface productFullName as the display header
+        // (it already carries the marketing version from /api/about). The build
+        // number lives in the locator parens so the line doesn't double up on
+        // version-like tokens.
+        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342)"),
             "expected the full IDE header line; got:\n$text")
         assertTrue(text.contains("mcp-steroid plugin not installed"),
             "must explain why projects are unavailable; got:\n$text")
@@ -244,10 +248,15 @@ class BackendCommandRenderTest {
     }
 
     @Test
-    fun `port-discovered IDE falls back to baselineVersion when buildNumber is null`() {
-        val rows = listOf(BackendRow.FromPort(portIde(buildNumber = null, baselineVersion = 253)))
+    fun `port-discovered IDE drops build segment from the locator when buildNumber is null`() {
+        // When the IDE doesn't expose a build number (some older builds), the
+        // locator should NOT print an empty `build , port N`. Just port.
+        val rows = listOf(BackendRow.FromPort(portIde(buildNumber = null)))
         val text = render(rows)
-        assertTrue(text.contains(" 253 "), "expected baseline fallback; got:\n$text")
+        assertTrue(text.contains("(port 63342)"),
+            "no buildNumber → locator should be `port N` only; got:\n$text")
+        assertTrue(!text.contains("build ,"),
+            "must not produce 'build , port …' when buildNumber is null; got:\n$text")
     }
 
     @Test
@@ -311,6 +320,24 @@ class BackendCommandRenderTest {
         assertEquals(1, merged.size, "duplicate IDE should collapse to one row; got: $merged")
         assertTrue(merged.single() is BackendRow.FromMarker,
             "should keep the marker row (it has projects); got: ${merged.single()}")
+    }
+
+    @Test
+    fun `mergeRows drops a port IDE whose unprefixed build matches a prefixed marker build`() {
+        // The real-world case: marker carries `IU-261.23567.138`, /api/about
+        // returns `261.23567.138` (no product-code prefix). Both refer to the
+        // same running IDE; dedup must collapse them.
+        val markerRows = listOf(
+            BackendRow.FromMarker(
+                ide = markerIde("IntelliJ IDEA", "2026.1.1", 1L, build = "IU-261.23567.138"),
+                projects = emptyList(),
+            )
+        )
+        val portIdes = setOf(portIde(port = 63342, buildNumber = "261.23567.138"))
+
+        val merged = mergeRows(markerRows, portIdes)
+        assertEquals(1, merged.size, "prefix-normalised builds must match; got: $merged")
+        assertTrue(merged.single() is BackendRow.FromMarker)
     }
 
     @Test
