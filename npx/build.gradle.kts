@@ -1,6 +1,7 @@
 import com.github.gradle.node.npm.task.NpmTask
 import org.gradle.api.attributes.Usage
 import org.gradle.api.tasks.bundling.Zip
+import java.util.SortedSet
 
 plugins {
     base
@@ -112,6 +113,63 @@ tasks.named("assemble") {
     dependsOn(npxPackageZip)
 }
 
+// Locks down what `npxPackageZip` ships so a stray `from(...)` block in this build script
+// or a renamed dist artefact can't silently change what `npx mcp-steroid` installs.
+// Modelled on :ij-plugin's `verifyBundledLibraries`. Update `expectedFiles` when the
+// change is intentional.
+val verifyPackageFiles = tasks.register("verifyPackageFiles") {
+    group = "verification"
+    description = "List and verify files bundled in the npx package zip"
+    dependsOn(npxPackageZip)
+    doLast {
+        val zip = npxPackageZip.get().outputs.files.singleFile
+
+        val allFiles: SortedSet<String> = run {
+            val collected = mutableListOf<String>()
+            zipTree(zip).visit {
+                if (!isDirectory) {
+                    val path = relativePath.pathString
+                    collected += if (permissions.user.execute) "$path:X" else path
+                }
+            }
+            collected
+        }.toSortedSet()
+
+        val expectedFiles = sortedSetOf(
+            "LICENSE",
+            "package.json",
+            "package-lock.json",
+            "dist/index.js",
+        ).toSortedSet()
+
+        if (allFiles != expectedFiles) {
+            val missing = expectedFiles - allFiles
+            val unexpected = allFiles - expectedFiles
+            throw GradleException(buildString {
+                appendLine("Bundled files mismatch in :npx package zip!")
+                if (missing.isNotEmpty()) {
+                    appendLine("Missing entries:")
+                    missing.forEach { appendLine("  - $it") }
+                }
+                if (unexpected.isNotEmpty()) {
+                    appendLine("Unexpected entries:")
+                    unexpected.forEach { appendLine("  - $it") }
+                }
+                appendLine()
+                appendLine("Actual entries:")
+                allFiles.forEach { appendLine("  - $it") }
+                appendLine()
+                appendLine("Update `expectedFiles` in npx/build.gradle.kts if this change is intentional.")
+            })
+        }
+    }
+}
+
+npxPackageZip.configure {
+    finalizedBy(verifyPackageFiles)
+}
+
 tasks.named("check") {
     dependsOn(npmTest)
+    dependsOn(verifyPackageFiles)
 }
