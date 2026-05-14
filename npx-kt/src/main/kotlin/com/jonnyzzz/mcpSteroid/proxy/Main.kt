@@ -19,7 +19,15 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import java.io.InputStream
+import java.io.PrintStream
 import java.util.UUID
+import kotlin.system.exitProcess
+
+data class MainContext(
+    val mcpStdin: InputStream,
+    val mcpStdout: PrintStream,
+)
 
 fun main(@Suppress("unused_parameter") args: Array<String>) {
     // STDOUT IS RESERVED FOR MCP NDJSON FRAMES.
@@ -34,10 +42,24 @@ fun main(@Suppress("unused_parameter") args: Array<String>) {
     // Order matters: this redirect runs BEFORE any class touches a logger or
     // System.out — that's why it lives ahead of the runBlocking entry. The
     // stdout-cleanliness integration test pins this invariant.
-    val mcpStdin = System.`in`
-    val mcpStdout = System.out
+    val mcpStdin: InputStream = System.`in`
+    val mcpStdout: PrintStream = System.out
+
     System.setOut(System.err)
 
+    try {
+        MainContext(
+            mcpStdin = mcpStdin,
+            mcpStdout = mcpStdout,
+        ).mainImpl(args)
+    } catch (t: Throwable) {
+        System.err.println("Unexpected error ${t.message}")
+        t.printStackTrace(System.err)
+        exitProcess(64)
+    }
+}
+
+fun MainContext.mainImpl(@Suppress("unused_parameter") args: Array<String>) {
     // Construct every dependent service explicitly here — the npx-kt module
     // does not use any DI framework, so main.kt is the wiring root.
     val proxyVersion = loadProxyVersion()
@@ -205,9 +227,11 @@ private suspend fun emitUpgradeNotice(registry: ServerRegistry, config: ProxyCon
             upgradeNoticeShown = true
             System.err.write("$notice\n".toByteArray(Charsets.UTF_8))
             System.err.flush()
-            beacon.capture(BeaconEvents.UPGRADE_RECOMMENDED, mapOf(
-                "current_version" to extractBaseVersion(config.version ?: "")
-            ))
+            beacon.capture(
+                BeaconEvents.UPGRADE_RECOMMENDED, mapOf(
+                    "current_version" to extractBaseVersion(config.version ?: "")
+                )
+            )
         }
     } finally {
         upgradeCheckInFlight = false
