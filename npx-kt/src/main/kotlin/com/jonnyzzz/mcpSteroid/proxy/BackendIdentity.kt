@@ -7,8 +7,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.slf4j.LoggerFactory
+import java.net.URI
 
 internal const val BACKEND_TYPE_INTELLIJ = "intellij"
+
+private val backendIdentityLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.BackendIdentity")
 
 internal fun markerBackendDisplayName(ide: DiscoveredIde): String =
     "${ide.marker.ide.name} ${ide.marker.ide.version}".trim()
@@ -47,6 +51,38 @@ internal fun backendLocatorLabel(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> markerBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
     is BackendRow.FromPort -> portBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
     is BackendRow.FromManaged -> row.locatorLabel
+}
+
+internal fun backendPorts(row: BackendRow): List<BackendPort> = when (row) {
+    is BackendRow.FromMarker -> listOf(
+        BackendPort(
+            type = PORT_TYPE_MCP_STEROID,
+            port = portFromMcpUrl(row.ide.mcpUrl),
+            url = row.ide.mcpUrl,
+            token = row.ide.marker.token.takeIf { it.isNotEmpty() },
+        ),
+    )
+    is BackendRow.FromPort -> listOf(
+        BackendPort(
+            type = PORT_TYPE_BUILTIN_HTTP,
+            port = row.ide.port,
+            url = row.ide.baseUrl,
+        ),
+    )
+    is BackendRow.FromManaged -> emptyList()
+}
+
+private fun portFromMcpUrl(mcpUrl: String): Int = try {
+    val port = URI(mcpUrl).port
+    if (port == -1) {
+        backendIdentityLog.warn("Failed to parse MCP URL port from {}", mcpUrl)
+        0
+    } else {
+        port
+    }
+} catch (e: Exception) {
+    backendIdentityLog.warn("Failed to parse MCP URL port from {}", mcpUrl, e)
+    0
 }
 
 internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
