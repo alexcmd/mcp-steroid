@@ -61,23 +61,38 @@ internal sealed interface BackendRow {
      * `build` + `port` for port-discovered.
      */
     val locatorLabel: String
+    val managed: Boolean
 
     data class FromMarker(
         val ide: DiscoveredIde,
         val projects: List<ProjectInfo>?,
         val errorMessage: String? = null,
+        override val managed: Boolean = false,
     ) : BackendRow {
         override val displayName: String
             get() = markerIdeDisplayName(ide)
-        override val locatorLabel: String get() = markerIdeLocatorLabel(ide)
+        override val locatorLabel: String get() = markerIdeLocatorLabel(ide) + if (managed) ", managed" else ""
     }
 
     data class FromPort(
         val ide: DiscoveredIdeByPort,
+        override val managed: Boolean = false,
     ) : BackendRow {
         override val displayName: String
             get() = portIdeDisplayName(ide)
-        override val locatorLabel: String get() = portIdeLocatorLabel(ide)
+        override val locatorLabel: String get() = portIdeLocatorLabel(ide) + if (managed) ", managed" else ""
+    }
+
+    data class FromManaged(
+        val info: ManagedBackendInfo,
+    ) : BackendRow {
+        override val displayName: String get() = "${info.productKey} ${info.version}"
+        override val locatorLabel: String get() = when (info.state) {
+            ManagedBackendState.INSTALLED -> "managed, installed"
+            ManagedBackendState.RUNNING -> "managed, running pid ${info.runningPid}"
+            ManagedBackendState.UNREACHABLE -> "managed, unreachable"
+        }
+        override val managed: Boolean get() = true
     }
 }
 
@@ -101,6 +116,17 @@ internal fun runBackendCommand(
     json: Boolean = false,
     homePaths: HomePaths = resolveHomePaths(override = null),
 ) {
+    val rows = collectBackendRows(homePaths)
+    if (json) {
+        renderBackendJson(rows, out)
+    } else {
+        renderBackendOutput(rows, out)
+    }
+}
+
+internal fun collectBackendRows(
+    homePaths: HomePaths = resolveHomePaths(override = null),
+): List<BackendRow> {
     val homeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     val discovery = IdeDiscoveryService(homeDir = homeDir, allowHosts = allowHosts)
@@ -122,7 +148,7 @@ internal fun runBackendCommand(
         val ides = discovery.ides.value
             .sortedWith(compareBy({ it.marker.ide.name }, { it.pid }))
 
-        val rows = runBlocking(Dispatchers.IO) {
+        return runBlocking(Dispatchers.IO) {
             // Run marker-fetch and port-scan concurrently — both hit localhost
             // and they're independent, so there's no reason to serialise.
             val markerRowsAsync = async {
@@ -133,17 +159,55 @@ internal fun runBackendCommand(
             }
             val markerRows = markerRowsAsync.await()
             val portIdes = portIdesAsync.await()
-            mergeRows(markerRows, portIdes)
-        }
-        if (json) {
-            renderBackendJson(rows, out)
-        } else {
-            renderBackendOutput(rows, out)
+            val managedBackends = BackendManager(homePaths).list()
+            mergeRows(markerRows, portIdes, managedBackends)
         }
     } finally {
         portDiscovery.close()
         httpClient.close()
     }
+}
+
+internal fun runBackendDownloadCommand(
+    out: PrintStream,
+    homePaths: HomePaths,
+    mode: CliMode.Backend.Download,
+) {
+    val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    val result = runBlocking(Dispatchers.IO) {
+        BackendManager(homePaths).download(backendId, acceptPaid = mode.acceptPaid)
+    }
+    out.println("id: ${result.id}")
+    out.println("install: ${result.backendDir}")
+    out.println("launcher: ${result.backendDir.resolve(result.descriptor.bundleDirName).resolve(result.descriptor.launcherPath)}")
+    out.println("vmoptions: ${result.vmOptionsPath}")
+}
+
+internal fun runBackendStartCommand(
+    out: PrintStream,
+    homePaths: HomePaths,
+    mode: CliMode.Backend.Start,
+) {
+    val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    val result = runBlocking(Dispatchers.IO) {
+        BackendManager(homePaths).start(backendId)
+    }
+    out.println("pid: ${result.pid}")
+    out.println("log: ${result.ideaLogPath}")
+    out.println("config: ${result.configPath}")
+}
+
+internal fun runBackendStopCommand(
+    out: PrintStream,
+    homePaths: HomePaths,
+    mode: CliMode.Backend.Stop,
+) {
+    val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    val result = runBlocking(Dispatchers.IO) {
+        BackendManager(homePaths).stop(backendId)
+    }
+    val pidSuffix = result.pid?.let { " pid $it" }.orEmpty()
+    out.println("${result.outcome}: ${result.id}$pidSuffix")
 }
 
 /**
@@ -170,6 +234,7 @@ internal suspend fun collectPortDiscoveredIdes(
 internal fun mergeRows(
     markerRows: List<BackendRow.FromMarker>,
     portIdes: Set<DiscoveredIdeByPort>,
+    managedBackends: List<ManagedBackendInfo> = emptyList(),
 ): List<BackendRow> {
     // PidMarker writes `IdeInfo.build = "IU-261.23567.138"` (with the product
     // code prefix), while `/api/about` returns `"261.23567.138"` (without).
@@ -178,6 +243,11 @@ internal fun mergeRows(
     val markerBuilds: Set<String> = markerRows
         .mapNotNull { normaliseBuildForDedup(it.ide.marker.ide.build) }
         .toSet()
+    val markerManagedIds = markerRows.associateWith { row -> matchingManagedIds(row, managedBackends) }
+    val annotatedMarkerRows = markerRows.map { row ->
+        row.copy(managed = markerManagedIds.getValue(row).isNotEmpty())
+    }
+    val portManagedIds = mutableMapOf<DiscoveredIdeByPort, Set<String>>()
     val deduplicatedPortRows = portIdes
         .asSequence()
         .filter { ide ->
@@ -185,9 +255,17 @@ internal fun mergeRows(
             key == null || key !in markerBuilds
         }
         .sortedBy { it.port }
-        .map { BackendRow.FromPort(it) }
+        .map { ide ->
+            val ids = matchingManagedIds(ide, managedBackends)
+            portManagedIds[ide] = ids
+            BackendRow.FromPort(ide, managed = ids.isNotEmpty())
+        }
         .toList()
-    return markerRows + deduplicatedPortRows
+    val surfacedManagedIds = markerManagedIds.values.flatten().toSet() + portManagedIds.values.flatten().toSet()
+    val managedRows = managedBackends
+        .filter { it.id !in surfacedManagedIds }
+        .map { BackendRow.FromManaged(it) }
+    return annotatedMarkerRows + deduplicatedPortRows + managedRows
 }
 
 /**
@@ -199,6 +277,35 @@ internal fun mergeRows(
 private fun normaliseBuildForDedup(build: String?): String? {
     if (build.isNullOrBlank()) return null
     return build.replaceFirst(Regex("^[A-Z]+-"), "")
+}
+
+private fun matchingManagedIds(
+    row: BackendRow.FromMarker,
+    managedBackends: List<ManagedBackendInfo>,
+): Set<String> {
+    val rowBuild = normaliseBuildForDedup(row.ide.marker.ide.build)
+    return managedBackends
+        .filter { it.state == ManagedBackendState.RUNNING }
+        .filter { managed ->
+            managed.runningPid == row.ide.pid ||
+                (rowBuild != null && rowBuild == normaliseBuildForDedup(managed.buildNumber))
+        }
+        .map { it.id }
+        .toSet()
+}
+
+private fun matchingManagedIds(
+    ide: DiscoveredIdeByPort,
+    managedBackends: List<ManagedBackendInfo>,
+): Set<String> {
+    val portBuild = normaliseBuildForDedup(ide.buildNumber)
+    return managedBackends
+        .filter { it.state == ManagedBackendState.RUNNING }
+        .filter { managed ->
+            portBuild != null && portBuild == normaliseBuildForDedup(managed.buildNumber)
+        }
+        .map { it.id }
+        .toSet()
 }
 
 /**
@@ -316,7 +423,7 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
     out.println()
     if (rows.isEmpty()) {
-        out.println("No IDEs detected.")
+        out.println(NO_IDES_DETECTED_MESSAGE)
         out.println()
         return
     }
@@ -330,6 +437,7 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
             is BackendRow.FromPort -> out.println(
                 "        (mcp-steroid plugin not installed — project list unavailable)"
             )
+            is BackendRow.FromManaged -> renderManagedBackend(row.info, out)
         }
         if (index < rows.lastIndex) out.println()
     }
@@ -373,6 +481,7 @@ internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
 private fun rowToJson(row: BackendRow): JsonObject = when (row) {
     is BackendRow.FromMarker -> buildJsonObject {
         put("source", "marker")
+        put("managed", row.managed)
         putJsonFields(markerIdeIdentityJson(row.ide))
         // Projects shape mirrors the wire `ProjectInfo` — `name` + `path` per entry.
         // `null` (not absent) when fetch failed; `unreachable` carries the reason.
@@ -392,6 +501,7 @@ private fun rowToJson(row: BackendRow): JsonObject = when (row) {
     }
     is BackendRow.FromPort -> buildJsonObject {
         put("source", "port")
+        put("managed", row.managed)
         // `/api/about` reports the marketing version mashed into the product
         // name (e.g. "IntelliJ IDEA 2026.1.1") and the bare build number as
         // a separate field. Surface the full name as `displayName` so scripts
@@ -401,6 +511,20 @@ private fun rowToJson(row: BackendRow): JsonObject = when (row) {
         // Hard signal: no plugin ⇒ no project list. The CLI text renderer says
         // this in prose; the JSON form is explicit so scripts don't have to
         // guess from "no projects field".
+    }
+    is BackendRow.FromManaged -> buildJsonObject {
+        val info = row.info
+        put("source", "managed")
+        put("managed", true)
+        put("id", info.id)
+        put("productKey", info.productKey)
+        put("productCode", info.productCode)
+        put("version", info.version)
+        info.buildNumber?.let { put("buildNumber", it) }
+        put("state", info.state.name.lowercase())
+        put("installPath", info.installPath.toString())
+        put("cachePath", info.cachePath.toString())
+        info.runningPid?.let { put("runningPid", it) } ?: putJsonNull("runningPid")
     }
 }
 
@@ -429,4 +553,10 @@ private fun renderMarkerProjects(row: BackendRow.FromMarker, out: PrintStream) {
             }
         }
     }
+}
+
+private fun renderManagedBackend(info: ManagedBackendInfo, out: PrintStream) {
+    out.println("        state: ${info.state.name.lowercase()}${info.runningPid?.let { " (pid $it)" }.orEmpty()}")
+    out.println("        install: ${info.installPath}")
+    out.println("        cache: ${info.cachePath}")
 }

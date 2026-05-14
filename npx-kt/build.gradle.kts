@@ -48,6 +48,10 @@ dependencies {
     // works against both backends without conditional logic.
     implementation(project(":execution-storage"))
 
+    // Managed backends reuse the existing IntelliJ downloader/unpacker instead
+    // of carrying a second product-feed / archive-extraction implementation.
+    implementation(project(":intellij-downloader"))
+
     // Bundles :ij-plugin's buildPlugin archive into the distZip under ij-plugin/.
     // Resolved through the `ijPluginZip` configuration above.
     ijPluginZip(project(":ij-plugin"))
@@ -373,6 +377,7 @@ val verifyBundledLibraries by tasks.registering {
             // Internal jars (this project + sibling subprojects).
             "lib/npx-kt-$proxyVersion.jar",
             "lib/execution-storage-$proxyVersion.jar",
+            "lib/intellij-downloader-$proxyVersion.jar",
             "lib/mcp-core-$proxyVersion.jar",
             "lib/mcp-steroid-server-$proxyVersion.jar",
             "lib/mcp-stdio-$proxyVersion.jar",
@@ -419,6 +424,11 @@ val verifyBundledLibraries by tasks.registering {
 
             // Other transitives.
             "lib/annotations-23.0.0.jar",
+            "lib/commons-codec-1.17.1.jar",
+            "lib/commons-compress-1.27.1.jar",
+            "lib/commons-io-2.16.1.jar",
+            "lib/commons-lang3-3.16.0.jar",
+            "lib/xz-1.10.jar",
         ).toSortedSet()
 
         if (allFiles != expectedFiles) {

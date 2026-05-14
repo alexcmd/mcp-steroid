@@ -60,6 +60,33 @@ class CliModeTest {
     }
 
     @Test
+    fun `backend lifecycle subcommands route to concrete backend modes`() {
+        assertEquals(
+            CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false),
+            parseCliMode(arrayOf("backend", "download", "idea-community")),
+        )
+        assertEquals(
+            CliMode.Backend.Download("idea", versionOverride = "2025.3.3", acceptPaid = true),
+            parseCliMode(arrayOf("backend", "download", "idea", "--version", "2025.3.3", "--allow-paid")),
+        )
+        assertEquals(
+            CliMode.Backend.Start("idea-community", versionOverride = "2025.3.3"),
+            parseCliMode(arrayOf("backend", "start", "idea-community", "--version", "2025.3.3")),
+        )
+        assertEquals(
+            CliMode.Backend.Stop("idea-community-2025.3.3", versionOverride = null),
+            parseCliMode(arrayOf("backend", "stop", "idea-community-2025.3.3")),
+        )
+    }
+
+    @Test
+    fun `backend lifecycle subcommands without id are Unknown`() {
+        assertTrue(parseCliMode(arrayOf("backend", "download")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("backend", "start", "--version", "2025.3.3")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("backend", "stop")) is CliMode.Unknown)
+    }
+
+    @Test
     fun `--json without backend is ignored at the mode level`() {
         // `--json` only modifies the backend subcommand; on any other mode it's
         // filtered out by the parser, just like `--debug`. So `--json` alone
@@ -148,6 +175,11 @@ class CliModeTest {
         // breaking compatibility.
         assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("backend", "extra")))
         assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("extra", "backend")))
+    }
+
+    @Test
+    fun `backend wins over project when both subcommands are present`() {
+        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("backend", "project")))
     }
 
     @Test

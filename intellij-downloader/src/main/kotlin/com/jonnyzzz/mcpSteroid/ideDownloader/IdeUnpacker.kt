@@ -201,8 +201,9 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
         println("[IDE-DOWNLOAD] Copying $sourceDir -> $unpackDir")
         // Use `cp -R` (or ditto) so symlinks / extended attributes survive — Java's
         // Files.copy doesn't preserve xattrs which matters for code-signed .app bundles.
+        val copySource = if (sourceDir.name.endsWith(".app")) sourceDir.absolutePath else "${sourceDir.absolutePath}/."
         runOrThrow(
-            listOf("/bin/cp", "-R", "${sourceDir.absolutePath}/.", unpackDir.absolutePath),
+            listOf("/bin/cp", "-R", copySource, unpackDir.absolutePath),
             timeoutMinutes = 10,
         )
         println("[IDE-DOWNLOAD] Unpacked DMG into $unpackDir")

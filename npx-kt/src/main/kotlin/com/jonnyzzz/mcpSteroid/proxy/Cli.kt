@@ -11,6 +11,8 @@ internal const val BRAND_NAME: String = "devrig"
 internal const val BRAND_TAGLINE: String =
     "the AI-empowered development environment for your project."
 
+internal const val NO_IDES_DETECTED_MESSAGE: String = "No IDEs detected."
+
 /**
  * What the user asked the launcher to do. Resolved by [parseCliMode] BEFORE any
  * other code runs — the MCP path must redirect `System.out` to stderr before
@@ -40,6 +42,19 @@ internal sealed interface CliMode {
     sealed interface Backend : CliMode {
         data object Text : Backend
         data object Json : Backend
+        data class Download(
+            val id: String,
+            val versionOverride: String?,
+            val acceptPaid: Boolean,
+        ) : Backend
+        data class Start(
+            val id: String,
+            val versionOverride: String?,
+        ) : Backend
+        data class Stop(
+            val id: String,
+            val versionOverride: String?,
+        ) : Backend
     }
 
     /** Unknown arg(s). Print usage on stderr and exit non-zero. */
@@ -51,10 +66,10 @@ internal sealed interface CliMode {
  * stdout redirection or any class init.
  *
  * Precedence (highest first): `--mcp` → `--help` / `-h` / empty → `--version`
- * / `-v` → `backend` → Unknown. The "info" modes (help, version) intentionally
- * win over `backend` so `backend --help` prints help instead of opening
- * connections, and `--mcp` wins over everything so a wrapper that accidentally
- * combines flags still keeps MCP framing intact.
+ * / `-v` → `backend` → Unknown. The "info" modes (help, version)
+ * intentionally win over `backend` so `backend --help` prints help instead of
+ * opening connections, and `--mcp` wins over everything so a wrapper that
+ * accidentally combines flags still keeps MCP framing intact.
  *
  * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
  * [parseDebugFlag]) and is filtered out here so e.g. `--debug` alone routes
@@ -70,6 +85,9 @@ internal fun parseCliMode(args: Array<String>): CliMode {
         .toTypedArray()
     if (modeArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (modeArgs.isEmpty() || modeArgs.any { it == "--help" || it == "-h" }) return CliMode.Help
+    if (modeArgs.any { it == "backend" }) {
+        parseBackendLifecycleMode(modeArgs)?.let { return it }
+    }
     if (modeArgs.any { it == "--version" || it == "-v" }) return CliMode.Version
     if (modeArgs.any { it == "backend" }) {
         return if (args.any { it == "--json" }) CliMode.Backend.Json else CliMode.Backend.Text
@@ -105,6 +123,41 @@ private fun Array<String>.withoutGlobalValueFlag(flag: String): List<String> {
         result += arg
     }
     return result
+}
+
+private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
+    val backendIndex = args.indexOf("backend")
+    if (backendIndex < 0 || backendIndex == args.lastIndex) return null
+    val subcommand = args.getOrNull(backendIndex + 1) ?: return null
+    if (subcommand !in setOf("download", "start", "stop")) return null
+    val id = args.getOrNull(backendIndex + 2)
+        ?: return CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+    if (id.startsWith("--")) {
+        return CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+    }
+    val versionOverride = valueAfter(args, "--version")
+    return when (subcommand) {
+        "download" -> CliMode.Backend.Download(
+            id = id,
+            versionOverride = versionOverride,
+            acceptPaid = args.any { it == "--allow-paid" },
+        )
+        "start" -> CliMode.Backend.Start(
+            id = id,
+            versionOverride = versionOverride,
+        )
+        "stop" -> CliMode.Backend.Stop(
+            id = id,
+            versionOverride = versionOverride,
+        )
+        else -> null
+    }
+}
+
+private fun valueAfter(args: Array<String>, flag: String): String? {
+    val idx = args.indexOf(flag)
+    if (idx < 0 || idx == args.lastIndex) return null
+    return args[idx + 1]
 }
 
 /**
@@ -150,7 +203,13 @@ internal fun runCli(
         0
     }
     is CliMode.Backend -> {
-        runBackendCommand(System.out, json = mode is CliMode.Backend.Json, homePaths = homePaths)
+        when (mode) {
+            CliMode.Backend.Text -> runBackendCommand(System.out, json = false, homePaths = homePaths)
+            CliMode.Backend.Json -> runBackendCommand(System.out, json = true, homePaths = homePaths)
+            is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
+            is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
+            is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
+        }
         0
     }
     is CliMode.Unknown -> {
@@ -172,6 +231,14 @@ private fun printHelp(out: PrintStream) {
                                                      projects each one has open. `--json` emits a
                                                      single machine-readable object on stdout
                                                      (pipe through `jq`); default is human text.
+          mcp-steroid-proxy backend download <id>    download and install a managed backend under
+                                                     the devrig home. Accepts <product>,
+                                                     <product>:<version>, or <product>-<version>.
+                                                     Use --version <v> to override the positional
+                                                     version and --allow-paid for paid SKUs.
+          mcp-steroid-proxy backend start <id>       start an installed managed backend in detached
+                                                     mode and print its pid/log/config paths.
+          mcp-steroid-proxy backend stop <id>        stop a managed backend by pid file.
           mcp-steroid-proxy --version | -v           print the proxy version and exit
           mcp-steroid-proxy --help    | -h           print this help and exit
 

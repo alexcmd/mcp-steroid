@@ -11,6 +11,15 @@ import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
+data class IdeArchiveResolution(
+    val product: IdeProduct,
+    val channel: IdeChannel,
+    val version: String,
+    val build: String,
+    val url: String,
+    val downloadKey: String,
+)
+
 /**
  * Returns the JetBrains products-API download key for the given OS / architecture combo.
  *
@@ -75,9 +84,20 @@ fun resolveArchiveUrl(
     architecture: HostArchitecture = resolveHostArchitecture(),
     preferWindowsZip: Boolean = true,
 ): String {
+    return resolveArchive(product, channel, os, architecture, preferWindowsZip).url
+}
+
+fun resolveArchive(
+    product: IdeProduct,
+    channel: IdeChannel,
+    os: HostOs = resolveHostOs(),
+    architecture: HostArchitecture = resolveHostArchitecture(),
+    preferWindowsZip: Boolean = true,
+    version: String? = null,
+): IdeArchiveResolution {
     // Android Studio is a Google product and lives on a different feed.
     if (product === IdeProduct.AndroidStudio) {
-        return resolveAndroidStudioArchiveUrl(channel, os, architecture, preferWindowsZip)
+        return resolveAndroidStudioArchive(channel, os, architecture, preferWindowsZip, version)
     }
 
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
@@ -96,32 +116,35 @@ fun resolveArchiveUrl(
 
     val releases = (matchingProduct["releases"] as? JsonArray) ?: JsonArray(emptyList())
     val candidates = downloadKeyCandidates(os, architecture, preferWindowsZip)
+    val wantedVersion = version?.takeIf { it.isNotBlank() }
 
-    for (downloadKey in candidates) {
-        val release = releases
-            .filterIsInstance<JsonObject>()
-            .firstOrNull { candidate ->
-                val type = (candidate["type"] as? JsonPrimitive)?.content
-                val version = (candidate["version"] as? JsonPrimitive)?.content
-                val build = (candidate["build"] as? JsonPrimitive)?.content
-                val downloads = candidate["downloads"] as? JsonObject
-                val link = (downloads?.get(downloadKey) as? JsonObject)?.get("link")?.let { (it as? JsonPrimitive)?.content }
-
-                type.equals(channel.apiValue, ignoreCase = true) &&
-                        !version.isNullOrBlank() &&
-                        !build.isNullOrBlank() &&
-                        !link.isNullOrBlank()
-            }
-            ?: continue
+    for (release in releases.filterIsInstance<JsonObject>()) {
+        val type = (release["type"] as? JsonPrimitive)?.content
+        val releaseVersion = (release["version"] as? JsonPrimitive)?.content
+        val build = (release["build"] as? JsonPrimitive)?.content
+        if (!type.equals(channel.apiValue, ignoreCase = true)) continue
+        if (releaseVersion.isNullOrBlank() || build.isNullOrBlank()) continue
+        if (wantedVersion != null && wantedVersion != releaseVersion && wantedVersion != build) continue
 
         val downloads = release["downloads"] as? JsonObject ?: continue
-        val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
-        val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
-        return link
+        for (downloadKey in candidates) {
+            val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
+            val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
+            if (link.isBlank()) continue
+            return IdeArchiveResolution(
+                product = product,
+                channel = channel,
+                version = releaseVersion,
+                build = build,
+                url = link,
+                downloadKey = downloadKey,
+            )
+        }
     }
 
+    val versionMessage = if (wantedVersion == null) "latest" else "version '$wantedVersion'"
     error(
-        "Unable to resolve latest '${channel.apiValue}' release for product '${product.code}' " +
+        "Unable to resolve $versionMessage '${channel.apiValue}' release for product '${product.code}' " +
             "(tried download keys ${candidates.joinToString()}) from $url"
     )
 }

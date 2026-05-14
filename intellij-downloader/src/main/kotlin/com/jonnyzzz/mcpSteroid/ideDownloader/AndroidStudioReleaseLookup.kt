@@ -33,6 +33,16 @@ fun resolveAndroidStudioArchiveUrl(
     architecture: HostArchitecture,
     preferWindowsZip: Boolean,
 ): String {
+    return resolveAndroidStudioArchive(channel, os, architecture, preferWindowsZip, version = null).url
+}
+
+fun resolveAndroidStudioArchive(
+    channel: IdeChannel,
+    os: HostOs,
+    architecture: HostArchitecture,
+    preferWindowsZip: Boolean,
+    version: String?,
+): IdeArchiveResolution {
     require(channel == IdeChannel.STABLE) {
         "Android Studio: only IdeChannel.STABLE is supported by this downloader; got $channel. " +
             "Canary / Beta live on a separate Google page and aren't wired up yet."
@@ -76,11 +86,38 @@ fun resolveAndroidStudioArchiveUrl(
 
     for (suffix in wantedSuffixes) {
         val match = allUrls.firstOrNull { it.endsWith(suffix) }
-        if (match != null) return match
+        if (match != null) {
+            val resolvedVersion = inferAndroidStudioVersion(match)
+            if (!version.isNullOrBlank() && version != resolvedVersion) {
+                error(
+                    "Android Studio $version is not the current stable archive on $pageUrl " +
+                        "(current stable is $resolvedVersion). Version-pinned Android Studio downloads " +
+                        "are not supported by this downloader yet."
+                )
+            }
+            return IdeArchiveResolution(
+                product = IdeProduct.AndroidStudio,
+                channel = channel,
+                version = resolvedVersion,
+                build = resolvedVersion,
+                url = match,
+                downloadKey = suffix.removePrefix("-").removeSuffix(".tar.gz").removeSuffix(".dmg")
+                    .removeSuffix(".zip").removeSuffix(".exe"),
+            )
+        }
     }
 
     error(
         "No Android Studio download URL ending in ${wantedSuffixes.joinToString()} found on $pageUrl. " +
             "URLs discovered: ${allUrls.sorted().joinToString()}"
     )
+}
+
+private fun inferAndroidStudioVersion(url: String): String {
+    val fileName = url.substringAfterLast('/')
+    val version = Regex("""android-studio-([0-9]+(?:\.[0-9]+)+)-""")
+        .find(fileName)
+        ?.groupValues
+        ?.get(1)
+    return version ?: error("Could not infer Android Studio version from download URL: $url")
 }

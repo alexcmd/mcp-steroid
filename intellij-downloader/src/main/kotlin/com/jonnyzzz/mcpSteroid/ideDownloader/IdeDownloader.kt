@@ -46,7 +46,8 @@ private fun IdeDistribution.resolveUrlAndFileName(
             url to resolvedName
         }
         is IdeDistribution.Latest -> {
-            val resolvedUrl = resolveArchiveUrl(product, channel, os, preferWindowsZip = preferWindowsZip)
+            val resolved = resolveArchive(product, channel, os, preferWindowsZip = preferWindowsZip)
+            val resolvedUrl = resolved.url
             val arch = resolveHostArchitecture()
             val fallbackName = if (arch.isArmArch) "${product.id}-${channel.name.lowercase()}-arm.tar.gz"
                                else "${product.id}-${channel.name.lowercase()}-x86.tar.gz"
