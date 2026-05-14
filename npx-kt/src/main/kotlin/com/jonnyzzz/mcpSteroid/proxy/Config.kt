@@ -226,6 +226,6 @@ fun loadProxyVersion(): String {
         val resource = object {}.javaClass.classLoader.getResourceAsStream("proxy-version.txt")
         resource?.bufferedReader()?.readText()?.trim() ?: "0.1.0"
     } catch (e: Exception) {
-        "0.1.0"
+        throw Error("Failed to load proxy version: ${e.message}", e)
     }
 }
