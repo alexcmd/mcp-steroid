@@ -118,6 +118,11 @@ val extractIjPluginZip by tasks.registering(Sync::class) {
 distributions {
     main {
         contents {
+            // Repo-root EULA — same file `:ij-plugin` already ships inside its
+            // plugin zip. Bundled at the npx-kt dist root so the binary carries
+            // its own license text alongside the launcher and bundled plugin.
+            from(rootProject.layout.projectDirectory.file("EULA"))
+
             // Unpacked :ij-plugin contents — sits under `ij-plugin/` with no
             // outer wrapper directory. The kotlinc and ocr-tesseract POSIX
             // launchers need the executable bit re-applied: Gradle's distZip
@@ -331,6 +336,10 @@ val verifyBundledLibraries by tasks.registering {
         allFiles = (allFiles - ijPluginFiles).toSortedSet()
 
         val expectedFiles = sortedSetOf(
+            // EULA — repo-root EULA at the distribution root, mirroring the
+            // copy `:ij-plugin` ships inside its plugin zip.
+            "EULA",
+
             // Launchers — the `application` plugin marks BOTH executable in the zip
             // (Windows ignores the bit; Unix needs it for the shell launcher).
             "bin/mcp-steroid-proxy:X",
