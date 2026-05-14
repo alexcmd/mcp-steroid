@@ -238,13 +238,13 @@ private fun resolveDmgPayloadDir(mountPoint: File): File {
 }
 
 /**
- * Extracts a Windows `.exe` IDE installer (NSIS-packaged) using a `7z` binary located
- * on `PATH`. The resulting directory is a runnable Windows IDE install (NSIS bundles
- * flat files; 7zip extracts them verbatim).
+ * Extracts a Windows `.exe` IDE installer (NSIS-packaged) using `7zz` / `7z` located
+ * via [SevenZipLocator]. The resulting directory is a runnable Windows IDE install
+ * (NSIS bundles flat files; 7zip extracts them verbatim).
  *
- * TODO(intellij-downloader): bundle a known-good 7za binary in build resources via
- * `de.undercouch.download` (matching `ocr-tesseract`'s pattern) so callers don't need
- * 7z on PATH. Until then, this throws with a clear message if 7z is not present.
+ * On Linux / Mac hosts the bundled `7zz` 23.01 binary is used automatically. On
+ * Windows hosts the locator falls back to `7z` / `7za` on `PATH`; if neither is
+ * available a clear error is raised.
  */
 fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     require(archiveFile.exists()) { "Archive file does not exist: $archiveFile" }
@@ -254,9 +254,10 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
 
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
-    val sevenZip = locate7zOnPath() ?: error(
-        "No 7z binary on PATH; cannot extract Windows installer ${archiveFile.name}. " +
-            "Install 7-Zip (or download the .win.zip variant instead — set preferWindowsZip=true)."
+    val sevenZip = SevenZipLocator.locate() ?: error(
+        "No 7z binary available to extract Windows installer ${archiveFile.name}. " +
+            "On Linux/Mac the bundled 7zz resource is expected (check the JAR's `7z/` resources); " +
+            "on Windows install 7-Zip or pick the .win.zip variant via preferWindowsZip=true."
     )
 
     unpackDir.mkdirs()
@@ -272,19 +273,6 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     if (nsisScratch.isDirectory) nsisScratch.deleteRecursively()
 
     println("[IDE-DOWNLOAD] Unpacked .exe into $unpackDir")
-}
-
-private fun locate7zOnPath(): String? {
-    val path = System.getenv("PATH") ?: return null
-    val sep = if (resolveHostOs() == HostOs.WINDOWS) ';' else ':'
-    val candidates = if (resolveHostOs() == HostOs.WINDOWS) listOf("7z.exe", "7za.exe") else listOf("7z", "7za", "7zz")
-    for (dir in path.split(sep)) {
-        for (name in candidates) {
-            val candidate = File(dir, name)
-            if (candidate.isFile && candidate.canExecute()) return candidate.absolutePath
-        }
-    }
-    return null
 }
 
 private fun unpackDirAlreadyPopulated(unpackDir: File): Boolean {
