@@ -33,6 +33,12 @@ class VmOptionsWriterTest {
             "-Didea.vendor.name=devrig (managed)",
             "-Xms256m",
             "-Xmx2048m",
+            "-Dmcp.steroid.review.mode=NEVER",
+            "-Dmcp.steroid.updates.enabled=false",
+            "-Dmcp.steroid.analytics.enabled=false",
+            "-Dmcp.steroid.idea.description.enabled=false",
+            "-Dmcp.steroid.dialog.killer.enabled=true",
+            "-Dmcp.steroid.storage.path=${cacheDir.resolve("execution-storage")}",
             "",
         ).joinToString("\n")
 
@@ -40,7 +46,7 @@ class VmOptionsWriterTest {
         assertEquals(expected, content)
         assertFalse(content.contains("\r"), "vmoptions must use LF line endings only")
 
-        listOf("config", "system", "logs", "plugins").forEach { child ->
+        listOf("config", "system", "logs", "plugins", "execution-storage").forEach { child ->
             assertTrue(homePaths.cacheDir(id).resolve(child).exists(), "$child cache directory should exist")
         }
         assertFalse(homePaths.backendDir(id).resolve("IntelliJ IDEA CE.app/Contents/bin/idea.vmoptions").exists(),
