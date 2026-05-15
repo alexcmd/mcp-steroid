@@ -1,3 +1,4 @@
+import org.gradle.api.artifacts.Configuration
 import org.gradle.api.attributes.Usage
 import java.util.SortedSet
 
@@ -36,6 +37,29 @@ val sevenZipBinaries by configurations.creating {
     attributes {
         attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "seven-zip-binaries"))
     }
+}
+
+data class JdkPlatform(val id: String, val usageAttr: String) {
+    val configName: String = "jdk${id.split('-').joinToString("") { it.replaceFirstChar(Char::uppercase) }}"
+}
+
+val jdkPlatforms = listOf(
+    JdkPlatform("linux-amd64", "jdk-linux-amd64"),
+    JdkPlatform("linux-arm", "jdk-linux-arm"),
+    JdkPlatform("mac-arm", "jdk-mac-arm"),
+    JdkPlatform("windows-amd64", "jdk-windows-amd64"),
+)
+
+val jdkConfigs: Map<String, Configuration> = jdkPlatforms.associate { platform ->
+    val cfg = configurations.create(platform.configName) {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, platform.usageAttr))
+        }
+    }
+    dependencies.add(cfg.name, project(":jdk-downloader"))
+    platform.id to cfg
 }
 
 dependencies {
@@ -108,6 +132,10 @@ application {
 // and strips the Buildable, leaving the consumer without a path to producing the zip.
 val ijPluginZipFile = ijPluginZip.elements.map { it.single().asFile }
 val sevenZipBinariesDir = sevenZipBinaries.elements.map { it.single().asFile }
+val jdkDirs: Map<String, Provider<File>> = jdkPlatforms.associate { platform ->
+    val cfg = jdkConfigs.getValue(platform.id)
+    platform.id to cfg.elements.map { it.single().asFile }
+}
 
 distributions {
     main {
@@ -147,6 +175,25 @@ distributions {
                 eachFile {
                     if (file.canExecute()) {
                         permissions { unix("rwxr-xr-x") }
+                    }
+                }
+            }
+
+            // Amazon Corretto 21 JDKs, one per supported platform.
+            // The producer's permission audit (POSIX +x on bin/* and
+            // lib/server/libjvm.*) has already run before this consumer
+            // reads the tree — see :jdk-downloader's auditJdkPermissions_*
+            // tasks. distZip then defaults file modes to 0o644 and drops
+            // the +x bit, so we re-apply it here using the same canExecute
+            // rule the ij-plugin and 7z blocks already use.
+            jdkPlatforms.forEach { platform ->
+                into("jdk/jdk-${platform.id}") {
+                    from(jdkDirs.getValue(platform.id)) {
+                        eachFile {
+                            if (file.canExecute()) {
+                                permissions { unix("rwxr-xr-x") }
+                            }
+                        }
                     }
                 }
             }
@@ -361,6 +408,58 @@ val verifyBundledLibraries by tasks.registering {
             }
         }
         allFiles = (allFiles - ijPluginFiles).toSortedSet()
+
+        // jdk/ subtree: :jdk-downloader enforces each Corretto source layout and
+        // audits source executable bits. Here we sentinel-check each platform tree
+        // without enumerating every JDK file in the strict allowlist below.
+        val jdkPrefix = "jdk/"
+        val jdkFiles = allFiles.filter { it.startsWith(jdkPrefix) }.toSortedSet()
+        check(jdkFiles.isNotEmpty()) {
+            "Expected jdk/ subtree to be populated in $distName"
+        }
+        jdkPlatforms.forEach { platform ->
+            val platformPrefix = "jdk/jdk-${platform.id}/"
+            val platformFiles = jdkFiles.filter { it.startsWith(platformPrefix) }.toSortedSet()
+            check(platformFiles.isNotEmpty()) {
+                "Missing jdk-${platform.id} subtree under $jdkPrefix"
+            }
+            listOf(
+                "${platformPrefix}release",
+                "${platformPrefix}version.txt",
+            ).forEach { sentinel ->
+                check(platformFiles.any { it.removeSuffix(":X") == sentinel }) {
+                    "Missing sentinel '$sentinel' in jdk-${platform.id} subtree"
+                }
+            }
+            check(platformFiles.any { it.removeSuffix(":X").startsWith("${platformPrefix}legal/") }) {
+                "Missing non-empty legal/ directory in jdk-${platform.id} subtree"
+            }
+
+            val isWindows = platform.id == "windows-amd64"
+            val javaPath = if (isWindows) {
+                "${platformPrefix}bin/java.exe"
+            } else {
+                "${platformPrefix}bin/java"
+            }
+            check(platformFiles.any { it.removeSuffix(":X") == javaPath }) {
+                "Missing java launcher '$javaPath' in jdk-${platform.id} subtree"
+            }
+            if (!isWindows) {
+                check("$javaPath:X" in platformFiles) {
+                    "java launcher in jdk-${platform.id} is missing +x bit"
+                }
+
+                val libjvmExtension = if (platform.id == "mac-arm") "dylib" else "so"
+                val libjvmPath = "${platformPrefix}lib/server/libjvm.$libjvmExtension"
+                check(platformFiles.any { it.removeSuffix(":X") == libjvmPath }) {
+                    "Missing libjvm.$libjvmExtension in jdk-${platform.id} subtree"
+                }
+                check("$libjvmPath:X" in platformFiles) {
+                    "libjvm.$libjvmExtension in jdk-${platform.id} is missing +x bit"
+                }
+            }
+        }
+        allFiles = (allFiles - jdkFiles).toSortedSet()
 
         // 7z/ subtree: :intellij-downloader enforces the source layout; this task
         // checks the distZip copy is present, contains no surprise entries, and
