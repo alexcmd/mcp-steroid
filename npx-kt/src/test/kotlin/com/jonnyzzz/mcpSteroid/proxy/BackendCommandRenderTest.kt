@@ -97,6 +97,15 @@ class BackendCommandRenderTest {
     // -------------------------- empty / no-backend branch ----------------------
 
     @Test
+    fun `code-point width treats surrogate pairs as one visual column`() {
+        val text = "🚀 foo"
+
+        assertEquals(5, text.codePointWidth())
+        assertEquals("🚀 foo  ", text.padEndCodePoints(7))
+        assertEquals(7, text.padEndCodePoints(7).codePointWidth())
+    }
+
+    @Test
     fun `empty row list prints banner + the no-backends message + trailing blank`() {
         val text = render(emptyList())
         assertTrue(text.contains("No backends detected."), "missing message; got:\n$text")
@@ -147,6 +156,31 @@ class BackendCommandRenderTest {
         val arrowColumns = text.lines().filter { it.contains("→") }.map { it.indexOf('→') }
         assertEquals(arrowColumns.toSet().size, 1,
             "all project-list arrows must be in the same column; got columns: $arrowColumns in:\n$text")
+    }
+
+    @Test
+    fun `project name table aligns arrows when a name contains an emoji surrogate pair`() {
+        val rows = listOf(
+            BackendRow.FromMarker(
+                ide = markerIde("PyCharm", "2025.3.1", pid = 4242L),
+                projects = listOf(
+                    ProjectInfo(name = "🚀 app", path = "/p/rocket"),
+                    ProjectInfo(name = "plain", path = "/p/plain"),
+                ),
+            )
+        )
+        val text = render(rows)
+
+        assertTrue(text.contains("🚀 app") && text.contains("/p/rocket"), text)
+        assertTrue(text.contains("plain") && text.contains("/p/plain"), text)
+        val arrowDisplayColumns = text.lines()
+            .filter { it.contains("→") }
+            .map { it.substringBefore("→").codePointWidth() }
+        assertEquals(
+            1,
+            arrowDisplayColumns.toSet().size,
+            "all project-list arrows must be in the same visual column; got columns: $arrowDisplayColumns in:\n$text",
+        )
     }
 
     @Test

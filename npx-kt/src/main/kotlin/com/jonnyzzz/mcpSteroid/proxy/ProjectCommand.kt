@@ -73,9 +73,9 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
 
     out.println("Listing ${projectEntries.size} open project(s) across ${reachableRows.size} backend(s):")
     out.println()
-    val padWidth = projectEntries.maxOf { it.project.name.length }.coerceAtMost(40)
+    val padWidth = projectEntries.maxOf { it.project.name.codePointWidth() }.coerceAtMost(40)
     for ((index, entry) in projectEntries.withIndex()) {
-        val paddedName = entry.project.name.padEnd(padWidth)
+        val paddedName = entry.project.name.padEndCodePoints(padWidth)
         out.println("  [${index + 1}] $paddedName  →  ${entry.project.path}")
         out.println("        ${backendDisplayName(entry.row)} (${backendLocatorLabel(entry.row)})")
         if (index < projectEntries.lastIndex) out.println()

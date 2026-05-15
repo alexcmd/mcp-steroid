@@ -193,13 +193,13 @@ internal fun renderBackendStartListText(
     out.println()
     val indexWidth = rows.size.toString().length + 2
     val idWidth = rows.maxOf { it.id.length }
-    val displayWidth = rows.maxOf { it.displayName.length }
+    val displayWidth = rows.maxOf { it.displayName.codePointWidth() }
     for ((index, row) in rows.withIndex()) {
         val state = when (row.state) {
             LocalBackendState.RUNNING -> "running (pid ${row.pid})"
             LocalBackendState.INSTALLED -> "installed"
         }
-        out.println("  ${"[${index + 1}]".padEnd(indexWidth)} ${row.id.padEnd(idWidth)}  ${row.displayName.padEnd(displayWidth)}  $state")
+        out.println("  ${"[${index + 1}]".padEnd(indexWidth)} ${row.id.padEnd(idWidth)}  ${row.displayName.padEndCodePoints(displayWidth)}  $state")
     }
     out.println()
     out.println("Run:  devrig backend start <id>")
@@ -215,9 +215,9 @@ internal fun renderBackendStopListText(rows: List<RunningBackendListRow>, out: P
     out.println()
     val indexWidth = rows.size.toString().length + 2
     val idWidth = rows.maxOf { it.id.length }
-    val displayWidth = rows.maxOf { it.displayName.length }
+    val displayWidth = rows.maxOf { it.displayName.codePointWidth() }
     for ((index, row) in rows.withIndex()) {
-        out.println("  ${"[${index + 1}]".padEnd(indexWidth)} ${row.id.padEnd(idWidth)}  ${row.displayName.padEnd(displayWidth)}  pid ${row.pid}")
+        out.println("  ${"[${index + 1}]".padEnd(indexWidth)} ${row.id.padEnd(idWidth)}  ${row.displayName.padEndCodePoints(displayWidth)}  pid ${row.pid}")
     }
     out.println()
     out.println("Run:  devrig backend stop <id>")

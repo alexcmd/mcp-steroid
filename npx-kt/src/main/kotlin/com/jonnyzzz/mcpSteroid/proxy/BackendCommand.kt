@@ -654,9 +654,9 @@ private fun renderMarkerProjects(row: BackendRow.FromMarker, out: PrintStream) {
             // list into a small two-column table when more than one project
             // is open. Cap the pad so a single unusually long name doesn't
             // push every other row's path off the screen.
-            val padWidth = row.projects.maxOf { it.name.length }.coerceAtMost(40)
+            val padWidth = row.projects.maxOf { it.name.codePointWidth() }.coerceAtMost(40)
             for (p in row.projects) {
-                val paddedName = p.name.padEnd(padWidth)
+                val paddedName = p.name.padEndCodePoints(padWidth)
                 out.println("        $paddedName  →  ${p.path}")
             }
         }

@@ -151,14 +151,14 @@ internal fun renderBackendDownloadListRowsText(
     if (rows.isNotEmpty()) {
         val indexWidth = rows.size.toString().length + 2
         val idWidth = rows.maxOf { it.product.id.length }
-        val displayWidth = rows.maxOf { it.product.displayName.length }
+        val displayWidth = rows.maxOf { it.product.displayName.codePointWidth() }
         val versionWidth = rows
             .map { it.versionText().length }
             .maxOrNull() ?: 0
         for ((index, row) in rows.withIndex()) {
             val indexLabel = "[${index + 1}]".padEnd(indexWidth)
             val id = row.product.id.padEnd(idWidth)
-            val name = row.product.displayName.padEnd(displayWidth)
+            val name = row.product.displayName.padEndCodePoints(displayWidth)
             val licenseSuffix = row.product.licenseTier.licenseSymbol
                 .takeIf { it.isNotEmpty() }
                 ?.let { "  $it" }
