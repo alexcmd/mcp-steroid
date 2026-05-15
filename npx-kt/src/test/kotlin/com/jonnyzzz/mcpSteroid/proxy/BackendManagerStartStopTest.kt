@@ -2,14 +2,19 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class BackendManagerStartStopTest {
@@ -73,6 +78,74 @@ class BackendManagerStartStopTest {
         val stopped = manager.stop(parseBackendId("idea-community-2025.3.3"))
 
         assertEquals("not running", stopped.outcome)
+    }
+
+    @Test
+    fun `stop deletes stale pid file without signalling unrelated process`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = gracefulLauncher())
+        val unrelated = startUnrelatedSleeper()
+        try {
+            Files.createDirectories(homePaths.stateDir)
+            Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "${unrelated.pid()}\n")
+            val manager = BackendManager(
+                homePaths = homePaths,
+                downloader = StaticDownloader,
+                ideUserHome = tempDir.resolve("user-home"),
+            )
+
+            val stopped = manager.stop(parseBackendId("idea-community-2025.3.3"))
+
+            assertEquals("stale", stopped.outcome)
+            assertNull(stopped.pid)
+            assertEquals("pid ${unrelated.pid()} is no longer the managed backend", stopped.message)
+            assertFalse(homePaths.pidFile("idea-community-2025.3.3").exists())
+            assertTrue(unrelated.isAlive, "unrelated process must not be signalled")
+        } finally {
+            stopProcess(unrelated)
+        }
+    }
+
+    @Test
+    fun `stop accepts matching pid marker for process outside backend directory`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = gracefulLauncher())
+        val process = startUnrelatedSleeper()
+        val userHome = tempDir.resolve("user-home")
+        try {
+            Files.createDirectories(homePaths.stateDir)
+            Files.createDirectories(userHome)
+            Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "${process.pid()}\n")
+            Files.writeString(
+                userHome.resolve(PidMarker.fileNameFor(process.pid())),
+                PidMarkerJson.encode(
+                    PidMarker(
+                        pid = process.pid(),
+                        mcpUrl = "http://localhost:63342/mcp",
+                        ide = IdeInfo(name = "IntelliJ IDEA Community", version = "2025.3.3", build = "IC-253.1"),
+                        plugin = PluginInfo(id = "com.jonnyzzz.mcpSteroid", name = "MCP Steroid", version = "1.0.0"),
+                        createdAt = "2026-05-14T21:00:00Z",
+                    ),
+                ),
+            )
+            val manager = BackendManager(
+                homePaths = homePaths,
+                downloader = StaticDownloader,
+                ideUserHome = userHome,
+            )
+
+            val stopped = manager.stop(parseBackendId("idea-community-2025.3.3"))
+
+            assertEquals("stopped", stopped.outcome)
+            assertEquals(process.pid(), stopped.pid)
+            assertFalse(ProcessHandle.of(process.pid()).map { it.isAlive }.orElse(false))
+        } finally {
+            stopProcess(process)
+        }
     }
 
     @Test
@@ -152,6 +225,17 @@ class BackendManagerStartStopTest {
         #!/usr/bin/env sh
         sleep 60
         """.trimIndent() + "\n"
+
+    private fun startUnrelatedSleeper(): Process =
+        ProcessBuilder("sh", "-c", "trap 'exit 0' TERM; while true; do sleep 1; done").start()
+
+    private fun stopProcess(process: Process) {
+        process.destroy()
+        if (!process.waitFor(5, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            process.waitFor(5, TimeUnit.SECONDS)
+        }
+    }
 
     private object StaticDownloader : ManagedBackendDownloader {
         override suspend fun resolve(id: BackendId): BackendDownloadResolution =

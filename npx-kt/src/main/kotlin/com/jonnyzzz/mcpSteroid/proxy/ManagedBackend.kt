@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeChannel
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeDistribution
@@ -62,6 +63,7 @@ internal data class StopResult(
     val id: String,
     val pid: Long?,
     val outcome: String,
+    val message: String? = null,
 )
 
 internal enum class ManagedBackendState {
@@ -301,12 +303,22 @@ internal class BackendManager(
             Files.deleteIfExists(pidFile)
             return StopResult(resolved.id, pid = null, outcome = "not running")
         }
+        val descriptor = loadDescriptor(resolved)
 
         val handle = ProcessHandle.of(pid).getOrNull()
         if (handle == null || !handle.isAlive) {
             deleteMcpMarker(pid)
             Files.deleteIfExists(pidFile)
             return StopResult(resolved.id, pid = pid, outcome = "already stopped")
+        }
+        if (!isManagedBackendProcess(handle, descriptor, pid)) {
+            Files.deleteIfExists(pidFile)
+            return StopResult(
+                id = resolved.id,
+                pid = null,
+                outcome = "stale",
+                message = "pid $pid is no longer the managed backend",
+            )
         }
 
         handle.destroy()
@@ -321,6 +333,46 @@ internal class BackendManager(
         deleteMcpMarker(pid)
         Files.deleteIfExists(pidFile)
         return StopResult(resolved.id, pid = pid, outcome = outcome)
+    }
+
+    private fun isManagedBackendProcess(
+        handle: ProcessHandle,
+        descriptor: BackendDescriptor,
+        pid: Long,
+    ): Boolean {
+        return processCommandIsUnderBackendsDir(handle) || pidMarkerMatchesDescriptor(pid, descriptor)
+    }
+
+    private fun processCommandIsUnderBackendsDir(handle: ProcessHandle): Boolean {
+        val info = handle.info()
+        val command = info.command().orElse(null)
+        if (command != null && processPathIsUnderBackendsDir(command)) return true
+        return info.arguments().orElse(emptyArray()).any { processPathIsUnderBackendsDir(it) }
+    }
+
+    private fun processPathIsUnderBackendsDir(rawPath: String): Boolean {
+        val commandPath = try {
+            Path.of(rawPath)
+        } catch (e: Exception) {
+            System.err.println("WARN: failed to parse process path '$rawPath': ${e.message}")
+            return false
+        }
+        if (!commandPath.isAbsolute) return false
+        val backendsDir = homePaths.backendsDir.toAbsolutePath().normalize()
+        return commandPath.toAbsolutePath().normalize().startsWith(backendsDir)
+    }
+
+    private fun pidMarkerMatchesDescriptor(pid: Long, descriptor: BackendDescriptor): Boolean {
+        val markerPath = ideUserHome.resolve(PidMarker.fileNameFor(pid))
+        if (!Files.isRegularFile(markerPath)) return false
+        val marker = try {
+            PidMarkerJson.decode(Files.readString(markerPath))
+        } catch (e: Exception) {
+            System.err.println("WARN: failed to decode MCP Steroid marker file $markerPath: ${e.message}")
+            return false
+        }
+        val expectedBuild = descriptor.buildNumber ?: return false
+        return marker.pid == pid && marker.ide.build == expectedBuild
     }
 
     private fun deleteMcpMarker(pid: Long) {

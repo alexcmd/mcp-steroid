@@ -269,7 +269,9 @@ internal fun runBackendStopCommand(
                 } else {
                     put("stoppedPid", result.pid)
                 }
+                put("outcome", result.outcome)
                 put("graceful", result.outcome != "killed")
+                result.message?.let { put("message", it) }
                 put("durationMs", durationMs)
             }
         }
@@ -279,7 +281,8 @@ internal fun runBackendStopCommand(
         backendService.stop(backendId)
     }
     val pidSuffix = result.pid?.let { " pid $it" }.orEmpty()
-    out.println("${result.outcome}: ${result.id}$pidSuffix")
+    val messageSuffix = result.message?.let { " - $it" }.orEmpty()
+    out.println("${result.outcome}: ${result.id}$pidSuffix$messageSuffix")
     return 0
 }
 

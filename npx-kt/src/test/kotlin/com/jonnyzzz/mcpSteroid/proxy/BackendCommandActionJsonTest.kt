@@ -106,10 +106,11 @@ class BackendCommandActionJsonTest {
 
         assertEquals(0, exit)
         assertEquals("", stderr)
-        assertEquals(setOf("tool", "action", "id", "stoppedPid", "graceful", "durationMs"), root.keys)
+        assertEquals(setOf("tool", "action", "id", "stoppedPid", "outcome", "graceful", "durationMs"), root.keys)
         assertEquals("stop", root["action"]!!.jsonPrimitive.content)
         assertEquals("idea-community-2025.3.3", root["id"]!!.jsonPrimitive.content)
         assertEquals(12345L, root["stoppedPid"]!!.jsonPrimitive.long)
+        assertEquals("stopped", root["outcome"]!!.jsonPrimitive.content)
         assertEquals(true, root["graceful"]!!.jsonPrimitive.boolean)
         assertTrue(root["durationMs"]!!.jsonPrimitive.long >= 0L)
     }
@@ -132,6 +133,35 @@ class BackendCommandActionJsonTest {
         assertEquals(0, exit)
         assertEquals("", stderr)
         assertEquals(false, root["graceful"]!!.jsonPrimitive.boolean)
+        assertEquals("killed", root["outcome"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `stop action json exposes stale pid outcome and message`(@TempDir tempDir: Path) {
+        val backendService = FakeBackendService(
+            stopResult = StopResult(
+                id = "idea-community-2025.3.3",
+                pid = null,
+                outcome = "stale",
+                message = "pid 12345 is no longer the managed backend",
+            ),
+        )
+
+        val (exit, root, stderr) = runJsonAction {
+            runBackendStopCommand(
+                out = it,
+                homePaths = HomePaths(tempDir),
+                mode = CliMode.Backend.Stop("idea-community-2025.3.3", versionOverride = null, json = true),
+                backendService = backendService,
+            )
+        }
+
+        assertEquals(0, exit)
+        assertEquals("", stderr)
+        assertEquals(setOf("tool", "action", "id", "stoppedPid", "outcome", "graceful", "message", "durationMs"), root.keys)
+        assertEquals(null, root["stoppedPid"]!!.jsonPrimitive.contentOrNull)
+        assertEquals("stale", root["outcome"]!!.jsonPrimitive.content)
+        assertEquals("pid 12345 is no longer the managed backend", root["message"]!!.jsonPrimitive.content)
     }
 
     @Test
