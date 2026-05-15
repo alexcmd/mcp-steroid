@@ -5,7 +5,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -17,7 +16,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.net.ServerSocket
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -43,14 +41,11 @@ class IntelliJPortDiscoveryTest {
 
     @BeforeEach
     fun setUp() {
-        // Three ports: one impersonates IntelliJ, one returns non-IDE
-        // JSON, one is never bound (connect should refuse).
-        val (p1, p2, p3) = grabFreePorts(3)
-        idePort = p1
-        garbagePort = p2
-        refusedPort = p3
+        // Bind the fake servers with port=0 so Ktor asks the OS for a free port and keeps it bound.
+        // The refused probe uses a fixed reserved port that should never expose an IntelliJ /api/about.
+        refusedPort = 1
 
-        ideServer = embeddedServer(ServerCIO, port = idePort, host = "127.0.0.1") {
+        ideServer = embeddedServer(ServerCIO, port = 0, host = "127.0.0.1") {
             routing {
                 get("/api/about") {
                     call.respondText(
@@ -67,9 +62,10 @@ class IntelliJPortDiscoveryTest {
                     )
                 }
             }
-        }.also { it.start(wait = false) }
+        }.start(wait = false)
+        idePort = ideServer.resolvedPort()
 
-        garbageServer = embeddedServer(ServerCIO, port = garbagePort, host = "127.0.0.1") {
+        garbageServer = embeddedServer(ServerCIO, port = 0, host = "127.0.0.1") {
             routing {
                 get("/api/about") {
                     // Looks like JSON but doesn't carry IDE-identifying
@@ -83,12 +79,8 @@ class IntelliJPortDiscoveryTest {
                     call.respond(HttpStatusCode.OK, "not relevant")
                 }
             }
-        }.also { it.start(wait = false) }
-
-        runBlocking {
-            ideServer.monitor.subscribe(ApplicationStarted) {}
-            garbageServer.monitor.subscribe(ApplicationStarted) {}
-        }
+        }.start(wait = false)
+        garbagePort = garbageServer.resolvedPort()
 
         httpClient = HttpClient(CIO) {
             install(HttpTimeout) { requestTimeoutMillis = 5_000 }
@@ -182,16 +174,7 @@ class IntelliJPortDiscoveryTest {
         }
     }
 
-    private fun grabFreePorts(count: Int): IntArray {
-        // Open `count` sockets simultaneously so the OS hands out
-        // distinct ports, then close them all and return the numbers.
-        val sockets = (0 until count).map { ServerSocket(0) }
-        val ports = sockets.map { it.localPort }.toIntArray()
-        sockets.forEach { it.close() }
-        return ports
+    private fun EmbeddedServer<*, *>.resolvedPort(): Int = runBlocking {
+        engine.resolvedConnectors().first().port
     }
 }
-
-private operator fun IntArray.component1(): Int = this[0]
-private operator fun IntArray.component2(): Int = this[1]
-private operator fun IntArray.component3(): Int = this[2]

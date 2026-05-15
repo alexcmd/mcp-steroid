@@ -1580,7 +1580,7 @@ flags that route to Help / Version regardless of the mode keyword
 preceding them. Add explicit parametrised tests for
 `backend --help`, `backend download --help`, `project --version`.
 
-### F2 — `:npx-kt:installDist` fails when previous tree has read-only bundled JDK files
+### F2 — `:npx-kt:installDist` fails when previous tree has read-only bundled JDK files ✅ resolved
 
 Surfaced by `task-lifecycle` and `task-m13`. Manual recovery is
 `chmod -R u+w npx-kt/build/install/mcp-steroid-proxy && rm -rf` before
@@ -1590,7 +1590,7 @@ rerunning.
 `installDist` task that chmod-fixes any pre-existing install tree
 before the `Sync` task copies into it.
 
-### F3 — `SevenZipLocatorTest` writes through the real `~/.cache/mcp-steroid/7z/`
+### F3 — `SevenZipLocatorTest` writes through the real `~/.cache/mcp-steroid/7z/` ✅ resolved
 
 `SevenZipLocator.cacheRoot` is a `private val by lazy` bound to
 `user.home`. Tests run against the real host cache, leaving side
@@ -1600,14 +1600,14 @@ effects.
 `SevenZipLocatorTestSupport` object in the test sourceset overrides
 the cache root via package-internal access. Reset between tests.
 
-### F4 — `IntelliJPortDiscoveryTest` has a port-bind race
+### F4 — `IntelliJPortDiscoveryTest` has a port-bind race ✅ resolved
 
 `task-polish` hit `Address already in use` on its first full-module
 run; immediate rerun passed.
 
-**Fix:** allocate ephemeral ports via `ServerSocket(0).localPort` and
-hold the socket bound until the test process takes it over; or
-refactor to mock-driven discovery. No `Thread.sleep` retries.
+**Fix:** bind Ktor fake IDE servers with `embeddedServer(port = 0)` and
+read the resolved connector port after start. No pre-release
+`ServerSocket(0).localPort` hand-off and no `Thread.sleep` retries.
 
 ### F5 — GUI integration test re-downloads ~1 GB IDE archive every run
 
