@@ -64,6 +64,8 @@ class BackendCommandStartListTest {
         assertTrue(text.contains("[1] idea-community"), text)
         assertTrue(text.contains("2025.3"), text)
         assertTrue(text.contains("2025-12-08"), text)
+        assertTrue(text.contains("  *  Requires a JetBrains license."), text)
+        assertTrue(!text.contains("Free for non-commercial use; JetBrains license required for commercial use."), text)
         assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>]"), text)
         assertTrue(text.contains("Then: devrig backend start <id>"), text)
     }

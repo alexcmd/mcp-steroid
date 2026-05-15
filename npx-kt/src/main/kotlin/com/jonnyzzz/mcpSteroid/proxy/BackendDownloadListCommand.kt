@@ -162,19 +162,24 @@ internal fun renderBackendDownloadListRowsText(
             val indexLabel = "[${index + 1}]".padEnd(indexWidth)
             val id = row.product.id.padEnd(idWidth)
             val name = row.product.displayName.padEnd(displayWidth)
+            val licenseSuffix = row.product.licenseTier.licenseSymbol
+                .takeIf { it.isNotEmpty() }
+                ?.let { "  $it" }
+                .orEmpty()
             if (releaseDateWidth > 0) {
                 out.println(
                     "  $indexLabel $id  $name  " +
                         "${row.versionText().padEnd(versionWidth)}  " +
-                        "${row.releaseDate.orEmpty().padEnd(releaseDateWidth)}  " +
-                        row.product.licenseTier.cliValue
+                        row.releaseDate.orEmpty().padEnd(releaseDateWidth) +
+                        licenseSuffix
                 )
             } else {
-                out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}  ${row.product.licenseTier.cliValue}")
+                out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}$licenseSuffix")
             }
         }
     }
     out.println()
+    renderLicenseLegend(rows, out)
     out.println("Run:  devrig backend download <id> [--version <v>]")
     afterRunLine?.let { out.println(it) }
     out.println()
@@ -195,11 +200,23 @@ internal fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>)
             put("code", row.product.code)
             put("displayName", row.product.displayName)
             put("licenseTier", row.product.licenseTier.cliValue)
+            put("licenseSymbol", row.product.licenseTier.licenseSymbol)
+            put("licenseNote", row.product.licenseTier.licenseNote)
             if (row.version == null) put("version", JsonNull) else put("version", row.version)
             row.releaseDate?.let { put("releaseDate", it) }
             row.versionLookupError?.let { put("versionLookupError", it) }
         })
     }
+}
+
+private fun renderLicenseLegend(rows: List<AvailableBackendDownload>, out: PrintStream) {
+    val tiers = listOf(LicenseTier.Paid, LicenseTier.FreeForNonCommercial)
+        .filter { tier -> rows.any { it.product.licenseTier == tier } }
+    if (tiers.isEmpty()) return
+    for (tier in tiers) {
+        out.println("  ${tier.licenseSymbol.padEnd(2)} ${tier.licenseNote}")
+    }
+    out.println()
 }
 
 private fun AvailableBackendDownload.versionText(): String =
@@ -210,6 +227,20 @@ internal val LicenseTier.cliValue: String
         LicenseTier.Free -> "free"
         LicenseTier.FreeForNonCommercial -> "free-for-non-commercial"
         LicenseTier.Paid -> "paid"
+    }
+
+internal val LicenseTier.licenseSymbol: String
+    get() = when (this) {
+        LicenseTier.Free -> ""
+        LicenseTier.FreeForNonCommercial -> "**"
+        LicenseTier.Paid -> "*"
+    }
+
+internal val LicenseTier.licenseNote: String
+    get() = when (this) {
+        LicenseTier.Free -> ""
+        LicenseTier.FreeForNonCommercial -> "Free for non-commercial use; JetBrains license required for commercial use."
+        LicenseTier.Paid -> "Requires a JetBrains license."
     }
 
 internal fun Throwable.shortMessage(): String {

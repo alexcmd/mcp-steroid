@@ -41,7 +41,9 @@ class BackendCommandDownloadListTest {
 
         assertTrue(text.startsWith("devrig v"), text)
         assertTrue(text.contains("Available IDEs (defaults to latest stable):"), text)
-        assertTrue(text.contains("free-for-non-commercial"), text)
+        assertFalse(text.contains("free-for-non-commercial"), text)
+        assertTrue(text.contains("  *  Requires a JetBrains license."), text)
+        assertTrue(text.contains("  ** Free for non-commercial use; JetBrains license required for commercial use."), text)
         assertTrue(text.contains("(version lookup failed: offline products API)"), text)
         assertTrue(text.contains("2025-12-08"), text)
         assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>]"), text)
@@ -53,6 +55,11 @@ class BackendCommandDownloadListTest {
         val goLand = lines.single { it.contains("goland") }
         val ideaUltimate = lines.single { it.contains("idea-ultimate") && it.contains("IntelliJ IDEA Ultimate") }
         val pyCharmPro = lines.single { it.contains("pycharm-pro") && it.contains("PyCharm Professional") }
+
+        assertFalse(ideaCommunity.trimEnd().endsWith("*"), ideaCommunity)
+        assertTrue(goLand.trimEnd().endsWith("**"), goLand)
+        assertTrue(ideaUltimate.trimEnd().endsWith("*"), ideaUltimate)
+        assertTrue(pyCharmPro.trimEnd().endsWith("*"), pyCharmPro)
 
         assertTrue(lines.indexOf(ideaCommunity) < lines.indexOf(goLand), text)
         assertTrue(lines.indexOf(pyCharmCommunity) < lines.indexOf(goLand), text)
@@ -77,7 +84,7 @@ class BackendCommandDownloadListTest {
     }
 
     @Test
-    fun `json exposes available schema with null versions for paid and failed lookups`() = runBlocking {
+    fun `json exposes available schema with license annotations and failed lookups`() = runBlocking {
         val rows = collectAvailableBackendDownloads(
             versionResolver = FakeVersionResolver(
                 versions = mapOf(
@@ -109,11 +116,15 @@ class BackendCommandDownloadListTest {
         assertEquals("IIC", ideaCommunity["code"]!!.jsonPrimitive.content)
         assertEquals("IntelliJ IDEA Community", ideaCommunity["displayName"]!!.jsonPrimitive.content)
         assertEquals("free", ideaCommunity["licenseTier"]!!.jsonPrimitive.content)
+        assertEquals("", ideaCommunity["licenseSymbol"]!!.jsonPrimitive.content)
+        assertEquals("", ideaCommunity["licenseNote"]!!.jsonPrimitive.content)
         assertEquals("2025.3.test", ideaCommunity["version"]!!.jsonPrimitive.content)
         assertEquals("2025-12-08", ideaCommunity["releaseDate"]!!.jsonPrimitive.content)
 
         val rider = available.single { it["id"]!!.jsonPrimitive.content == "rider" }
         assertEquals("free-for-non-commercial", rider["licenseTier"]!!.jsonPrimitive.content)
+        assertEquals("**", rider["licenseSymbol"]!!.jsonPrimitive.content)
+        assertEquals("Free for non-commercial use; JetBrains license required for commercial use.", rider["licenseNote"]!!.jsonPrimitive.content)
         assertEquals("2025.3.test", rider["version"]!!.jsonPrimitive.content)
 
         val android = available.single { it["id"]!!.jsonPrimitive.content == "android-studio" }
@@ -122,9 +133,32 @@ class BackendCommandDownloadListTest {
 
         val paid = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
         assertEquals("paid", paid["licenseTier"]!!.jsonPrimitive.content)
+        assertEquals("*", paid["licenseSymbol"]!!.jsonPrimitive.content)
+        assertEquals("Requires a JetBrains license.", paid["licenseNote"]!!.jsonPrimitive.content)
         assertEquals("2025.3.test", paid["version"]!!.jsonPrimitive.content)
         assertEquals("2025-12-08", paid["releaseDate"]!!.jsonPrimitive.content)
         assertFalse("requiresAllowPaid" in paid)
+    }
+
+    @Test
+    fun `text license legend omits unused symbol tiers`() {
+        val text = renderText(
+            listOf(
+                AvailableBackendDownload(
+                    product = IdeProduct.IntelliJIdeaCommunity,
+                    version = "2025.3",
+                    releaseDate = "2025-12-08",
+                ),
+                AvailableBackendDownload(
+                    product = IdeProduct.PyCharmCommunity,
+                    version = "2025.3",
+                    releaseDate = "2025-12-08",
+                ),
+            ),
+        )
+
+        assertFalse(text.contains("Requires a JetBrains license."), text)
+        assertFalse(text.contains("Free for non-commercial use; JetBrains license required for commercial use."), text)
     }
 
     @Test
