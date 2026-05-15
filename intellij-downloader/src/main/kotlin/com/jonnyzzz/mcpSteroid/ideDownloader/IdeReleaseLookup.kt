@@ -68,17 +68,32 @@ fun resolveArchive(
         return resolveAndroidStudioArchive(channel, os, architecture, version)
     }
 
-    // IDEA Community stable trails Ultimate. The github.com/JetBrains/intellij-community
-    // `idea/2026.1.*` tags are source-only; downloads.jetbrains.com does NOT host
-    // `ideaIC-2026.1.*` binaries today. The products API correctly reports 2025.3
-    // as latest stable for code=IIC. Don't try to synthesise a download URL —
-    // trust the API.
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
     val url = "https://data.services.jetbrains.com/products?code=${product.code}&release.type=$releaseType"
 
     logFetchingProductsInfo(url)
     val payload = readUrlText(url)
 
+    return resolveArchiveFromProductsApiPayload(
+        product = product,
+        channel = channel,
+        os = os,
+        architecture = architecture,
+        version = version,
+        productsApiUrl = url,
+        payload = payload,
+    )
+}
+
+internal fun resolveArchiveFromProductsApiPayload(
+    product: IdeProduct,
+    channel: IdeChannel,
+    os: HostOs,
+    architecture: HostArchitecture,
+    version: String? = null,
+    productsApiUrl: String,
+    payload: String,
+): IdeArchiveResolution {
     val json = Json { ignoreUnknownKeys = true }
     val products = json.parseToJsonElement(payload).jsonArray
 
@@ -90,6 +105,7 @@ fun resolveArchive(
     val releases = (matchingProduct["releases"] as? JsonArray) ?: JsonArray(emptyList())
     val downloadKey = resolveDownloadKey(os, architecture)
     val wantedVersion = version?.takeIf { it.isNotBlank() }
+    val skippedWrongFilename = mutableListOf<String>()
 
     for (release in releases.filterIsInstance<JsonObject>()) {
         val type = (release["type"] as? JsonPrimitive)?.content
@@ -104,6 +120,11 @@ fun resolveArchive(
         val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
         val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
         if (link.isBlank()) continue
+        val filename = downloadFilenameFromUrl(link)
+        if (!product.acceptsDownloadFilename(filename)) {
+            skippedWrongFilename += "$releaseVersion -> $filename"
+            continue
+        }
         return IdeArchiveResolution(
             product = product,
             channel = channel,
@@ -115,11 +136,41 @@ fun resolveArchive(
         )
     }
 
+    error(resolveArchiveFailureMessage(product, channel, wantedVersion, downloadKey, productsApiUrl, skippedWrongFilename))
+}
+
+internal fun IdeProduct.acceptsDownloadFilename(filename: String): Boolean {
+    val tokens = urlFilenameTokens
+    return tokens.isEmpty() || tokens.any { token -> filename.contains(token) }
+}
+
+internal fun downloadFilenameFromUrl(link: String): String =
+    URI(link).path.substringAfterLast('/').takeIf { it.isNotBlank() } ?: link.substringAfterLast('/')
+
+private fun resolveArchiveFailureMessage(
+    product: IdeProduct,
+    channel: IdeChannel,
+    wantedVersion: String?,
+    downloadKey: String,
+    productsApiUrl: String,
+    skippedWrongFilename: List<String>,
+): String {
     val versionMessage = if (wantedVersion == null) "latest" else "version '$wantedVersion'"
-    error(
-        "Unable to resolve $versionMessage '${channel.apiValue}' release for product '${product.code}' " +
-            "(tried download key $downloadKey) from $url"
-    )
+    val tokens = product.urlFilenameTokens
+    if (tokens.isEmpty()) {
+        return "Unable to resolve $versionMessage '${channel.apiValue}' release for product '${product.code}' " +
+            "(tried download key $downloadKey) from $productsApiUrl"
+    }
+    val tokensText = tokens.joinToString { "`$it`" }
+    val skippedText = skippedWrongFilename
+        .take(5)
+        .joinToString(prefix = " Skipped mismatched filenames: ")
+        .takeIf { skippedWrongFilename.isNotEmpty() }
+        .orEmpty()
+    return "No release in the '${channel.apiValue}' channel of code=${product.code} serves a download URL whose filename " +
+        "contains any of: $tokensText (tried download key $downloadKey) from $productsApiUrl. " +
+        "Latest matched: <none>.$skippedText JetBrains may not have published this edition for the most recent " +
+        "version; try --version with an older known-good build."
 }
 
 internal fun logFetchingProductsInfo(url: String) {

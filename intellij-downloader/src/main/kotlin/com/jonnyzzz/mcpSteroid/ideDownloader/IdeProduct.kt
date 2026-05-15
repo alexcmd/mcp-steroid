@@ -41,6 +41,14 @@ sealed interface IdeProduct {
 
     val licenseTier: LicenseTier
 
+    /**
+     * Case-sensitive filename tokens that identify archives for this product in the
+     * JetBrains products API. Empty means the resolver accepts any filename; this
+     * keeps [Custom] products unblocked when the caller deliberately opts into an
+     * unknown SKU.
+     */
+    val urlFilenameTokens: List<String> get() = emptyList()
+
     /** Convenience alias kept for back-compat with earlier code. */
     val jetbrainsProductCode: String get() = code
 
@@ -53,6 +61,8 @@ sealed interface IdeProduct {
         override val code = "IIU"
         override val launcherExecutable = "idea"
         override val licenseTier = LicenseTier.Paid
+        // HEAD evidence: current Ultimate releases use unprefixed idea-*. Older releases used ideaIU-*.
+        override val urlFilenameTokens = listOf("ideaIU-", "idea-")
     }
 
     /** IntelliJ IDEA Community (free, open source). */
@@ -62,6 +72,8 @@ sealed interface IdeProduct {
         override val code = "IIC"
         override val launcherExecutable = "idea"
         override val licenseTier = LicenseTier.Free
+        // HEAD evidence: Community binaries use ideaIC-*; unprefixed idea-* is Ultimate.
+        override val urlFilenameTokens = listOf("ideaIC-")
     }
 
     // ---- PyCharm ----
@@ -73,6 +85,8 @@ sealed interface IdeProduct {
         override val code = "PCP"
         override val launcherExecutable = "pycharm"
         override val licenseTier = LicenseTier.Paid
+        // HEAD evidence: current Professional releases use unprefixed pycharm-*; older releases used pycharm-professional-*.
+        override val urlFilenameTokens = listOf("pycharmPP-", "pycharm-professional-", "pycharm-")
     }
 
     /** PyCharm Community (free, open source). */
@@ -82,6 +96,8 @@ sealed interface IdeProduct {
         override val code = "PCC"
         override val launcherExecutable = "pycharm"
         override val licenseTier = LicenseTier.Free
+        // HEAD evidence: Community binaries use pycharm-community-*; accept pycharmPC-* for older API naming.
+        override val urlFilenameTokens = listOf("pycharmPC-", "pycharm-community-")
     }
 
     // ---- Free-for-non-commercial IDEs ----
@@ -92,6 +108,8 @@ sealed interface IdeProduct {
         override val code = "GO"
         override val launcherExecutable = "goland"
         override val licenseTier = LicenseTier.FreeForNonCommercial
+        // HEAD evidence: GoLand archives use goland-*.
+        override val urlFilenameTokens = listOf("goland-")
     }
 
     data object WebStorm : IdeProduct {
@@ -100,6 +118,8 @@ sealed interface IdeProduct {
         override val code = "WS"
         override val launcherExecutable = "webstorm"
         override val licenseTier = LicenseTier.FreeForNonCommercial
+        // HEAD evidence: WebStorm archives use case-sensitive WebStorm-* filenames.
+        override val urlFilenameTokens = listOf("WebStorm-")
     }
 
     data object Rider : IdeProduct {
@@ -108,6 +128,8 @@ sealed interface IdeProduct {
         override val code = "RD"
         override val launcherExecutable = "rider"
         override val licenseTier = LicenseTier.FreeForNonCommercial
+        // HEAD evidence: Rider archives use JetBrains.Rider-*; keep rider-* for older lowercase feed entries.
+        override val urlFilenameTokens = listOf("JetBrains.Rider-", "rider-")
     }
 
     data object CLion : IdeProduct {
@@ -116,6 +138,8 @@ sealed interface IdeProduct {
         override val code = "CL"
         override val launcherExecutable = "clion"
         override val licenseTier = LicenseTier.FreeForNonCommercial
+        // HEAD evidence: CLion archives use case-sensitive CLion-* filenames.
+        override val urlFilenameTokens = listOf("CLion-")
     }
 
     // ---- Google-published IDE ----

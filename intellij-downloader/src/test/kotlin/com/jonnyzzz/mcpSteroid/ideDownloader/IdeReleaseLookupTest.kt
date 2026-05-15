@@ -1,6 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -40,6 +46,117 @@ class IdeReleaseLookupTest {
         val url = resolveArchiveUrl(IdeProduct.Rider, IdeChannel.STABLE, os = HostOs.LINUX)
         assertTrue("Expected .tar.gz URL, got: $url", url.endsWith(".tar.gz"))
         assertTrue("Expected download URL, got: $url", url.contains("download"))
+    }
+
+    @Test
+    fun `resolver skips release whose filename belongs to another edition`() {
+        val payload = productsPayload(
+            IdeProduct.IntelliJIdeaCommunity,
+            listOf(
+                FixtureRelease(
+                    version = "2025.3",
+                    build = "253.28294.334",
+                    link = "https://download.jetbrains.com/idea/idea-2025.3-aarch64.dmg",
+                ),
+                FixtureRelease(
+                    version = "2025.2.6.2",
+                    build = "252.28238.39",
+                    link = "https://download.jetbrains.com/idea/ideaIC-2025.2.6.2-aarch64.dmg",
+                ),
+            ),
+        )
+
+        val resolution = resolveArchiveFromProductsApiPayload(
+            product = IdeProduct.IntelliJIdeaCommunity,
+            channel = IdeChannel.STABLE,
+            os = HostOs.MAC,
+            architecture = HostArchitecture.ARM64,
+            productsApiUrl = "fixture://products?code=IIC",
+            payload = payload,
+        )
+
+        assertEquals("2025.2.6.2", resolution.version)
+        assertEquals("https://download.jetbrains.com/idea/ideaIC-2025.2.6.2-aarch64.dmg", resolution.url)
+    }
+
+    @Test
+    fun `resolver fails clearly when no release filename matches the product tokens`() {
+        val payload = productsPayload(
+            IdeProduct.IntelliJIdeaCommunity,
+            listOf(
+                FixtureRelease(
+                    version = "2025.3",
+                    build = "253.28294.334",
+                    link = "https://download.jetbrains.com/idea/idea-2025.3-aarch64.dmg",
+                ),
+            ),
+        )
+
+        val ex = expectError {
+            resolveArchiveFromProductsApiPayload(
+                product = IdeProduct.IntelliJIdeaCommunity,
+                channel = IdeChannel.STABLE,
+                os = HostOs.MAC,
+                architecture = HostArchitecture.ARM64,
+                productsApiUrl = "fixture://products?code=IIC",
+                payload = payload,
+            )
+        }
+
+        assertTrue("expected product code in error, got: ${ex.message}", ex.message!!.contains("code=IIC"))
+        assertTrue("expected token in error, got: ${ex.message}", ex.message!!.contains("ideaIC-"))
+        assertTrue("expected skipped filename in error, got: ${ex.message}", ex.message!!.contains("idea-2025.3-aarch64.dmg"))
+    }
+
+    @Test
+    fun `known JetBrains products resolve to URLs accepted by their filename token list`() {
+        val products = IdeProduct.knownProducts.filterNot { it === IdeProduct.AndroidStudio }
+        for (product in products) {
+            assertTrue("${product.code} must define URL filename tokens", product.urlFilenameTokens.isNotEmpty())
+            val resolution = resolveArchive(
+                product,
+                IdeChannel.STABLE,
+                os = HostOs.MAC,
+                architecture = HostArchitecture.ARM64,
+            )
+            val filename = downloadFilenameFromUrl(resolution.url)
+            assertTrue(
+                "${product.code} resolved $filename, expected one of ${product.urlFilenameTokens}",
+                product.acceptsDownloadFilename(filename),
+            )
+        }
+    }
+
+    @Test
+    fun `Custom product keeps accepting arbitrary API filenames`() {
+        val custom = IdeProduct.Custom(
+            id = "rubymine",
+            displayName = "RubyMine",
+            code = "RM",
+            launcherExecutable = "rubymine",
+            licenseTier = LicenseTier.FreeForNonCommercial,
+        )
+        val payload = productsPayload(
+            custom,
+            listOf(
+                FixtureRelease(
+                    version = "2026.1",
+                    build = "261.1",
+                    link = "https://download.jetbrains.com/ruby/RubyMine-2026.1-aarch64.dmg",
+                ),
+            ),
+        )
+
+        val resolution = resolveArchiveFromProductsApiPayload(
+            product = custom,
+            channel = IdeChannel.STABLE,
+            os = HostOs.MAC,
+            architecture = HostArchitecture.ARM64,
+            productsApiUrl = "fixture://products?code=RM",
+            payload = payload,
+        )
+
+        assertEquals("https://download.jetbrains.com/ruby/RubyMine-2026.1-aarch64.dmg", resolution.url)
     }
 
     // ---------- new: IntelliJ Community (IIC) on every OS × arch ----------
@@ -251,6 +368,37 @@ class IdeReleaseLookupTest {
             expectedSuffixes.any { url.endsWith(it) }
         )
         assertTrue("Expected download URL, got: $url", url.startsWith("https://") || url.startsWith("http://"))
+    }
+
+    private data class FixtureRelease(
+        val version: String,
+        val build: String,
+        val link: String,
+        val type: String = IdeChannel.STABLE.apiValue,
+    )
+
+    private fun productsPayload(product: IdeProduct, releases: List<FixtureRelease>): String {
+        val payload = buildJsonArray {
+            add(buildJsonObject {
+                put("code", product.code)
+                put("releases", buildJsonArray {
+                    for (release in releases) {
+                        add(buildJsonObject {
+                            put("type", release.type)
+                            put("version", release.version)
+                            put("build", release.build)
+                            put("date", "2026-05-15")
+                            put("downloads", buildJsonObject {
+                                put("macM1", buildJsonObject {
+                                    put("link", release.link)
+                                })
+                            })
+                        })
+                    }
+                })
+            })
+        }
+        return Json.encodeToString(JsonArray.serializer(), payload)
     }
 
     private inline fun expectError(block: () -> Unit): Throwable {
