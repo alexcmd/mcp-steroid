@@ -103,10 +103,16 @@ fun writeIdeStartupConfigFiles(configDir: Path) {
 }
 
 fun writeIdeUserStartupConfigFiles(userHome: Path) {
-    for (file in ideUserStartupConfigFiles()) {
-        val target = userHome.resolve(file.relativePath)
-        Files.createDirectories(target.parent)
-        Files.writeString(target, file.content)
+    // The .java/.userPrefs/... paths use java.util.prefs FileSystemPreferences
+    // encoding (with " characters) that's illegal in Windows paths. Windows uses
+    // WindowsPreferences (HKCU\Software\JavaSoft\Prefs) instead, so file-based
+    // EULA stubs are unnecessary — the Preferences.userRoot() flush below covers it.
+    if (resolveHostOs() != HostOs.WINDOWS) {
+        for (file in ideUserStartupConfigFiles()) {
+            val target = userHome.resolve(file.relativePath)
+            Files.createDirectories(target.parent)
+            Files.writeString(target, file.content)
+        }
     }
     if (userHome.toAbsolutePath().normalize() == Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()) {
         val prefs = Preferences.userRoot().node("jetbrains/privacy_policy")
