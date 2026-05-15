@@ -283,7 +283,7 @@ internal fun runBackendStopCommand(
     return 0
 }
 
-private fun runBackendActionJson(
+internal fun runBackendActionJson(
     out: PrintStream,
     action: String,
     id: String,
