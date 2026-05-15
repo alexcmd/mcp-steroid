@@ -116,6 +116,7 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
+    testImplementation(project(":intellij-downloader"))
     testImplementation(project(":test-helper"))
 
     // https://mvnrepository.com/artifact/org.testcontainers/testcontainers-bom
@@ -185,6 +186,9 @@ intellijPlatform {
         }
 
         ideaVersion {
+            // KEEP IN SYNC with `MANAGED_BACKEND_MIN_SUPPORTED_BUILD` in
+            // intellij-downloader/.../CompatibilityFloor.kt — enforced by
+            // PluginCompatibilityFloorTest.
             sinceBuild = "252"
             untilBuild = null
         }

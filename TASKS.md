@@ -1621,16 +1621,18 @@ fresh download when the file is missing/stale. The test stages cached
 `devrig backend download` and back-populates archive files after a
 successful download.
 
-### F6 — Plugin `sinceBuild` must move with the resolver's oldest fallback
+### F6 — Plugin `sinceBuild` must move with the resolver's oldest fallback ✅ resolved
 
 M1-fix's `idea-community` fallback to 2025.2.6.2 (build `IC-252`) does
 not load with `sinceBuild=253`. The two surfaces (resolver oldest
 release in `IdeProduct.knownProducts` + plugin manifest `sinceBuild`)
 are coupled but live in different modules.
 
-**Fix:** add a CI test that loads the lowest version any
-`IdeProduct.knownProducts` entry resolves to and asserts the built
-plugin's `sinceBuild` is `<=` that version's build number.
+**Fix:** declare `MANAGED_BACKEND_MIN_SUPPORTED_BUILD = "252"` in
+`:intellij-downloader` and gate `:ij-plugin:test` with
+`PluginCompatibilityFloorTest`, which reads `ij-plugin/build.gradle.kts`
+and fails if `pluginConfiguration.ideaVersion.sinceBuild` drifts from
+the resolver baseline.
 
 ### F7 — Remove legacy home-root marker fallback after one release (DEFERRED)
 
