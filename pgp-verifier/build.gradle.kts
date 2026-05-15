@@ -40,3 +40,19 @@ tasks.test {
         systemProperty("pgpVerifier.test.launcher", launcher.absolutePath)
     }
 }
+
+// Expose the installed distribution to consumers via the same "install-dist"
+// Usage attribute that :ocr-tesseract uses.
+val installDistElements by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "install-dist"))
+    }
+}
+
+artifacts {
+    add(installDistElements.name, tasks.installDist.map { it.destinationDir }) {
+        builtBy(tasks.installDist)
+    }
+}
