@@ -1200,7 +1200,7 @@ exposed as primary keys in `backends[]`. Scripts will key on the index.
 **Fix:** drop the synthetic id; the natural id is the row's
 `<product-key>-<version>` (or `port-<n>` for port-discovered).
 
-### M5 — SevenZipLocator cache writes are racy (A, C)
+### M5 — SevenZipLocator cache writes are racy (A, C) ✅ resolved (download-A batch)
 `SevenZipLocator.kt:69-73`, `:103-107`. Fixed `*.tmp` filename per
 binary; two concurrent first-runs collide.
 **Fix:** randomise tmp name with `Files.createTempFile` and atomic-move
@@ -1211,7 +1211,7 @@ The schema lies. Either `start` writes to that path, or `stop` omits the field.
 **Fix:** drop the field, or have `start` write to that path (it's the
 log file we already capture — wire it).
 
-### M7 — Partial / interrupted downloads poison the install dir (B)
+### M7 — Partial / interrupted downloads poison the install dir (B) ✅ resolved (download-A batch)
 No transactional rename; an aborted `download` leaves a half-extracted
 bundle that subsequent `download` calls treat as installed.
 **Fix:** extract to `<id>.partial/`, atomic rename to `<id>/` only on
@@ -1231,9 +1231,9 @@ the canonical mode prefix.
 | m2 | `NpxKtRoot` has a production-visible mutable test seam | A, B, C |
 | m3 | Text rendering uses UTF-16 `String.length`, not terminal display width | A, B |
 | m4 | Some unit tests depend on live JetBrains/Google APIs (flaky offline) | A |
-| m5 | Banned silent `catch (_:Exception)` in `IdeDownloader.kt:58-60` | A, B, C |
+| m5 | Banned silent `catch (_:Exception)` in `IdeDownloader.kt:58-60` ✅ resolved (download-A batch) | A, B, C |
 | m6 | Help banner omits `--version <v>` for `backend start/stop` | C |
-| m7 | `tempFile.renameTo(dest)` success not checked in `IdeDownloader.kt:79-98` | A |
+| m7 | `tempFile.renameTo(dest)` success not checked in `IdeDownloader.kt:79-98` ✅ resolved (download-A batch) | A |
 
 ## Deferred (per user, 2026-05-15)
 

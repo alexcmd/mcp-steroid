@@ -54,6 +54,13 @@ internal data class DownloadResult(
     val vmOptionsPath: Path,
 )
 
+private data class PreparedBackendInstall(
+    val bundleDirName: String,
+    val launcher: LauncherResolution,
+    val downloadArtifact: BackendDownloadArtifact,
+    val downloadedAt: String?,
+)
+
 internal data class StartResult(
     val id: String,
     val pid: Long,
@@ -206,41 +213,84 @@ internal class BackendManager(
         val resolution = downloader.resolve(id)
         val resolved = ResolvedBackendId(resolution.product, resolution.version)
         val backendDir = homePaths.backendDir(resolved.id)
-        Files.createDirectories(backendDir)
-
         val descriptorPath = descriptorPath(backendDir)
         val existingDescriptor = readDescriptorOrNull(descriptorPath)
-        val downloadArtifact = if (existingDescriptor == null || !backendDir.resolve(existingDescriptor.bundleDirName).isDirectory()) {
-            downloader.downloadAndUnpack(resolution, backendDir)
+
+        val prepared = if (isReusableBackendInstall(backendDir, existingDescriptor)) {
+            val bundleDir = resolveBundleDir(backendDir)
+            val launcher = launcherResolver.resolve(bundleDir)
+            val artifact = BackendDownloadArtifact(sourceArchiveSha256 = existingDescriptor?.sourceArchiveSha256)
+            validateInstalledProductCode(
+                product = resolution.product,
+                actualProductCode = launcher.productCode,
+                downloadedUrl = resolution.url,
+                archivePath = artifact.archivePath,
+                bundleDir = bundleDir,
+                descriptorPath = descriptorPath,
+            )
+            PreparedBackendInstall(
+                bundleDirName = bundleDir.fileName.toString(),
+                launcher = launcher,
+                downloadArtifact = artifact,
+                downloadedAt = existingDescriptor?.downloadedAt,
+            )
         } else {
-            BackendDownloadArtifact(sourceArchiveSha256 = existingDescriptor.sourceArchiveSha256)
+            val partialDir = homePaths.backendsDir.resolve("${resolved.id}.partial")
+            deleteRecursively(backendDir)
+            deleteRecursively(partialDir)
+            Files.createDirectories(partialDir)
+            try {
+                val artifact = downloader.downloadAndUnpack(resolution, partialDir)
+                val partialBundleDir = resolveBundleDir(partialDir)
+                val launcher = launcherResolver.resolve(partialBundleDir)
+                validateInstalledProductCode(
+                    product = resolution.product,
+                    actualProductCode = launcher.productCode,
+                    downloadedUrl = resolution.url,
+                    archivePath = artifact.archivePath,
+                    bundleDir = partialBundleDir,
+                    descriptorPath = descriptorPath(partialDir),
+                )
+                Files.move(partialDir, backendDir, StandardCopyOption.ATOMIC_MOVE)
+                PreparedBackendInstall(
+                    bundleDirName = partialBundleDir.fileName.toString(),
+                    launcher = launcher,
+                    downloadArtifact = artifact,
+                    downloadedAt = existingDescriptor?.downloadedAt,
+                )
+            } catch (e: Exception) {
+                deleteRecursively(partialDir)
+                throw e
+            }
         }
 
-        val bundleDir = resolveBundleDir(backendDir)
-        val launcher = launcherResolver.resolve(bundleDir)
-        validateInstalledProductCode(
-            product = resolution.product,
-            actualProductCode = launcher.productCode,
-            downloadedUrl = resolution.url,
-            archivePath = downloadArtifact.archivePath,
-            bundleDir = bundleDir,
-            descriptorPath = descriptorPath,
-        )
-        val vmOptionsPath = writeBackendVmOptions(homePaths, resolved.id, bundleDir.fileName.toString())
+        val vmOptionsPath = writeBackendVmOptions(homePaths, resolved.id, prepared.bundleDirName)
         val descriptor = BackendDescriptor(
             id = resolved.id,
             productKey = resolution.product.id,
-            productCode = launcher.productCode ?: resolution.product.code,
+            productCode = prepared.launcher.productCode ?: resolution.product.code,
             version = resolution.version,
-            buildNumber = launcher.buildNumber ?: resolution.build,
-            bundleDirName = bundleDir.fileName.toString(),
-            launcherPath = launcher.launcherPath,
-            downloadedAt = existingDescriptor?.downloadedAt ?: Instant.now().toString(),
-            sourceArchiveSha256 = downloadArtifact.sourceArchiveSha256,
+            buildNumber = prepared.launcher.buildNumber ?: resolution.build,
+            bundleDirName = prepared.bundleDirName,
+            launcherPath = prepared.launcher.launcherPath,
+            downloadedAt = prepared.downloadedAt ?: Instant.now().toString(),
+            sourceArchiveSha256 = prepared.downloadArtifact.sourceArchiveSha256,
         )
         writeDescriptor(descriptorPath, descriptor)
         deployMcpSteroidPlugin(resolved.id)
         return DownloadResult(resolved.id, descriptor, backendDir, vmOptionsPath)
+    }
+
+    private fun isReusableBackendInstall(backendDir: Path, descriptor: BackendDescriptor?): Boolean {
+        if (!Files.isDirectory(backendDir)) return false
+        if (descriptor != null) {
+            return backendDir.resolve(descriptor.bundleDirName).isDirectory()
+        }
+        return Files.list(backendDir).use { stream ->
+            stream.asSequence()
+                .filter { it.isDirectory() }
+                .any { hasProductInfoCandidate(it) }
+        }
     }
 
     fun deployMcpSteroidPlugin(id: String): Path {

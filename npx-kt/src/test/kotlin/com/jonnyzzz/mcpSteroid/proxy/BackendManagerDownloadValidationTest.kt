@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.EOFException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -68,8 +69,10 @@ class BackendManagerDownloadValidationTest {
             manager.download(parseBackendId(backendId))
         }
 
-        val unpackedBundle = backendDir.resolve("idea-IU-253.1")
+        val partialDir = homePaths.backendsDir.resolve("$backendId.partial")
+        val unpackedBundle = partialDir.resolve("idea-IU-253.1")
         assertFalse(unpackedBundle.exists(), "mismatched bundle must be removed")
+        assertFalse(partialDir.exists(), "partial backend dir must be removed on validation failure")
         assertFalse(descriptorPath(backendDir).exists(), "backend.json must be removed on validation failure")
         assertTrue(error.message!!.contains("idea-community (IIC)"), error.message)
         assertTrue(error.message!!.contains("Expected product-info.json productCode 'IC'"), error.message)
@@ -77,6 +80,37 @@ class BackendManagerDownloadValidationTest {
         assertTrue(error.message!!.contains("https://download.jetbrains.com/idea/idea-2025.3-aarch64.dmg"), error.message)
         assertTrue(error.message!!.contains(archivePath.toString()), error.message)
         assertTrue(error.message!!.contains(unpackedBundle.toString()), error.message)
+    }
+
+    @Test
+    fun `failed partial extraction is cleaned before retry succeeds`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val backendId = "idea-community-2025.3.3"
+        val partialDir = homePaths.backendsDir.resolve("$backendId.partial")
+        val finalDir = homePaths.backendDir(backendId)
+        val downloader = FailingOnceDownloader(fakeArchive(tempDir, "ideaIC-2025.3.3.tar.gz"))
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = downloader,
+            bundledPluginResolver = FixedPluginResolver(pluginFixture(tempDir.resolve("dist/ij-plugin"))),
+        )
+
+        assertFailsWith<EOFException> {
+            manager.download(parseBackendId(backendId))
+        }
+
+        assertFalse(finalDir.exists(), "failed extraction must not publish a final backend dir")
+        assertFalse(partialDir.exists(), "failed extraction must remove the partial backend dir")
+
+        val result = manager.download(parseBackendId(backendId))
+
+        assertEquals(backendId, result.id)
+        assertTrue(finalDir.exists(), "successful retry must publish the final backend dir")
+        assertTrue(finalDir.resolve(result.descriptor.bundleDirName).resolve("product-info.json").exists())
+        assertFalse(partialDir.exists(), "successful retry must leave no partial backend dir")
+        assertEquals(listOf(partialDir, partialDir), downloader.targetDirs)
     }
 
     @Test
@@ -142,6 +176,56 @@ class BackendManagerDownloadValidationTest {
 
     private class FixedPluginResolver(private val dir: Path) : BundledPluginResolver {
         override fun resolveBundledPluginDir(): Path = dir
+    }
+
+    private class FailingOnceDownloader(
+        private val archivePath: Path,
+    ) : ManagedBackendDownloader {
+        val targetDirs = mutableListOf<Path>()
+        private var attempts = 0
+
+        override suspend fun resolve(id: BackendId): BackendDownloadResolution =
+            BackendDownloadResolution(
+                product = IdeProduct.IntelliJIdeaCommunity,
+                version = id.version ?: "2025.3.3",
+                build = "IC-253.1",
+                url = "https://download.jetbrains.com/idea/${archivePath.fileName}",
+            )
+
+        override suspend fun downloadAndUnpack(
+            resolution: BackendDownloadResolution,
+            targetDir: Path,
+        ): BackendDownloadArtifact {
+            targetDirs.add(targetDir)
+            attempts++
+            val bundleDir = targetDir.resolve("idea-IC-253.1")
+            Files.createDirectories(bundleDir.resolve("bin"))
+            Files.writeString(bundleDir.resolve("partial-entry.txt"), "created before EOF")
+            if (attempts == 1) {
+                throw EOFException("truncated fake archive")
+            }
+            Files.deleteIfExists(bundleDir.resolve("partial-entry.txt"))
+            Files.writeString(bundleDir.resolve("product-info.json"), productInfo())
+            Files.writeString(bundleDir.resolve("bin/idea.sh"), "#!/usr/bin/env sh\n")
+            Files.writeString(bundleDir.resolve("bin/idea.bat"), "@echo off\r\n")
+            return BackendDownloadArtifact(
+                sourceArchiveSha256 = "sha-retry",
+                archivePath = archivePath,
+            )
+        }
+
+        private fun productInfo(): String =
+            """
+            {
+              "productCode": "IC",
+              "buildNumber": "IC-253.1",
+              "launch": [
+                { "os": "Linux", "launcherPath": "bin/idea.sh" },
+                { "os": "macOS", "launcherPath": "bin/idea.sh" },
+                { "os": "Windows", "launcherPath": "bin/idea.bat" }
+              ]
+            }
+            """.trimIndent()
     }
 
     private class InstallingDownloader(
