@@ -1,24 +1,5 @@
 import de.undercouch.gradle.tasks.download.Download
-import org.bouncycastle.openpgp.PGPCompressedData
-import org.bouncycastle.openpgp.PGPObjectFactory
-import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
-import org.bouncycastle.openpgp.PGPSignature
-import org.bouncycastle.openpgp.PGPSignatureList
-import org.bouncycastle.openpgp.PGPUtil
-import org.bouncycastle.openpgp.operator.bc.BcKeyFingerprintCalculator
-import org.bouncycastle.openpgp.operator.bc.BcPGPContentVerifierBuilderProvider
 import org.gradle.api.file.RelativePath
-import java.io.BufferedInputStream
-
-buildscript {
-    dependencies {
-        // OpenPGP signature verification — used by the doLast in the
-        // verifyJdk_* tasks below. The non-fips package is fine for
-        // verifying signatures (no key generation, no cipher modes).
-        classpath("org.bouncycastle:bcpg-jdk18on:1.78.1")
-        classpath("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    }
-}
 
 plugins {
     kotlin("jvm")
@@ -51,47 +32,27 @@ fun Download.configureReliableDownload() {
     tempAndMove(true)
 }
 
-fun pgpKeyIdHex(keyId: Long): String = keyId.toULong().toString(16).uppercase().padStart(16, '0')
-
-fun verifyDetachedPgpSignature(archive: File, signature: File, publicKeyBundle: File) {
-    val rings = PGPUtil.getDecoderStream(publicKeyBundle.inputStream()).use { stream ->
-        PGPPublicKeyRingCollection(stream, BcKeyFingerprintCalculator())
+// Resolvable: consumes :pgp-verifier's installDist directory through
+// the same "install-dist" Usage attribute :ocr-tesseract already
+// exposes. The verifier runs as an external process so :jdk-downloader's
+// buildscript classpath stays small.
+val pgpVerifierInstallDist by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "install-dist"))
     }
+}
 
-    val sig: PGPSignature = PGPUtil.getDecoderStream(signature.inputStream()).use { stream ->
-        val factory = PGPObjectFactory(stream, BcKeyFingerprintCalculator())
-        val first = factory.nextObject()
-        val sigList = when (first) {
-            is PGPSignatureList -> first
-            is PGPCompressedData -> PGPObjectFactory(first.dataStream, BcKeyFingerprintCalculator()).nextObject() as PGPSignatureList
-            else -> error("Unexpected packet in signature file ${signature.name}: ${first?.javaClass?.simpleName ?: "null"}")
-        }
-        require(sigList.size() > 0) { "Signature file ${signature.name} contains no signature packets" }
-        sigList[0]
-    }
+dependencies {
+    pgpVerifierInstallDist(project(":pgp-verifier"))
+}
 
-    val keyId = pgpKeyIdHex(sig.keyID)
-    val key = rings.getPublicKey(sig.keyID)
-        ?: error(
-            "Signature on ${archive.name} was made with key id 0x$keyId, " +
-                "which is NOT present in the bundled Corretto public key ring (${publicKeyBundle.name}). " +
-                "Refusing to extract — possible tampered archive or untrusted signer."
-        )
-
-    sig.init(BcPGPContentVerifierBuilderProvider(), key)
-    BufferedInputStream(archive.inputStream()).use { input ->
-        val buffer = ByteArray(64 * 1024)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            sig.update(buffer, 0, read)
-        }
-    }
-    require(sig.verify()) {
-        "PGP signature verification FAILED for ${archive.name} " +
-            "(signed by key id 0x$keyId, key in ${publicKeyBundle.name}). " +
-            "Archive may be corrupted or tampered."
-    }
+val pgpVerifierLauncher = pgpVerifierInstallDist.elements.map { elements ->
+    val installDir = elements.single().asFile
+    installDir.resolve("bin").resolve(
+        if (org.gradle.internal.os.OperatingSystem.current().isWindows) "pgp-verifier.bat" else "pgp-verifier"
+    )
 }
 
 data class CorrettoPlatform(
@@ -172,20 +133,28 @@ correttoPlatforms.forEach { platform ->
     }
     downloadAllJdks.configure { dependsOn(downloadTask, downloadSigTask, downloadCorrettoPublicKey) }
 
-    val verifyTask = tasks.register("verifyJdk_${platform.id}") {
+    val verifyTask = tasks.register<Exec>("verifyJdk_${platform.id}") {
         group = "verification"
         description = "Verify the PGP signature for Amazon Corretto JDK $correttoVersion on ${platform.id}."
         dependsOn(downloadTask, downloadSigTask, downloadCorrettoPublicKey)
         inputs.file(downloadTask.map { it.outputs.files.singleFile })
         inputs.file(downloadSigTask.map { it.outputs.files.singleFile })
         inputs.file(downloadCorrettoPublicKey.map { it.outputs.files.singleFile })
-        doLast {
-            verifyDetachedPgpSignature(
-                archive = downloadTask.get().outputs.files.singleFile,
-                signature = downloadSigTask.get().outputs.files.singleFile,
-                publicKeyBundle = downloadCorrettoPublicKey.get().outputs.files.singleFile,
+        inputs.file(pgpVerifierLauncher)
+        doFirst {
+            val archive = downloadTask.get().outputs.files.singleFile
+            val signature = downloadSigTask.get().outputs.files.singleFile
+            val publicKey = downloadCorrettoPublicKey.get().outputs.files.singleFile
+            val launcher = pgpVerifierLauncher.get()
+            commandLine(
+                launcher.absolutePath,
+                archive.absolutePath,
+                signature.absolutePath,
+                publicKey.absolutePath,
             )
-            logger.lifecycle("[jdk-downloader] verified ${platform.id} signature")
+        }
+        doLast {
+            logger.lifecycle("[jdk-downloader] verified ${platform.id} signature via pgp-verifier")
         }
     }
 
