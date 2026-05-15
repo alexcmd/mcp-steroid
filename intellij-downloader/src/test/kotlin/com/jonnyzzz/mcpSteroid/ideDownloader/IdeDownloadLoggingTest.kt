@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +59,25 @@ class IdeDownloadLoggingTest {
                     it.level == Level.DEBUG &&
                         it.formattedMessage ==
                         "[IDE-DOWNLOAD] Fetching Android Studio downloads from https://developer.android.com/studio"
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `malformed archive URL falls back and logs warning`() {
+        val logger = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader") as Logger
+        withCapturedLogger(logger) { appender ->
+            logger.level = Level.WARN
+
+            val fileName = archiveFileNameFromUrl("http://example.com/[bad]", "fallback.tar.gz")
+
+            assertEquals("fallback.tar.gz", fileName)
+            assertTrue(
+                "expected WARN about malformed archive URL",
+                appender.list.any {
+                    it.level == Level.WARN &&
+                        it.formattedMessage.contains("Failed to parse archive file name from URL http://example.com/[bad]")
                 },
             )
         }

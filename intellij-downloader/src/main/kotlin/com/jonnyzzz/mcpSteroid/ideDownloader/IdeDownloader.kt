@@ -55,8 +55,13 @@ private fun IdeDistribution.resolveUrlAndFileName(
     }
 }
 
-private fun archiveFileNameFromUrl(url: String, fallbackFileName: String): String {
-    val fileName = try { URI(url).path.substringAfterLast('/') } catch (_: Exception) { null }
+internal fun archiveFileNameFromUrl(url: String, fallbackFileName: String): String {
+    val fileName = try {
+        URI(url).path.substringAfterLast('/')
+    } catch (e: Exception) {
+        ideDownloaderLog.warn("[IDE-DOWNLOAD] Failed to parse archive file name from URL {}", url, e)
+        null
+    }
     return fileName?.takeIf { it.isNotBlank() } ?: fallbackFileName
 }
 
