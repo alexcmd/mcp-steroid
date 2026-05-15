@@ -264,19 +264,23 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
             "on Windows install 7-Zip or use the npx-kt distribution with bundled 7z."
     )
 
-    unpackDir.mkdirs()
-    ideUnpackerLog.debug("[IDE-DOWNLOAD] Extracting {} with {} -> {}", archiveFile.name, sevenZip, unpackDir)
+    // NSIS extracts files flat — wrap them in a per-archive subdirectory so the
+    // installed layout matches Linux (tar.gz) and macOS (.app from .dmg), both of
+    // which produce a single wrapping directory under the backend dir.
+    val bundleDir = File(unpackDir, archiveFile.nameWithoutExtension)
+    bundleDir.mkdirs()
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Extracting {} with {} -> {}", archiveFile.name, sevenZip, bundleDir)
     runOrThrow(
-        listOf(sevenZip, "x", "-y", "-o${unpackDir.absolutePath}", archiveFile.absolutePath),
+        listOf(sevenZip, "x", "-y", "-o${bundleDir.absolutePath}", archiveFile.absolutePath),
         timeoutMinutes = 10,
     )
 
     // NSIS stub leaves a $PLUGINSDIR with installer scratch; remove it to match toolbox's
     // Windows7zExtractor.kt — it contains nothing needed at runtime.
-    val nsisScratch = File(unpackDir, "\$PLUGINSDIR")
+    val nsisScratch = File(bundleDir, "\$PLUGINSDIR")
     if (nsisScratch.isDirectory) nsisScratch.deleteRecursively()
 
-    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacked .exe into {}", unpackDir)
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacked .exe into {}", bundleDir)
 }
 
 private fun unpackDirAlreadyPopulated(unpackDir: File): Boolean {
