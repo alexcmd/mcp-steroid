@@ -6,6 +6,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class SevenZipLocatorTest {
 
@@ -39,6 +42,59 @@ class SevenZipLocatorTest {
 
         val second = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
         assertEquals("Same 7z.exe hash should reuse the same cache path", first, second)
+    }
+
+    @Test
+    fun `Windows locator concurrent first cache extraction leaves no orphaned temp files`() {
+        val warmup = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
+        assertNotNull("Expected bundled Windows 7z.exe to resolve from classpath", warmup)
+        val cacheDir = File(warmup!!).parentFile
+        cacheDir.deleteRecursively()
+
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val finished = CountDownLatch(2)
+        val results = Collections.synchronizedList(mutableListOf<String>())
+        val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+
+        repeat(2) { index ->
+            Thread({
+                try {
+                    ready.countDown()
+                    start.await()
+                    results += SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
+                        ?: error("bundled Windows 7z.exe did not resolve")
+                } catch (e: Throwable) {
+                    failures += e
+                } finally {
+                    finished.countDown()
+                }
+            }, "sevenzip-locate-$index").apply {
+                isDaemon = true
+                start()
+            }
+        }
+
+        assertTrue("worker threads did not become ready", ready.await(5, TimeUnit.SECONDS))
+        start.countDown()
+        assertTrue("concurrent locate calls did not finish", finished.await(30, TimeUnit.SECONDS))
+        failures.firstOrNull()?.let { throw AssertionError("concurrent locate failed", it) }
+
+        assertEquals(2, results.size)
+        results.forEach { path ->
+            val binary = File(path)
+            assertEquals("7z.exe", binary.name)
+            assertTrue("located binary should exist: $binary", binary.isFile)
+            assertTrue("located binary should be executable: $binary", binary.canExecute())
+        }
+        listOf("7z.exe", "7z.dll", "License.txt").forEach { fileName ->
+            assertTrue("Expected cached bundled payload file $fileName in $cacheDir", File(cacheDir, fileName).isFile)
+        }
+
+        val tempFiles = cacheDir.walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".tmp") }
+            .toList()
+        assertTrue("cache dir should not contain orphaned temp files: $tempFiles", tempFiles.isEmpty())
     }
 
     @Test

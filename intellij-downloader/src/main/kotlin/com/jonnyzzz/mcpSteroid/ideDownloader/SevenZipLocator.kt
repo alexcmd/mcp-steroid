@@ -97,11 +97,16 @@ object SevenZipLocator {
         targetDir.mkdirs()
         sourceFiles.forEach { (fileName, sourceFile) ->
             val target = targetDir.toPath().resolve(fileName)
-            val tmpFile = targetDir.toPath().resolve("$fileName.tmp")
-            Files.copy(sourceFile, tmpFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-            Files.move(tmpFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            if (fileName in payload.executableNames) {
-                target.toFile().setExecutable(true, false)
+            val tmpFile = Files.createTempFile(targetDir.toPath(), fileName, ".tmp")
+            try {
+                Files.copy(sourceFile, tmpFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+                Files.move(tmpFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                if (fileName in payload.executableNames) {
+                    target.toFile().setExecutable(true, false)
+                }
+            } catch (e: Exception) {
+                deleteTempFileOnFailure(tmpFile, e)
+                throw e
             }
         }
 
@@ -126,17 +131,34 @@ object SevenZipLocator {
 
         targetDir.mkdirs()
         resourceBytes.forEach { (fileName, bytes) ->
-            val target = File(targetDir, fileName)
-            val tmpFile = File(targetDir, "$fileName.tmp")
-            tmpFile.outputStream().use { it.write(bytes) }
-            Files.move(tmpFile.toPath(), target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            if (fileName in windowsPayload.executableNames) {
-                target.setExecutable(true, false)
+            val target = targetDir.toPath().resolve(fileName)
+            val tmpFile = Files.createTempFile(targetDir.toPath(), fileName, ".tmp")
+            try {
+                Files.write(tmpFile, bytes)
+                Files.move(
+                    tmpFile,
+                    target,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+                if (fileName in windowsPayload.executableNames) {
+                    target.toFile().setExecutable(true, false)
+                }
+            } catch (e: Exception) {
+                deleteTempFileOnFailure(tmpFile, e)
+                throw e
             }
         }
 
         return targetBinary
+    }
+
+    private fun deleteTempFileOnFailure(tmpFile: Path, cause: Exception) {
+        try {
+            Files.deleteIfExists(tmpFile)
+        } catch (deleteError: Exception) {
+            cause.addSuppressed(deleteError)
+        }
     }
 
     private fun isCompleteCachedPayload(targetDir: File, payload: BundledPayload, primarySize: Int): Boolean {
