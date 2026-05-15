@@ -20,10 +20,10 @@ fun ContainerDriver.copyFromContainer(containerPath: String, localPath: File) {
     newRunOnHost()
         .command("docker", "cp", "$containerId:$containerPath", localPath.absolutePath)
         .description("Copy container:$containerPath to ${localPath.name}")
-        .timeoutSeconds(30L)
+        .timeoutSeconds(300L)
         .quietly()
         .startProcess()
-        .assertExitCode(0) { "Failed to copy to container: $localPath: $stderr" }
+        .assertExitCode(0) { "Failed to copy from container: $containerPath to $localPath: $stderr" }
 }
 
 fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {

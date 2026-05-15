@@ -1609,15 +1609,17 @@ run; immediate rerun passed.
 read the resolved connector port after start. No pre-release
 `ServerSocket(0).localPort` hand-off and no `Thread.sleep` retries.
 
-### F5 — GUI integration test re-downloads ~1 GB IDE archive every run
+### F5 — GUI integration test re-downloads ~1 GB IDE archive every run ✅ resolved
 
 Cold-cache run is ~2 minutes; transient `EOFException` mid-stream has
 surfaced (M14 run).
 
 **Fix:** persistent test archive cache under
-`~/.cache/mcp-steroid-test/` reused across CI runs; falls back to
-fresh download when the file is missing/stale. Single `Files.copy`
-from a `${MCP_STEROID_TEST_ARCHIVE_CACHE}` dir set on CI.
+`~/.cache/mcp-steroid-test/` reused across dev-loop runs; falls back to
+fresh download when the file is missing/stale. The test stages cached
+`ideaIC-*.tar.gz` archives into `/tmp/mcp-home/downloads/` before
+`devrig backend download` and back-populates archive files after a
+successful download.
 
 ### F6 — Plugin `sinceBuild` must move with the resolver's oldest fallback
 

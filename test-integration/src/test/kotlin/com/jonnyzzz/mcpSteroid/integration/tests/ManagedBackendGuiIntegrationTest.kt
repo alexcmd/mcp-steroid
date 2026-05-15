@@ -5,6 +5,8 @@ import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.create
+import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
+import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
@@ -15,6 +17,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -35,17 +40,33 @@ class ManagedBackendGuiIntegrationTest {
         val devrig = container.deployDevrigLauncher()
         container.console.writeHeader("Managed-backend integration test")
 
+        container.execAndAssert(
+            description = "prepare managed backend home",
+            script = """
+                set -euo pipefail
+                rm -rf /tmp/mcp-home
+                mkdir -p /tmp/mcp-home/downloads
+            """.trimIndent(),
+        )
+
+        val hostArchiveCacheDir = resolveManagedBackendArchiveCache(container.console)
+        if (hostArchiveCacheDir != null) {
+            stageCachedManagedBackendArchives(container, hostArchiveCacheDir)
+        }
+
         val download = container.execAndAssertWithConsoleStream(
             description = "download IDEA Community managed backend",
             timeoutSeconds = 35 * 60L,
             script = """
                 set -euo pipefail
-                rm -rf /tmp/mcp-home
-                mkdir -p /tmp/mcp-home
-                "$devrig" --home /tmp/mcp-home backend download idea-community
+                mkdir -p /tmp/mcp-home/downloads
+                "$devrig" --debug --home /tmp/mcp-home backend download idea-community
             """.trimIndent(),
         )
         assertTrue(download.stdout.contains("id: idea-community-"), download.stdout)
+        if (hostArchiveCacheDir != null) {
+            backPopulateManagedBackendArchiveCache(container, hostArchiveCacheDir)
+        }
 
         val id = container.execAndAssert(
             description = "resolve managed backend id",
@@ -187,6 +208,161 @@ class ManagedBackendGuiIntegrationTest {
         container.console.writeSuccess("Managed backend lifecycle verified")
     }
 }
+
+private const val MANAGED_BACKEND_HOME = "/tmp/mcp-home"
+private const val MANAGED_BACKEND_DOWNLOADS_DIR = "/tmp/mcp-home/downloads"
+private const val MANAGED_BACKEND_ARCHIVE_CACHE_ENV = "MCP_STEROID_TEST_ARCHIVE_CACHE"
+private val ideaCommunityArchiveName = Regex("""ideaIC-.*\.tar\.gz""")
+private val managedBackendArchiveExtensions = listOf(".tar.gz", ".dmg", ".zip", ".exe")
+
+private fun resolveManagedBackendArchiveCache(console: ConsoleDriver): File? {
+    val configuredDir = System.getenv(MANAGED_BACKEND_ARCHIVE_CACHE_ENV)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+    val cacheDir = (configuredDir
+        ?.let { File(it) }
+        ?: File(System.getProperty("user.home"), ".cache/mcp-steroid-test"))
+        .absoluteFile
+
+    try {
+        Files.createDirectories(cacheDir.toPath())
+    } catch (e: Exception) {
+        console.writeInfo("WARN: managed-backend archive cache disabled; cannot create ${cacheDir.absolutePath}: ${e.message}")
+        return null
+    }
+
+    if (!cacheDir.isDirectory) {
+        console.writeInfo("WARN: managed-backend archive cache disabled; not a directory: ${cacheDir.absolutePath}")
+        return null
+    }
+    if (!cacheDir.canRead() || !cacheDir.canWrite()) {
+        console.writeInfo("WARN: managed-backend archive cache disabled; directory is not readable/writable: ${cacheDir.absolutePath}")
+        return null
+    }
+
+    console.writeInfo("using managed-backend archive cache: ${cacheDir.absolutePath}")
+    return cacheDir
+}
+
+private fun stageCachedManagedBackendArchives(
+    container: IntelliJContainer,
+    hostCacheDir: File,
+) {
+    val archives = try {
+        hostCacheDir.listFiles { file -> file.isFile && ideaCommunityArchiveName.matches(file.name) }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+    } catch (e: Exception) {
+        container.console.writeInfo("WARN: cannot list managed-backend archive cache ${hostCacheDir.absolutePath}: ${e.message}")
+        return
+    }
+
+    if (archives.isEmpty()) {
+        container.console.writeInfo("no cached IDEA Community archives staged from ${hostCacheDir.absolutePath}")
+        return
+    }
+
+    container.execAndAssert(
+        description = "ensure managed backend downloads directory",
+        script = """
+            set -euo pipefail
+            mkdir -p $MANAGED_BACKEND_DOWNLOADS_DIR
+        """.trimIndent(),
+    )
+
+    archives.forEach { archive ->
+        try {
+            container.scope.copyToContainer(archive, "$MANAGED_BACKEND_DOWNLOADS_DIR/${archive.name}")
+            container.console.writeInfo("staged cached archive: ${archive.name}")
+        } catch (e: Exception) {
+            container.console.writeInfo("WARN: failed to stage cached archive ${archive.name}: ${e.message}")
+        }
+    }
+}
+
+private fun backPopulateManagedBackendArchiveCache(
+    container: IntelliJContainer,
+    hostCacheDir: File,
+) {
+    val archiveNames = container.execAndAssert(
+        description = "list managed backend downloads",
+        script = """
+            set -euo pipefail
+            ls $MANAGED_BACKEND_DOWNLOADS_DIR
+        """.trimIndent(),
+    ).stdout
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isManagedBackendArchiveFileName() }
+        .sorted()
+        .toList()
+
+    if (archiveNames.isEmpty()) {
+        container.console.writeInfo("no managed-backend archive files found to cache")
+        return
+    }
+
+    archiveNames.forEach { archiveName ->
+        cacheManagedBackendArchive(container, hostCacheDir, archiveName)
+    }
+}
+
+private fun cacheManagedBackendArchive(
+    container: IntelliJContainer,
+    hostCacheDir: File,
+    archiveName: String,
+) {
+    val guestPath = "$MANAGED_BACKEND_DOWNLOADS_DIR/$archiveName"
+    val hostFile = File(hostCacheDir, archiveName)
+    val containerSize = container.execAndAssert(
+        description = "stat managed backend archive $archiveName",
+        script = """
+            set -euo pipefail
+            stat -c %s ${bashSingleQuote(guestPath)}
+        """.trimIndent(),
+    ).stdout.trim().toLong()
+
+    if (hostFile.isFile && hostFile.length() == containerSize) {
+        container.console.writeInfo("archive cache already up to date: $archiveName")
+        return
+    }
+
+    val temporaryHostFile = File(hostCacheDir, ".${archiveName}.${System.nanoTime()}.tmp")
+    var cached = false
+    try {
+        container.scope.copyFromContainer(guestPath, temporaryHostFile)
+        val copiedSize = temporaryHostFile.length()
+        if (copiedSize != containerSize) {
+            container.console.writeInfo(
+                "WARN: copied archive has unexpected size for $archiveName: host=$copiedSize container=$containerSize",
+            )
+            return
+        }
+
+        Files.move(
+            temporaryHostFile.toPath(),
+            hostFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+        cached = true
+        container.console.writeInfo("cached archive for next run: $archiveName")
+    } catch (e: Exception) {
+        container.console.writeInfo("WARN: failed to cache archive $archiveName: ${e.message}")
+    } finally {
+        if (!cached) {
+            try {
+                Files.deleteIfExists(temporaryHostFile.toPath())
+            } catch (e: Exception) {
+                container.console.writeInfo("WARN: failed to remove temporary archive file ${temporaryHostFile.absolutePath}: ${e.message}")
+            }
+        }
+    }
+}
+
+private fun String.isManagedBackendArchiveFileName(): Boolean =
+    managedBackendArchiveExtensions.any { extension -> endsWith(extension) }
+
+private fun bashSingleQuote(value: String): String = "'" + value.replace("'", "'\"'\"'") + "'"
 
 /**
  * Runs a devrig script inside this container while live-streaming stdout/stderr
