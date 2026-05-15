@@ -54,12 +54,12 @@ data class AppliedHunk(
 )
 
 @Serializable
-data class ApplyPatchResult(val applied: List<AppliedHunk>) {
+data class ApplyPatchResult(val applied: List<AppliedHunk>, val isDryRun: Boolean = false) {
     val hunkCount: Int get() = applied.size
     val fileCount: Int get() = applied.map { it.path }.distinct().size
 
     /**
-     * Multi-line audit trail suitable for `println(result)`. Example:
+     * Multi-line audit trail suitable for `println(result)`. Example (live):
      *
      * ```
      * apply-patch: 3 hunks across 2 file(s) applied atomically.
@@ -67,15 +67,22 @@ data class ApplyPatchResult(val applied: List<AppliedHunk>) {
      *   [#1] /abs/A.java:42:9  (5→9 chars)
      *   [#2] /abs/B.java:88:13 (7→5 chars)
      * ```
+     *
+     * Dry-run swaps "applied" for "would apply" so consumers parsing the
+     * audit trail can distinguish the two without inspecting `isDryRun`.
      */
     override fun toString(): String = buildString {
-        append("apply-patch: ")
+        append("apply-patch")
+        if (isDryRun) append(" (dry-run)")
+        append(": ")
         append(hunkCount)
         append(" hunk")
         if (hunkCount != 1) append("s")
         append(" across ")
         append(fileCount)
-        append(" file(s) applied atomically.")
+        append(" file(s) ")
+        append(if (isDryRun) "would apply" else "applied")
+        append(" atomically.")
         applied.forEach { h ->
             append("\n  [#").append(h.index).append("] ").append(h.path)
             append(':').append(h.line).append(':').append(h.column)
@@ -104,6 +111,7 @@ class ApplyPatchBuilder internal constructor() {
 internal suspend fun executeApplyPatch(
     project: Project,
     hunks: List<ApplyPatchHunk>,
+    dryRun: Boolean = false,
     resolveFile: (String) -> VirtualFile?,
 ): ApplyPatchResult {
     require(hunks.isNotEmpty()) { "applyPatch { … } called with zero hunks" }
@@ -189,32 +197,39 @@ internal suspend fun executeApplyPatch(
     // `timeoutRunBlocking` runs on the JUnit worker thread and leaves EDT free
     // to dispatch the write phase (an EDT-parked-in-runBlocking caller would
     // deadlock here).
-    withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) {
-        WriteCommandAction.runWriteCommandAction(project, commandName, null, Runnable {
-            val fileDocumentManager = FileDocumentManager.getInstance()
-            for ((_, hunksInFile) in groupedDescending) {
-                for (h in hunksInFile) {
-                    h.document.replaceString(h.offset, h.offset + h.oldLen, h.newString)
+    // Dry-run: preflight ran above, every anchor resolved exactly once, every
+    // file is writable. Skip the write phase — caller wants to know whether the
+    // patch *would* apply, not to apply it. `isDryRun` flips the audit-trail
+    // wording so a consumer parsing the output sees "would apply" instead of
+    // "applied".
+    if (!dryRun) {
+        withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) {
+            WriteCommandAction.runWriteCommandAction(project, commandName, null, Runnable {
+                val fileDocumentManager = FileDocumentManager.getInstance()
+                for ((_, hunksInFile) in groupedDescending) {
+                    for (h in hunksInFile) {
+                        h.document.replaceString(h.offset, h.offset + h.oldLen, h.newString)
+                    }
                 }
-            }
-            PsiDocumentManager.getInstance(project).commitAllDocuments()
-            for ((document, hunksInFile) in groupedDescending) {
-                val filePath = hunksInFile.first().filePath
-                try {
-                    fileDocumentManager.saveDocument(document)
-                } catch (e: ProcessCanceledException) {
-                    throw e
-                } catch (e: RuntimeException) {
-                    throw ApplyPatchException("Failed to save patched document to disk: $filePath", e)
+                PsiDocumentManager.getInstance(project).commitAllDocuments()
+                for ((document, hunksInFile) in groupedDescending) {
+                    val filePath = hunksInFile.first().filePath
+                    try {
+                        fileDocumentManager.saveDocument(document)
+                    } catch (e: ProcessCanceledException) {
+                        throw e
+                    } catch (e: RuntimeException) {
+                        throw ApplyPatchException("Failed to save patched document to disk: $filePath", e)
+                    }
+                    if (fileDocumentManager.isDocumentUnsaved(document)) {
+                        throw ApplyPatchException(
+                            "Failed to save patched document to disk: $filePath"
+                        )
+                    }
                 }
-                if (fileDocumentManager.isDocumentUnsaved(document)) {
-                    throw ApplyPatchException(
-                        "Failed to save patched document to disk: $filePath"
-                    )
-                }
-            }
-            PsiDocumentManager.getInstance(project).commitAllDocuments()
-        })
+                PsiDocumentManager.getInstance(project).commitAllDocuments()
+            })
+        }
     }
 
     return ApplyPatchResult(
@@ -227,7 +242,8 @@ internal suspend fun executeApplyPatch(
                 oldLen = h.oldLen,
                 newLen = h.newString.length,
             )
-        }
+        },
+        isDryRun = dryRun,
     )
 }
 

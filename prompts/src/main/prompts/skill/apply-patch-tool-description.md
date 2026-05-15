@@ -22,6 +22,17 @@ Input parameters:
 - `task_id` (string) — your task id; reuse across related calls
 - `reason` (string, optional) — one-line summary
 - `hunks` (array of objects) — each with `file_path`, `old_string`, `new_string` (all strings)
+- `dry_run` (boolean, optional, default `false`) — when `true`, run preflight
+  only. Every anchor is validated and the same "file not found" /
+  "old_string not found" / "occurs more than once" errors are returned as on
+  a live call, but **no files are written**. Use this when you are
+  uncertain whether your hunks still match the current file bytes — a
+  dry-run is cheaper than a failed live patch followed by a discovery
+  call. Successful dry-runs return `apply-patch (dry-run): N hunks across
+  M file(s) would apply atomically.` so the audit-trail string is
+  distinguishable from a live run. Note: `dry_run: true` still flushes the
+  IDE's unsaved editor buffers to disk before preflight (so the preflight
+  reads canonical bytes); the patch itself never writes.
 
 Field names match Claude Code `Edit` exactly (`file_path`, `old_string`, `new_string`) — agents that already know `Edit` can re-use their knowledge directly.
 

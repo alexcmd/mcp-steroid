@@ -33,6 +33,7 @@ class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
         }
 
         val hunks = applyPatchRequest.hunks
+        val dryRun = applyPatchRequest.dryRun
 
         val executionId = ExecutionId("apply-patch-${System.currentTimeMillis()}")
 
@@ -40,16 +41,19 @@ class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
         //   1. dialog killer + modality fail-fast
         //   2. commit + saveAllDocuments + awaitRefresh BEFORE the patch
         //   3. memory-vs-disk conflict resolver disabled for the body
-        //   4. executeApplyPatch
+        //   4. executeApplyPatch (write phase skipped when dryRun=true)
         //   5. awaitRefresh AFTER the patch
         // See McpEditingGuard KDoc for the full flow + threading rationale.
+        // The guard wraps dry-run too: pre-refresh ensures preflight reads the
+        // current on-disk state; post-refresh is a no-op cost when nothing
+        // changed, traded for symmetry with the live path.
         val result = try {
             mcpEditingGuard().withEditingGuard(
                 project = project,
                 executionId = executionId,
                 logMessage = { log.info(it) },
             ) {
-                executeApplyPatch(project, hunks) { path ->
+                executeApplyPatch(project, hunks, dryRun = dryRun) { path ->
                     LocalFileSystem.getInstance().refreshAndFindFileByPath(path)
                 }
             }

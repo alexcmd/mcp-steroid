@@ -221,6 +221,116 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
         assertTrue("Error should name empty hunks: ${result.output}", result.output.contains("hunks array is empty"))
     }
 
+    fun testDryRunTrueDoesNotModifyFileButReportsAudit(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val original = "class A { int value = 1; }\n"
+            val file = writeProjectFile(dir, "DryRun.java", original)
+
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "int value = 1", "int value = 42")),
+                dryRun = true,
+            )
+
+            assertFalse("Dry-run should succeed (preflight ok): ${result.output}", result.isError)
+            assertTrue("Dry-run audit must say 'would apply': ${result.output}",
+                result.output.contains("would apply"))
+            assertTrue("Dry-run audit must mark itself: ${result.output}",
+                result.output.contains("dry-run"))
+            assertEquals("Dry-run must not write to disk", original, Files.readString(file))
+        }
+    }
+
+    fun testDryRunTrueWithBadAnchorReturnsCandidatesNoWrite(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val original = "class DryRunBad { int findByStatus = 1; }\n"
+            val file = writeProjectFile(dir, "DryRunBad.java", original)
+
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "NOT_IN_FILE_XYZ", "replacement")),
+                dryRun = true,
+            )
+
+            assertTrue("Bad anchor must surface as tool error: ${result.output}", result.isError)
+            assertTrue("Error preserves leading wording: ${result.output}",
+                result.output.contains("old_string not found"))
+            // Dry-run flows through the same diagnostic path as the live call,
+            // so the C1 structured tail (file length + fuzzy candidates) is
+            // available without an actual write attempt.
+            assertTrue("Diagnostic should include file size: ${result.output}",
+                result.output.contains(" bytes"))
+            assertEquals("Failed dry-run preflight must not write to disk",
+                original, Files.readString(file))
+        }
+    }
+
+    fun testDryRunFalseIsExplicitLiveCall(): Unit = timeoutRunBlocking(30.seconds) {
+        withTempDir { dir ->
+            val file = writeProjectFile(dir, "DryRunExplicitFalse.java", "class A { int v = 1; }\n")
+
+            val result = callApplyPatchTool(
+                hunks = listOf(hunk(file, "int v = 1", "int v = 42")),
+                dryRun = false,
+            )
+
+            assertFalse("Explicit dry_run=false should write: ${result.output}", result.isError)
+            assertFalse("Live audit must NOT say 'would apply': ${result.output}",
+                result.output.contains("would apply"))
+            assertEquals("class A { int v = 42; }\n", Files.readString(file))
+        }
+    }
+
+    fun testDryRunStringTypeIsRejected(): Unit = timeoutRunBlocking(30.seconds) {
+        // `JsonPrimitive.booleanOrNull` parses .content regardless of token
+        // type, so without the explicit `isString` rejection a quoted "true"
+        // would silently flip behavior. Pin the strict-boolean contract.
+        withTempDir { dir ->
+            val original = "class A { int v = 1; }\n"
+            val file = writeProjectFile(dir, "DryRunStringType.java", original)
+
+            val server = SteroidsMcpServer.getInstance()
+            server.startServerIfNeeded()
+            val sessionId = startSession(server)
+
+            val response = client.post(server.mcpUrl) {
+                contentType(ContentType.Application.Json)
+                accept(ContentType.Application.Json)
+                header(McpHttpTransport.SESSION_HEADER, sessionId)
+                setBody(
+                    buildJsonObject {
+                        put("jsonrpc", "2.0")
+                        put("id", "apply-patch-string-dryrun")
+                        put("method", "tools/call")
+                        putJsonObject("params") {
+                            put("name", "steroid_apply_patch")
+                            putJsonObject("arguments") {
+                                put("project_name", project.name)
+                                put("task_id", "apply-patch-tool-test")
+                                put("dry_run", "true") // string-typed — should be rejected
+                                putJsonArray("hunks") {
+                                    addJsonObject {
+                                        put("file_path", file.toString())
+                                        put("old_string", "int v = 1")
+                                        put("new_string", "int v = 42")
+                                    }
+                                }
+                            }
+                        }
+                    }.toString()
+                )
+            }
+            assertEquals(HttpStatusCode.OK, response.status)
+            val rpc = McpJson.decodeFromString<JsonRpcResponse>(response.bodyAsText())
+            val toolResult = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+            val output = toolResult.content.filterIsInstance<ContentItem.Text>()
+                .joinToString("\n") { it.text }
+
+            assertTrue("String-typed dry_run must be rejected: $output", toolResult.isError)
+            assertTrue("Error names the offending type: $output",
+                output.contains("dry_run must be a JSON boolean"))
+            assertEquals("Rejected call must not write to disk", original, Files.readString(file))
+        }
+    }
+
     // --- Tricky edge cases through the real MCP HTTP transport ---
 
     /**
@@ -464,7 +574,10 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
         }
     }
 
-    private suspend fun callApplyPatchTool(hunks: List<JsonObject>): ApplyPatchCallResult {
+    private suspend fun callApplyPatchTool(
+        hunks: List<JsonObject>,
+        dryRun: Boolean? = null,
+    ): ApplyPatchCallResult {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
         val sessionId = startSession(server)
@@ -484,6 +597,7 @@ class ApplyPatchToolIntegrationTest : BasePlatformTestCase() {
                             put("project_name", project.name)
                             put("task_id", "apply-patch-tool-test")
                             put("reason", "Verify apply patch tool behavior")
+                            if (dryRun != null) put("dry_run", dryRun)
                             putJsonArray("hunks") {
                                 hunks.forEach { add(it) }
                             }

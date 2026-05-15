@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -22,7 +23,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 @Serializable
-data class ApplyPatchRequest(val hunks: List<ApplyPatchHunk>)
+data class ApplyPatchRequest(val hunks: List<ApplyPatchHunk>, val dryRun: Boolean = false)
 
 @Serializable
 data class ApplyPatchHunk(val filePath: String, val oldString: String, val newString: String)
@@ -70,6 +71,10 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
             putJsonObject("reason") {
                 put("type", "string")
                 put("description", "One-line summary of what this patch changes.")
+            }
+            putJsonObject("dry_run") {
+                put("type", "boolean")
+                put("description", "If true, run preflight only — resolve files, validate every anchor (exactly-once), and return the resolved-position audit trail without writing any files. On preflight failure the same structured `file not found` / `old_string not found` / `occurs more than once` diagnostics are returned as on a live call. Defaults to false.")
             }
             putJsonObject("hunks") {
                 put("type", "array")
@@ -151,7 +156,27 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
             ApplyPatchHunk(filePath = filePath, oldString = oldString, newString = newString)
         }
 
-        return handler().applyPatch(projectName, ApplyPatchRequest(hunks))
+        // dry_run is optional and must be a JSON boolean. String-typed primitives
+        // are rejected explicitly — `JsonPrimitive.booleanOrNull` parses `.content`
+        // regardless of whether the original JSON token was a boolean or a
+        // quoted string, so without the `isString` guard `"dry_run": "true"`
+        // would silently flip behavior. A non-strict accept is too risky here:
+        // the flag gates whether the patch writes to disk.
+        val dryRun: Boolean = when (val raw = args["dry_run"]) {
+            null -> false
+            is JsonPrimitive -> {
+                if (raw.isString) {
+                    return ToolCallResult.errorResult(
+                        "dry_run must be a JSON boolean (true/false), got string: \"${raw.content}\""
+                    )
+                }
+                raw.booleanOrNull
+                    ?: return ToolCallResult.errorResult("dry_run must be a JSON boolean, got primitive: ${raw.content}")
+            }
+            else -> return ToolCallResult.errorResult("dry_run must be a JSON boolean, got ${raw::class.simpleName}")
+        }
+
+        return handler().applyPatch(projectName, ApplyPatchRequest(hunks, dryRun = dryRun))
     }
 }
 

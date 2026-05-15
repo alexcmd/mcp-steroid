@@ -7,6 +7,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.TestResultBuilder
+import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import kotlinx.serialization.json.buildJsonObject
 import java.nio.file.Files
@@ -553,5 +554,174 @@ class ApplyPatchTest : BasePlatformTestCase() {
                     || err.message!!.contains("once")
                     || err.message!!.contains("unique"))
         }
+    }
+
+    // -- dryRun (C4) --------------------------------------------------------
+    //
+    // The DSL on McpScriptContext deliberately does NOT expose dryRun — the
+    // flag belongs to the dedicated `steroid_apply_patch` MCP tool, where the
+    // agent is preflighting an external write. Tests below call the engine
+    // (`executeApplyPatch`) directly to exercise the dryRun path the tool
+    // handler relies on.
+
+    fun testDryRunDoesNotModifyFile(): Unit = timeoutRunBlocking(30.seconds) {
+        val original = "class A { int x = 1; }\n"
+        val vf = writeTempFile("DryRun_NoMod.java", original)
+
+        val result = executeApplyPatch(
+            project = project,
+            hunks = listOf(ApplyPatchHunk(vf.toString(), "int x = 1", "int x = 42")),
+            dryRun = true,
+        ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+
+        assertTrue("Result must flag dry-run", result.isDryRun)
+        assertEquals(1, result.hunkCount)
+        assertEquals(1, result.fileCount)
+        // Critical: file bytes unchanged on disk AND in VFS.
+        assertEquals(original, vf.readViaIde())
+        assertEquals(original, Files.readString(vf))
+    }
+
+    fun testDryRunMultiHunkReportsAllResolvedPositions(): Unit = timeoutRunBlocking(30.seconds) {
+        val original = """
+            class A {
+                int x = 1;
+                int y = 2;
+                int z = 3;
+            }
+        """.trimIndent()
+        val vf = writeTempFile("DryRun_Multi.java", original)
+
+        val result = executeApplyPatch(
+            project = project,
+            hunks = listOf(
+                ApplyPatchHunk(vf.toString(), "int x = 1", "int x = 100"),
+                ApplyPatchHunk(vf.toString(), "int y = 2", "int y = 200"),
+                ApplyPatchHunk(vf.toString(), "int z = 3", "int z = 300"),
+            ),
+            dryRun = true,
+        ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+
+        assertTrue(result.isDryRun)
+        assertEquals(3, result.hunkCount)
+        assertEquals(1, result.fileCount)
+        assertEquals(listOf(2, 3, 4), result.applied.map { it.line })
+        assertEquals(original, vf.readViaIde())
+    }
+
+    fun testDryRunSurfacesFileNotFoundSameAsLive(): Unit = timeoutRunBlocking(30.seconds) {
+        val missing = tempRoot.resolve("NoSuchFile.java").toString()
+
+        val err = try {
+            executeApplyPatch(
+                project = project,
+                hunks = listOf(ApplyPatchHunk(missing, "anything", "replacement")),
+                dryRun = true,
+            ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull("Expected ApplyPatchException on missing file under dryRun", err)
+        assertTrue("Error names hunk index: ${err!!.message}", err.message!!.contains("Hunk #0"))
+        assertTrue("Error preserves 'file not found' substring: ${err.message}",
+            err.message!!.contains("file not found"))
+    }
+
+    fun testDryRunSurfacesAnchorMismatchSameAsLive(): Unit = timeoutRunBlocking(30.seconds) {
+        val original = "class A { int x = 1; }\n"
+        val vf = writeTempFile("DryRun_AnchorMiss.java", original)
+
+        val err = try {
+            executeApplyPatch(
+                project = project,
+                hunks = listOf(ApplyPatchHunk(vf.toString(), "NOT_IN_FILE_XYZ", "replacement")),
+                dryRun = true,
+            ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull("Expected ApplyPatchException on missing anchor under dryRun", err)
+        assertTrue("Error preserves 'old_string not found' substring: ${err!!.message}",
+            err.message!!.contains("old_string not found"))
+        // File must remain unmodified after a failed dry-run preflight, just
+        // as it would after a failed live preflight.
+        assertEquals(original, vf.readViaIde())
+    }
+
+    fun testDryRunResultStringSaysWouldApply(): Unit = timeoutRunBlocking(30.seconds) {
+        val vf = writeTempFile("DryRun_String.java", "class A { int x = 1; }\n")
+        val result = executeApplyPatch(
+            project = project,
+            hunks = listOf(ApplyPatchHunk(vf.toString(), "int x = 1", "int x = 42")),
+            dryRun = true,
+        ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+
+        val asString = result.toString()
+        assertTrue("Audit trail flags dry-run: $asString", asString.contains("dry-run"))
+        assertTrue("Audit trail says 'would apply': $asString", asString.contains("would apply"))
+        assertFalse("Live wording must not leak into dry-run audit: $asString",
+            asString.contains("applied atomically"))
+    }
+
+    fun testDryRunSurfacesAmbiguousAnchorSameAsLive(): Unit = timeoutRunBlocking(30.seconds) {
+        // The third leg of C1's structured fallout — non-unique anchor — must
+        // behave identically under dryRun. Two occurrences of `dup_token`:
+        val original = "dup_token line one\nmiddle\ndup_token line three\n"
+        val vf = writeTempFile("DryRun_Ambiguous.java", original)
+
+        val err = try {
+            executeApplyPatch(
+                project = project,
+                hunks = listOf(ApplyPatchHunk(vf.toString(), "dup_token", "rep_token")),
+                dryRun = true,
+            ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull("Expected ApplyPatchException on ambiguous anchor under dryRun", err)
+        assertTrue("Error preserves 'occurs more than once': ${err!!.message}",
+            err.message!!.contains("occurs more than once"))
+        assertTrue("Error preserves expansion hint: ${err.message}",
+            err.message!!.contains("expand old_string"))
+        assertEquals("Failed dry-run preflight must not write to disk",
+            original, vf.readViaIde())
+    }
+
+    fun testDryRunMultiFileAllOrNothingOnPartialFailure(): Unit = timeoutRunBlocking(30.seconds) {
+        // Multi-file preflight: one valid + one missing-anchor hunk. Dry-run
+        // must reject the batch atomically — no per-file partial "would apply"
+        // result for the valid hunk.
+        val originalA = "class A { int value = 1; }\n"
+        val originalB = "class B { int other = 1; }\n"
+        val vfA = writeTempFile("DryRun_MultiA.java", originalA)
+        val vfB = writeTempFile("DryRun_MultiB.java", originalB)
+
+        val err = try {
+            executeApplyPatch(
+                project = project,
+                hunks = listOf(
+                    ApplyPatchHunk(vfA.toString(), "int value = 1", "int value = 42"), // valid
+                    ApplyPatchHunk(vfB.toString(), "NOT_PRESENT_XYZ", "rep"),           // fails
+                ),
+                dryRun = true,
+            ) { path -> LocalFileSystem.getInstance().findFileByPath(path) }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull("Expected ApplyPatchException on partial-failure dry-run", err)
+        assertTrue("Error names the failing hunk index: ${err!!.message}",
+            err.message!!.contains("Hunk #1"))
+        // Both files must be unmodified — the valid hunk in #0 must NOT
+        // partially "apply" even in dry-run audit.
+        assertEquals(originalA, vfA.readViaIde())
+        assertEquals(originalB, vfB.readViaIde())
     }
 }
