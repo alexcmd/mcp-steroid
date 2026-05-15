@@ -108,11 +108,11 @@ class PidMarkerTest {
     }
 
     @Test
-    fun `file name contract`() {
-        assertEquals(".12345.mcp-steroid", PidMarker.fileNameFor(12345))
+    fun `file name parsing accepts new and legacy layouts`() {
+        assertEquals("12345.mcp-steroid", PidMarker.markerFileNameFor(12345))
+        assertEquals(12345L, PidMarker.pidFromFileName("12345.mcp-steroid"))
         assertEquals(12345L, PidMarker.pidFromFileName(".12345.mcp-steroid"))
         assertEquals(null, PidMarker.pidFromFileName(".mcp-steroid"))
-        assertEquals(null, PidMarker.pidFromFileName("12345.mcp-steroid"))
         assertEquals(null, PidMarker.pidFromFileName(".12345.mcp-steroid.json"))
     }
 }
