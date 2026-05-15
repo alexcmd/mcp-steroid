@@ -120,6 +120,6 @@ class BackendAndProjectJsonAreIdenticalTest {
         assertTrue(portBackends.all { it["reachable"]!!.jsonPrimitive.boolean }, "port rows are reachable because the probe succeeded: $backends")
 
         val projects = root["projects"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(listOf("backend-0", "backend-0"), projects.map { it["backend"]!!.jsonPrimitive.content })
+        assertEquals(listOf("pid-1", "pid-1"), projects.map { it["backend"]!!.jsonPrimitive.content })
     }
 }

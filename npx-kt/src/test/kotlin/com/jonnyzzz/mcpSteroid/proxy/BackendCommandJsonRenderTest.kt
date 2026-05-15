@@ -1,6 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
@@ -8,7 +12,10 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
@@ -21,8 +28,10 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.nio.file.Path
 
 /** Pins the schema of `mcp-steroid-proxy backend --json`. */
 class BackendCommandJsonRenderTest {
@@ -37,6 +46,30 @@ class BackendCommandJsonRenderTest {
         renderBackendJson(rows, PrintStream(buf, true, Charsets.UTF_8))
         val text = buf.toString(Charsets.UTF_8)
         return parser.parseToJsonElement(text).jsonObject
+    }
+
+    private fun backendIds(root: JsonObject): List<String> =
+        root["backends"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
+
+    private fun jsonStrings(element: JsonElement): List<String> = when (element) {
+        is JsonObject -> element.values.flatMap(::jsonStrings)
+        is JsonArray -> element.flatMap(::jsonStrings)
+        is JsonPrimitive -> element.contentOrNull?.let { listOf(it) }.orEmpty()
+    }
+
+    private fun captureBackendCommandLogs(action: () -> JsonObject): Pair<JsonObject, List<ILoggingEvent>> {
+        val logger = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.BackendCommand") as Logger
+        val appender = ListAppender<ILoggingEvent>().apply {
+            context = logger.loggerContext
+            start()
+        }
+        logger.addAppender(appender)
+        try {
+            return action() to appender.list.toList()
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
     }
 
     private fun markerIde(
@@ -76,6 +109,22 @@ class BackendCommandJsonRenderTest {
         edition = edition,
         baselineVersion = baselineVersion,
         buildNumber = buildNumber,
+    )
+
+    private fun managedInfo(
+        id: String = "idea-community-2025.2.6.2",
+        state: ManagedBackendState = ManagedBackendState.INSTALLED,
+        runningPid: Long? = null,
+    ) = ManagedBackendInfo(
+        id = id,
+        productKey = id.substringBeforeLast('-'),
+        productCode = "IC",
+        version = id.substringAfterLast('-'),
+        buildNumber = "IC-252.1",
+        installPath = Path.of("/managed/$id"),
+        cachePath = Path.of("/caches/$id"),
+        runningPid = runningPid,
+        state = state,
     )
 
     // ----------------------------- top-level shape -------------------------
@@ -123,8 +172,7 @@ class BackendCommandJsonRenderTest {
         val root = render(listOf(row))
         val backend = root["backends"]!!.jsonArray.single().jsonObject
 
-        assertTrue(Regex("^backend-\\d+$").matches(backend["id"]!!.jsonPrimitive.content))
-        assertEquals("backend-0", backend["id"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("pid-1234", backend["id"]?.jsonPrimitive?.contentOrNull)
         assertEquals("intellij", backend["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("marker", backend["source"]?.jsonPrimitive?.contentOrNull)
         assertEquals(true, backend["pluginInstalled"]?.jsonPrimitive?.boolean)
@@ -143,7 +191,7 @@ class BackendCommandJsonRenderTest {
         val projects = root["projects"]!!.jsonArray
         assertEquals(1, projects.size)
         val p = projects.single().jsonObject
-        assertEquals("backend-0", p["backend"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("pid-1234", p["backend"]?.jsonPrimitive?.contentOrNull)
         assertEquals("my-app", p["name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("/Users/x/my-app", p["path"]?.jsonPrimitive?.contentOrNull)
     }
@@ -189,8 +237,7 @@ class BackendCommandJsonRenderTest {
         val row = BackendRow.FromPort(portIde(port = 63342))
         val backend = render(listOf(row))["backends"]!!.jsonArray.single().jsonObject
 
-        assertTrue(Regex("^backend-\\d+$").matches(backend["id"]!!.jsonPrimitive.content))
-        assertEquals("backend-0", backend["id"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("port-63342", backend["id"]?.jsonPrimitive?.contentOrNull)
         assertEquals("intellij", backend["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("port", backend["source"]?.jsonPrimitive?.contentOrNull)
         assertEquals(false, backend["pluginInstalled"]?.jsonPrimitive?.boolean)
@@ -229,7 +276,7 @@ class BackendCommandJsonRenderTest {
     // ---------------------------- mixed list -------------------------------
 
     @Test
-    fun `mixed list keeps input order and assigns backend ids by index`() {
+    fun `mixed list keeps input order and assigns backend ids from natural identifiers`() {
         val rows = listOf(
             BackendRow.FromMarker(markerIde(pid = 1L), emptyList()),
             BackendRow.FromPort(portIde(port = 63342)),
@@ -237,7 +284,7 @@ class BackendCommandJsonRenderTest {
         )
         val backends = render(rows)["backends"]!!.jsonArray
         assertEquals(3, backends.size)
-        assertEquals(listOf("backend-0", "backend-1", "backend-2"),
+        assertEquals(listOf("pid-1", "port-63342", "pid-2"),
             backends.map { it.jsonObject["id"]!!.jsonPrimitive.content })
         assertEquals("marker", backends[0].jsonObject["source"]?.jsonPrimitive?.contentOrNull)
         assertEquals("port", backends[1].jsonObject["source"]?.jsonPrimitive?.contentOrNull)
@@ -254,8 +301,81 @@ class BackendCommandJsonRenderTest {
         val root = render(rows)
         val ids = root["backends"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }.toSet()
         val refs = root["projects"]!!.jsonArray.map { it.jsonObject["backend"]!!.jsonPrimitive.content }
-        assertEquals(listOf("backend-0", "backend-0", "backend-2"), refs)
+        assertEquals(listOf("pid-1", "pid-1", "pid-2"), refs)
         assertTrue(refs.all { it in ids }, "every projects[].backend must resolve to a backend id; ids=$ids refs=$refs")
+    }
+
+    @Test
+    fun `backend ids use natural identifier for marker port and managed rows`() {
+        val rows = listOf(
+            BackendRow.FromMarker(markerIde(pid = 4242L), listOf(ProjectInfo("known", "/known"))),
+            BackendRow.FromPort(portIde(port = 65432)),
+            BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2")),
+        )
+
+        val root = render(rows)
+
+        assertEquals(listOf("pid-4242", "port-65432", "idea-community-2025.2.6.2"), backendIds(root))
+        val projects = root["projects"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("pid-4242"), projects.map { it["backend"]!!.jsonPrimitive.content })
+    }
+
+    @Test
+    fun `json document contains no synthetic backend prefix strings`() {
+        val root = render(
+            listOf(
+                BackendRow.FromMarker(markerIde(pid = 4242L), listOf(ProjectInfo("known", "/known"))),
+                BackendRow.FromPort(portIde(port = 65432)),
+                BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2")),
+            ),
+        )
+
+        val syntheticValues = jsonStrings(root).filter { it.startsWith("backend-") }
+        assertEquals(emptyList<String>(), syntheticValues)
+    }
+
+    @Test
+    fun `backend ids stay stable when discovery rows are reordered`() {
+        val marker = BackendRow.FromMarker(markerIde(pid = 200L), emptyList())
+        val port = BackendRow.FromPort(portIde(port = 65432))
+        val managed = BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2"))
+        val expected = mapOf(
+            "marker" to "pid-200",
+            "port" to "port-65432",
+            "managed" to "idea-community-2025.2.6.2",
+        )
+
+        fun idsBySource(rows: List<BackendRow>) = render(rows)["backends"]!!.jsonArray.associate { element ->
+            val backend = element.jsonObject
+            backend["source"]!!.jsonPrimitive.content to backend["id"]!!.jsonPrimitive.content
+        }
+
+        assertEquals(expected, idsBySource(listOf(marker, port, managed)))
+        assertEquals(expected, idsBySource(listOf(managed, marker, port)))
+    }
+
+    @Test
+    fun `duplicate stable ids log warning and keep first row`() {
+        val first = BackendRow.FromMarker(markerIde(pid = 777L), listOf(ProjectInfo("first", "/first")))
+        val second = BackendRow.FromMarker(
+            markerIde(pid = 777L, mcpUrl = "http://localhost:7778/mcp"),
+            listOf(ProjectInfo("second", "/second")),
+        )
+
+        val (root, events) = captureBackendCommandLogs { render(listOf(first, second)) }
+
+        val ids = backendIds(root)
+        assertEquals(1, ids.count { it == "pid-777" })
+        assertEquals(listOf("pid-777"), ids)
+        val projects = root["projects"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("first"), projects.map { it["name"]!!.jsonPrimitive.content })
+        assertEquals(listOf("pid-777"), projects.map { it["backend"]!!.jsonPrimitive.content })
+
+        val warnMessages = events.filter { it.level == Level.WARN }.map { it.formattedMessage }
+        assertTrue(
+            warnMessages.any { it.contains("Duplicate backend ids in backend --json output") && it.contains("pid-777") },
+            "expected a WARN mentioning duplicate pid-777; got $warnMessages",
+        )
     }
 
     @Test

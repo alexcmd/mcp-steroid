@@ -77,7 +77,7 @@ class BackendListTest {
 
         val root = Json.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject
         val backend = root["backends"]!!.jsonArray.single().jsonObject
-        assertEquals("backend-0", backend["id"]!!.jsonPrimitive.content)
+        assertEquals("idea-community-2025.3.3", backend["id"]!!.jsonPrimitive.content)
         assertEquals("intellij", backend["type"]!!.jsonPrimitive.content)
         assertEquals("managed", backend["source"]!!.jsonPrimitive.content)
         assertEquals(true, backend["managed"]!!.jsonPrimitive.boolean)

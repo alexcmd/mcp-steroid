@@ -1194,11 +1194,11 @@ concurrent `backend start` calls can both pass the scan and both spawn.
 **Fix:** `FileChannel.tryLock()` on `homePaths.stateDir/global.lock`
 for the duration of the start sequence.
 
-### M4 — JSON `backend-0` / `backend-1` order-derived IDs leak (A, B, C)
-`BackendCommand.kt:576-603` — synthetic ordinal-based identifiers
-exposed as primary keys in `backends[]`. Scripts will key on the index.
-**Fix:** drop the synthetic id; the natural id is the row's
-`<product-key>-<version>` (or `port-<n>` for port-discovered).
+### M4 — JSON backend ids use natural stable identifiers (A, B, C) ✅ resolved
+`BackendCommand.kt` — `backend --json` no longer exposes synthetic ordinal-based identifiers
+as primary keys in `backends[]`.
+**Fix:** use each row's natural id: `pid-<n>` for marker-discovered IDEs,
+`port-<n>` for port-discovered IDEs, or the managed backend id.
 
 ### M5 — SevenZipLocator cache writes are racy (A, C) ✅ resolved (download-A batch)
 `SevenZipLocator.kt:69-73`, `:103-107`. Fixed `*.tmp` filename per

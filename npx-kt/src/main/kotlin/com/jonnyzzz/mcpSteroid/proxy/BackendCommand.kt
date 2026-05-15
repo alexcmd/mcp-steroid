@@ -30,6 +30,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.OutputStream
 import java.io.PrintStream
@@ -37,6 +38,8 @@ import java.util.UUID
 import kotlin.system.measureTimeMillis
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+
+private val backendCommandLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.BackendCommand")
 
 /**
  * One row in the `backend` subcommand's output. Two sources:
@@ -580,14 +583,15 @@ private fun backendActionSuffix(row: BackendRow): String = when (row) {
  * scripted consumption (`mcp-steroid-proxy backend --json | jq …`):
  *  - **No banner** — stdout is one JSON document, nothing else.
  *  - **Top-level object** with `tool`, `backends`, and flat `projects`.
- *  - **Backend ids** are synthetic `backend-N` keys, stable within this
- *    document and referenced by `projects[].backend`.
+ *  - **Backend ids** are stable across runs and use the natural identifier
+ *    for each source (`pid-<n>`, `port-<n>`, or the managed id).
  *  - **Pretty-printed**: humans can read without `jq -P`, scripts don't care.
  *
  * Example query:
  *   mcp-steroid-proxy backend --json | jq '.backends[] | select(.source=="marker")'
  */
 internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
+    val rowsWithIds = backendRowsWithStableIds(rows)
     val json = Json { prettyPrint = true; encodeDefaults = true }
     val payload = buildJsonObject {
         put("tool", buildJsonObject {
@@ -595,14 +599,13 @@ internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
             put("version", loadProxyVersion())
         })
         put("backends", buildJsonArray {
-            for ((index, row) in rows.withIndex()) {
-                add(backendEntryJson("backend-$index", row))
+            for ((backendId, row) in rowsWithIds) {
+                add(backendEntryJson(backendId, row))
             }
         })
         put("projects", buildJsonArray {
-            for ((index, row) in rows.withIndex()) {
+            for ((backendId, row) in rowsWithIds) {
                 if (row is BackendRow.FromMarker && row.projects != null) {
-                    val backendId = "backend-$index"
                     for (project in row.projects) {
                         add(projectToBackendJson(backendId, project))
                     }
@@ -611,6 +614,24 @@ internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
         })
     }
     out.println(json.encodeToString(JsonObject.serializer(), payload))
+}
+
+private fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendRow>> {
+    val rowsWithIds = rows.map { row -> backendStableId(row) to row }
+    val ids = rowsWithIds.map { it.first }
+    if (ids.toSet().size != rows.size) {
+        val duplicateIds = ids.groupingBy { it }.eachCount()
+            .filterValues { count -> count > 1 }
+            .keys
+            .sorted()
+        backendCommandLog.warn(
+            "Duplicate backend ids in backend --json output: {}. Keeping the first row for each duplicate id.",
+            duplicateIds.joinToString(", "),
+        )
+    }
+
+    val seen = LinkedHashSet<String>()
+    return rowsWithIds.filter { (id, _) -> seen.add(id) }
 }
 
 private fun projectToBackendJson(backendId: String, project: ProjectInfo): JsonObject = buildJsonObject {

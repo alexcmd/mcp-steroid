@@ -93,10 +93,10 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
  * {
  *   "tool": { "name": "devrig", "version": "..." },
  *   "backends": [
- *     { "id": "backend-0", "type": "intellij", "source": "marker", "name": "...", "version": "..." }
+ *     { "id": "pid-1234", "type": "intellij", "source": "marker", "name": "...", "version": "..." }
  *   ],
  *   "projects": [
- *     { "backend": "backend-0", "name": "myproject", "path": "/Users/me/myproject" }
+ *     { "backend": "pid-1234", "name": "myproject", "path": "/Users/me/myproject" }
  *   ]
  * }
  * ```

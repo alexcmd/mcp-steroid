@@ -55,6 +55,12 @@ internal fun backendLocatorLabel(row: BackendRow): String = when (row) {
     is BackendRow.FromManaged -> row.locatorLabel
 }
 
+internal fun backendStableId(row: BackendRow): String = when (row) {
+    is BackendRow.FromMarker -> "pid-${row.ide.pid}"
+    is BackendRow.FromPort -> "port-${row.ide.port}"
+    is BackendRow.FromManaged -> row.info.id
+}
+
 internal fun backendPorts(row: BackendRow): List<BackendPort> = when (row) {
     is BackendRow.FromMarker -> listOf(
         BackendPort(
