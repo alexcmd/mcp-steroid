@@ -55,14 +55,21 @@ internal fun runBackendDownloadListCommand(
     out: PrintStream,
     json: Boolean,
     versionResolver: AvailableBackendVersionResolver = ReleaseServiceAvailableBackendVersionResolver(),
-) {
-    val rows = runBlocking(Dispatchers.IO) {
+    availableDownloads: suspend () -> List<AvailableBackendDownload> = {
         collectAvailableBackendDownloads(versionResolver = versionResolver)
+    },
+) {
+    if (!json) {
+        renderBackendDownloadListBanner(out)
+        out.flush()
+    }
+    val rows = runBlocking(Dispatchers.IO) {
+        availableDownloads()
     }
     if (json) {
         renderBackendDownloadListJson(rows, out)
     } else {
-        renderBackendDownloadListText(rows, out)
+        renderBackendDownloadListRowsText(rows, out)
     }
 }
 
@@ -117,8 +124,16 @@ private fun licenseTierSortKey(tier: LicenseTier): Int = when (tier) {
 }
 
 internal fun renderBackendDownloadListText(rows: List<AvailableBackendDownload>, out: PrintStream) {
+    renderBackendDownloadListBanner(out)
+    renderBackendDownloadListRowsText(rows, out)
+}
+
+internal fun renderBackendDownloadListBanner(out: PrintStream) {
     out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
     out.println()
+}
+
+internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownload>, out: PrintStream) {
     out.println("Available IDEs (defaults to latest stable):")
     out.println()
     if (rows.isNotEmpty()) {

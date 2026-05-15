@@ -2,7 +2,11 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
@@ -129,6 +133,35 @@ class BackendCommandDownloadListTest {
         )
         assertTrue("idea" !in resolver.calls, "paid IntelliJ IDEA Ultimate must not hit the release resolver")
         assertTrue("pycharm" !in resolver.calls, "paid PyCharm Professional must not hit the release resolver")
+    }
+
+    @Test
+    fun `text command flushes banner before resolver work`() = runBlocking {
+        val buf = ByteArrayOutputStream()
+        val out = PrintStream(buf, true, Charsets.UTF_8)
+        val resolverEntered = CompletableDeferred<String>()
+        val releaseResolver = CompletableDeferred<Unit>()
+
+        val job = launch(Dispatchers.Default) {
+            runBackendDownloadListCommand(
+                out = out,
+                json = false,
+                availableDownloads = {
+                    resolverEntered.complete(buf.toString(Charsets.UTF_8))
+                    releaseResolver.await()
+                    emptyList()
+                },
+            )
+        }
+
+        val stdoutAtResolverStart = withTimeout(5_000) {
+            resolverEntered.await()
+        }
+        assertTrue(stdoutAtResolverStart.startsWith("devrig v"), stdoutAtResolverStart)
+        assertFalse(stdoutAtResolverStart.contains("Available IDEs"), stdoutAtResolverStart)
+
+        releaseResolver.complete(Unit)
+        job.join()
     }
 
     private fun renderText(rows: List<AvailableBackendDownload>): String {
