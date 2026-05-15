@@ -116,6 +116,87 @@ class IdeDownloaderTest {
     }
 
     @Test
+    fun `resolveAndDownload logs resolved archive before verified cache hit`() {
+        val payload = "cached archive".toByteArray()
+        val goodSha256 = sha256(payload)
+        val dest = File(tmp.root, "archive.tar.gz")
+        dest.writeBytes(payload)
+        File(tmp.root, "archive.tar.gz.sha256").writeText("$goodSha256  archive.tar.gz\n")
+        val archiveRequests = AtomicInteger()
+        val logger = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader") as Logger
+
+        withCapturedLogger(logger) { appender ->
+            logger.level = Level.DEBUG
+            withServer({ server ->
+                server.createContext("/archive.tar.gz") { exchange ->
+                    archiveRequests.incrementAndGet()
+                    sendBytes(exchange, payload)
+                }
+                server.createContext("/archive.tar.gz.sha256") { exchange ->
+                    sendText(exchange, "$goodSha256  archive.tar.gz\n")
+                }
+            }) { baseUrl ->
+                val url = "$baseUrl/archive.tar.gz"
+                val archive = IdeDistribution.FromUrl(
+                    product = IdeProduct.IntelliJIdeaCommunity,
+                    url = url,
+                    checksumUrl = "$url.sha256",
+                ).resolveAndDownload(tmp.root, os = HostOs.LINUX)
+
+                assertEquals(dest, archive)
+                assertEquals("cache hit must not fetch the archive bytes", 0, archiveRequests.get())
+                val resolvedMessage = "[IDE-DOWNLOAD] Resolved archive: $url -> $dest"
+                val cachedMessage = "[IDE-DOWNLOAD] Using verified cached archive: $dest"
+                assertEquals(1, appender.list.count { it.level == Level.INFO && it.formattedMessage == resolvedMessage })
+                val resolvedIndex = appender.list.indexOfFirst { it.level == Level.INFO && it.formattedMessage == resolvedMessage }
+                val cachedIndex = appender.list.indexOfFirst { it.level == Level.DEBUG && it.formattedMessage == cachedMessage }
+                assertTrue("expected resolved archive INFO log", resolvedIndex >= 0)
+                assertTrue("cache-hit DEBUG log must follow resolved archive INFO log", cachedIndex > resolvedIndex)
+            }
+        }
+    }
+
+    @Test
+    fun `resolveAndDownload logs resolved archive before cold download`() {
+        val payload = "fresh archive".toByteArray()
+        val goodSha256 = sha256(payload)
+        val archiveRequests = AtomicInteger()
+        val logger = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader") as Logger
+
+        withCapturedLogger(logger) { appender ->
+            logger.level = Level.DEBUG
+            withServer({ server ->
+                server.createContext("/archive.tar.gz") { exchange ->
+                    archiveRequests.incrementAndGet()
+                    sendBytes(exchange, payload)
+                }
+                server.createContext("/archive.tar.gz.sha256") { exchange ->
+                    sendText(exchange, "$goodSha256  archive.tar.gz\n")
+                }
+            }) { baseUrl ->
+                val url = "$baseUrl/archive.tar.gz"
+                val dest = File(tmp.root, "archive.tar.gz")
+                val archive = IdeDistribution.FromUrl(
+                    product = IdeProduct.IntelliJIdeaCommunity,
+                    url = url,
+                    checksumUrl = "$url.sha256",
+                ).resolveAndDownload(tmp.root, os = HostOs.LINUX)
+
+                assertEquals(dest, archive)
+                assertArrayEquals(payload, archive.readBytes())
+                assertEquals("cold path must download the archive once", 1, archiveRequests.get())
+                val resolvedMessage = "[IDE-DOWNLOAD] Resolved archive: $url -> $dest"
+                val downloadingMessage = "[IDE-DOWNLOAD] Downloading $url -> $dest"
+                assertEquals(1, appender.list.count { it.level == Level.INFO && it.formattedMessage == resolvedMessage })
+                val resolvedIndex = appender.list.indexOfFirst { it.level == Level.INFO && it.formattedMessage == resolvedMessage }
+                val downloadingIndex = appender.list.indexOfFirst { it.level == Level.DEBUG && it.formattedMessage == downloadingMessage }
+                assertTrue("expected resolved archive INFO log", resolvedIndex >= 0)
+                assertTrue("download DEBUG log must follow resolved archive INFO log", downloadingIndex > resolvedIndex)
+            }
+        }
+    }
+
+    @Test
     fun `downloadFile resumes interrupted temp file with Range request`() {
         val payload = payloadBytes(size = 5 * 1024 * 1024)
         val interruptAfterBytes = 1_234_567

@@ -8,7 +8,7 @@
   configurations layered on top should keep the same invariant.
 
   Stderr level is controlled by `proxy.log.level` system property:
-    default: WARN (only WARN and ERROR reach the operator)
+    default: INFO (INFO, WARN and ERROR reach the operator)
     when CLI sees the debug flag: DEBUG, set before the first log call
 
   File logging is always DEBUG and is routed to `proxy.log.dir`, set by main()
@@ -21,7 +21,7 @@
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.err</target>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>${proxy.log.level:-WARN}</level>
+            <level>${proxy.log.level:-INFO}</level>
         </filter>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>

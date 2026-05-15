@@ -308,7 +308,7 @@ internal fun mcpIgnoredTokens(args: Array<String>): List<String> {
 }
 
 /**
- * `--debug` toggles verbose stderr logging (DEBUG instead of WARN). Pure and
+ * `--debug` toggles verbose stderr logging (DEBUG instead of INFO). Pure and
  * orthogonal to [parseCliMode] — `--debug` is valid in EVERY mode, including
  * `--mcp` where it still goes to stderr (stdout stays reserved for NDJSON).
  */
@@ -534,7 +534,7 @@ private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\
 /**
  * Wire the `--debug` flag into the bundled logback configuration. Reads the
  * `proxy.log.level` system property at logback-init time (see `logback.xml`):
- *  - default: WARN
+ *  - default: INFO
  *  - `--debug`: DEBUG
  *
  * MUST run before the first SLF4J call — logback initialises lazily on first
@@ -543,9 +543,9 @@ private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\
  */
 internal fun applyDebugLogging(debug: Boolean) {
     // Only set the property when --debug is requested — leaving it unset lets
-    // operators override the WARN default from the outside with
-    // `-Dproxy.log.level=INFO` etc. The hard-coded default in logback.xml
-    // (`${proxy.log.level:-WARN}`) handles the no-flag case.
+    // operators override the INFO default from the outside with
+    // `-Dproxy.log.level=WARN` etc. The hard-coded default in logback.xml
+    // (`${proxy.log.level:-INFO}`) handles the no-flag case.
     if (debug) {
         System.setProperty("proxy.log.level", "DEBUG")
     }
@@ -670,7 +670,7 @@ private fun printHelp(out: PrintStream) {
                                                      and state under <path> instead of
                                                      ${'$'}MCP_STEROID_HOME / ~/.mcp-steroid
           --debug                                    enable verbose stderr logging (DEBUG)
-                                                     — without it, only WARN+ are shown.
+                                                     — without it, INFO+ are shown.
 
         Unknown flags or extra arguments are rejected with exit code 64.
         Run with --debug for verbose logging.

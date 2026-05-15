@@ -1650,7 +1650,7 @@ fail downloads.
 at ~10 s) inside the checksum-fetch path only. Final failure still
 surfaces the error verbatim.
 
-### F9 — Log the selected archive URL on `--debug` even on cache hits
+### F9 — Log the selected archive URL on `--debug` even on cache hits ✅ resolved
 
 Today only a cold download surfaces the URL chosen by the resolver;
 a cached rerun shows just the products-API fetch. Hampers forensics.

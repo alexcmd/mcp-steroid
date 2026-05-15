@@ -39,6 +39,11 @@ fun IdeDistribution.resolveAndDownload(
 
     val resolved = resolveArchiveDownload(os)
     val destFile = File(downloadDir, resolved.fileName)
+    ideDownloaderLog.info(
+        "[IDE-DOWNLOAD] Resolved archive: {} -> {}",
+        resolved.url,
+        destFile,
+    )
     val expectedSha256 = resolveExpectedSha256(resolved)
     if (expectedSha256 == null) {
         ideDownloaderLog.warn(
