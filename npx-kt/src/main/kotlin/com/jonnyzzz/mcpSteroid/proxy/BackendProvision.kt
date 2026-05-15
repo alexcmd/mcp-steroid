@@ -10,26 +10,13 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.aboutJson
 import io.ktor.client.HttpClient
 import io.ktor.client.request.accept
 import io.ktor.client.request.get
-import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import org.slf4j.LoggerFactory
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import kotlin.io.path.exists
-import kotlin.io.path.isDirectory
-import kotlin.streams.asSequence
 
 internal const val PROVISION_ACTION_ID = "provision"
 internal const val MCP_STEROID_PLUGIN_DIR_NAME = "mcp-steroid"
-
-private val backendProvisionLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.BackendProvision")
 
 internal data class ProvisionResult(
     val id: String,
@@ -38,8 +25,8 @@ internal data class ProvisionResult(
     val productCode: String?,
     val selector: String,
     val pluginsDir: Path,
-    val pluginPath: Path,
-    val alreadyProvisioned: Boolean,
+    val pluginSource: Path,
+    val suggestedDestination: Path,
 )
 
 internal data class ProvisionTarget(
@@ -67,8 +54,7 @@ internal class BackendProvisioner(
             ?: throw ManagedBackendValidationException(unknownProvisionTargetMessage(id, targets))
 
         val about = fetchAbout(httpClient, target.ide.baseUrl)
-        val productInfo = fetchInstallPluginInfo(httpClient, target.ide.baseUrl)
-        val productCode = productCodeFromBuild(productInfo?.buildNumber) ?: productCodeFromBuild(about.buildNumber)
+        val productCode = productCodeFromBuild(about.buildNumber)
         val selectorInfo = deriveIdePathSelector(about, productCode)
         val pluginsDir = defaultIdePluginsDir(
             selector = selectorInfo.selector,
@@ -77,11 +63,8 @@ internal class BackendProvisioner(
             userHome = userHome,
             env = env,
         )
-        val pluginPath = pluginsDir.resolve(MCP_STEROID_PLUGIN_DIR_NAME)
-        val alreadyProvisioned = pluginPath.isDirectory()
-        if (!alreadyProvisioned) {
-            installBundledPlugin(pluginPath)
-        }
+        val suggestedDestination = pluginsDir.resolve(MCP_STEROID_PLUGIN_DIR_NAME)
+        val pluginSource = bundledPluginResolver.resolveBundledPluginDir()
         return ProvisionResult(
             id = id,
             ide = target.ide,
@@ -89,19 +72,9 @@ internal class BackendProvisioner(
             productCode = productCode,
             selector = selectorInfo.selector,
             pluginsDir = pluginsDir,
-            pluginPath = pluginPath,
-            alreadyProvisioned = alreadyProvisioned,
+            pluginSource = pluginSource,
+            suggestedDestination = suggestedDestination,
         )
-    }
-
-    private suspend fun installBundledPlugin(pluginPath: Path) = withContext(Dispatchers.IO) {
-        val source = bundledPluginResolver.resolveBundledPluginDir()
-        require(source.isDirectory()) { "Bundled ij-plugin/ directory is missing: $source" }
-        if (pluginPath.exists() && !pluginPath.isDirectory()) {
-            error("Cannot install MCP Steroid plugin: target path exists and is not a directory: $pluginPath")
-        }
-        Files.createDirectories(pluginPath.parent)
-        copyDirectory(source, pluginPath)
     }
 }
 
@@ -147,30 +120,6 @@ private suspend fun fetchAbout(httpClient: HttpClient, baseUrl: String): AboutRe
     return aboutJson.decodeFromString(AboutResponse.serializer(), response.bodyAsText())
 }
 
-private suspend fun fetchInstallPluginInfo(httpClient: HttpClient, baseUrl: String): InstallPluginInfo? = try {
-    val response = httpClient.get("${baseUrl.trimEnd('/')}/api/installPlugin") {
-        accept(ContentType.Application.Json)
-        header("Origin", "http://localhost")
-    }
-    if (!response.status.isSuccess()) {
-        backendProvisionLog.debug("{}/api/installPlugin returned HTTP {}; falling back to /api/about product mapping", baseUrl, response.status.value)
-        null
-    } else {
-        aboutJson.decodeFromString(InstallPluginInfo.serializer(), response.bodyAsText())
-    }
-} catch (e: CancellationException) {
-    throw e
-} catch (e: Exception) {
-    backendProvisionLog.debug("Failed to read {}/api/installPlugin; falling back to /api/about product mapping", baseUrl, e)
-    null
-}
-
-@Serializable
-private data class InstallPluginInfo(
-    val name: String? = null,
-    val buildNumber: String? = null,
-)
-
 internal data class IdePathSelector(
     val selector: String,
     val vendor: String,
@@ -213,6 +162,24 @@ internal fun defaultIdePluginsDir(
         Path.of(windowsJoin(root, vendor, selector, "plugins"))
     }
 }
+
+internal fun provisionTargetProductName(about: AboutResponse, selector: String): String {
+    if (selector.startsWith("IntelliJIdea")) return "IntelliJ IDEA Ultimate"
+    if (selector.startsWith("IdeaIC")) return "IntelliJ IDEA Community"
+    return about.name?.let { stripVersionSuffix(it) }
+        ?: about.productName
+        ?: "JetBrains IDE"
+}
+
+internal fun provisionTargetVersion(about: AboutResponse): String {
+    val fromName = about.name?.let { Regex("""\b(20\d{2}\.\d+(?:\.\d+)*)\b""").find(it)?.groupValues?.get(1) }
+    return fromName ?: deriveSelectorVersion(about)
+}
+
+private fun stripVersionSuffix(name: String): String = name
+    .replace(Regex("""\s+20\d{2}\.\d+(?:\.\d+)*\b.*$"""), "")
+    .trim()
+    .ifBlank { name }
 
 private data class PathProduct(
     val selectorPrefix: String,
@@ -275,18 +242,3 @@ private fun baselineFromBuild(buildNumber: String?): Int? =
 private fun windowsJoin(vararg parts: String): String = parts
     .filter { it.isNotBlank() }
     .joinToString("\\") { it.trimEnd('\\', '/') }
-
-private fun copyDirectory(source: Path, target: Path) {
-    Files.walk(source).use { stream ->
-        stream.asSequence().forEach { path ->
-            val relative = source.relativize(path)
-            val destination = target.resolve(relative)
-            if (Files.isDirectory(path)) {
-                Files.createDirectories(destination)
-            } else {
-                Files.createDirectories(destination.parent)
-                Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-            }
-        }
-    }
-}

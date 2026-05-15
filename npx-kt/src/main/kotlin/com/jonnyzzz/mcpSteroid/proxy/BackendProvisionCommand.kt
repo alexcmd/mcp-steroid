@@ -13,6 +13,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.PrintStream
 
+private const val SUGGESTED_DESTINATION_NOTE =
+    "Suggested destination assumes the default plugins directory; user-customised paths require manual adjustment."
+
 internal fun runBackendProvisionListCommand(
     out: PrintStream,
     json: Boolean,
@@ -54,11 +57,7 @@ internal fun runBackendProvisionCommand(
             provision(httpClient)
         }
     }
-    if (result.alreadyProvisioned) {
-        out.println("MCP Steroid plugin already provisioned at ${result.pluginPath}. Restart the IDE to load it if it is not loaded yet.")
-    } else {
-        out.println("MCP Steroid plugin installed at ${result.pluginPath}. Restart the IDE to load it.")
-    }
+    renderProvisionInstructionsText(result, out)
     return 0
 }
 
@@ -119,24 +118,53 @@ internal fun provisionActionJson(id: String): JsonObject = buildJsonObject {
     put("command", provisionCommand(id))
 }
 
+private fun renderProvisionInstructionsText(result: ProvisionResult, out: PrintStream) {
+    val productName = provisionTargetProductName(result.about, result.selector)
+    val version = provisionTargetVersion(result.about)
+    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    out.println()
+    out.println("Target: $productName $version (port ${result.ide.port})")
+    out.println()
+    out.println("MCP Steroid is not installed in this IDE. To install:")
+    out.println()
+    out.println("  (a) From within the IDE")
+    out.println("      → Settings → Plugins → Marketplace → search \"MCP Steroid\" → Install")
+    out.println("      → restart the IDE.")
+    out.println()
+    out.println("  (b) Manual file install (advanced)")
+    out.println("      Plugin source on this machine:")
+    out.println("        ${result.pluginSource}")
+    out.println("      Suggested install path:")
+    out.println("        ${result.suggestedDestination}")
+    out.println("      (the actual plugins folder may differ if the user customised it")
+    out.println("       under Settings → Appearance & Behavior → System Settings → Path Variables)")
+    out.println("      → restart the IDE.")
+    out.println()
+}
+
 private fun provisionResultJson(result: ProvisionResult): JsonObject = buildJsonObject {
     putToolJson()
     put("action", PROVISION_ACTION_ID)
     put("id", result.id)
-    put("status", if (result.alreadyProvisioned) "already_provisioned" else "installed")
-    put("alreadyProvisioned", result.alreadyProvisioned)
-    put("restartRequired", true)
-    put("pluginPath", result.pluginPath.toString())
-    put("pluginsPath", result.pluginsDir.toString())
-    put("selector", result.selector)
-    result.productCode?.let { put("productCode", it) }
-    put("port", result.ide.port)
-    put("baseUrl", result.ide.baseUrl)
-    result.about.name?.let { put("name", it) }
-    result.about.productName?.let { put("productName", it) }
-    result.about.edition?.let { put("edition", it) }
-    result.about.baselineVersion?.let { put("baselineVersion", it) }
-    result.about.buildNumber?.let { put("buildNumber", it) }
+    put("target", buildJsonObject {
+        put("productName", provisionTargetProductName(result.about, result.selector))
+        put("version", provisionTargetVersion(result.about))
+        result.about.buildNumber?.let { put("buildNumber", it) }
+        put("port", result.ide.port)
+    })
+    put("instructions", buildJsonArray {
+        add(buildJsonObject {
+            put("step", "marketplace")
+            put("description", "Use Settings → Plugins → Marketplace from within the IDE.")
+        })
+        add(buildJsonObject {
+            put("step", "files")
+            put("pluginSource", result.pluginSource.toString())
+            put("suggestedDestination", result.suggestedDestination.toString())
+            put("note", SUGGESTED_DESTINATION_NOTE)
+        })
+    })
+    put("note", SUGGESTED_DESTINATION_NOTE)
 }
 
 private fun <T> withProvisionHttpClient(block: (HttpClient) -> T): T {

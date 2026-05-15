@@ -12,14 +12,11 @@ import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.request.header
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,11 +29,9 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.ServerSocket
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
-import kotlin.io.path.readText
-import kotlin.io.path.writeText
+import kotlin.io.path.notExists
 
 class BackendProvisionTest {
     private val parser = Json { ignoreUnknownKeys = true }
@@ -77,6 +72,8 @@ class BackendProvisionTest {
         assertEquals("IntelliJIdea2026.1", selector.selector)
         assertEquals("JetBrains", selector.vendor)
         assertEquals(tempDir.resolve("Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins"), path)
+        assertEquals("IntelliJ IDEA Ultimate", provisionTargetProductName(about, selector.selector))
+        assertEquals("2026.1.1", provisionTargetVersion(about))
     }
 
     @Test
@@ -159,15 +156,10 @@ class BackendProvisionTest {
     }
 
     @Test
-    fun `provision copies bundled plugin once and second run is idempotent`(@TempDir tempDir: Path) = runBlocking {
-        val sourcePlugin = tempDir.resolve("source-plugin")
-        sourcePlugin.resolve("lib").createDirectories()
-        sourcePlugin.resolve("lib/plugin.txt").writeText("first")
-        sourcePlugin.resolve("META-INF").createDirectories()
-        sourcePlugin.resolve("META-INF/plugin.xml").writeText("<idea-plugin/>")
-
+    fun `provision resolves port id and computes manual instruction paths without installing plugin`(@TempDir tempDir: Path) = runBlocking {
+        val sourcePlugin = tempDir.resolve("source-plugin").createDirectories()
         val port = ServerSocket(0).use { it.localPort }
-        val installPluginOrigins = mutableListOf<String?>()
+        val installPluginCalls = mutableListOf<Unit>()
         val server = ideServer(
             port = port,
             aboutBody = """
@@ -179,8 +171,7 @@ class BackendProvisionTest {
                   "buildNumber": "261.23567.138"
                 }
             """.trimIndent(),
-            installPluginBody = """{"name":"IntelliJ IDEA 2026.1.1","buildNumber":"IU-261.23567.138"}""",
-            installPluginOrigins = installPluginOrigins,
+            installPluginCalls = installPluginCalls,
         )
         servers += server
         val httpClient = httpClient()
@@ -194,39 +185,45 @@ class BackendProvisionTest {
             portRanges = listOf(port..port),
         )
 
-        val first = provisioner.provision("port-$port", httpClient)
-        assertFalse(first.alreadyProvisioned)
-        assertEquals("IntelliJIdea2026.1", first.selector)
-        assertEquals("IU", first.productCode)
-        assertEquals(tempDir.resolve("home/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins/mcp-steroid"), first.pluginPath)
-        assertEquals("first", first.pluginPath.resolve("lib/plugin.txt").readText())
-        assertTrue("http://localhost" in installPluginOrigins)
+        val result = provisioner.provision("port-$port", httpClient)
 
-        sourcePlugin.resolve("lib/plugin.txt").writeText("second")
-        val second = provisioner.provision("port-$port", httpClient)
-        assertTrue(second.alreadyProvisioned)
-        assertEquals(first.pluginPath, second.pluginPath)
-        assertEquals("first", second.pluginPath.resolve("lib/plugin.txt").readText())
+        assertEquals("IntelliJIdea2026.1", result.selector)
+        assertEquals(null, result.productCode)
+        assertEquals(sourcePlugin, result.pluginSource)
+        assertEquals(tempDir.resolve("home/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins"), result.pluginsDir)
+        assertEquals(tempDir.resolve("home/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins/mcp-steroid"), result.suggestedDestination)
+        assertTrue(result.suggestedDestination.notExists(), "provision must not create the suggested destination")
+        assertTrue(installPluginCalls.isEmpty(), "provision must not call /api/installPlugin")
     }
 
     @Test
-    fun `provision json reports installed status and restart requirement`(@TempDir tempDir: Path) {
-        val result = ProvisionResult(
-            id = "port-63342",
-            ide = portIde(port = 63342),
-            about = AboutResponse(
-                name = "IntelliJ IDEA 2026.1.1",
-                productName = "IDEA",
-                baselineVersion = 261,
-                buildNumber = "261.23567.138",
-            ),
-            productCode = "IU",
-            selector = "IntelliJIdea2026.1",
-            pluginsDir = tempDir.resolve("plugins"),
-            pluginPath = tempDir.resolve("plugins/mcp-steroid"),
-            alreadyProvisioned = false,
-        )
+    fun `provision action text prints manual install instructions and exits zero`(@TempDir tempDir: Path) {
+        val result = provisionResult(tempDir)
+        val buf = ByteArrayOutputStream()
 
+        val exit = runBackendProvisionCommand(
+            out = PrintStream(buf, true, Charsets.UTF_8),
+            homePaths = HomePaths(tempDir),
+            mode = CliMode.Backend.Provision("port-63342", json = false),
+            provision = { result },
+        )
+        val text = buf.toString(Charsets.UTF_8)
+
+        assertEquals(0, exit)
+        assertTrue(text.startsWith("devrig v"), text)
+        assertTrue(text.contains("Target: IntelliJ IDEA Ultimate 2026.1.1 (port 63342)"), text)
+        assertTrue(text.contains("MCP Steroid is not installed in this IDE. To install:"), text)
+        assertTrue(text.contains("Settings → Plugins → Marketplace → search \"MCP Steroid\" → Install"), text)
+        assertTrue(text.contains("Plugin source on this machine:\n        ${result.pluginSource}"), text)
+        assertTrue(text.contains("Suggested install path:\n        ${result.suggestedDestination}"), text)
+        assertTrue(text.contains("the actual plugins folder may differ if the user customised it"), text)
+        assertFalse(text.contains("plugin installed at"), text)
+        assertFalse(text.contains("already provisioned"), text)
+    }
+
+    @Test
+    fun `provision json reports manual instructions with marketplace and files steps`(@TempDir tempDir: Path) {
+        val result = provisionResult(tempDir)
         val buf = ByteArrayOutputStream()
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
@@ -237,15 +234,43 @@ class BackendProvisionTest {
         val root = parser.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject
 
         assertEquals(0, exit)
+        assertEquals(setOf("tool", "action", "id", "target", "instructions", "note"), root.keys)
         assertEquals("provision", root["action"]!!.jsonPrimitive.content)
         assertEquals("port-63342", root["id"]!!.jsonPrimitive.content)
-        assertEquals("installed", root["status"]!!.jsonPrimitive.content)
-        assertEquals(false, root["alreadyProvisioned"]!!.jsonPrimitive.boolean)
-        assertEquals(true, root["restartRequired"]!!.jsonPrimitive.boolean)
-        assertEquals(result.pluginPath.toString(), root["pluginPath"]!!.jsonPrimitive.content)
-        assertEquals(result.pluginsDir.toString(), root["pluginsPath"]!!.jsonPrimitive.content)
-        assertEquals("IU", root["productCode"]!!.jsonPrimitive.contentOrNull)
+        assertFalse("method" in root.keys)
+
+        val target = root["target"]!!.jsonObject
+        assertEquals("IntelliJ IDEA Ultimate", target["productName"]!!.jsonPrimitive.content)
+        assertEquals("2026.1.1", target["version"]!!.jsonPrimitive.content)
+        assertEquals("261.23567.138", target["buildNumber"]!!.jsonPrimitive.content)
+        assertEquals("63342", target["port"]!!.jsonPrimitive.content)
+
+        val instructions = root["instructions"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("marketplace", "files"), instructions.map { it["step"]!!.jsonPrimitive.content })
+        assertEquals("Use Settings → Plugins → Marketplace from within the IDE.", instructions[0]["description"]!!.jsonPrimitive.content)
+        assertEquals(result.pluginSource.toString(), instructions[1]["pluginSource"]!!.jsonPrimitive.content)
+        assertEquals(result.suggestedDestination.toString(), instructions[1]["suggestedDestination"]!!.jsonPrimitive.content)
+        assertEquals(
+            "Suggested destination assumes the default plugins directory; user-customised paths require manual adjustment.",
+            root["note"]!!.jsonPrimitive.content,
+        )
     }
+
+    private fun provisionResult(tempDir: Path) = ProvisionResult(
+        id = "port-63342",
+        ide = portIde(port = 63342),
+        about = AboutResponse(
+            name = "IntelliJ IDEA 2026.1.1",
+            productName = "IDEA",
+            baselineVersion = 261,
+            buildNumber = "261.23567.138",
+        ),
+        productCode = "IU",
+        selector = "IntelliJIdea2026.1",
+        pluginsDir = tempDir.resolve("plugins"),
+        pluginSource = tempDir.resolve("ij-plugin"),
+        suggestedDestination = tempDir.resolve("plugins/mcp-steroid"),
+    )
 
     private fun renderProvisionText(rows: List<ProvisionTarget>): String {
         val buf = ByteArrayOutputStream()
@@ -289,8 +314,7 @@ class BackendProvisionTest {
     private fun ideServer(
         port: Int,
         aboutBody: String,
-        installPluginBody: String,
-        installPluginOrigins: MutableList<String?>,
+        installPluginCalls: MutableList<Unit>,
     ): EmbeddedServer<*, *> {
         val server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
             routing {
@@ -298,8 +322,8 @@ class BackendProvisionTest {
                     call.respondText(aboutBody, ContentType.Application.Json)
                 }
                 get("/api/installPlugin") {
-                    installPluginOrigins += call.request.header("Origin")
-                    call.respondText(installPluginBody, ContentType.Application.Json)
+                    installPluginCalls += Unit
+                    call.respondText("{}", ContentType.Application.Json)
                 }
             }
         }.also { it.start(wait = false) }

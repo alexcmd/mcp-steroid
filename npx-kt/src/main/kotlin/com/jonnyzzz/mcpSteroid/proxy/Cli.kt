@@ -384,8 +384,8 @@ private fun printHelp(out: PrintStream) {
           mcp-steroid-proxy backend provision [<id>] [--json]
                                                      no id → list port-discovered IDEs that can be
                                                      provisioned. With id (for example port-63342),
-                                                     install the bundled MCP Steroid plugin into
-                                                     that IDE's user plugins directory.
+                                                     print manual MCP Steroid plugin install
+                                                     instructions for that IDE.
           mcp-steroid-proxy --version | -v           print the proxy version and exit
           mcp-steroid-proxy --help    | -h           print this help and exit
 

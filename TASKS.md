@@ -1507,6 +1507,8 @@ Therefore M13's deliverable shrinks to **manual mode only**:
 
 M11's filesystem-install code path needs to be **removed** in this iteration — keep the listing + the `port-<port>` id parsing, drop the actual copy-files step. (Or hide it behind an unadvertised `--method install-files` flag that defaults off.) Net result: fewer surfaces to maintain; the user makes the install decision deliberately.
 
+✅ resolved (manual mode only)
+
 ## M14 — Relocate MCP Steroid plugin marker into `~/.mcp-steroid/markers/`
 
 Today the plugin writes the PID-marker file at `~/.<pid>.mcp-steroid`
