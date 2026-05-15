@@ -103,7 +103,7 @@ class PluginDeployTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-        ): String? {
+        ): BackendDownloadArtifact {
             unpackCount++
             val bundleDir = targetDir.resolve("idea-IC-253.1")
             Files.createDirectories(bundleDir.resolve("bin"))
@@ -123,7 +123,7 @@ class PluginDeployTest {
             )
             Files.writeString(bundleDir.resolve("bin/idea.sh"), "#!/usr/bin/env sh\n")
             Files.writeString(bundleDir.resolve("bin/idea.bat"), "@echo off\r\n")
-            return "sha-$unpackCount"
+            return BackendDownloadArtifact(sourceArchiveSha256 = "sha-$unpackCount")
         }
     }
 
@@ -139,6 +139,6 @@ class PluginDeployTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-        ): String? = error("downloadAndUnpack should not be called by deploy-only tests")
+        ): BackendDownloadArtifact = error("downloadAndUnpack should not be called by deploy-only tests")
     }
 }

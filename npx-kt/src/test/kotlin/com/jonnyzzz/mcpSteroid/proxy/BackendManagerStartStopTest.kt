@@ -165,6 +165,6 @@ class BackendManagerStartStopTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-        ): String? = error("downloadAndUnpack should not be called by start/stop tests")
+        ): BackendDownloadArtifact = error("downloadAndUnpack should not be called by start/stop tests")
     }
 }

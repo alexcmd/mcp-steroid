@@ -222,6 +222,6 @@ class SingleInstanceLockTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-        ): String? = error("downloadAndUnpack should not be called by single-instance tests")
+        ): BackendDownloadArtifact = error("downloadAndUnpack should not be called by single-instance tests")
     }
 }

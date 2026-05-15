@@ -88,13 +88,18 @@ internal data class BackendDownloadResolution(
     val url: String,
 )
 
+internal data class BackendDownloadArtifact(
+    val sourceArchiveSha256: String?,
+    val archivePath: Path? = null,
+)
+
 internal interface ManagedBackendDownloader {
     suspend fun resolve(id: BackendId): BackendDownloadResolution
 
     suspend fun downloadAndUnpack(
         resolution: BackendDownloadResolution,
         targetDir: Path,
-    ): String?
+    ): BackendDownloadArtifact
 }
 
 internal interface BundledPluginResolver {
@@ -124,6 +129,8 @@ internal object DefaultManagedProcessInspector : ManagedProcessInspector {
 }
 
 internal class ManagedBackendLockException(message: String) : RuntimeException(message)
+
+internal class ManagedBackendValidationException(message: String) : RuntimeException(message)
 
 internal interface ManagedBackendService {
     suspend fun download(id: BackendId): DownloadResult
@@ -164,13 +171,16 @@ internal class DefaultManagedBackendDownloader(
     override suspend fun downloadAndUnpack(
         resolution: BackendDownloadResolution,
         targetDir: Path,
-    ): String? = withContext(Dispatchers.IO) {
+    ): BackendDownloadArtifact = withContext(Dispatchers.IO) {
         val distribution = IdeDistribution.FromUrl(product = resolution.product, url = resolution.url)
 
         Files.createDirectories(archiveDownloadDir)
         val archive = distribution.resolveAndDownload(archiveDownloadDir.toFile(), os = os)
         unpackIdeArchive(archive, targetDir.toFile())
-        sha256(archive.toPath())
+        BackendDownloadArtifact(
+            sourceArchiveSha256 = sha256(archive.toPath()),
+            archivePath = archive.toPath().toAbsolutePath().normalize(),
+        )
     }
 }
 
@@ -194,14 +204,22 @@ internal class BackendManager(
 
         val descriptorPath = descriptorPath(backendDir)
         val existingDescriptor = readDescriptorOrNull(descriptorPath)
-        val archiveSha = if (existingDescriptor == null || !backendDir.resolve(existingDescriptor.bundleDirName).isDirectory()) {
+        val downloadArtifact = if (existingDescriptor == null || !backendDir.resolve(existingDescriptor.bundleDirName).isDirectory()) {
             downloader.downloadAndUnpack(resolution, backendDir)
         } else {
-            existingDescriptor.sourceArchiveSha256
+            BackendDownloadArtifact(sourceArchiveSha256 = existingDescriptor.sourceArchiveSha256)
         }
 
         val bundleDir = resolveBundleDir(backendDir)
         val launcher = launcherResolver.resolve(bundleDir)
+        validateInstalledProductCode(
+            product = resolution.product,
+            actualProductCode = launcher.productCode,
+            downloadedUrl = resolution.url,
+            archivePath = downloadArtifact.archivePath,
+            bundleDir = bundleDir,
+            descriptorPath = descriptorPath,
+        )
         val vmOptionsPath = writeBackendVmOptions(homePaths, resolved.id, bundleDir.fileName.toString())
         val descriptor = BackendDescriptor(
             id = resolved.id,
@@ -212,7 +230,7 @@ internal class BackendManager(
             bundleDirName = bundleDir.fileName.toString(),
             launcherPath = launcher.launcherPath,
             downloadedAt = existingDescriptor?.downloadedAt ?: Instant.now().toString(),
-            sourceArchiveSha256 = archiveSha,
+            sourceArchiveSha256 = downloadArtifact.sourceArchiveSha256,
         )
         writeDescriptor(descriptorPath, descriptor)
         deployMcpSteroidPlugin(resolved.id)
@@ -475,6 +493,32 @@ private val backendJson = Json {
     prettyPrint = true
     encodeDefaults = true
     ignoreUnknownKeys = true
+}
+
+internal fun validateInstalledProductCode(
+    product: IdeProduct,
+    actualProductCode: String?,
+    downloadedUrl: String,
+    archivePath: Path?,
+    bundleDir: Path,
+    descriptorPath: Path,
+) {
+    val expectedProductCode = product.installedProductCode
+    if (actualProductCode == expectedProductCode) return
+
+    deleteRecursively(bundleDir)
+    Files.deleteIfExists(descriptorPath)
+    throw ManagedBackendValidationException(
+        buildString {
+            append("Managed backend product validation failed for ${product.id} (${product.code}). ")
+            append("Expected product-info.json productCode '$expectedProductCode', ")
+            append("actual '${actualProductCode ?: "<missing>"}'. ")
+            append("Downloaded URL: $downloadedUrl. ")
+            append("Archive path: ${archivePath?.toString() ?: "<not downloaded in this invocation>"}. ")
+            append("Unpacked path: $bundleDir. ")
+            append("Removed unpacked bundle and descriptor: $descriptorPath")
+        }
+    )
 }
 
 private fun resolveBundleDir(backendDir: Path): Path {

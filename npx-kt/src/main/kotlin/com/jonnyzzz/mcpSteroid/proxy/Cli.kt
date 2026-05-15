@@ -308,6 +308,9 @@ internal fun runCli(
         } catch (e: ManagedBackendLockException) {
             System.err.println(e.message)
             64
+        } catch (e: ManagedBackendValidationException) {
+            System.err.println(e.message)
+            64
         }
     }
     is CliMode.Project -> {

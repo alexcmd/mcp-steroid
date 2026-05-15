@@ -49,6 +49,9 @@ sealed interface IdeProduct {
      */
     val urlFilenameTokens: List<String> get() = emptyList()
 
+    /** Top-level `productCode` expected in the unpacked bundle's product-info.json. */
+    val installedProductCode: String get() = code
+
     /** Convenience alias kept for back-compat with earlier code. */
     val jetbrainsProductCode: String get() = code
 
@@ -61,6 +64,7 @@ sealed interface IdeProduct {
         override val code = "IIU"
         override val launcherExecutable = "idea"
         override val licenseTier = LicenseTier.Paid
+        override val installedProductCode = "IU"
         // HEAD evidence: current Ultimate releases use unprefixed idea-*. Older releases used ideaIU-*.
         override val urlFilenameTokens = listOf("ideaIU-", "idea-")
     }
@@ -72,6 +76,7 @@ sealed interface IdeProduct {
         override val code = "IIC"
         override val launcherExecutable = "idea"
         override val licenseTier = LicenseTier.Free
+        override val installedProductCode = "IC"
         // HEAD evidence: Community binaries use ideaIC-*; unprefixed idea-* is Ultimate.
         override val urlFilenameTokens = listOf("ideaIC-")
     }
@@ -85,6 +90,7 @@ sealed interface IdeProduct {
         override val code = "PCP"
         override val launcherExecutable = "pycharm"
         override val licenseTier = LicenseTier.Paid
+        override val installedProductCode = "PY"
         // HEAD evidence: current Professional releases use unprefixed pycharm-*; older releases used pycharm-professional-*.
         override val urlFilenameTokens = listOf("pycharmPP-", "pycharm-professional-", "pycharm-")
     }
@@ -96,6 +102,7 @@ sealed interface IdeProduct {
         override val code = "PCC"
         override val launcherExecutable = "pycharm"
         override val licenseTier = LicenseTier.Free
+        override val installedProductCode = "PC"
         // HEAD evidence: Community binaries use pycharm-community-*; accept pycharmPC-* for older API naming.
         override val urlFilenameTokens = listOf("pycharmPC-", "pycharm-community-")
     }
