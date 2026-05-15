@@ -43,6 +43,8 @@ internal sealed interface CliMode {
         data object Text : Backend
         data object Json : Backend
         data class DownloadList(val json: Boolean) : Backend
+        data class StartList(val json: Boolean) : Backend
+        data class StopList(val json: Boolean) : Backend
         data class Download(
             val id: String,
             val versionOverride: String?,
@@ -166,11 +168,15 @@ private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
     val id = resolutionArgs.getOrNull(backendIndex + 2)
         ?: return when (subcommand) {
             "download" -> CliMode.Backend.DownloadList(json = json)
+            "start" -> CliMode.Backend.StartList(json = json)
+            "stop" -> CliMode.Backend.StopList(json = json)
             else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
         }
     if (id.startsWith("--")) {
         return when (subcommand) {
             "download" -> CliMode.Backend.DownloadList(json = json)
+            "start" -> CliMode.Backend.StartList(json = json)
+            "stop" -> CliMode.Backend.StopList(json = json)
             else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
         }
     }
@@ -219,11 +225,6 @@ private fun isSupportedBackendLifecycleId(raw: String): Boolean {
 
 private fun isKnownProductKey(raw: String): Boolean =
     com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts.any { it.id == raw }
-
-private fun isSupportedBackendVersion(raw: String): Boolean {
-    val version = raw.trim()
-    return version.isNotBlank() && version.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
-}
 
 private fun valueAfter(args: Array<String>, flag: String): String? {
     val idx = args.indexOf(flag)
@@ -279,6 +280,8 @@ internal fun runCli(
                 CliMode.Backend.Text -> runBackendCommand(System.out, json = false, homePaths = homePaths)
                 CliMode.Backend.Json -> runBackendCommand(System.out, json = true, homePaths = homePaths)
                 is CliMode.Backend.DownloadList -> runBackendDownloadListCommand(System.out, json = mode.json)
+                is CliMode.Backend.StartList -> runBackendStartListCommand(System.out, homePaths, json = mode.json)
+                is CliMode.Backend.StopList -> runBackendStopListCommand(System.out, homePaths, json = mode.json)
                 is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)

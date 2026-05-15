@@ -48,11 +48,16 @@ internal fun parseBackendId(raw: String): BackendId {
 internal fun validateBackendVersion(raw: String): String {
     val version = raw.trim()
     require(version.isNotBlank()) { "Backend version must not be blank" }
-    require(version.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }) {
+    require(isSupportedBackendVersion(version)) {
         "Backend version '$raw' contains unsupported characters. " +
             "Use letters, digits, '.', '_' or '-'."
     }
     return version
+}
+
+internal fun isSupportedBackendVersion(raw: String): Boolean {
+    val version = raw.trim()
+    return version.isNotBlank() && version.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
 }
 
 private fun parseManagedProductKey(raw: String): IdeProduct {

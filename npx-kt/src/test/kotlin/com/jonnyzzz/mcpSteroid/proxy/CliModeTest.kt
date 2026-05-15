@@ -106,9 +106,12 @@ class CliModeTest {
     }
 
     @Test
-    fun `backend lifecycle subcommands without id are Unknown except download`() {
-        assertTrue(parseCliMode(arrayOf("backend", "start", "--version", "2025.3.3")) is CliMode.Unknown)
-        assertTrue(parseCliMode(arrayOf("backend", "stop")) is CliMode.Unknown)
+    fun `backend start and stop without id route to default listings`() {
+        assertEquals(CliMode.Backend.StartList(json = false), parseCliMode(arrayOf("backend", "start")))
+        assertEquals(CliMode.Backend.StartList(json = true), parseCliMode(arrayOf("backend", "start", "--json")))
+        assertEquals(CliMode.Backend.StartList(json = false), parseCliMode(arrayOf("backend", "start", "--version", "2025.3.3")))
+        assertEquals(CliMode.Backend.StopList(json = false), parseCliMode(arrayOf("backend", "stop")))
+        assertEquals(CliMode.Backend.StopList(json = true), parseCliMode(arrayOf("backend", "stop", "--json")))
     }
 
     @Test
@@ -118,6 +121,19 @@ class CliModeTest {
         mode as CliMode.Unknown
         assertEquals(listOf("backend", "download", "foo"), mode.args)
         assertEquals("Run `devrig backend download` with no id to list valid backend ids.", mode.hint)
+    }
+
+    @Test
+    fun `backend start and stop reject unknown ids with list hints`() {
+        val start = parseCliMode(arrayOf("backend", "start", "foo"))
+        assertTrue(start is CliMode.Unknown)
+        start as CliMode.Unknown
+        assertEquals("Run `devrig backend start` with no id to list valid backend ids.", start.hint)
+
+        val stop = parseCliMode(arrayOf("backend", "stop", "foo"))
+        assertTrue(stop is CliMode.Unknown)
+        stop as CliMode.Unknown
+        assertEquals("Run `devrig backend stop` with no id to list valid backend ids.", stop.hint)
     }
 
     @Test
