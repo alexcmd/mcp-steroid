@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeChannel
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeDistribution
@@ -306,6 +307,7 @@ internal class BackendManager(
 
         val handle = ProcessHandle.of(pid).getOrNull()
         if (handle == null || !handle.isAlive) {
+            deleteMcpMarker(pid)
             Files.deleteIfExists(pidFile)
             return StopResult(resolved.id, pid = pid, outcome = "already stopped")
         }
@@ -319,8 +321,18 @@ internal class BackendManager(
             waitForExit(handle, timeoutMillis = 5_000L)
             "killed"
         }
+        deleteMcpMarker(pid)
         Files.deleteIfExists(pidFile)
         return StopResult(resolved.id, pid = pid, outcome = outcome)
+    }
+
+    private fun deleteMcpMarker(pid: Long) {
+        val marker = ideUserHome.resolve(PidMarker.fileNameFor(pid))
+        try {
+            Files.deleteIfExists(marker)
+        } catch (e: Exception) {
+            System.err.println("WARN: failed to delete MCP Steroid marker file $marker: ${e.message}")
+        }
     }
 
     fun list(): List<ManagedBackendInfo> {

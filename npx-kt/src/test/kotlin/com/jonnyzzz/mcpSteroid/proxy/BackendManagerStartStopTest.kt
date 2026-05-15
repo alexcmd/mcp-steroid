@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -30,11 +31,14 @@ class BackendManagerStartStopTest {
         assertTrue(started.pid > 0)
         assertEquals("${started.pid}\n", Files.readString(homePaths.pidFile("idea-community-2025.3.3")))
         assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
+        val marker = tempDir.resolve("user-home").resolve(PidMarker.fileNameFor(started.pid))
+        Files.writeString(marker, "marker")
 
         val stopped = manager.stop(parseBackendId("idea-community-2025.3.3"))
 
         assertEquals("stopped", stopped.outcome)
         assertFalse(homePaths.pidFile("idea-community-2025.3.3").exists())
+        assertFalse(marker.exists())
         assertFalse(ProcessHandle.of(started.pid).map { it.isAlive }.orElse(false))
     }
 
