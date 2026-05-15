@@ -1,6 +1,7 @@
 import de.undercouch.gradle.tasks.download.Download
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.gradle.api.attributes.Usage
+import org.gradle.internal.os.OperatingSystem
 import org.tukaani.xz.XZInputStream
 import java.io.BufferedInputStream
 
@@ -49,16 +50,16 @@ tasks.test {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Bundled 7-Zip 23.01 binaries — LGPL v2.1+, https://www.7-zip.org/license.txt
+// Bundled 7-Zip 23.01 Windows payload — LGPL v2.1+, https://www.7-zip.org/license.txt
 //
-// We ship `7zz` (full console, NSIS-capable) on Linux x64 / Linux arm64 / macOS
-// universal so that Windows-installer .exe (NSIS) extraction works out of the box
-// on any of those hosts. The `.tar.xz` archive is downloaded from the official
-// 7-zip.org URLs at build time; `7zz` and `License.txt` are extracted from it and
-// dropped into the main JAR resources at `7z/<platform>/`.
+// We ship the official Windows x64 `7z.exe` + `7z.dll` + `License.txt` tuple.
+// 7-Zip 23.01 keeps NSIS and LZMA2 support inside `7z.dll`; there are no
+// `Formats/Nsis.dll` or `Codecs/Lzma2.dll` plugin files in this pinned payload.
 //
-// On Windows hosts no binary is bundled — the upstream `7zr.exe` doesn't support
-// NSIS, so SevenZipLocator falls back to `7z` / `7za` on `PATH` instead.
+// The upstream Windows installer is itself unpacked at build time with a Unix
+// `7zz` bootstrap downloaded from 7-zip.org for the build host. The bootstrap
+// lives under build/7z-bootstrap/ only and is never exposed through the outgoing
+// sevenZipBinariesElements artifact or main resources.
 //
 // License attribution: see `THIRD_PARTY_NOTICES.md`.
 // ────────────────────────────────────────────────────────────────────────────
@@ -66,16 +67,29 @@ tasks.test {
 val sevenZipVersion = "2301"
 val sevenZipBaseUrl = "https://www.7-zip.org/a"
 
+val sevenZipBootstrapDir = layout.buildDirectory.dir("7z-bootstrap")
+val sevenZipBootstrapExtractedDir = sevenZipBootstrapDir.map { it.dir("extracted") }
 val sevenZipDownloadDir = layout.buildDirectory.dir("7z-download")
+val sevenZipWindowsStagingDir = layout.buildDirectory.dir("7z-windows-staging")
 val sevenZipResourceDir = layout.buildDirectory.dir("7z-extracted")
 
-data class SevenZipPlatform(val id: String, val archiveSuffix: String)
+data class BootstrapPlatform(val id: String, val archiveSuffix: String)
 
-val sevenZipPlatforms = listOf(
-    SevenZipPlatform("linux-x64", "linux-x64.tar.xz"),
-    SevenZipPlatform("linux-arm64", "linux-arm64.tar.xz"),
-    SevenZipPlatform("mac", "mac.tar.xz"),
-)
+fun resolveSevenZipBootstrapPlatform(): BootstrapPlatform {
+    val os = OperatingSystem.current()
+    val arch = System.getProperty("os.arch").lowercase()
+    return when {
+        os.isMacOsX -> BootstrapPlatform("mac", "mac.tar.xz")
+        os.isLinux -> when (arch) {
+            "aarch64", "arm64" -> BootstrapPlatform("linux-arm64", "linux-arm64.tar.xz")
+            else -> BootstrapPlatform("linux-x64", "linux-x64.tar.xz")
+        }
+        os.isWindows -> error("7-Zip Windows payload extraction requires a Linux or macOS build host; Windows bootstrap is intentionally unsupported")
+        else -> error("Unsupported build host for 7-Zip bootstrap: ${os.name} ($arch)")
+    }
+}
+
+val sevenZipBootstrapPlatform = resolveSevenZipBootstrapPlatform()
 
 val downloadConnectTimeoutMs = 30_000
 val downloadReadTimeoutMs = 15 * 60_000
@@ -89,74 +103,118 @@ fun Download.configureReliableDownload() {
     tempAndMove(true)
 }
 
-val downloadSevenZipArchives by tasks.registering {
-    outputs.dir(sevenZipDownloadDir)
+val downloadSevenZipBootstrap by tasks.registering(Download::class) {
+    val destFile = sevenZipBootstrapDir.get().asFile
+        .resolve("7z${sevenZipVersion}-${sevenZipBootstrapPlatform.archiveSuffix}")
+    src("$sevenZipBaseUrl/7z${sevenZipVersion}-${sevenZipBootstrapPlatform.archiveSuffix}")
+    dest(destFile)
+    configureReliableDownload()
+    // 7-zip.org artefacts are immutable for a given version; skip if already on disk.
+    onlyIf { !destFile.exists() }
 }
 
-sevenZipPlatforms.forEach { platform ->
-    val task = tasks.register<Download>("download_7z_${platform.id}") {
-        val destFile = sevenZipDownloadDir.get().asFile.resolve("7z${sevenZipVersion}-${platform.archiveSuffix}")
-        src("$sevenZipBaseUrl/7z${sevenZipVersion}-${platform.archiveSuffix}")
-        dest(destFile)
-        configureReliableDownload()
-        // 7-zip.org artefacts are immutable for a given version; skip if already on disk.
-        onlyIf { !destFile.exists() }
-    }
-    downloadSevenZipArchives.configure { dependsOn(task) }
-}
-
-val extractSevenZipResources by tasks.registering {
-    dependsOn(downloadSevenZipArchives)
-    inputs.dir(sevenZipDownloadDir)
-    outputs.dir(sevenZipResourceDir)
+val extractSevenZipBootstrap by tasks.registering {
+    dependsOn(downloadSevenZipBootstrap)
+    val archiveFile = sevenZipBootstrapDir.map { it.asFile.resolve("7z${sevenZipVersion}-${sevenZipBootstrapPlatform.archiveSuffix}") }
+    inputs.file(archiveFile)
+    outputs.dir(sevenZipBootstrapExtractedDir)
 
     doLast {
-        val root = sevenZipResourceDir.get().asFile
-        sevenZipPlatforms.forEach { platform ->
-            val tarXz = sevenZipDownloadDir.get().asFile.resolve("7z${sevenZipVersion}-${platform.archiveSuffix}")
-            val outDir = root.resolve("7z/${platform.id}").apply {
-                deleteRecursively(); mkdirs()
-            }
-            BufferedInputStream(tarXz.inputStream()).use { fileStream ->
-                XZInputStream(fileStream).use { xz ->
-                    TarArchiveInputStream(xz).use { tar ->
-                        while (true) {
-                            val entry = tar.nextEntry ?: break
-                            if (entry.isDirectory) continue
-                            // Only the two payload files matter for us; the rest is HTML manuals.
-                            val keepName = when (entry.name) {
-                                "7zz", "./7zz" -> "7zz"
-                                "License.txt", "./License.txt" -> "License.txt"
-                                else -> null
-                            } ?: continue
-                            val outFile = outDir.resolve(keepName)
-                            outFile.outputStream().use { sink -> tar.copyTo(sink) }
-                            if (keepName == "7zz") outFile.setExecutable(true, false)
-                        }
+        val outDir = sevenZipBootstrapExtractedDir.get().asFile.apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val tarXz = archiveFile.get()
+        BufferedInputStream(tarXz.inputStream()).use { fileStream ->
+            XZInputStream(fileStream).use { xz ->
+                TarArchiveInputStream(xz).use { tar ->
+                    while (true) {
+                        val entry = tar.nextEntry ?: break
+                        if (entry.isDirectory) continue
+                        val keepName = when (entry.name) {
+                            "7zz", "./7zz" -> "7zz"
+                            "License.txt", "./License.txt" -> "License.txt"
+                            else -> null
+                        } ?: continue
+                        val outFile = outDir.resolve(keepName)
+                        outFile.outputStream().use { sink -> tar.copyTo(sink) }
+                        if (keepName == "7zz") outFile.setExecutable(true, false)
                     }
                 }
             }
-            require(outDir.resolve("7zz").isFile) {
-                "Did not find `7zz` inside ${tarXz.name} — 7-Zip archive layout may have changed"
-            }
         }
-
-        // Also surface one shared License.txt at `7z/License.txt` so consumers don't have
-        // to know which platform's copy to cite.
-        val sharedLicense = root.resolve("7z/License.txt")
-        val anyPlatformLicense = sevenZipPlatforms
-            .map { root.resolve("7z/${it.id}/License.txt") }
-            .firstOrNull { it.isFile }
-        if (anyPlatformLicense != null && !sharedLicense.exists()) {
-            anyPlatformLicense.copyTo(sharedLicense, overwrite = true)
+        require(outDir.resolve("7zz").isFile) {
+            "Did not find `7zz` inside ${tarXz.name} — 7-Zip bootstrap archive layout may have changed"
+        }
+        require(outDir.resolve("License.txt").isFile) {
+            "Did not find `License.txt` inside ${tarXz.name} — 7-Zip bootstrap archive layout may have changed"
         }
     }
 }
 
-// Outgoing: the unpacked 7-Zip binaries tree (`7z/<platform>/{7zz,License.txt}`)
-// for consumers that want to bundle the binaries in their own distribution
-// instead of pulling them off the classpath. See SevenZipLocator's doc for
-// the classpath-resource consumer path that already exists.
+val downloadSevenZipWindowsInstaller by tasks.registering(Download::class) {
+    val destFile = sevenZipDownloadDir.get().asFile.resolve("7z${sevenZipVersion}-x64.exe")
+    src("$sevenZipBaseUrl/7z${sevenZipVersion}-x64.exe")
+    dest(destFile)
+    configureReliableDownload()
+    // 7-zip.org artefacts are immutable for a given version; skip if already on disk.
+    onlyIf { !destFile.exists() }
+}
+
+val extractSevenZipResources by tasks.registering {
+    dependsOn(extractSevenZipBootstrap, downloadSevenZipWindowsInstaller)
+    val bootstrapExecutable = sevenZipBootstrapExtractedDir.map { it.asFile.resolve("7zz") }
+    val windowsInstaller = sevenZipDownloadDir.map { it.asFile.resolve("7z${sevenZipVersion}-x64.exe") }
+    inputs.file(bootstrapExecutable)
+    inputs.file(windowsInstaller)
+    inputs.property("sevenZipPayloadLayout", "windows-x64-exe-dll-license-v1")
+    outputs.dir(sevenZipResourceDir)
+
+    doLast {
+        val bootstrap = bootstrapExecutable.get()
+        require(bootstrap.isFile && bootstrap.canExecute()) {
+            "7-Zip bootstrap executable is missing or not executable: $bootstrap"
+        }
+        val installer = windowsInstaller.get()
+        require(installer.isFile) {
+            "7-Zip Windows installer is missing: $installer"
+        }
+
+        val stagingDir = sevenZipWindowsStagingDir.get().asFile.apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        providers.exec {
+            commandLine(bootstrap.absolutePath, "x", installer.absolutePath, "-y", "-o${stagingDir.absolutePath}")
+        }.result.get().assertNormalExitValue()
+
+        val root = sevenZipResourceDir.get().asFile.apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val winDir = root.resolve("7z/win-x64").apply { mkdirs() }
+        val payload = mapOf(
+            "7z.exe" to "7z.exe",
+            "7z.dll" to "7z.dll",
+            "License.txt" to "License.txt",
+        )
+        payload.forEach { (sourceName, targetName) ->
+            val source = stagingDir.resolve(sourceName)
+            require(source.isFile) {
+                "Did not find `$sourceName` inside ${installer.name} — 7-Zip Windows installer layout may have changed"
+            }
+            source.copyTo(winDir.resolve(targetName), overwrite = true)
+        }
+
+        winDir.resolve("License.txt").copyTo(root.resolve("7z/License.txt"), overwrite = true)
+    }
+}
+
+// Outgoing: the unpacked 7-Zip Windows payload tree
+// (`7z/win-x64/{7z.exe,7z.dll,License.txt}` plus shared `7z/License.txt`) for
+// consumers that want to bundle the binaries in their own distribution instead
+// of pulling them off the classpath. See SevenZipLocator's doc for the
+// classpath-resource consumer path that already exists.
 val sevenZipBinariesElements by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
@@ -177,4 +235,7 @@ sourceSets.named("main") {
 
 tasks.named("processResources") {
     dependsOn(extractSevenZipResources)
+    doFirst {
+        delete(layout.buildDirectory.dir("resources/main/7z"))
+    }
 }
