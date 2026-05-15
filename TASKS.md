@@ -707,3 +707,369 @@ suites, fresh timestamps.
 - The `apply-patch` branch retains the full feature surface for re-enable.
 - No force-push was used; `origin/main` and `jb/main` are fast-forwards
   from `349d649c` to `47e03ef2`.
+
+# Parked — Cluster A: MCP transport, cancellation, indexing (#46, #52) (2026-05-15)
+
+Six tasks parked for a future iteration. Re-iterate later — direction is set,
+but the boundary design and the `kind`-error shapes need a second pass.
+**Ordering below is easiest-first**, so the re-iteration starts at the top.
+
+## Design constraints carried over from the 2026-05-15 review
+
+- **The webserver must keep functioning regardless of what scripts/handlers
+  do.** There is exactly one outer boundary in the HTTP layer that catches
+  everything (including `CancellationException`, `Throwable`, panics from
+  handler code) and converts it into a well-formed MCP tool result. The
+  inner code is free to throw; the boundary is the contract that protects
+  the server. No exception escapes the boundary into ktor.
+- **No new MCP tools, no new HTTP endpoints** for readiness. Surface
+  indexing state through a failing tool response on the existing calls. See
+  `memory/feedback_narrow_tool_surface.md`.
+- **Cancellation does not kill `kotlinc`.** A3 waits for the worker to
+  finish; we release the request slot and the boundary returns a structured
+  `cancelled` response to the client, but the compiler runs to completion.
+  Justification: forcibly killing the JDK21 worker is flaky on macOS and the
+  saved cycles are small relative to the rest of cleanup.
+
+## A0 — Boundary catch-all in `McpHttpTransport.handlePost` (foundation, easiest)
+
+Single `try { … } catch (Throwable) { … }` wrapping the entire handler body in
+`mcp-http/.../McpHttpTransport.kt:99–182`. Inside the catch:
+- Match `CancellationException` first — build a structured `cancelled` tool
+  result, do **not** log, do **not** rethrow.
+- Match every other `Throwable` — build a structured `internal_error` tool
+  result with the executionId, log once at `Logger.error`.
+- The boundary itself must never throw; ktor sees only a normal 200 response
+  with `isError: true` in the body. Server-side state stays clean.
+
+Acceptance: a script that throws OOM, a script that calls `error("boom")`,
+and a client that disconnects mid-request all produce a single 200 response
+with the appropriate `kind`, and the next request on the same server
+succeeds.
+
+## A2c — Single terminal HTTP log per request
+
+Remove the per-handler logging at
+`mcp-http/.../McpHttpTransport.kt:159` (the 500 line) and `:176` (the 200
+line). Keep only the global `requestLoggingPlugin` line at
+`ij-plugin/.../server/SteroidsMcpServer.kt:334–348`. The middleware sees
+whatever status the boundary set, exactly once.
+
+## A2b — Logger discipline for `CancellationException`
+
+In every `catch (t: Throwable)` under `mcp-http/` and
+`ij-plugin/.../execution/` (`McpHttpTransport.kt`, `ExecutionManager.kt:94`,
+`ScriptExecutor.kt:158`), match `CancellationException` first and rethrow
+without logging. Cite the `c.i.openapi.diagnostic.Logger` Javadoc in a
+short code comment. Add a banned-pattern test:
+`Logger.error(CancellationException)` must fail the lint, alongside the
+existing empty-catch rule in `CLAUDE.md → Banned patterns`.
+
+## A1 — `indexing_in_progress` structured error after ⌊2T/3⌋
+
+Centralize the wait in
+`ij-plugin/.../execution/McpScriptContextImpl.kt:153–174` as
+`waitForSmartMode(maxWait: Duration)` and call it from every handler that
+currently waits silently (`steroid_execute_code`, `steroid_apply_patch`,
+`steroid_action_discovery`, `steroid_list_windows`). Bound = ⌊2T/3⌋
+seconds where T is the per-call timeout. On timeout, return:
+```
+{
+  "isError": true,
+  "kind": "indexing_in_progress",
+  "message": "Project '<name>' is still indexing. Wait and repeat the same command again.",
+  "project": "<name>", "elapsedMs": …, "dumbMode": true
+}
+```
+- Add registry key `mcp.steroid.smart.mode.wait.fraction` (default 0.66).
+- Add one line to the `steroid_execute_code` and `steroid_apply_patch` tool
+  descriptions: *"Returns `kind: indexing_in_progress` while the project is
+  still being indexed — wait a few seconds and retry."*
+
+## A2a — `cancelled` structured tool result
+
+Build on A0. When the boundary catches a `CancellationException`, classify
+the reason:
+- `client_closed` if the request channel reports closed.
+- `script_timeout` if our own `withTimeout` fired.
+- `server_shutdown` otherwise.
+
+Return body:
+```
+{ "isError": true, "kind": "cancelled", "reason": "...",
+  "executionId": "...", "elapsedMs": ..., "message": "The call was interrupted. You may retry." }
+```
+HTTP status 200, no 408/499. Update the tool descriptions to mention the
+`cancelled` kind so agents know to retry.
+
+## A3 — Cooperative cancellation (without killing `kotlinc`)
+
+Wait for `kotlinc` to finish naturally; do **not** call `destroyForcibly`.
+Make these call sites cancellation-aware:
+- `waitForSmartMode` — `suspendCancellableCoroutine { cont -> runWhenSmart { cont.resume(Unit) }; cont.invokeOnCancellation { /* no-op */ } }`.
+  Cancellation returns instantly; smart-mode callback resolves later
+  harmlessly.
+- Long IDE operations that accept a `ProgressIndicator`
+  (`ProjectTaskManager.buildAllModules` etc.) — hand in an indicator
+  linked to the coroutine `Job` via
+  `com.intellij.openapi.progress.coroutineToIndicator` so `Job.cancel()`
+  propagates through `indicator.cancel()`.
+- The `kotlinc` worker step — leave running; the boundary already returned
+  to the client. Worker completion releases its own resources.
+
+Acceptance: a forcibly-cancelled `steroid_execute_code` returns its
+`cancelled` body within ~500 ms regardless of what the inner script is
+doing. The `kotlinc` worker may continue and complete silently.
+
+## Integration tests (when A re-opens)
+
+One new test class in `:test-integration` (Docker IDE):
+1. **Indexing-in-progress** — heavy project, immediate
+   `steroid_execute_code` with T=15s and fraction=0.66 → response at ~10 s
+   with `kind=indexing_in_progress`.
+2. **Client cancellation** — 600 s script, close connection at 1 s →
+   response within 2 s with `kind=cancelled, reason=client_closed`. No
+   `SEVERE` logged.
+3. **Script timeout** — script sleeps past timeout → `kind=cancelled,
+   reason=script_timeout`. Single HTTP log line.
+4. **Boundary stability** — fire a sequence of misbehaving scripts (OOM,
+   `error(...)`, infinite loop+cancel, valid call) and assert the *last*
+   valid call succeeds — the server survives every failure mode.
+
+Plus one unit test: scan caught `Throwable` in `mcp-http/` and
+`ij-plugin/.../execution/` and assert each has a `CancellationException`
+rethrow before any logging.
+
+## Order of execution (when A re-opens)
+
+1. A0 → A2c → A2b (boundary + log cleanup; mechanical).
+2. A1 (indexing error; independent, deliverable on its own).
+3. A2a (cancelled error shape; depends on A0).
+4. A3 (cooperative cancellation; last, optimisation).
+
+# Active — Cluster B: prompt corpus hardening (#47, #48, #51) (2026-05-15)
+
+Five prompt-only changes to steer `steroid_execute_code` away from invented
+helpers, threading misuse, and low-level daemon-highlighting APIs. Format
+recap: each `.md` in `prompts/src/main/prompts/` is `[line 1: title]`,
+`[line 3: description]`, then body. No hardcoded `mcp-steroid://` URI
+literals — use `XxxPromptArticle().uri` in production Kotlin. Fence
+annotations like `` ```kotlin[RD] `` per IDE.
+
+**Ordered easiest-first.** Each task is independent; can ship as
+separate commits or bundled per the user's preference (validated in a
+prior session: bundled is fine for related prompt-corpus refactors).
+
+## B3 — Expand daemon-highlighting warning (smallest)
+
+File: `prompts/src/main/prompts/skill/coding-with-intellij-context-api.md`.
+The existing NOTE about `isEditorHighlightingCompleted()` already warns
+against stale results. Expand it into a boxed warning that names the
+specific symbols that cause the failures observed in #51:
+
+> **Do not call `DaemonCodeAnalyzerImpl`, `HighlightingSession`, or
+> `DaemonProgressIndicator` directly.** These APIs require running under a
+> `DaemonProgressIndicator` and a stored `HighlightingSession` — neither of
+> which exists in a `steroid_execute_code` script context. Symptoms:
+> `must be run under DaemonProgressIndicator, but got: null` and
+> `No HighlightingSession stored in …`.
+>
+> For inspection diagnostics, use the supported recipes:
+> see `[Inspect and fix](mcp-steroid://ide/inspect-and-fix)` and
+> `[Inspection summary](mcp-steroid://ide/inspection-summary)`.
+
+Use article-Kotlin link syntax (the generator resolves `mcp-steroid://...`
+in markdown to article references at build time — confirmed in existing
+see-also blocks).
+
+## B1 — "Real helpers vs invented names" subsection
+
+File: `prompts/src/main/prompts/skill/coding-with-intellij-context-api.md`,
+inserted near the top of the body (after the description, before the
+existing helper inventory).
+
+```
+## Real helpers vs invented names
+
+These names exist on `McpScriptContext` / standard imports:
+`readAction`, `writeAction`, `smartReadAction`, `writeIntentReadAction`,
+`findProjectFile`, `runInspectionsDirectly`, `projectScope()`,
+`allScope()`, `waitForSmartMode()`, `project`.
+
+These names **do not exist** — do not write them:
+
+| Invented | Use instead |
+|---|---|
+| `buildProject()`, `compileProject()` | `ProjectTaskManager.getInstance(project).buildAllModules().await()` |
+| `createProjectFile(...)` | `findProjectFile("...")` for existing files, or `writeAction { VfsUtil.saveText(virtualFile, text) }` after creating with `LocalFileSystem` |
+| `context.project` | Just `project` — it is in scope already |
+| `projectDir`, `findProjectDir()` | `project.basePath` or `project.guessProjectDir()` |
+```
+
+Each invented name appears verbatim so future agents grep-find this
+table on first failure.
+
+## B2 — Threading decision table + failure→fix patches
+
+File: `prompts/src/main/prompts/skill/coding-with-intellij-threading.md`.
+Insert a compact table at the very top of the body (existing prose
+moves below). Then add three named failure→fix patches.
+
+```
+## Quick decision
+
+| You're doing… | Wrap in |
+|---|---|
+| VFS write (`saveText`, create, delete) | `writeAction { … }` |
+| PSI read, `FilenameIndex`, search | `readAction { … }` (or `smartReadAction` if may be dumb) |
+| Refactoring processor, intention action | `writeIntentReadAction { … }` |
+| Background write (newer platform APIs) | `backgroundWriteAction { … }` |
+| EDT-only API (UI, action invocation) | `withContext(Dispatchers.EDT) { … }` |
+
+## Failure → fix
+
+- `Access is allowed from write thread only` → wrap the offending call in
+  `writeAction { … }`.
+- `Access is allowed from Event Dispatch Thread (EDT) only` → wrap in
+  `withContext(Dispatchers.EDT) { … }`.
+- `Background write action is not permitted on this thread` → use
+  `backgroundWriteAction { … }`, or switch to EDT if the API requires it.
+```
+
+## B4 — Tool description distillation (`steroid_execute_code`)
+
+File: the tool handler for `steroid_execute_code` — locate via
+`Grep -r "steroid_execute_code"` under `ij-plugin/src/main/kotlin/.../tools/`.
+The tool description is always in agent context (unlike articles, which
+are loaded on demand), so 4 compact lines pay off.
+
+Add to the tool description:
+
+> Available helpers in scope: `project`, `readAction`, `writeAction`,
+> `smartReadAction`, `writeIntentReadAction`, `findProjectFile`,
+> `waitForSmartMode`. Use `project` (not `context.project`).
+> Wrap VFS writes in `writeAction`; PSI reads in `readAction`.
+> Do not call `DaemonCodeAnalyzerImpl` or `HighlightingSession` directly —
+> use the inspection resources.
+
+Constraint: don't blow the description over the soft limit (check
+existing `*ToolDescription.md` files for length convention). If the
+addition pushes over, route via `XxxPromptArticle().uri` reference
+instead.
+
+## B5 — DPAIA regression prompts in `:test-experiments`
+
+New test class under `test-experiments/src/test/kotlin/...` that fires
+each invented-helper / threading-misuse / daemon-API snippet from #47,
+#48, #51 verbatim and asserts the agent self-corrects within one retry.
+
+- Gemini-key-aware: use `DockerGeminiSession` with
+  `skipTestWhenKeyMissing = true` per CLAUDE.md.
+- Not parallel (CLAUDE.md: "never run `:test-experiments` tests in
+  parallel" — each starts a Docker container).
+- One test per pattern; minimal fixtures.
+
+Patterns to cover (one test each, names suggested):
+- `BuildProjectInventedHelper` — script calling `buildProject()`
+- `CreateProjectFileInventedHelper` — `createProjectFile(...)`
+- `ContextDotProject` — `val p = context.project`
+- `ProjectDirInvented` — `val dir = projectDir`
+- `WriteFromWrongThread` — VFS save without `writeAction`
+- `EdtRequiredAccess` — UI/action call without `Dispatchers.EDT`
+- `DirectDaemonIndicator` — `DaemonCodeAnalyzerImpl.runMainPasses(...)`
+
+This is the largest task in B; defer until B1–B4 land if scope is tight.
+
+# Active — Cluster C: structured apply_patch recovery hints (#49, #50) (2026-05-15)
+
+Three changes (plus one deferred). C depends on Cluster A's `kind`-error
+shape only loosely — C can ship before or after A, but reusing A's body
+shape is cleaner. **C runs last in the accepted B → A → C order.**
+
+## C3 — One-line nudge in `steroid_apply_patch` tool description (smallest)
+
+Locate the `steroid_apply_patch` tool description (likely
+`ApplyPatchToolDescription.md` or similar under
+`ij-plugin/src/main/kotlin/.../tools/`). Add:
+
+> On error, do not retry blindly. Inspect current file text via
+> `steroid_execute_code` with `FilenameIndex` first. See
+> `[Anchor-safe editing](mcp-steroid://skill/anchor-safe-editing)`.
+
+## C2 — New article: `skill/anchor-safe-editing.md`
+
+New file: `prompts/src/main/prompts/skill/anchor-safe-editing.md`.
+Article format (title line, blank, description line, blank, body).
+Fence annotations `[IU,RD]` on each Kotlin block since the recipe is
+IDE-product-agnostic.
+
+Body covers:
+1. Locate file with
+   `FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project))`
+   — handle empty result and multiple-match cases.
+2. Print 5 lines of context around the intended anchor (use
+   `VfsUtil.loadText` and substring around the match).
+3. Apply the patch only when occurrence count == 1; if 0 or >1, abort
+   and surface the count.
+4. After apply, re-read and verify replacement count.
+
+Add to the relevant `seeAlso` chain (likely
+`prompts/src/main/prompts/skill/overview.md` or similar TOC).
+
+## C1 — Structured `apply_patch` errors with candidates
+
+File: `ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/execution/ApplyPatch.kt`.
+At lines 128 (`Hunk #$index: file not found`) and 143 (`old_string not
+found`), replace bare strings with structured bodies. Keep the
+human-readable first line so existing tests pass; append structured
+fields.
+
+**File-not-found body:**
+```
+{
+  "kind": "file_not_found",
+  "hunk": N,
+  "file": "...",
+  "candidates": [up to 5 paths from FilenameIndex.getVirtualFilesByName(basename)],
+  "parentExists": bool,
+  "parentListing": [up to 10 entries if parentExists]
+}
+```
+
+**`old_string not found` body:**
+```
+{
+  "kind": "anchor_not_found",
+  "hunk": N,
+  "file": "...",
+  "fileExists": true,
+  "fileLines": N,
+  "fileBytes": N,
+  "fuzzyCandidates": [up to 3 lines that share the longest stable token from old_string, with line numbers]
+}
+```
+
+Token-bag scoring: tokenize `old_string` on `[A-Za-z0-9_]+`, pick the
+longest token that appears uniquely (or rarely) in the file, return
+its line. If no useful token, omit `fuzzyCandidates`.
+
+Tests: extend the existing `ApplyPatchTest` suite with three cases:
+- file_not_found returns at least one basename candidate
+- anchor_not_found returns fileLines + fileBytes when file exists
+- existing error messages remain unchanged on first line (backward compat)
+
+## C4 — `dryRun` parameter (deferred)
+
+Add `dryRun: Boolean = false` to the `steroid_apply_patch` tool args.
+When true, run preflight + return structured candidates (C1's shape)
+without applying. Lower priority — ship C1+C2+C3 first.
+
+## Order of execution (B → A → C)
+
+1. **B3** → **B1** → **B2** → **B4** (prompt edits, mechanical). Single
+   commit OK.
+2. **B5** (regression tests; can ship in a follow-up).
+3. **A** (when re-opened — see Parked section above).
+4. **C3** → **C2** → **C1** (recovery hints).
+5. **C4** (dryRun, deferred).
+
