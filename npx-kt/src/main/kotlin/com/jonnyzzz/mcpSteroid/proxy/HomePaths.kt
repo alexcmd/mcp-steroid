@@ -27,7 +27,25 @@ internal fun resolveHomePaths(
     override: String?,
     env: Map<String, String> = System.getenv(),
 ): HomePaths {
-    val raw = override
+    val raw = override?.let(::expandTilde)
         ?: PidMarker.markerHomeDirectory(Path.of(System.getProperty("user.home")), env).toString()
-    return HomePaths(Path.of(raw).toAbsolutePath().normalize())
+    val path = Path.of(raw)
+    rejectDotDot(path)
+    return HomePaths(path.toAbsolutePath().normalize())
+}
+
+private fun expandTilde(raw: String): String {
+    if (raw == "~") return System.getProperty("user.home")
+    if (raw.startsWith("~/")) return System.getProperty("user.home") + raw.substring(1)
+    if (raw.startsWith("~")) {
+        throw IllegalArgumentException("--home: unsupported '~user' form. Use \"${'$'}HOME\" or an absolute path.")
+    }
+    return raw
+}
+
+private fun rejectDotDot(path: Path) {
+    val hasDotDot = path.iterator().asSequence().any { it.toString() == ".." }
+    if (hasDotDot) {
+        throw IllegalArgumentException("--home: '..' segments are not allowed; pass an explicit absolute path.")
+    }
 }

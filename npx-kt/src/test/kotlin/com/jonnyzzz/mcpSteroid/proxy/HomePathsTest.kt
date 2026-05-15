@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.isDirectory
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class HomePathsTest {
@@ -15,12 +16,48 @@ class HomePathsTest {
     fun `CLI override wins over environment and resolves to an absolute normalized path`(
         @TempDir tempDir: Path,
     ) {
-        val override = tempDir.resolve("x").resolve("..").resolve("chosen").toString()
+        val override = tempDir.resolve("chosen").toString()
         val envHome = tempDir.resolve("env").toString()
 
         val paths = resolveHomePaths(override, env = mapOf("MCP_STEROID_HOME" to envHome))
 
         assertEquals(tempDir.resolve("chosen").toAbsolutePath().normalize(), paths.home)
+    }
+
+    @Test
+    fun `CLI override expands bare tilde to user home`() {
+        val expected = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()
+
+        val paths = resolveHomePaths("~", env = emptyMap())
+
+        assertEquals(expected, paths.home)
+    }
+
+    @Test
+    fun `CLI override expands tilde slash prefix to user home child`() {
+        val expected = Path.of(System.getProperty("user.home")).resolve("foo").toAbsolutePath().normalize()
+
+        val paths = resolveHomePaths("~/foo", env = emptyMap())
+
+        assertEquals(expected, paths.home)
+    }
+
+    @Test
+    fun `CLI override rejects unsupported other user tilde form`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveHomePaths("~root", env = emptyMap())
+        }
+
+        assertTrue(ex.message.orEmpty().contains("~user"), "Expected ~user hint, got: ${ex.message}")
+    }
+
+    @Test
+    fun `CLI override rejects dot dot path segments`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveHomePaths("/tmp/../etc", env = emptyMap())
+        }
+
+        assertTrue(ex.message.orEmpty().contains(".."), "Expected '..' hint, got: ${ex.message}")
     }
 
     @Test

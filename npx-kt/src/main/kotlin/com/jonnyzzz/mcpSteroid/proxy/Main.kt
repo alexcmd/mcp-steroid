@@ -55,7 +55,12 @@ fun main(args: Array<String>) {
     //
     // `parseCliMode` is intentionally pure and does not touch System.out.
     val mode = parseCliMode(args)
-    val homePaths = resolveHomePaths(parseHomeOverride(args))
+    val homePaths = try {
+        resolveHomePaths(parseHomeOverride(args))
+    } catch (e: IllegalArgumentException) {
+        System.err.println(e.message)
+        exitProcess(64)
+    }
     homePaths.mkdirsAll()
     System.setProperty("proxy.log.dir", homePaths.logsDir.toString())
     System.setProperty("proxy.log.session", LocalDateTime.now().format(LOG_SESSION_FORMAT))
