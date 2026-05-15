@@ -1563,6 +1563,129 @@ Both sides need updating in lockstep:
 8. M12 video xterm.
 9. Polish m1+m2+m3+m4+m6 ✅ resolved.
 
+## Post-pipeline follow-ups (added 2026-05-15)
+
+Synthesised from each codex run's `IMPROVEMENTS.md` after the
+managed-backends pipeline landed. Higher priority first.
+
+### F1 — M8 introduced a regression: `backend --help` / `backend --version` exit 64
+
+`Cli.kt`'s strict allow-list (commit `dc733cac`) dropped `--help` /
+`--version` from every backend mode's allowed-flag set. Pre-tightening,
+`parseCliMode` checked `--help` / `-h` BEFORE `backend`, so `backend --help`
+routed to Help. Now it lands in `Unknown` with exit 64.
+
+**Fix:** re-introduce `--help` / `-h` / `--version` / `-v` as universal
+flags that route to Help / Version regardless of the mode keyword
+preceding them. Add explicit parametrised tests for
+`backend --help`, `backend download --help`, `project --version`.
+
+### F2 — `:npx-kt:installDist` fails when previous tree has read-only bundled JDK files
+
+Surfaced by `task-lifecycle` and `task-m13`. Manual recovery is
+`chmod -R u+w npx-kt/build/install/mcp-steroid-proxy && rm -rf` before
+rerunning.
+
+**Fix:** in `npx-kt/build.gradle.kts`, add a `doFirst { ... }` to the
+`installDist` task that chmod-fixes any pre-existing install tree
+before the `Sync` task copies into it.
+
+### F3 — `SevenZipLocatorTest` writes through the real `~/.cache/mcp-steroid/7z/`
+
+`SevenZipLocator.cacheRoot` is a `private val by lazy` bound to
+`user.home`. Tests run against the real host cache, leaving side
+effects.
+
+**Fix:** mirror the `NpxKtRootTestSupport` pattern from m2 — a
+`SevenZipLocatorTestSupport` object in the test sourceset overrides
+the cache root via package-internal access. Reset between tests.
+
+### F4 — `IntelliJPortDiscoveryTest` has a port-bind race
+
+`task-polish` hit `Address already in use` on its first full-module
+run; immediate rerun passed.
+
+**Fix:** allocate ephemeral ports via `ServerSocket(0).localPort` and
+hold the socket bound until the test process takes it over; or
+refactor to mock-driven discovery. No `Thread.sleep` retries.
+
+### F5 — GUI integration test re-downloads ~1 GB IDE archive every run
+
+Cold-cache run is ~2 minutes; transient `EOFException` mid-stream has
+surfaced (M14 run).
+
+**Fix:** persistent test archive cache under
+`~/.cache/mcp-steroid-test/` reused across CI runs; falls back to
+fresh download when the file is missing/stale. Single `Files.copy`
+from a `${MCP_STEROID_TEST_ARCHIVE_CACHE}` dir set on CI.
+
+### F6 — Plugin `sinceBuild` must move with the resolver's oldest fallback
+
+M1-fix's `idea-community` fallback to 2025.2.6.2 (build `IC-252`) does
+not load with `sinceBuild=253`. The two surfaces (resolver oldest
+release in `IdeProduct.knownProducts` + plugin manifest `sinceBuild`)
+are coupled but live in different modules.
+
+**Fix:** add a CI test that loads the lowest version any
+`IdeProduct.knownProducts` entry resolves to and asserts the built
+plugin's `sinceBuild` is `<=` that version's build number.
+
+### F7 — Remove legacy home-root marker fallback after one release (DEFERRED)
+
+The M14 transition keeps a DEBUG-only fallback scanning
+`~/.<pid>.mcp-steroid`. Drop the fallback + transition tests after
+one release cycle (once shipped plugins all write to
+`~/.mcp-steroid/markers/`). Track which release first shipped the new
+layout (next ij-plugin release after `5e324746`).
+
+**No action now.**
+
+### F8 — Bounded retry on transient `checksumLink` fetch failures
+
+M10's checksum verification fails closed if the `.sha256` URL returns
+a transient error. Safest default; but CDN blips would unnecessarily
+fail downloads.
+
+**Fix:** small bounded retry (3 attempts, exponential backoff capped
+at ~10 s) inside the checksum-fetch path only. Final failure still
+surfaces the error verbatim.
+
+### F9 — Log the selected archive URL on `--debug` even on cache hits
+
+Today only a cold download surfaces the URL chosen by the resolver;
+a cached rerun shows just the products-API fetch. Hampers forensics.
+
+**Fix:** in `IdeDistribution.resolveAndDownload`, log the resolved
+URL + local destination at INFO (always) or DEBUG (selectable) BEFORE
+the cache check.
+
+### F10 — npx-kt fixtures conflate API product code (`IIC`) with installed `product-info.json` code (`IC`)
+
+Naming hygiene only. Fixtures should distinguish:
+- `apiProductCode = "IIC"` — JetBrains products-API code
+- `installedProductCode = "IC"` — value in `product-info.json`
+
+### F11 — `backend provision` listing should hide IDEs already running MCP Steroid
+
+Today the listing scans all port-discovered IDEs, including ones
+with the plugin already loaded. Once an IDE has produced a marker
+file, the listing should annotate or hide those rows.
+
+**Fix:** correlate port-discovered rows against marker-discovered
+rows by build number + pid (or port → mcp-steroid health check).
+Annotate `port-<n>  (already provisioned)` and demote in the listing.
+
+### F12 — East-Asian wide characters and combining marks (display width)
+
+m3 (polish batch) intentionally fixed surrogate-pair / code-point
+width only. East-Asian wide characters render at 2 columns; combining
+marks at 0. Both still misalign in text mode.
+
+**Fix:** extend `String.codePointWidth()` to consult Unicode East
+Asian Width. Defer combining marks if scope grows.
+
+---
+
 ## Lifecycle batch (B1 + M2 + M3 + M6) — ✅ resolved 2026-05-15
 
 Codex run `task-lifecycle/run_20260515-133645-60441`. Commits pushed to
