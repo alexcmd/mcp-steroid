@@ -1,5 +1,6 @@
 import de.undercouch.gradle.tasks.download.Download
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.gradle.api.attributes.Usage
 import org.tukaani.xz.XZInputStream
 import java.io.BufferedInputStream
 
@@ -149,6 +150,24 @@ val extractSevenZipResources by tasks.registering {
         if (anyPlatformLicense != null && !sharedLicense.exists()) {
             anyPlatformLicense.copyTo(sharedLicense, overwrite = true)
         }
+    }
+}
+
+// Outgoing: the unpacked 7-Zip binaries tree (`7z/<platform>/{7zz,License.txt}`)
+// for consumers that want to bundle the binaries in their own distribution
+// instead of pulling them off the classpath. See SevenZipLocator's doc for
+// the classpath-resource consumer path that already exists.
+val sevenZipBinariesElements by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "seven-zip-binaries"))
+    }
+}
+
+artifacts {
+    add(sevenZipBinariesElements.name, sevenZipResourceDir.map { it.asFile }) {
+        builtBy(extractSevenZipResources)
     }
 }
 
