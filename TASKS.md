@@ -1266,6 +1266,8 @@ Today downloads land in per-backend dirs. Move all download staging to
 `HomePaths` gets a new `downloadsDir` property; `BackendManager.download`
 routes the archive there, unpacks, then `Files.delete()`.
 
+✅ resolved (download-B batch)
+
 ### M10 — Recoverable downloads + checksum/signature verification
 Two parts:
 
@@ -1285,6 +1287,8 @@ When the source doesn't expose a checksum we trust:
   - DO log a `WARN` (visible without --debug) noting "no checksum
     available from upstream; skipping verification".
   - Don't fabricate a fallback; just record the gap.
+
+✅ resolved (download-B batch)
 
 ## Revised plan / execution
 
