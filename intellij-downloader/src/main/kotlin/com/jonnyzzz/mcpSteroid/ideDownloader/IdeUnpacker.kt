@@ -76,20 +76,23 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
             val outputFile = File(unpackDir, entry.name)
             requireUnderTarget(outputFile, unpackDir, entry.name)
 
-            if (entry.isDirectory) {
-                outputFile.mkdirs()
-            } else {
-                outputFile.parentFile?.mkdirs()
-                outputFile.outputStream().use { out -> tar.copyTo(out) }
-                if (entry.mode and 0b001_000_000 != 0) {
-                    outputFile.setExecutable(true, false)
-                }
-            }
+            when {
+                entry.isDirectory -> outputFile.mkdirs()
 
-            if (entry.isSymbolicLink) {
-                outputFile.delete()
-                val linkTarget = File(outputFile.parentFile, entry.linkName)
-                Files.createSymbolicLink(outputFile.toPath(), linkTarget.toPath())
+                entry.isSymbolicLink -> {
+                    requireSymlinkTargetUnderTarget(outputFile, entry.linkName, unpackDir, entry.name)
+                    outputFile.parentFile?.mkdirs()
+                    outputFile.delete()
+                    Files.createSymbolicLink(outputFile.toPath(), File(entry.linkName).toPath())
+                }
+
+                else -> {
+                    outputFile.parentFile?.mkdirs()
+                    outputFile.outputStream().use { out -> tar.copyTo(out) }
+                    if (entry.mode and 0b001_000_000 != 0) {
+                        outputFile.setExecutable(true, false)
+                    }
+                }
             }
 
             entryCount++
@@ -293,8 +296,39 @@ private fun unpackDirAlreadyPopulated(unpackDir: File): Boolean {
 }
 
 private fun requireUnderTarget(outputFile: File, unpackDir: File, entryName: String) {
-    require(outputFile.canonicalPath.startsWith(unpackDir.canonicalPath)) {
+    require(!File(entryName).isAbsolute) {
         "Archive entry escapes target directory: $entryName"
+    }
+    val outputCanonical = outputFile.canonicalPath
+    val unpackCanonical = unpackDir.canonicalPath
+    val unpackPrefix = if (unpackCanonical.endsWith(File.separator)) {
+        unpackCanonical
+    } else {
+        unpackCanonical + File.separator
+    }
+    require(outputCanonical == unpackCanonical || outputCanonical.startsWith(unpackPrefix)) {
+        "Archive entry escapes target directory: $entryName"
+    }
+}
+
+private fun requireSymlinkTargetUnderTarget(
+    linkLocation: File,
+    linkName: String,
+    unpackDir: File,
+    entryName: String,
+) {
+    val unpackRoot = unpackDir.toPath().toRealPath()
+    val unpackAbsolute = unpackDir.toPath().toAbsolutePath().normalize()
+    val linkParent = linkLocation.parentFile.toPath().toAbsolutePath().normalize()
+    require(linkParent == unpackAbsolute || linkParent.startsWith(unpackAbsolute)) {
+        "Archive symlink location escapes target directory: $entryName"
+    }
+    val resolved = unpackRoot
+        .resolve(unpackAbsolute.relativize(linkParent))
+        .resolve(linkName)
+        .normalize()
+    require(resolved.startsWith(unpackRoot)) {
+        "Archive symlink escapes target directory: $entryName -> $linkName (resolves to $resolved)"
     }
 }
 

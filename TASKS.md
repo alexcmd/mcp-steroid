@@ -1162,6 +1162,8 @@ target-validated.
 symlinks resolve `linkTarget = unpackDir.resolve(entry.linkName).normalize()`
 and reject when it escapes the unpack dir.
 
+✅ resolved
+
 ### B3 — Build / installDist blocked by `:intellij-downloader:extractSevenZipResources` (B only)
 Likely fallout of the parallel 7zip-into-npx-kt worker mid-edit;
 expected to resolve as that worker lands. Re-check after each iter
