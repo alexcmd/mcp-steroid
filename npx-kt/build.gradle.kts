@@ -520,7 +520,8 @@ val verifyBundledLibraries by tasks.registering {
 
         // 7z/ subtree: :intellij-downloader enforces the source layout; this task
         // checks the distZip copy is present, contains no surprise entries, and
-        // preserves +x only on the runnable 7zz binaries.
+        // keeps license files non-executable. The Windows 7z.exe bit is intentionally
+        // not pinned: POSIX build hosts may or may not preserve +x, and Windows ignores it.
         val sevenZipPrefix = "7z/"
         val sevenZipFiles = allFiles.filter { it.startsWith(sevenZipPrefix) }.toSortedSet()
         check(sevenZipFiles.isNotEmpty()) {
@@ -528,30 +529,27 @@ val verifyBundledLibraries by tasks.registering {
         }
         val expectedSevenZipFiles = sortedSetOf(
             "7z/License.txt",
-            "7z/linux-arm64/7zz:X",
-            "7z/linux-arm64/License.txt",
-            "7z/linux-x64/7zz:X",
-            "7z/linux-x64/License.txt",
-            "7z/mac/7zz:X",
-            "7z/mac/License.txt",
+            "7z/win-x64/7z.exe",
+            "7z/win-x64/7z.dll",
+            "7z/win-x64/License.txt",
         )
         expectedSevenZipFiles.forEach { sentinel ->
-            check(sentinel in sevenZipFiles) {
+            check(sevenZipFiles.any { it.removeSuffix(":X") == sentinel }) {
                 "7z/ subtree is missing sentinel '$sentinel'. Present entries: " +
                         sevenZipFiles.joinToString("\n  ", prefix = "\n  ")
             }
         }
         listOf(
             "7z/License.txt",
-            "7z/linux-arm64/License.txt",
-            "7z/linux-x64/License.txt",
-            "7z/mac/License.txt",
+            "7z/win-x64/License.txt",
         ).forEach { licensePath ->
             check("$licensePath:X" !in sevenZipFiles) {
-                "7z/ subtree wrongly marked '$licensePath' executable; only 7zz binaries should keep +x."
+                "7z/ subtree wrongly marked '$licensePath' executable; license files must stay non-executable."
             }
         }
-        val unexpectedSevenZipFiles = sevenZipFiles - expectedSevenZipFiles
+        val unexpectedSevenZipFiles = sevenZipFiles
+            .filter { it.removeSuffix(":X") !in expectedSevenZipFiles }
+            .toSortedSet()
         check(unexpectedSevenZipFiles.isEmpty()) {
             "7z/ subtree has unexpected entries: " + unexpectedSevenZipFiles.joinToString("\n  ", prefix = "\n  ")
         }
