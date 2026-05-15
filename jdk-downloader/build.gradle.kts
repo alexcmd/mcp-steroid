@@ -188,6 +188,20 @@ correttoPlatforms.forEach { platform ->
                 }
                 relativePath = RelativePath(true, *parts.drop(stripDepth).toTypedArray())
             }
+            if (!isZip) {
+                filesMatching("**/bin/*") {
+                    permissions { unix("rwxr-xr-x") }
+                }
+                filesMatching("**/lib/jspawnhelper") {
+                    permissions { unix("rwxr-xr-x") }
+                }
+                filesMatching("**/lib/**/*.so") {
+                    permissions { unix("rwxr-xr-x") }
+                }
+                filesMatching("**/lib/**/*.dylib") {
+                    permissions { unix("rwxr-xr-x") }
+                }
+            }
             includeEmptyDirs = false
         }
         into(correttoExtractDir.map { it.dir(platform.id) })
@@ -201,4 +215,74 @@ val verifyAllJdks by tasks.registering {
     dependsOn(correttoPlatforms.map { tasks.named("verifyJdk_${it.id}") })
 }
 
-extractAllJdks.configure { dependsOn(verifyAllJdks) }
+val posixAuditPlatforms = correttoPlatforms.filter { it.id != "windows-amd64" }
+
+val auditJdkPermissions by tasks.registering {
+    group = "verification"
+    description = "Audit POSIX +x bits on extracted JDK trees (Linux + macOS)."
+
+    doLast {
+        logger.lifecycle("[jdk-downloader] permission audit skipped: windows-amd64 (no POSIX modes)")
+    }
+}
+
+posixAuditPlatforms.forEach { platform ->
+    val extract = tasks.named("extractJdk_${platform.id}")
+    val audit = tasks.register("auditJdkPermissions_${platform.id}") {
+        group = "verification"
+        description = "Audit POSIX +x bits on extracted JDK tree for ${platform.id}."
+        dependsOn(extract)
+
+        val rootProvider = correttoExtractDir.map { it.dir(platform.id) }
+        inputs.dir(rootProvider)
+
+        doLast {
+            val root = rootProvider.get().asFile
+            val failures = mutableListOf<String>()
+
+            val binDir = root.resolve("bin")
+            require(binDir.isDirectory) { "missing bin/ in ${platform.id} extract" }
+            requireNotNull(binDir.listFiles()) { "could not list bin/ in ${platform.id} extract" }
+                .filter { it.isFile }
+                .forEach { file ->
+                    if (!file.canExecute()) failures += "bin/${file.name}"
+                }
+
+            val jspawnhelper = root.resolve("lib/jspawnhelper")
+            require(jspawnhelper.isFile) { "missing lib/jspawnhelper in ${platform.id} extract" }
+            if (!jspawnhelper.canExecute()) failures += "lib/jspawnhelper"
+
+            val sharedLibraryExtension = if (platform.id.startsWith("mac-")) ".dylib" else ".so"
+            val libDir = root.resolve("lib")
+            require(libDir.isDirectory) { "missing lib/ in ${platform.id} extract" }
+            val sharedLibraries = libDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(sharedLibraryExtension) }
+                .toList()
+            require(sharedLibraries.isNotEmpty()) {
+                "missing *$sharedLibraryExtension shared libraries in ${platform.id} extract"
+            }
+
+            val expectedLibjvm = if (platform.id.startsWith("mac-")) "libjvm.dylib" else "libjvm.so"
+            val libjvm = root.resolve("lib/server/$expectedLibjvm")
+            require(libjvm.isFile) { "missing lib/server/$expectedLibjvm in ${platform.id} extract" }
+
+            sharedLibraries.forEach { file ->
+                if (!file.canExecute()) {
+                    failures += file.toRelativeString(root).replace(File.separatorChar, '/')
+                }
+            }
+
+            require(failures.isEmpty()) {
+                "POSIX +x bit was NOT preserved on ${failures.size} file(s) in " +
+                    "${platform.id}:\n  - " + failures.joinToString("\n  - ") + "\n" +
+                    "Gradle's tarTree silently lost the executable bit; the extract task " +
+                    "needs an explicit filesMatching { permissions { unix(...) } } rule " +
+                    "for the listed paths."
+            }
+            logger.lifecycle("[jdk-downloader] permission audit passed: ${platform.id}")
+        }
+    }
+    auditJdkPermissions.configure { dependsOn(audit) }
+}
+
+extractAllJdks.configure { dependsOn(verifyAllJdks, auditJdkPermissions) }
