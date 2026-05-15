@@ -1493,3 +1493,59 @@ JSON output adds a `method` field on every variant.
 M13 slots **right after M11** (already done) and BEFORE the lifecycle
 batch B1/M2/M3/M6 — touches the same `BackendProvision*` files M11
 just added.
+
+## M13 update (2026-05-15) — manual mode only
+
+User feedback:
+- **Option A (install-files via `~/.intellij/<pid>-built-in-server.json`)** — not viable. `BuiltInServerDiscoveryService` was reverted upstream; the discoverability JSON isn't in shipped IDE builds.
+- **Option B (install-marketplace)** — not great because the IDE would pull a Marketplace build, NOT the version bundled with the devrig launcher. We want the bundled plugin to be the source of truth.
+
+Therefore M13's deliverable shrinks to **manual mode only**:
+- `devrig backend provision <id>` prints actionable instructions and the per-OS suggested install path (best-effort derived from `/api/about`), then exits.
+- No file writes, no REST install calls.
+- Listing of port-discovered IDEs continues to suggest `devrig backend provision port-<port>` next to each row.
+
+M11's filesystem-install code path needs to be **removed** in this iteration — keep the listing + the `port-<port>` id parsing, drop the actual copy-files step. (Or hide it behind an unadvertised `--method install-files` flag that defaults off.) Net result: fewer surfaces to maintain; the user makes the install decision deliberately.
+
+## M14 — Relocate MCP Steroid plugin marker into `~/.mcp-steroid/markers/`
+
+Today the plugin writes the PID-marker file at `~/.<pid>.mcp-steroid`
+(directly in the user home root). That's noisy and conflicts with the
+"all state under `~/.mcp-steroid/`" principle the rest of the project now follows.
+
+Both sides need updating in lockstep:
+
+1. **Plugin (`ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/server/ServerUrlWriter.kt`)**:
+   - Write to `~/.mcp-steroid/markers/<pid>.mcp-steroid` (no leading dot in the filename — we don't need to hide files inside a dedicated subdir).
+   - Create the subdir on first write.
+   - Cleanup logic now scans `~/.mcp-steroid/markers/` instead of the home root.
+   - Honor `MCP_STEROID_HOME` env var when set (plugin reads env at IDE startup).
+
+2. **Proxy (`npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/proxy/monitor/IdeDiscovery.kt`)**:
+   - Scan `~/.mcp-steroid/markers/` (via `homePaths.markersDir`).
+   - Drop the home-root scan entirely after one release — for now, scan BOTH and warn (DEBUG) when the legacy location surfaces something.
+
+3. **Shared (`mcp-steroid-server` module's `PidMarker`)**:
+   - Add `PidMarker.markerDirectory(userHome: Path): Path` returning
+     `userHome.resolve(".mcp-steroid/markers")` so plugin and proxy
+     can't drift.
+   - Filename helper: `markerFileNameFor(pid)` returns `$pid.mcp-steroid`
+     (the leading-dot legacy `fileNameFor` stays for compat reads).
+
+4. **HomePaths**: add `markersDir = home.resolve("markers")` (the path lives under the managed home root the proxy already manages).
+
+5. **Stale-file cleanup**: keep the existing pid-alive check (`ProcessHandle.of(pid).isPresent`); apply it to the new directory.
+
+6. **Tests**: bump the existing discovery tests to use the new location; add one to confirm the proxy still reads a legacy `~/.<pid>.mcp-steroid` (with a DEBUG log) for the transition window.
+
+## Pipeline update (2026-05-15, again)
+
+1. Lifecycle batch B1/M2/M3/M6 (running).
+2. **M13** (now: manual-only — small shrink-down of the M11 surface).
+3. **M14** (marker relocation: plugin + proxy in lockstep).
+4. B2 archive security.
+5. Download overhaul M5+M7+M9+M10+m5+m7.
+6. M4 JSON synthetic IDs.
+7. M8 parser tighten.
+8. M12 video xterm.
+9. Polish m1+m2+m3+m4+m6.
