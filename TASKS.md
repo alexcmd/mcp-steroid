@@ -714,6 +714,19 @@ Six tasks parked for a future iteration. Re-iterate later — direction is set,
 but the boundary design and the `kind`-error shapes need a second pass.
 **Ordering below is easiest-first**, so the re-iteration starts at the top.
 
+## What likely happened (failure-mode summary for the next reviewer)
+
+MCP was HTTP-ready, but the project was not smart-mode-ready.
+`steroid_execute_code` correctly waited for indexing, but the request was
+cancelled at ~60 s before indexing finished. MCP Steroid then logged the
+coroutine cancellation as an unexpected `warning` / `SEVERE` error, and the
+server confusingly logged both `200 OK` and `500 Internal Server Error` for
+the same POST window. That single timeline is the canonical evidence for
+all six A tasks below — the boundary catch-all (A0), the single-log
+discipline (A2c), the cancellation-as-tool-error shape (A2a), the indexing
+error shape (A1), and the cooperative-cancellation work (A3) each address
+one slice of that timeline.
+
 ## Design constraints carried over from the 2026-05-15 review
 
 - **The webserver must keep functioning regardless of what scripts/handlers
