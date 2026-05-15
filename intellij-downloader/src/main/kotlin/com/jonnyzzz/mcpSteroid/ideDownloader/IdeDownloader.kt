@@ -5,6 +5,9 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 private val ideDownloaderLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader")
 
@@ -65,7 +68,7 @@ internal fun archiveFileNameFromUrl(url: String, fallbackFileName: String): Stri
     return fileName?.takeIf { it.isNotBlank() } ?: fallbackFileName
 }
 
-private fun downloadFile(url: String, dest: File) {
+internal fun downloadFile(url: String, dest: File) {
     val connection = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
         connectTimeout = 30_000
@@ -99,13 +102,36 @@ private fun downloadFile(url: String, dest: File) {
                     }
                 }
             }
-            tempFile.renameTo(dest)
+            moveDownloadedFile(tempFile, dest)
             ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloaded {} MB to {}", downloaded / 1024 / 1024, dest)
         } catch (e: Exception) {
-            tempFile.delete()
+            Files.deleteIfExists(tempFile.toPath())
             throw e
         }
     } finally {
         connection.disconnect()
+    }
+}
+
+private fun moveDownloadedFile(tempFile: File, dest: File) {
+    try {
+        Files.move(
+            tempFile.toPath(),
+            dest.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
+    } catch (e: AtomicMoveNotSupportedException) {
+        ideDownloaderLog.debug(
+            "[IDE-DOWNLOAD] Atomic archive move is not supported for {} -> {}; falling back to replace",
+            tempFile,
+            dest,
+            e,
+        )
+        Files.move(
+            tempFile.toPath(),
+            dest.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
     }
 }
