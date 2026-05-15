@@ -18,6 +18,7 @@ include(":prompts-api")
 include(":prompts")
 include(":intellij-downloader")
 include(":jdk-downloader")
+include(":pgp-verifier")
 
 include(":ij-plugin")
 include(":mcp-core")

@@ -218,6 +218,7 @@ val promptsSubprojects = setOf(
  *
  * * `ij-plugin` — the IntelliJ plugin itself (execution, vision, review, storage…).
  * * `jdk-downloader` — placeholder for Corretto JDK download/extract infrastructure.
+ * * `pgp-verifier` — standalone OpenPGP detached-signature verifier used by JDK downloads.
  * * `mcp-core` — MCP protocol types, session manager, tool/resource/prompt registries.
  * * `mcp-http` — Ktor HTTP transport implementing MCP Streamable HTTP.
  * * `ai-agents` — agent CLI configuration helpers consumed by the plugin.
@@ -229,6 +230,7 @@ val promptsSubprojects = setOf(
 val pluginCoreSubprojects = setOf(
     "ij-plugin",
     "jdk-downloader",
+    "pgp-verifier",
     "mcp-core",
     "mcp-http",
     "mcp-stdio",
