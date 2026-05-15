@@ -48,7 +48,13 @@ object SevenZipLocator {
         executableNames = setOf("7zz"),
     )
 
-    private val cacheRoot: File by lazy {
+    @Volatile
+    internal var cacheRootOverride: File? = null
+
+    internal val cacheRoot: File
+        get() = cacheRootOverride ?: defaultCacheRoot
+
+    private val defaultCacheRoot: File by lazy {
         val home = System.getProperty("user.home") ?: error("user.home is not set")
         File(home, ".cache/mcp-steroid/7z").apply { mkdirs() }
     }

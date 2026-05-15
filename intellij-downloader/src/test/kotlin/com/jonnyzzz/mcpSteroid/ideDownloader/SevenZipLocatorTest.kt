@@ -4,13 +4,33 @@ package com.jonnyzzz.mcpSteroid.ideDownloader
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class SevenZipLocatorTest {
+
+    @get:Rule
+    val temporaryFolder: TemporaryFolder = TemporaryFolder()
+
+    private lateinit var cacheRoot: File
+
+    @Before
+    fun setUp() {
+        cacheRoot = temporaryFolder.newFolder("sevenzip-cache")
+        SevenZipLocatorTestSupport.overrideCacheRoot(cacheRoot)
+    }
+
+    @After
+    fun tearDown() {
+        SevenZipLocatorTestSupport.reset()
+    }
 
     @Test
     fun `Windows 7-Zip bundle resources are present and parseable`() {
@@ -42,6 +62,17 @@ class SevenZipLocatorTest {
 
         val second = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
         assertEquals("Same 7z.exe hash should reuse the same cache path", first, second)
+    }
+
+    @Test
+    fun `Windows locator extracts bundled resources under override cache root`() {
+        val located = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
+        assertNotNull("Expected bundled Windows 7z.exe to resolve from classpath", located)
+
+        val binary = File(located!!)
+        assertTrue("Expected $binary to live under override cache root $cacheRoot",
+            binary.toPath().startsWith(cacheRoot.toPath()))
+        assertTrue("Located 7z.exe should exist in cache: $binary", binary.isFile)
     }
 
     @Test
