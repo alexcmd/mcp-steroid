@@ -1358,3 +1358,53 @@ Slots into the pipeline **right after M1** — before the lifecycle batch.
 6. M4 — JSON synthetic IDs.
 7. M8 — CLI parser tightening.
 8. m1 / m2 / m3 / m4 / m6 — polish.
+
+## M1 follow-up: confirmed bug, fix required (2026-05-15)
+
+Investigation (run `task-m1/run_20260515-123930-99884`) confirmed the
+IIC-vs-IIU mismatch. **Live evidence:**
+
+- JetBrains products API `?code=IIC&release.type=release` returns
+  release 2025.3 with these download URLs:
+  - `https://download.jetbrains.com/idea/idea-2025.3-aarch64.dmg`
+  - `https://download.jetbrains.com/idea/idea-2025.3.tar.gz`
+  - `https://download.jetbrains.com/idea/idea-2025.3.dmg`
+  - `https://download.jetbrains.com/idea/idea-2025.3.exe`
+- HEAD checks on the same URLs return **HTTP 200 with identical
+  Content-Length** to the IIU 2025.3 download. The correctly-named
+  Community URL `ideaIC-2025.3-aarch64.dmg` returns **HTTP 404** — JetBrains
+  hasn't shipped a Community 2025.3 binary.
+- The unpacked `product-info.json` on iter4's host run reported
+  `productCode: IU`. The IDE that started was Ultimate.
+- The NEXT release in the IIC feed (2025.2.6.2) has proper
+  `ideaIC-2025.2.6.2-aarch64.dmg` URLs (HTTP 200), unpacks as
+  Community.
+
+**Fix:**
+
+1. `IdeReleaseLookup.kt`: when iterating product API releases, require
+   the chosen download URL's filename to contain a product-specific
+   token. For Community editions, that token is `ideaIC-` / `pycharm-community-`
+   / `IC-` (whichever the per-OS URL uses). Skip releases whose URL
+   filename doesn't match. The most recent stable that passes the
+   filter becomes the "latest stable".
+2. `BackendManager.download`: post-unpack, read
+   `<bundle>/Contents/Resources/product-info.json` (macOS) or
+   `<bundle>/product-info.json` (Linux/Windows). Assert the
+   `productCode` matches what the requested IdeProduct expects
+   (`IC` for `IdeProduct.IntelliJIdeaCommunity` etc.). On mismatch:
+   delete the broken install, fail loudly.
+
+This is now a **blocker fix** (was logged as M1 investigation). Pipeline
+moves M1-fix in front of M11.
+
+## Revised pipeline order (2026-05-15)
+
+1. **M1-fix** — IIC resolver filter + post-unpack productCode assertion.
+2. M11 — `backend provision`.
+3. B1 / M2 / M3 / M6 — `ManagedBackend.kt` lifecycle.
+4. B2 — `IdeUnpacker.kt` security.
+5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
+6. M4 — JSON synthetic IDs.
+7. M8 — CLI parser tightening.
+8. m1 / m2 / m3 / m4 / m6 — polish.
