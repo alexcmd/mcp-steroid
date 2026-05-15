@@ -1,0 +1,103 @@
+/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
+package com.jonnyzzz.mcpSteroid.server
+
+import com.intellij.openapi.util.Disposer
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Comparator
+import java.util.concurrent.TimeUnit
+
+class ServerUrlWriterTest : BasePlatformTestCase() {
+
+    override fun runInDispatchThread(): Boolean = false
+
+    fun testWriteCreatesMarkerUnderManagedMarkersDirectory() = withTemporaryUserHome { userHome ->
+        val writer = ServerUrlWriter()
+        try {
+            writer.writeServerUrlToUserHome("http://localhost:6315/mcp", env = emptyMap())
+
+            val pid = ProcessHandle.current().pid()
+            val markerFile = PidMarker.markerDirectory(userHome, env = emptyMap())
+                .resolve(PidMarker.markerFileNameFor(pid))
+            assertTrue("marker should be written to $markerFile", Files.isRegularFile(markerFile))
+            val marker = PidMarkerJson.decode(Files.readString(markerFile))
+            assertEquals(pid, marker.pid)
+            assertEquals("http://localhost:6315/mcp", marker.mcpUrl)
+        } finally {
+            Disposer.dispose(writer)
+        }
+    }
+
+    fun testWriteHonoursMcpSteroidHomeAndDeletesLegacyMarkerForCurrentPid() = withTemporaryUserHome { userHome ->
+        val writer = ServerUrlWriter()
+        try {
+            val pid = ProcessHandle.current().pid()
+            val legacyFile = legacyMarkerFile(userHome, pid)
+            Files.writeString(legacyFile, "legacy")
+            val overrideHome = userHome.resolve("custom-mcp-home")
+
+            writer.writeServerUrlToUserHome(
+                "http://localhost:6316/mcp",
+                env = mapOf(PidMarker.MCP_STEROID_HOME_ENV to overrideHome.toString()),
+            )
+
+            val markerFile = overrideHome.resolve("markers").resolve(PidMarker.markerFileNameFor(pid))
+            assertTrue("marker should be written to $markerFile", Files.isRegularFile(markerFile))
+            assertFalse("legacy marker for current pid should be removed", Files.exists(legacyFile))
+        } finally {
+            Disposer.dispose(writer)
+        }
+    }
+
+    fun testWriteCleansStaleMarkersInManagedDirectory() = withTemporaryUserHome { userHome ->
+        val writer = ServerUrlWriter()
+        try {
+            val deadPid = deadPid()
+            val markerDir = PidMarker.markerDirectory(userHome, env = emptyMap())
+            Files.createDirectories(markerDir)
+            val staleMarker = markerDir.resolve(PidMarker.markerFileNameFor(deadPid))
+            Files.writeString(staleMarker, "stale")
+
+            writer.writeServerUrlToUserHome("http://localhost:6317/mcp", env = emptyMap())
+
+            assertFalse("stale marker for dead pid should be removed", Files.exists(staleMarker))
+            val currentMarker = markerDir.resolve(PidMarker.markerFileNameFor(ProcessHandle.current().pid()))
+            assertTrue("current marker should remain", Files.isRegularFile(currentMarker))
+        } finally {
+            Disposer.dispose(writer)
+        }
+    }
+
+    private fun withTemporaryUserHome(block: (Path) -> Unit) {
+        val originalUserHome = System.getProperty("user.home")
+        val userHome = Files.createTempDirectory("server-url-writer-home")
+        try {
+            System.setProperty("user.home", userHome.toString())
+            block(userHome)
+        } finally {
+            System.setProperty("user.home", originalUserHome)
+            deleteRecursively(userHome)
+        }
+    }
+
+    private fun legacyMarkerFile(userHome: Path, pid: Long): Path =
+        userHome.resolve(".$pid.mcp-steroid")
+
+    private fun deadPid(): Long {
+        val process = ProcessBuilder("/bin/echo", "server-url-writer-test").start()
+        check(process.waitFor(5, TimeUnit.SECONDS)) { "short-lived helper process should exit" }
+        return process.pid()
+    }
+
+    private fun deleteRecursively(root: Path) {
+        if (!Files.exists(root)) return
+        Files.walk(root).use { stream ->
+            stream.sorted(Comparator.reverseOrder()).forEach { path ->
+                Files.deleteIfExists(path)
+            }
+        }
+    }
+}

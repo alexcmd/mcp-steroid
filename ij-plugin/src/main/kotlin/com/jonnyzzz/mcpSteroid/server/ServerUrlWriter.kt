@@ -16,13 +16,13 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 /**
- * Writes the MCP server URL marker to the user home directory.
+ * Writes the MCP server URL marker to the managed MCP Steroid marker directory.
  *
- * The marker file is `~/.<pid>.mcp-steroid`, a JSON document defined by
- * [PidMarker]. External monitors (the `npx-kt` Kotlin proxy, the npm
- * `npx` proxy) read it to discover where this IDE's MCP server is
- * reachable. The `.idea/mcp-steroid.md` per-project description is
- * written separately by [IdeaDescriptionWriter].
+ * The marker file is `~/.mcp-steroid/markers/<pid>.mcp-steroid`, a JSON
+ * document defined by [PidMarker]. External monitors (the `npx-kt` Kotlin
+ * proxy, the npm `npx` proxy) read it to discover where this IDE's MCP server
+ * is reachable. The `.idea/mcp-steroid.md` per-project description is written
+ * separately by [IdeaDescriptionWriter].
  */
 @Service(Service.Level.APP)
 class ServerUrlWriter : Disposable {
@@ -41,12 +41,17 @@ class ServerUrlWriter : Disposable {
      * @param serverUrl The MCP server URL (e.g., "http://localhost:<port>/mcp")
      */
     fun writeServerUrlToUserHome(serverUrl: String) {
+        writeServerUrlToUserHome(serverUrl, env = System.getenv())
+    }
+
+    internal fun writeServerUrlToUserHome(
+        serverUrl: String,
+        env: Map<String, String>,
+    ) {
         val userHome = Path.of(System.getProperty("user.home"))
-
-        cleanupStaleMarkerFiles(userHome)
-
         val pid = ProcessHandle.current().pid()
-        val file = userHome.resolve(PidMarker.fileNameFor(pid))
+        val markerDir = PidMarker.markerDirectory(userHome, env)
+        val file = markerDir.resolve(PidMarker.markerFileNameFor(pid))
 
         val marker = PidMarker(
             pid = pid,
@@ -62,11 +67,13 @@ class ServerUrlWriter : Disposable {
         log.info("Writing MCP Steroid marker (pid=$pid)\n$content")
 
         try {
+            Files.createDirectories(markerDir)
+            cleanupStaleMarkerFiles(userHome, markerDir, pid)
             Files.writeString(file, content)
             markerFile = file
             log.info("MCP Steroid marker file created: $file")
         } catch (e: Exception) {
-            log.warn("Failed to create marker file in user home", e)
+            log.warn("Failed to create MCP Steroid marker file", e)
         }
 
         Disposer.register(this) {
@@ -80,15 +87,26 @@ class ServerUrlWriter : Disposable {
 
     /**
      * Remove marker files left behind by IDE processes that no longer exist.
-     * Matches both legacy text-format and current JSON-format markers — the
-     * filename pattern is unchanged across the format switch.
+     * Current markers are scanned in [markerDir]. Legacy home-root markers are
+     * also removed when they belong to this IDE pid or to a dead process, so a
+     * new-plugin startup cleans the noisy `~/.<pid>.mcp-steroid` layout.
      */
-    private fun cleanupStaleMarkerFiles(userHome: Path) {
+    private fun cleanupStaleMarkerFiles(
+        userHome: Path,
+        markerDir: Path,
+        currentPid: Long,
+    ) {
+        cleanupMarkerDirectory(markerDir)
+        cleanupLegacyMarkerFiles(userHome, currentPid)
+    }
+
+    private fun cleanupMarkerDirectory(markerDir: Path) {
+        if (!Files.isDirectory(markerDir)) return
         try {
-            Files.list(userHome).use { stream ->
+            Files.list(markerDir).use { stream ->
                 stream.filter { file ->
                     val pid = PidMarker.pidFromFileName(file.fileName.toString())
-                    pid != null && !ProcessHandle.of(pid).isPresent
+                    pid != null && Files.isRegularFile(file) && !ProcessHandle.of(pid).isPresent
                 }.forEach { staleFile ->
                     try {
                         Files.deleteIfExists(staleFile)
@@ -99,7 +117,34 @@ class ServerUrlWriter : Disposable {
                 }
             }
         } catch (e: Exception) {
-            log.warn("Failed to cleanup stale marker files", e)
+            log.warn("Failed to cleanup stale marker files in $markerDir", e)
+        }
+    }
+
+    private fun cleanupLegacyMarkerFiles(
+        userHome: Path,
+        currentPid: Long,
+    ) {
+        try {
+            Files.list(userHome).use { stream ->
+                stream.filter { file ->
+                    val fileName = file.fileName.toString()
+                    val pid = PidMarker.pidFromFileName(fileName)
+                    fileName.startsWith(".") &&
+                        pid != null &&
+                        Files.isRegularFile(file) &&
+                        (pid == currentPid || !ProcessHandle.of(pid).isPresent)
+                }.forEach { staleFile ->
+                    try {
+                        Files.deleteIfExists(staleFile)
+                        log.info("Removed legacy MCP marker file: $staleFile")
+                    } catch (e: Exception) {
+                        log.warn("Failed to delete legacy MCP marker file: $staleFile", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to cleanup legacy marker files in $userHome", e)
         }
     }
 
