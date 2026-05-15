@@ -27,6 +27,17 @@ val ijPluginZip by configurations.creating {
     }
 }
 
+// Resolvable: pulls :intellij-downloader's extracted 7-Zip binaries
+// tree through the "seven-zip-binaries" Usage attribute. The directory
+// (not a zip) lands here so distZip can copy it verbatim into 7z/.
+val sevenZipBinaries by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "seven-zip-binaries"))
+    }
+}
+
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
@@ -55,6 +66,10 @@ dependencies {
     // Bundles :ij-plugin's buildPlugin archive into the distZip under ij-plugins/.
     // Resolved through the `ijPluginZip` configuration above.
     ijPluginZip(project(":ij-plugin"))
+
+    // Bundles :intellij-downloader's extracted 7-Zip binaries into the distZip under 7z/.
+    // Resolved through the `sevenZipBinaries` configuration above.
+    sevenZipBinaries(project(":intellij-downloader"))
 
     // SLF4J binding for the launcher. We use Logback (not slf4j-simple) so
     // operators can drop in a `logback.xml` to add appenders, change levels,
@@ -92,6 +107,7 @@ application {
 // downstream tasks automatically. Going through `ijPluginZip.singleFile` is eager
 // and strips the Buildable, leaving the consumer without a path to producing the zip.
 val ijPluginZipFile = ijPluginZip.elements.map { it.single().asFile }
+val sevenZipBinariesDir = sevenZipBinaries.elements.map { it.single().asFile }
 
 distributions {
     main {
@@ -117,6 +133,19 @@ distributions {
                         if (file.canExecute()) {
                             permissions { unix("rwxr-xr-x") }
                         }
+                    }
+                }
+            }
+
+            // 7-Zip binaries from :intellij-downloader's extractSevenZipResources.
+            // Bundled unpacked at the dist root under `7z/<platform>/` so the proxy
+            // can call <install>/7z/<platform>/7zz directly — no extraction-on-
+            // first-use detour. The +x bit is preserved on the 7zz binaries, same
+            // logic that runs for kotlinc/bin/* under ij-plugins/.
+            from(sevenZipBinariesDir) {
+                eachFile {
+                    if (file.canExecute()) {
+                        permissions { unix("rwxr-xr-x") }
                     }
                 }
             }
@@ -331,6 +360,45 @@ val verifyBundledLibraries by tasks.registering {
             }
         }
         allFiles = (allFiles - ijPluginFiles).toSortedSet()
+
+        // 7z/ subtree: :intellij-downloader enforces the source layout; this task
+        // checks the distZip copy is present, contains no surprise entries, and
+        // preserves +x only on the runnable 7zz binaries.
+        val sevenZipPrefix = "7z/"
+        val sevenZipFiles = allFiles.filter { it.startsWith(sevenZipPrefix) }.toSortedSet()
+        check(sevenZipFiles.isNotEmpty()) {
+            "Expected 7z/ subtree to be populated in $distName"
+        }
+        val expectedSevenZipFiles = sortedSetOf(
+            "7z/License.txt",
+            "7z/linux-arm64/7zz:X",
+            "7z/linux-arm64/License.txt",
+            "7z/linux-x64/7zz:X",
+            "7z/linux-x64/License.txt",
+            "7z/mac/7zz:X",
+            "7z/mac/License.txt",
+        )
+        expectedSevenZipFiles.forEach { sentinel ->
+            check(sentinel in sevenZipFiles) {
+                "7z/ subtree is missing sentinel '$sentinel'. Present entries: " +
+                        sevenZipFiles.joinToString("\n  ", prefix = "\n  ")
+            }
+        }
+        listOf(
+            "7z/License.txt",
+            "7z/linux-arm64/License.txt",
+            "7z/linux-x64/License.txt",
+            "7z/mac/License.txt",
+        ).forEach { licensePath ->
+            check("$licensePath:X" !in sevenZipFiles) {
+                "7z/ subtree wrongly marked '$licensePath' executable; only 7zz binaries should keep +x."
+            }
+        }
+        val unexpectedSevenZipFiles = sevenZipFiles - expectedSevenZipFiles
+        check(unexpectedSevenZipFiles.isEmpty()) {
+            "7z/ subtree has unexpected entries: " + unexpectedSevenZipFiles.joinToString("\n  ", prefix = "\n  ")
+        }
+        allFiles = (allFiles - sevenZipFiles).toSortedSet()
 
         val expectedFiles = sortedSetOf(
             // EULA — repo-root EULA at the distribution root, mirroring the
