@@ -19,7 +19,7 @@ class PluginDeployTest {
         @TempDir tempDir: Path,
     ) {
         val homePaths = HomePaths(tempDir.resolve("home"))
-        val source = pluginFixture(tempDir.resolve("dist/ij-plugins/mcp-steroid"), version = "one")
+        val source = pluginFixture(tempDir.resolve("dist/ij-plugin"), version = "one")
         val stale = homePaths.cacheDir("idea-community-2025.3.3")
             .resolve("plugins/mcp-steroid/stale/old.txt")
         Files.createDirectories(stale.parent)
@@ -45,7 +45,7 @@ class PluginDeployTest {
         @TempDir tempDir: Path,
     ) = runBlocking {
         val homePaths = HomePaths(tempDir.resolve("home"))
-        val resolver = MutablePluginResolver(pluginFixture(tempDir.resolve("dist-v1/ij-plugins/mcp-steroid"), version = "one"))
+        val resolver = MutablePluginResolver(pluginFixture(tempDir.resolve("dist-v1/ij-plugin"), version = "one"))
         val downloader = InstallingDownloader()
         val manager = BackendManager(
             homePaths = homePaths,
@@ -59,7 +59,7 @@ class PluginDeployTest {
         assertEquals("one", Files.readString(deployedFile))
         assertEquals(1, downloader.unpackCount)
 
-        resolver.dir = pluginFixture(tempDir.resolve("dist-v2/ij-plugins/mcp-steroid"), version = "two")
+        resolver.dir = pluginFixture(tempDir.resolve("dist-v2/ij-plugin"), version = "two")
         val stale = homePaths.cacheDir("idea-community-2025.3.3")
             .resolve("plugins/mcp-steroid/stale.txt")
         Files.writeString(stale, "stale")

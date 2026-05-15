@@ -246,9 +246,9 @@ private fun resolveDmgPayloadDir(mountPoint: File): File {
  * via [SevenZipLocator]. The resulting directory is a runnable Windows IDE install
  * (NSIS bundles flat files; 7zip extracts them verbatim).
  *
- * On Linux / Mac hosts the bundled `7zz` 23.01 binary is used automatically. On
- * Windows hosts the locator falls back to `7z` / `7za` on `PATH`; if neither is
- * available a clear error is raised.
+ * The bundled `7z` binary is used automatically when the npx-kt distribution ships one
+ * for the host. Otherwise the locator falls back to `7z` / `7za` on `PATH`; if neither
+ * is available a clear error is raised.
  */
 fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     require(archiveFile.exists()) { "Archive file does not exist: $archiveFile" }

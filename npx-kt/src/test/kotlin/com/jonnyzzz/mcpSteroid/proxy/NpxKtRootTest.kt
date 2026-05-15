@@ -1,6 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.ideDownloader.HostArchitecture
+import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
+import com.jonnyzzz.mcpSteroid.ideDownloader.SevenZipLocator
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -55,5 +58,29 @@ class NpxKtRootTest {
         val message = ex.message.orEmpty()
         assertTrue(message.contains("npx-kt root"), "Expected root diagnostic, got: $message")
         assertTrue(message.contains(jar.toString()), "Expected inspected path in message, got: $message")
+    }
+
+    @Test
+    fun `SevenZipLocator prefers installDist bundled file`(
+        @TempDir tempDir: Path,
+    ) {
+        val root = tempDir.resolve("mcp-steroid-proxy")
+        val jar = root.resolve("lib/npx-kt-1.2.3.jar")
+        val sevenZip = root.resolve("7z/mac/7zz")
+        Files.createDirectories(jar.parent)
+        Files.writeString(jar, "fake jar")
+        Files.createDirectories(root.resolve("ij-plugin"))
+        Files.createDirectories(sevenZip.parent)
+        Files.writeString(sevenZip, "fake bundled seven zip")
+        Files.writeString(sevenZip.parent.resolve("License.txt"), "license")
+
+        NpxKtRoot.codeSourcePathOverride = jar
+        NpxKtRoot.resetForTests()
+
+        val located = SevenZipLocator.locate(os = HostOs.MAC, architecture = HostArchitecture.X86_64)
+        requireNotNull(located) { "Expected bundled 7z to resolve from $sevenZip" }
+        val locatedPath = Path.of(located)
+        assertEquals("fake bundled seven zip", Files.readString(locatedPath))
+        assertTrue(Files.isExecutable(locatedPath), "Expected cached 7z copy to be executable: $locatedPath")
     }
 }

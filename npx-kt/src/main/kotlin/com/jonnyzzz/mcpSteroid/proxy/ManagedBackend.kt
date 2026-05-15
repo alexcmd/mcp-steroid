@@ -132,18 +132,11 @@ internal interface ManagedBackendService {
     suspend fun stop(id: BackendId): StopResult
 }
 
-internal class ClasspathBundledPluginResolver(
-    private val anchorClass: Class<*> = BackendManager::class.java,
-) : BundledPluginResolver {
+internal class ClasspathBundledPluginResolver : BundledPluginResolver {
     override fun resolveBundledPluginDir(): Path {
-        val location = anchorClass.protectionDomain?.codeSource?.location
-            ?: error("Cannot locate bundled ij-plugins/mcp-steroid/: ${anchorClass.name} has no code source")
-        val jarPath = Path.of(location.toURI()).toAbsolutePath().normalize()
-        val installRoot = jarPath.parent?.parent
-            ?: error("Cannot locate installDist root from proxy jar location: $jarPath")
-        val pluginDir = installRoot.resolve("ij-plugins/mcp-steroid").toAbsolutePath().normalize()
+        val pluginDir = NpxKtRoot.ijPluginDir().toAbsolutePath().normalize()
         require(Files.isDirectory(pluginDir)) {
-            "Bundled ij-plugins/mcp-steroid/ directory is missing: $pluginDir. " +
+            "Bundled ij-plugin/ directory is missing: $pluginDir. " +
                 "Build and launch devrig from :npx-kt:installDist so the bundled plugin is available."
         }
         return pluginDir
@@ -237,7 +230,7 @@ internal class BackendManager(
 
     fun deployMcpSteroidPlugin(id: String): Path {
         val source = bundledPluginResolver.resolveBundledPluginDir()
-        require(Files.isDirectory(source)) { "Bundled ij-plugins/mcp-steroid/ directory is missing: $source" }
+        require(Files.isDirectory(source)) { "Bundled ij-plugin/ directory is missing: $source" }
         val target = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
         deleteRecursively(target)
         copyDirectory(source, target)
