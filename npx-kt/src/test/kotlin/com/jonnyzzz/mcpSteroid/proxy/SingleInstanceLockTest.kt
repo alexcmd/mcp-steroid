@@ -81,7 +81,7 @@ class SingleInstanceLockTest {
         assertEquals("", stderr)
         assertTrue(stdout.contains("already running: idea-community-2025.3.3 (pid $pid)"), stdout)
         assertTrue(stdout.contains("pid: $pid"), stdout)
-        assertTrue(stdout.contains("log: ${homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/idea.log")}"), stdout)
+        assertTrue(stdout.contains("log: ${homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/managed.log")}"), stdout)
         assertTrue(stdout.contains("config: ${homePaths.cacheDir("idea-community-2025.3.3").resolve("config")}"), stdout)
     }
 

@@ -6,6 +6,8 @@ import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -193,6 +195,35 @@ class BackendManagerStartStopTest {
     }
 
     @Test
+    fun `start captures launcher stdout and stderr to managed log`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = noisyLauncher())
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+        )
+
+        val started = manager.start(parseBackendId("idea-community-2025.3.3"))
+        try {
+            assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/managed.log"), started.ideaLogPath)
+            withTimeout(5_000) {
+                while (true) {
+                    if (started.ideaLogPath.exists()) {
+                        val text = Files.readString(started.ideaLogPath)
+                        if ("managed stdout" in text && "managed stderr" in text) break
+                    }
+                    delay(100)
+                }
+            }
+        } finally {
+            manager.stop(parseBackendId("idea-community-2025.3.3"))
+        }
+    }
+
+    @Test
     fun `start seeds first-run startup config before launching IDE`(
         @TempDir tempDir: Path,
     ) = kotlinx.coroutines.runBlocking {
@@ -271,6 +302,15 @@ class BackendManagerStartStopTest {
         """
         #!/usr/bin/env sh
         sleep 60
+        """.trimIndent() + "\n"
+
+    private fun noisyLauncher(): String =
+        """
+        #!/usr/bin/env sh
+        echo "managed stdout"
+        echo "managed stderr" >&2
+        trap 'exit 0' TERM
+        while true; do sleep 1; done
         """.trimIndent() + "\n"
 
     private fun startUnrelatedSleeper(): Process =

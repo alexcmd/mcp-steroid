@@ -272,7 +272,7 @@ internal class BackendManager(
             return StartResult(
                 id = resolved.id,
                 pid = existing.pid,
-                ideaLogPath = homePaths.cacheDir(resolved.id).resolve("logs/idea.log"),
+                ideaLogPath = homePaths.cacheDir(resolved.id).resolve("logs/managed.log"),
                 configPath = homePaths.cacheDir(resolved.id).resolve("config"),
                 alreadyRunning = true,
             )
@@ -290,16 +290,15 @@ internal class BackendManager(
         writeIdeStartupConfigFiles(cacheDir.resolve("config"))
         writeIdeUserStartupConfigFiles(ideUserHome)
 
-        val stdoutLog = logDir.resolve("devrig-launcher.out.log").toFile()
-        val stderrLog = logDir.resolve("devrig-launcher.err.log").toFile()
-        val pid = spawnIdeProcess(launcher, bundleDir, stdoutLog, stderrLog)
+        val managedLog = logDir.resolve("managed.log")
+        val pid = spawnIdeProcess(launcher, bundleDir, managedLog.toFile(), managedLog.toFile())
 
         Files.createDirectories(pidFile.parent)
         Files.writeString(pidFile, "$pid\n")
         return StartResult(
             id = resolved.id,
             pid = pid,
-            ideaLogPath = logDir.resolve("idea.log"),
+            ideaLogPath = managedLog,
             configPath = cacheDir.resolve("config"),
         )
     }
@@ -705,9 +704,9 @@ private fun spawnIdeProcess(
     stdoutLog: File,
     stderrLog: File,
 ): Long = if (resolveHostOs() == HostOs.WINDOWS) {
-    // stdoutLog/stderrLog are intentionally not propagated on Windows; the WMI-
-    // spawned child is created by the winmgmt service and has no caller-attached
-    // stdio. idea64.exe is GUI-subsystem and writes idea.log itself anyway.
+    // stdoutLog/stderrLog are not propagated on Windows; the WMI-spawned child
+    // is created by the winmgmt service and has no caller-attached stdio.
+    // idea64.exe is GUI-subsystem and writes idea.log itself anyway.
     spawnDetachedOnWindows(launcher, workDir)
 } else {
     ProcessBuilder(launcher.toString())

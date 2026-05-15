@@ -63,7 +63,7 @@ class BackendCommandActionJsonTest {
             startResult = StartResult(
                 id = "idea-community-2025.3.3",
                 pid = 12345L,
-                ideaLogPath = homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/idea.log"),
+                ideaLogPath = homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/managed.log"),
                 configPath = homePaths.cacheDir("idea-community-2025.3.3").resolve("config"),
             ),
         )
@@ -83,7 +83,7 @@ class BackendCommandActionJsonTest {
         assertEquals("start", root["action"]!!.jsonPrimitive.content)
         assertEquals("idea-community-2025.3.3", root["id"]!!.jsonPrimitive.content)
         assertEquals(12345L, root["pid"]!!.jsonPrimitive.long)
-        assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/idea.log").toString(), root["logPath"]!!.jsonPrimitive.content)
+        assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("logs/managed.log").toString(), root["logPath"]!!.jsonPrimitive.content)
         assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("config").toString(), root["configPath"]!!.jsonPrimitive.content)
         assertEquals(homePaths.backendDir("idea-community-2025.3.3").resolve("bundle-idea-community-2025.3.3.vmoptions").toString(), root["vmoptionsPath"]!!.jsonPrimitive.content)
     }
