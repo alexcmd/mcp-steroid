@@ -19,7 +19,13 @@ object NpxKtRoot {
     @Volatile
     private var cachedPath: Path? = null
 
-    internal var codeSourcePathOverride: Path? = null
+    /**
+     * Test-only hook, intentionally private so production sources cannot
+     * compile against it. `NpxKtRootTestSupport` in the test source set mutates
+     * this field reflectively and clears [cachedPath] between test cases.
+     */
+    @Volatile
+    private var codeSourcePathForTests: Path? = null
 
     /** Lazy-evaluated; cached for the JVM lifetime. */
     val path: Path
@@ -31,14 +37,8 @@ object NpxKtRoot {
 
     fun ijPluginDir(): Path = path.resolve("ij-plugin")
 
-    internal fun resetForTests() {
-        synchronized(lock) {
-            cachedPath = null
-        }
-    }
-
     private fun resolveOrFail(): Path {
-        val codeSourcePath = codeSourcePathOverride ?: realCodeSourcePath()
+        val codeSourcePath = codeSourcePathForTests ?: realCodeSourcePath()
         val candidate = walkUpForInstallDistRoot(codeSourcePath)
             ?: error(
                 "Cannot resolve npx-kt root from $codeSourcePath. " +

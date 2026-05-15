@@ -16,8 +16,7 @@ import kotlin.test.assertTrue
 class NpxKtRootTest {
     @AfterEach
     fun resetRootOverride() {
-        NpxKtRoot.codeSourcePathOverride = null
-        NpxKtRoot.resetForTests()
+        NpxKtRootTestSupport.reset()
     }
 
     @Test
@@ -32,8 +31,7 @@ class NpxKtRootTest {
         Files.createDirectories(root.resolve("7z/mac"))
         Files.writeString(root.resolve("7z/mac/7zz"), "fake binary")
 
-        NpxKtRoot.codeSourcePathOverride = jar
-        NpxKtRoot.resetForTests()
+        NpxKtRootTestSupport.overrideCodeSource(jar)
 
         assertEquals(root, NpxKtRoot.path)
         assertEquals(root.resolve("ij-plugin"), NpxKtRoot.ijPluginDir())
@@ -49,8 +47,7 @@ class NpxKtRootTest {
         Files.createDirectories(jar.parent)
         Files.writeString(jar, "fake jar")
 
-        NpxKtRoot.codeSourcePathOverride = jar
-        NpxKtRoot.resetForTests()
+        NpxKtRootTestSupport.overrideCodeSource(jar)
 
         val ex = assertFailsWith<IllegalStateException> {
             NpxKtRoot.path
@@ -74,8 +71,7 @@ class NpxKtRootTest {
         Files.writeString(sevenZip, "fake bundled seven zip")
         Files.writeString(sevenZip.parent.resolve("License.txt"), "license")
 
-        NpxKtRoot.codeSourcePathOverride = jar
-        NpxKtRoot.resetForTests()
+        NpxKtRootTestSupport.overrideCodeSource(jar)
 
         val located = SevenZipLocator.locate(os = HostOs.MAC, architecture = HostArchitecture.X86_64)
         requireNotNull(located) { "Expected bundled 7z to resolve from $sevenZip" }
