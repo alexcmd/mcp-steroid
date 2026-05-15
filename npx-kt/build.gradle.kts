@@ -17,7 +17,7 @@ val ktorVersion = "3.1.0"
 
 // Resolvable: pulls :ij-plugin's `buildPlugin` archive through the "plugin-zip"
 // Usage attribute (same hook :test-integration uses). The zip lands here so the
-// distribution can unpack it into ij-plugin/ — see `distributions { main { … } }`
+// distribution can unpack it into ij-plugins/ — see `distributions { main { … } }`
 // further down.
 val ijPluginZip by configurations.creating {
     isCanBeConsumed = false
@@ -52,7 +52,7 @@ dependencies {
     // of carrying a second product-feed / archive-extraction implementation.
     implementation(project(":intellij-downloader"))
 
-    // Bundles :ij-plugin's buildPlugin archive into the distZip under ij-plugin/.
+    // Bundles :ij-plugin's buildPlugin archive into the distZip under ij-plugins/.
     // Resolved through the `ijPluginZip` configuration above.
     ijPluginZip(project(":ij-plugin"))
 
@@ -87,42 +87,11 @@ application {
     mainClass.set("com.jonnyzzz.mcpSteroid.proxy.MainKt")
 }
 
-// Unpack :ij-plugin's buildPlugin archive into the proxy distribution at
-// `ij-plugin/`. The plugin zip is shaped `mcp-steroid/{EULA,lib,…}` (the
-// IntelliJ Platform plugin's default); the outer `mcp-steroid/` directory is
-// stripped on copy so the proxy sees `ij-plugin/EULA`, `ij-plugin/lib/…`,
-// `ij-plugin/kotlinc/…`, etc. — one level shallower, no wrapper directory.
-//
-// The plugin archive's contents (and their executable bits, e.g. kotlinc shell
-// scripts and ocr-tesseract binaries) are enforced by :ij-plugin's own
-// `verifyBundledLibraries` task. The npx-kt verifier (below) only sentinel-
-// checks the bundling step itself.
-//
 // Provider<File> for the resolved plugin zip — derived from `Configuration.elements`
 // so Gradle carries the task dependency on `:ij-plugin:buildPlugin` through into
 // downstream tasks automatically. Going through `ijPluginZip.singleFile` is eager
 // and strips the Buildable, leaving the consumer without a path to producing the zip.
 val ijPluginZipFile = ijPluginZip.elements.map { it.single().asFile }
-
-// Pre-extract the plugin zip into a staging dir with the outer `mcp-steroid/`
-// wrapper stripped. Doing this in a dedicated Sync task instead of an inline
-// `eachFile { relativePath = … }` under `distributions.main.contents.into(…)`
-// works around a Kotlin DSL quirk where the rewrite is silently dropped in that
-// position; pre-extracting is also cheaper for incremental builds.
-val extractIjPluginZip by tasks.registering(Sync::class) {
-    group = "build"
-    description = "Extract :ij-plugin's buildPlugin zip into a staging dir, strip the mcp-steroid/ wrapper"
-    from(zipTree(ijPluginZipFile)) {
-        eachFile {
-            val segments = relativePath.segments
-            if (segments.isNotEmpty() && segments[0] == "mcp-steroid") {
-                relativePath = RelativePath(true, *segments.drop(1).toTypedArray())
-            }
-        }
-        includeEmptyDirs = false
-    }
-    into(layout.buildDirectory.dir("ij-plugin-extracted"))
-}
 
 distributions {
     main {
@@ -132,16 +101,18 @@ distributions {
             // its own license text alongside the launcher and bundled plugin.
             from(rootProject.layout.projectDirectory.file("EULA"))
 
-            // Unpacked :ij-plugin contents — sits under `ij-plugin/` with no
-            // outer wrapper directory. The Sync extract preserved every entry's
-            // POSIX mode on disk; distZip then rewrites file modes to 0o644 by
+            // Unpacked :ij-plugin contents — the plugin zip keeps its natural
+            // `mcp-steroid/{EULA,lib,…}` shape under the plural `ij-plugins/`
+            // container. That makes `cp -r ij-plugins/* <plugins-dir>/` install
+            // the bundled plugin as-is. distZip rewrites file modes to 0o644 by
             // default and drops the executable bit. Re-apply +x for any source
             // file the OS reports as executable, so every executable inside
             // the plugin (kotlinc launchers, ocr-tesseract binary, plus any
             // new ones :ij-plugin starts shipping) survives without a narrow
             // per-pattern allowlist.
-            into("ij-plugin") {
-                from(extractIjPluginZip) {
+            into("ij-plugins") {
+                from(zipTree(ijPluginZipFile)) {
+                    includeEmptyDirs = false
                     eachFile {
                         if (file.canExecute()) {
                             permissions { unix("rwxr-xr-x") }
@@ -301,28 +272,25 @@ val verifyBundledLibraries by tasks.registering {
         allFiles = allFiles.map { it.removePrefix(pluginPrefix) }.toSortedSet()
         check(allFiles.isNotEmpty()) { "distZip has no entries" }
 
-        // ij-plugin/ subtree: full contents are enforced by :ij-plugin's own
+        // ij-plugins/ subtree: full contents are enforced by :ij-plugin's own
         // `verifyBundledLibraries` task before the archive ever reaches us. Here we
         // just sentinel-check that the unpack + relocate step did what it claimed:
-        // (1) the subtree exists and is populated, (2) the outer `mcp-steroid/`
-        // wrapper was stripped, (3) the key jars from the plugin zip are present.
-        val ijPluginPrefix = "ij-plugin/"
-        val ijPluginFiles = allFiles.filter { it.startsWith(ijPluginPrefix) }.toSortedSet()
+        // (1) the natural `mcp-steroid/` plugin folder is present under the plural
+        // container, (2) the key jars from the plugin zip are present.
+        val ijPluginsPrefix = "ij-plugins/mcp-steroid/"
+        val ijPluginFiles = allFiles.filter { it.startsWith(ijPluginsPrefix) }.toSortedSet()
         check(ijPluginFiles.isNotEmpty()) {
-            "Expected ij-plugin/ subtree to be populated in $distName"
-        }
-        check(ijPluginFiles.none { it.startsWith("ij-plugin/mcp-steroid/") }) {
-            "Outer mcp-steroid/ wrapper was not stripped from ij-plugin/ subtree"
+            "Expected ij-plugins/mcp-steroid/ subtree to be populated in $distName"
         }
         listOf(
-            "ij-plugin/EULA",
-            "ij-plugin/lib/ij-plugin-$proxyVersion.jar",
-            "ij-plugin/lib/execution-storage-$proxyVersion.jar",
-            "ij-plugin/lib/mcp-steroid-server-$proxyVersion.jar",
-            "ij-plugin/kotlinc/build.txt",
+            "ij-plugins/mcp-steroid/EULA",
+            "ij-plugins/mcp-steroid/lib/ij-plugin-$proxyVersion.jar",
+            "ij-plugins/mcp-steroid/lib/execution-storage-$proxyVersion.jar",
+            "ij-plugins/mcp-steroid/lib/mcp-steroid-server-$proxyVersion.jar",
+            "ij-plugins/mcp-steroid/kotlinc/build.txt",
         ).forEach { sentinel ->
             check(ijPluginFiles.any { it.removeSuffix(":X") == sentinel }) {
-                "ij-plugin/ subtree is missing sentinel '$sentinel'. Present prefix sample: " +
+                "ij-plugins/mcp-steroid/ subtree is missing sentinel '$sentinel'. Present prefix sample: " +
                         ijPluginFiles.take(10).joinToString("\n  ", prefix = "\n  ")
             }
         }
@@ -334,15 +302,15 @@ val verifyBundledLibraries by tasks.registering {
         // dist will fail this check loudly, prompting an investigation rather
         // than silently shipping a broken script.
         listOf(
-            "ij-plugin/kotlinc/bin/kapt:X",
-            "ij-plugin/kotlinc/bin/kotlin:X",
-            "ij-plugin/kotlinc/bin/kotlinc:X",
-            "ij-plugin/kotlinc/bin/kotlinc-js:X",
-            "ij-plugin/kotlinc/bin/kotlinc-jvm:X",
-            "ij-plugin/ocr-tesseract/bin/ocr-tesseract:X",
+            "ij-plugins/mcp-steroid/kotlinc/bin/kapt:X",
+            "ij-plugins/mcp-steroid/kotlinc/bin/kotlin:X",
+            "ij-plugins/mcp-steroid/kotlinc/bin/kotlinc:X",
+            "ij-plugins/mcp-steroid/kotlinc/bin/kotlinc-js:X",
+            "ij-plugins/mcp-steroid/kotlinc/bin/kotlinc-jvm:X",
+            "ij-plugins/mcp-steroid/ocr-tesseract/bin/ocr-tesseract:X",
         ).forEach { sentinel ->
             check(sentinel in ijPluginFiles) {
-                "ij-plugin/ subtree is missing executable sentinel '$sentinel'. " +
+                "ij-plugins/mcp-steroid/ subtree is missing executable sentinel '$sentinel'. " +
                         "Check that distZip's eachFile { permissions { … } } block " +
                         "preserves the +x bit on POSIX launchers."
             }
@@ -351,14 +319,14 @@ val verifyBundledLibraries by tasks.registering {
         // but a stray bit would mean our eachFile rule mis-promoted a non-source-
         // executable file, signaling a regression in the rule itself.
         listOf(
-            "ij-plugin/kotlinc/bin/kotlinc.bat",
-            "ij-plugin/ocr-tesseract/bin/ocr-tesseract.bat",
+            "ij-plugins/mcp-steroid/kotlinc/bin/kotlinc.bat",
+            "ij-plugins/mcp-steroid/ocr-tesseract/bin/ocr-tesseract.bat",
         ).forEach { batPath ->
             check(batPath in ijPluginFiles) {
-                "ij-plugin/ subtree is missing '$batPath' (expected as non-executable .bat sibling)."
+                "ij-plugins/mcp-steroid/ subtree is missing '$batPath' (expected as non-executable .bat sibling)."
             }
             check("$batPath:X" !in ijPluginFiles) {
-                "ij-plugin/ subtree wrongly marked '$batPath' executable; eachFile { } rule " +
+                "ij-plugins/mcp-steroid/ subtree wrongly marked '$batPath' executable; eachFile { } rule " +
                         "should only promote files whose source mode had +x."
             }
         }
