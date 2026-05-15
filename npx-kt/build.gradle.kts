@@ -132,6 +132,7 @@ application {
 // and strips the Buildable, leaving the consumer without a path to producing the zip.
 val ijPluginZipFile = ijPluginZip.elements.map { it.single().asFile }
 val sevenZipBinariesDir = sevenZipBinaries.elements.map { it.single().asFile }
+val sevenZipLicenseFile = sevenZipBinariesDir.map { it.resolve("7z/License.txt") }
 val jdkDirs: Map<String, Provider<File>> = jdkPlatforms.associate { platform ->
     val cfg = jdkConfigs.getValue(platform.id)
     platform.id to cfg.elements.map { it.single().asFile }
@@ -179,6 +180,15 @@ distributions {
                 }
             }
 
+            // Operator-facing license consolidation. The component-local copies
+            // remain in place; these entries give admins one index under licenses/.
+            into("licenses/seven-zip") {
+                from(sevenZipLicenseFile)
+            }
+            into("licenses/mcp-steroid") {
+                from(rootProject.layout.projectDirectory.file("EULA"))
+            }
+
             // Amazon Corretto 21 JDKs, one per supported platform.
             // The producer's permission audit (POSIX +x on bin/* and
             // lib/server/libjvm.*) has already run before this consumer
@@ -194,6 +204,21 @@ distributions {
                                 permissions { unix("rwxr-xr-x") }
                             }
                         }
+                    }
+                }
+
+                into("licenses/corretto-jdk-21/${platform.id}") {
+                    from(jdkDirs.getValue(platform.id)) {
+                        include(
+                            "LICENSE",
+                            "ADDITIONAL_LICENSE_INFO",
+                            "ASSEMBLY_EXCEPTION",
+                            "THIRD_PARTY_README",
+                            "NOTICE",
+                            "version.txt",
+                            "legal/**",
+                        )
+                        includeEmptyDirs = false
                     }
                 }
             }
@@ -460,6 +485,38 @@ val verifyBundledLibraries by tasks.registering {
             }
         }
         allFiles = (allFiles - jdkFiles).toSortedSet()
+
+        // licenses/ subtree: additive operator-facing consolidation of each
+        // bundled component's license files. Original component-local copies stay
+        // under jdk/, 7z/, and ij-plugin/ and are verified separately above/below.
+        val licensesPrefix = "licenses/"
+        val licensesFiles = allFiles.filter { it.startsWith(licensesPrefix) }.toSortedSet()
+        check(licensesFiles.isNotEmpty()) {
+            "licenses/ subtree must be populated in $distName"
+        }
+
+        val licensesSentinels = buildList {
+            add("licenses/README.md")
+            add("licenses/seven-zip/License.txt")
+            add("licenses/mcp-steroid/EULA")
+            jdkPlatforms.forEach { platform ->
+                add("licenses/corretto-jdk-21/${platform.id}/LICENSE")
+                add("licenses/corretto-jdk-21/${platform.id}/version.txt")
+            }
+        }
+        licensesSentinels.forEach { sentinel ->
+            check(licensesFiles.any { it.removeSuffix(":X") == sentinel }) {
+                "licenses/ subtree missing sentinel '$sentinel'"
+            }
+        }
+        jdkPlatforms.forEach { platform ->
+            val legalPrefix = "licenses/corretto-jdk-21/${platform.id}/legal/"
+            check(licensesFiles.any { it.startsWith(legalPrefix) }) {
+                "missing licenses/corretto-jdk-21/${platform.id}/legal/ — Corretto " +
+                        "always ships a legal directory; consolidation must capture it"
+            }
+        }
+        allFiles = (allFiles - licensesFiles).toSortedSet()
 
         // 7z/ subtree: :intellij-downloader enforces the source layout; this task
         // checks the distZip copy is present, contains no surprise entries, and
