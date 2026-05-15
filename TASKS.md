@@ -993,89 +993,63 @@ Patterns to cover (one test each, names suggested):
 
 This is the largest task in B; defer until B1–B4 land if scope is tight.
 
-# Active — Cluster C: structured apply_patch recovery hints (#49, #50) (2026-05-15)
+# Landed — Cluster C: structured apply_patch recovery hints (#49, #50) (2026-05-15)
 
-Three changes (plus one deferred). C depends on Cluster A's `kind`-error
-shape only loosely — C can ship before or after A, but reusing A's body
-shape is cleaner. **C runs last in the accepted B → A → C order.**
+C1, C2, C3 shipped together. The user-facing error response now carries
+nearby-file candidates (file-not-found path) and fuzzy line candidates
+(anchor-not-found path). C4 remains parked.
 
-## C3 — One-line nudge in `steroid_apply_patch` tool description (smallest)
+Test surface that gates this work — keep passing on future edits:
+- `:ij-plugin:test --tests '*ApplyPatchTest*' '*ApplyPatchToolIntegrationTest*'`
+  — 36 cases, ~3 s; substring assertions on `"file not found"`,
+  `"old_string not found"`, `"occurs more than once"`, `"expand old_string"`.
+- `:prompts:test --tests '*AnchorSafeEditing*' '*ApplyPatchToolDescription*' '*MarkdownArticleContract*'`
+  — the four kotlin blocks in the new article compile per IDE; the
+  tool description still validates.
 
-Locate the `steroid_apply_patch` tool description (likely
-`ApplyPatchToolDescription.md` or similar under
-`ij-plugin/src/main/kotlin/.../tools/`). Add:
+## C1 — Structured ApplyPatch errors (done — commit pending)
 
-> On error, do not retry blindly. Inspect current file text via
-> `steroid_execute_code` with `FilenameIndex` first. See
-> `[Anchor-safe editing](mcp-steroid://skill/anchor-safe-editing)`.
+`ij-plugin/src/main/kotlin/.../execution/ApplyPatch.kt` now calls two
+private helpers, `fileNotFoundMessage(...)` and `anchorNotFoundMessage(...)`,
+that append (multi-line, plain text) structured candidates to the leading
+sentence. The leading wording is preserved verbatim so existing
+substring-based assertions in `ApplyPatchTest` and
+`ApplyPatchToolIntegrationTest` keep passing.
 
-## C2 — New article: `skill/anchor-safe-editing.md`
+- `file_not_found` adds up to 5 same-basename project-index hits.
+- `anchor_not_found` adds `lines x, y bytes` and up to 3 fuzzy lines
+  for the longest stable `[A-Za-z0-9_]{4,}` token from `oldString`.
+- Both helpers swallow their own `RuntimeException` (re-throwing
+  `ProcessCanceledException`) so the diagnostic can never itself fail
+  the diagnostic.
 
-New file: `prompts/src/main/prompts/skill/anchor-safe-editing.md`.
-Article format (title line, blank, description line, blank, body).
-Fence annotations `[IU,RD]` on each Kotlin block since the recipe is
-IDE-product-agnostic.
+The body format is plain multi-line text rather than the JSON shape
+floated in the earlier plan — the existing tool result is a text
+content payload, and the in-line text is what the agent actually reads.
+If A2a lands and standardises a JSON `kind` envelope, the leading line
+remains and the structured tail can move into a sibling JSON field
+without breaking the substring contract.
 
-Body covers:
-1. Locate file with
-   `FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project))`
-   — handle empty result and multiple-match cases.
-2. Print 5 lines of context around the intended anchor (use
-   `VfsUtil.loadText` and substring around the match).
-3. Apply the patch only when occurrence count == 1; if 0 or >1, abort
-   and surface the count.
-4. After apply, re-read and verify replacement count.
+## C2 — `skill/anchor-safe-editing.md` (done — commit pending)
 
-Add to the relevant `seeAlso` chain (likely
-`prompts/src/main/prompts/skill/overview.md` or similar TOC).
+New article with four kotlin code blocks (locate → excerpt → unique
+check → apply+verify). Cross-linked from
+`apply-patch-tool-description.md`. KtBlocksCompilation tests pass across
+the IDE distributions that include the Kotlin plugin (default fence
+annotation, so all IDEs compile each block).
 
-## C1 — Structured `apply_patch` errors with candidates
+## C3 — Apply-patch tool description nudge (done — commit pending)
 
-File: `ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/execution/ApplyPatch.kt`.
-At lines 128 (`Hunk #$index: file not found`) and 143 (`old_string not
-found`), replace bare strings with structured bodies. Keep the
-human-readable first line so existing tests pass; append structured
-fields.
+`prompts/src/main/prompts/skill/apply-patch-tool-description.md` now
+ends with a "do not retry blindly" paragraph that points at
+`mcp-steroid://skill/anchor-safe-editing` and the four steps.
 
-**File-not-found body:**
-```
-{
-  "kind": "file_not_found",
-  "hunk": N,
-  "file": "...",
-  "candidates": [up to 5 paths from FilenameIndex.getVirtualFilesByName(basename)],
-  "parentExists": bool,
-  "parentListing": [up to 10 entries if parentExists]
-}
-```
-
-**`old_string not found` body:**
-```
-{
-  "kind": "anchor_not_found",
-  "hunk": N,
-  "file": "...",
-  "fileExists": true,
-  "fileLines": N,
-  "fileBytes": N,
-  "fuzzyCandidates": [up to 3 lines that share the longest stable token from old_string, with line numbers]
-}
-```
-
-Token-bag scoring: tokenize `old_string` on `[A-Za-z0-9_]+`, pick the
-longest token that appears uniquely (or rarely) in the file, return
-its line. If no useful token, omit `fuzzyCandidates`.
-
-Tests: extend the existing `ApplyPatchTest` suite with three cases:
-- file_not_found returns at least one basename candidate
-- anchor_not_found returns fileLines + fileBytes when file exists
-- existing error messages remain unchanged on first line (backward compat)
-
-## C4 — `dryRun` parameter (deferred)
+## C4 — `dryRun` parameter (still parked)
 
 Add `dryRun: Boolean = false` to the `steroid_apply_patch` tool args.
-When true, run preflight + return structured candidates (C1's shape)
-without applying. Lower priority — ship C1+C2+C3 first.
+When true, run preflight + return structured candidates without
+applying. Lower priority. Re-iterate when the issue trail justifies the
+extra surface.
 
 ## Order of execution (B → A → C)
 
