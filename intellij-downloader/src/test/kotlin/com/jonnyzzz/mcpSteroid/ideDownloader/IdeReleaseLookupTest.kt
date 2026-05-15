@@ -11,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import org.junit.experimental.categories.Category
 
 class IdeReleaseLookupTest {
 
@@ -18,32 +19,32 @@ class IdeReleaseLookupTest {
 
     @Test
     fun `resolves IDEA Ultimate stable archive URL for Linux`() {
-        val url = resolveArchiveUrl(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.LINUX)
+        val url = resolveArchiveUrlFromFixtures(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.LINUX)
         assertTrue("Expected .tar.gz URL, got: $url", url.endsWith(".tar.gz"))
         assertTrue("Expected download URL, got: $url", url.contains("download"))
     }
 
     @Test
     fun `resolves IDEA Ultimate EAP archive URL for Linux`() {
-        val url = resolveArchiveUrl(IdeProduct.IntelliJIdea, IdeChannel.EAP, os = HostOs.LINUX)
+        val url = resolveArchiveUrlFromFixtures(IdeProduct.IntelliJIdea, IdeChannel.EAP, os = HostOs.LINUX)
         assertTrue("Expected .tar.gz URL, got: $url", url.endsWith(".tar.gz"))
     }
 
     @Test
     fun `resolves IDEA Ultimate stable archive URL for Mac`() {
-        val url = resolveArchiveUrl(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.MAC)
+        val url = resolveArchiveUrlFromFixtures(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.MAC)
         assertTrue("Expected .dmg URL, got: $url", url.endsWith(".dmg"))
     }
 
     @Test
     fun `resolves IDEA Ultimate stable archive URL for Windows`() {
-        val url = resolveArchiveUrl(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.WINDOWS)
+        val url = resolveArchiveUrlFromFixtures(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.WINDOWS)
         assertTrue("Expected .exe URL, got: $url", url.endsWith(".exe"))
     }
 
     @Test
     fun `resolves Rider stable archive URL for Linux`() {
-        val url = resolveArchiveUrl(IdeProduct.Rider, IdeChannel.STABLE, os = HostOs.LINUX)
+        val url = resolveArchiveUrlFromFixtures(IdeProduct.Rider, IdeChannel.STABLE, os = HostOs.LINUX)
         assertTrue("Expected .tar.gz URL, got: $url", url.endsWith(".tar.gz"))
         assertTrue("Expected download URL, got: $url", url.contains("download"))
     }
@@ -191,11 +192,11 @@ class IdeReleaseLookupTest {
     }
 
     @Test
-    fun `known JetBrains products resolve to URLs accepted by their filename token list`() {
+    fun `fixture JetBrains products resolve to URLs accepted by their filename token list`() {
         val products = IdeProduct.knownProducts.filterNot { it === IdeProduct.AndroidStudio }
         for (product in products) {
             assertTrue("${product.code} must define URL filename tokens", product.urlFilenameTokens.isNotEmpty())
-            val resolution = resolveArchive(
+            val resolution = resolveArchiveFromFixtures(
                 product,
                 IdeChannel.STABLE,
                 os = HostOs.MAC,
@@ -204,6 +205,25 @@ class IdeReleaseLookupTest {
             val filename = downloadFilenameFromUrl(resolution.url)
             assertTrue(
                 "${product.code} resolved $filename, expected one of ${product.urlFilenameTokens}",
+                product.acceptsDownloadFilename(filename),
+            )
+        }
+    }
+
+    @Test
+    @Category(LiveNetwork::class)
+    fun `live JetBrains product feed URLs still match filename token list`() {
+        val products = listOf(IdeProduct.IntelliJIdea, IdeProduct.Rider)
+        for (product in products) {
+            val resolution = resolveArchive(
+                product,
+                IdeChannel.STABLE,
+                os = HostOs.MAC,
+                architecture = HostArchitecture.ARM64,
+            )
+            val filename = downloadFilenameFromUrl(resolution.url)
+            assertTrue(
+                "${product.code} resolved $filename from live feed, expected one of ${product.urlFilenameTokens}",
                 product.acceptsDownloadFilename(filename),
             )
         }
@@ -247,7 +267,7 @@ class IdeReleaseLookupTest {
     fun `IntelliJ Community resolves for every OS-arch combo`() {
         for (os in HostOs.values()) {
             for (arch in HostArchitecture.values()) {
-                val url = resolveArchiveUrl(
+                val url = resolveArchiveUrlFromFixtures(
                     IdeProduct.IntelliJIdeaCommunity,
                     IdeChannel.STABLE,
                     os = os,
@@ -264,7 +284,7 @@ class IdeReleaseLookupTest {
     fun `PyCharm Community resolves for every OS-arch combo`() {
         for (os in HostOs.values()) {
             for (arch in HostArchitecture.values()) {
-                val url = resolveArchiveUrl(
+                val url = resolveArchiveUrlFromFixtures(
                     IdeProduct.PyCharmCommunity,
                     IdeChannel.STABLE,
                     os = os,
@@ -285,7 +305,7 @@ class IdeReleaseLookupTest {
             Triple(HostOs.MAC, HostArchitecture.ARM64, "-mac_arm.dmg"),
         )
         for ((os, arch, suffix) in cases) {
-            val url = resolveArchiveUrl(IdeProduct.AndroidStudio, IdeChannel.STABLE, os = os, architecture = arch)
+            val url = resolveArchiveUrlFromFixtures(IdeProduct.AndroidStudio, IdeChannel.STABLE, os = os, architecture = arch)
             assertTrue("Expected $os/$arch URL to end with $suffix, got: $url", url.endsWith(suffix))
             assertTrue("Expected gvt1.com URL, got: $url", url.contains("gvt1.com") || url.contains("googleusercontent"))
         }
@@ -293,7 +313,7 @@ class IdeReleaseLookupTest {
 
     @Test
     fun `Android Studio on Windows x64 yields exe`() {
-        val url = resolveArchiveUrl(
+        val url = resolveArchiveUrlFromFixtures(
             IdeProduct.AndroidStudio, IdeChannel.STABLE,
             os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64,
         )
@@ -310,7 +330,7 @@ class IdeReleaseLookupTest {
     @Test
     fun `Android Studio rejects unsupported Linux ARM64`() {
         val ex = expectError {
-            resolveArchiveUrl(IdeProduct.AndroidStudio, IdeChannel.STABLE,
+            resolveArchiveUrlFromFixtures(IdeProduct.AndroidStudio, IdeChannel.STABLE,
                 os = HostOs.LINUX, architecture = HostArchitecture.ARM64)
         }
         assertTrue("expected 'Linux ARM64' message, got: ${ex.message}",
@@ -320,7 +340,7 @@ class IdeReleaseLookupTest {
     @Test
     fun `Android Studio rejects unsupported Windows ARM64`() {
         val ex = expectError {
-            resolveArchiveUrl(IdeProduct.AndroidStudio, IdeChannel.STABLE,
+            resolveArchiveUrlFromFixtures(IdeProduct.AndroidStudio, IdeChannel.STABLE,
                 os = HostOs.WINDOWS, architecture = HostArchitecture.ARM64)
         }
         assertTrue("expected 'Windows ARM64' message, got: ${ex.message}",
@@ -330,7 +350,7 @@ class IdeReleaseLookupTest {
     @Test
     fun `Android Studio rejects EAP channel (canary not wired up)`() {
         val ex = expectError {
-            resolveArchiveUrl(IdeProduct.AndroidStudio, IdeChannel.EAP, os = HostOs.MAC)
+            resolveArchiveUrlFromFixtures(IdeProduct.AndroidStudio, IdeChannel.EAP, os = HostOs.MAC)
         }
         assertTrue("expected channel message, got: ${ex.message}",
             ex.message!!.contains("only IdeChannel.STABLE is supported"))
@@ -439,6 +459,47 @@ class IdeReleaseLookupTest {
      *  - linux / mac → .tar.gz / .dmg
      *  - windows → .exe (installer)
      */
+    private fun resolveArchiveUrlFromFixtures(
+        product: IdeProduct,
+        channel: IdeChannel,
+        os: HostOs = resolveHostOs(),
+        architecture: HostArchitecture = resolveHostArchitecture(),
+        version: String? = null,
+    ): String = resolveArchiveFromFixtures(product, channel, os, architecture, version).url
+
+    private fun resolveArchiveFromFixtures(
+        product: IdeProduct,
+        channel: IdeChannel,
+        os: HostOs = resolveHostOs(),
+        architecture: HostArchitecture = resolveHostArchitecture(),
+        version: String? = null,
+    ): IdeArchiveResolution = resolveArchiveWithUrlReader(
+        product = product,
+        channel = channel,
+        os = os,
+        architecture = architecture,
+        version = version,
+        urlReader = ::fixtureForUrl,
+    )
+
+    private fun fixtureForUrl(url: String): String {
+        if (url == "https://developer.android.com/studio") {
+            return fixtureText("android-studio.html")
+        }
+        val code = Regex("""[?&]code=([^&]+)""")
+            .find(url)
+            ?.groupValues
+            ?.get(1)
+            ?: error("Fixture URL does not include a products API code: $url")
+        return fixtureText("products-$code.json")
+    }
+
+    private fun fixtureText(name: String): String {
+        val resource = javaClass.classLoader.getResource("fixtures/$name")
+            ?: error("Missing test fixture: fixtures/$name")
+        return resource.readText()
+    }
+
     private fun assertExpectedExtension(product: IdeProduct, os: HostOs, arch: HostArchitecture, url: String) {
         val expectedSuffixes: List<String> = when (os) {
             HostOs.LINUX -> listOf(".tar.gz", ".tgz")

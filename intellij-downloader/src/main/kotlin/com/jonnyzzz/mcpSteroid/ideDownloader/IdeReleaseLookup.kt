@@ -64,17 +64,52 @@ fun resolveArchive(
     os: HostOs = resolveHostOs(),
     architecture: HostArchitecture = resolveHostArchitecture(),
     version: String? = null,
+): IdeArchiveResolution = resolveArchiveWithUrlReader(
+    product = product,
+    channel = channel,
+    os = os,
+    architecture = architecture,
+    version = version,
+    productsApiReader = { url -> readUrlText(url) },
+    androidStudioReader = { url -> readUrlText(url, accept = "text/html,*/*") },
+)
+
+internal fun resolveArchiveWithUrlReader(
+    product: IdeProduct,
+    channel: IdeChannel,
+    os: HostOs = resolveHostOs(),
+    architecture: HostArchitecture = resolveHostArchitecture(),
+    version: String? = null,
+    urlReader: (String) -> String,
+): IdeArchiveResolution = resolveArchiveWithUrlReader(
+    product = product,
+    channel = channel,
+    os = os,
+    architecture = architecture,
+    version = version,
+    productsApiReader = urlReader,
+    androidStudioReader = urlReader,
+)
+
+private fun resolveArchiveWithUrlReader(
+    product: IdeProduct,
+    channel: IdeChannel,
+    os: HostOs,
+    architecture: HostArchitecture,
+    version: String?,
+    productsApiReader: (String) -> String,
+    androidStudioReader: (String) -> String,
 ): IdeArchiveResolution {
     // Android Studio is a Google product and lives on a different feed.
     if (product === IdeProduct.AndroidStudio) {
-        return resolveAndroidStudioArchive(channel, os, architecture, version)
+        return resolveAndroidStudioArchiveWithUrlReader(channel, os, architecture, version, androidStudioReader)
     }
 
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
     val url = "https://data.services.jetbrains.com/products?code=${product.code}&release.type=$releaseType"
 
     logFetchingProductsInfo(url)
-    val payload = readUrlText(url)
+    val payload = productsApiReader(url)
 
     return resolveArchiveFromProductsApiPayload(
         product = product,

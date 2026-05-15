@@ -46,7 +46,20 @@ dependencies {
 }
 
 tasks.test {
-    useJUnit()
+    useJUnit {
+        excludeCategories("com.jonnyzzz.mcpSteroid.ideDownloader.LiveNetwork")
+    }
+}
+
+tasks.register<Test>("liveNetworkTest") {
+    description = "Runs intellij-downloader tests that intentionally hit public vendor feeds."
+    group = "verification"
+    useJUnit {
+        includeCategories("com.jonnyzzz.mcpSteroid.ideDownloader.LiveNetwork")
+    }
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    shouldRunAfter(tasks.test)
 }
 
 // ────────────────────────────────────────────────────────────────────────────

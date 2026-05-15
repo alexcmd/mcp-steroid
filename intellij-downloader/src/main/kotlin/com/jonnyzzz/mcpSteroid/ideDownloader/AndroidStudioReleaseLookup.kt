@@ -45,6 +45,20 @@ fun resolveAndroidStudioArchive(
     os: HostOs,
     architecture: HostArchitecture,
     version: String?,
+): IdeArchiveResolution = resolveAndroidStudioArchiveWithUrlReader(
+    channel = channel,
+    os = os,
+    architecture = architecture,
+    version = version,
+    urlReader = { url -> readUrlText(url, accept = "text/html,*/*") },
+)
+
+internal fun resolveAndroidStudioArchiveWithUrlReader(
+    channel: IdeChannel,
+    os: HostOs,
+    architecture: HostArchitecture,
+    version: String?,
+    urlReader: (String) -> String,
 ): IdeArchiveResolution {
     require(channel == IdeChannel.STABLE) {
         "Android Studio: only IdeChannel.STABLE is supported by this downloader; got $channel. " +
@@ -53,7 +67,7 @@ fun resolveAndroidStudioArchive(
 
     val pageUrl = "https://developer.android.com/studio"
     logFetchingAndroidStudioDownloads(pageUrl)
-    val html = readUrlText(pageUrl, accept = "text/html,*/*")
+    val html = urlReader(pageUrl)
     return resolveAndroidStudioArchiveFromHtml(channel, os, architecture, version, pageUrl, html)
 }
 
