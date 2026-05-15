@@ -88,7 +88,11 @@ internal fun collectInstalledBackendListRows(
         stream.asSequence()
             .filter { Files.isDirectory(it) }
             .mapNotNull { dir -> installedBackendRowOrNull(homePaths, dir, processInspector) }
-            .sortedWith(compareBy({ backendProductSortIndex(it.productKey) }, { it.version }, { it.id }))
+            .sortedWith(
+                compareBy<InstalledBackendListRow> { backendProductSortIndex(it.productKey) }
+                    .thenComparator { left, right -> compareBackendVersions(left.version, right.version) }
+                    .thenBy { it.id },
+            )
             .toList()
     }
 }

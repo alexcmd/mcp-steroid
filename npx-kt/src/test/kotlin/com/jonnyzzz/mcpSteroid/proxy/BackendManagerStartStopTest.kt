@@ -149,6 +149,50 @@ class BackendManagerStartStopTest {
     }
 
     @Test
+    fun `start product-only prefers highest locally installed backend without resolving releases`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = gracefulLauncher(), id = "idea-community-2025.2.6.1")
+        installStubBackend(homePaths, launcherBody = gracefulLauncher(), id = "idea-community-2025.2.6.2")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = ThrowingDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+        )
+
+        val started = manager.start(parseBackendId("idea-community"))
+        try {
+            assertEquals("idea-community-2025.2.6.2", started.id)
+            assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
+        } finally {
+            manager.stop(parseBackendId("idea-community-2025.2.6.2"))
+        }
+    }
+
+    @Test
+    fun `stop product-only prefers highest locally installed backend without resolving releases`(
+        @TempDir tempDir: Path,
+    ) = kotlinx.coroutines.runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, launcherBody = gracefulLauncher(), id = "idea-community-2025.2.6.1")
+        installStubBackend(homePaths, launcherBody = gracefulLauncher(), id = "idea-community-2025.2.6.2")
+        val manager = BackendManager(
+            homePaths = homePaths,
+            downloader = ThrowingDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+        )
+        val started = manager.start(parseBackendId("idea-community-2025.2.6.2"))
+        assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
+
+        val stopped = manager.stop(parseBackendId("idea-community"))
+
+        assertEquals("idea-community-2025.2.6.2", stopped.id)
+        assertEquals("stopped", stopped.outcome)
+        assertFalse(ProcessHandle.of(started.pid).map { it.isAlive }.orElse(false))
+    }
+
+    @Test
     fun `start seeds first-run startup config before launching IDE`(
         @TempDir tempDir: Path,
     ) = kotlinx.coroutines.runBlocking {
@@ -190,8 +234,11 @@ class BackendManagerStartStopTest {
         assertFalse(ProcessHandle.of(started.pid).map { it.isAlive }.orElse(false))
     }
 
-    private fun installStubBackend(homePaths: HomePaths, launcherBody: String) {
-        val id = "idea-community-2025.3.3"
+    private fun installStubBackend(
+        homePaths: HomePaths,
+        launcherBody: String,
+        id: String = "idea-community-2025.3.3",
+    ) {
         val backendDir = homePaths.backendDir(id)
         val bundleDir = backendDir.resolve("idea-IC-253.1")
         val launcher = bundleDir.resolve("bin/idea.sh")
@@ -204,7 +251,7 @@ class BackendManagerStartStopTest {
                 id = id,
                 productKey = "idea-community",
                 productCode = "IC",
-                version = "2025.3.3",
+                version = id.removePrefix("idea-community-"),
                 buildNumber = "IC-253.1",
                 bundleDirName = bundleDir.fileName.toString(),
                 launcherPath = "bin/idea.sh",
@@ -245,6 +292,16 @@ class BackendManagerStartStopTest {
                 build = "IC-253.1",
                 url = "file:///unused",
             )
+
+        override suspend fun downloadAndUnpack(
+            resolution: BackendDownloadResolution,
+            targetDir: Path,
+        ): BackendDownloadArtifact = error("downloadAndUnpack should not be called by start/stop tests")
+    }
+
+    private object ThrowingDownloader : ManagedBackendDownloader {
+        override suspend fun resolve(id: BackendId): BackendDownloadResolution =
+            error("release resolver should not be called when a local backend is installed")
 
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,

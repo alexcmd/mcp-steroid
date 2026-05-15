@@ -64,6 +64,7 @@ class CliModeOutputTest {
         assertTrue(out.contains("no id → list IDEs available for download"), "help should explain download without id; got:\n$out")
         assertTrue(out.contains("backend start    [<id>] [--json]"), "help should advertise start default-listing form; got:\n$out")
         assertTrue(out.contains("backend stop     [<id>] [--json]"), "help should advertise stop default-listing form; got:\n$out")
+        assertTrue(out.contains("Product-only id prefers the highest"), "help should explain product-only local backend resolution; got:\n$out")
     }
 
     @Test

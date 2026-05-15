@@ -422,8 +422,30 @@ internal class BackendManager(
 
     private suspend fun resolveConcreteId(id: BackendId): ResolvedBackendId {
         if (id.version != null) return ResolvedBackendId(id.product, id.version)
+        findHighestInstalledBackend(id.product)?.let { return it }
         val resolution = downloader.resolve(id)
         return ResolvedBackendId(resolution.product, resolution.version)
+    }
+
+    private fun findHighestInstalledBackend(product: IdeProduct): ResolvedBackendId? {
+        if (!Files.isDirectory(homePaths.backendsDir)) return null
+        val prefix = "${product.id}-"
+        return Files.list(homePaths.backendsDir).use { stream ->
+            stream.asSequence()
+                .filter { it.isDirectory() }
+                .mapNotNull { dir ->
+                    val dirName = dir.fileName.toString()
+                    if (!dirName.startsWith(prefix)) return@mapNotNull null
+                    val version = dirName.removePrefix(prefix)
+                    if (!isSupportedBackendVersion(version)) return@mapNotNull null
+                    val descriptor = readDescriptorOrNull(descriptorPath(dir)) ?: return@mapNotNull null
+                    if (descriptor.id != dirName || descriptor.productKey != product.id || descriptor.version != version) {
+                        return@mapNotNull null
+                    }
+                    ResolvedBackendId(product, version)
+                }
+                .maxWithOrNull { left, right -> compareBackendVersions(left.version, right.version) }
+        }
     }
 
     private fun loadDescriptor(id: ResolvedBackendId): BackendDescriptor {

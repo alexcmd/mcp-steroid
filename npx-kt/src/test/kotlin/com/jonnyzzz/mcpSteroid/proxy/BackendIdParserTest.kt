@@ -61,6 +61,14 @@ class BackendIdParserTest {
     }
 
     @Test
+    fun `version comparator handles dotted update numbers numerically`() {
+        assertEquals(1, compareBackendVersions("2025.2.6.2", "2025.2.6.1").coerceIn(-1, 1))
+        assertEquals(1, compareBackendVersions("2025.2.6.10", "2025.2.6.2").coerceIn(-1, 1))
+        assertEquals(-1, compareBackendVersions("2025.2.6.2", "2025.2.6.10").coerceIn(-1, 1))
+        assertEquals(0, compareBackendVersions("2025.2.6.02", "2025.2.6.2"))
+    }
+
+    @Test
     fun `rejects unknown product keys and aliases`() {
         assertFailsWith<IllegalArgumentException> { parseBackendId("intellij") }
         assertFailsWith<IllegalArgumentException> { parseBackendId("unknown") }

@@ -374,10 +374,13 @@ private fun printHelp(out: PrintStream) {
                                                      no id → list installed backends. With id,
                                                      start an installed managed backend in
                                                      detached mode and print its pid/log/config
-                                                     paths.
+                                                     paths. Product-only id prefers the
+                                                     highest locally installed backend.
           mcp-steroid-proxy backend stop     [<id>] [--json]
                                                      no id → list currently running backends.
                                                      With id, stop a managed backend by pid file.
+                                                     Product-only id prefers the highest
+                                                     locally installed backend.
           mcp-steroid-proxy backend provision [<id>] [--json]
                                                      no id → list port-discovered IDEs that can be
                                                      provisioned. With id (for example port-63342),

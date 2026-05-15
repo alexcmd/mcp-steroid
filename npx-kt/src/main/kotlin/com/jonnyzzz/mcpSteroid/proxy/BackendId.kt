@@ -60,6 +60,36 @@ internal fun isSupportedBackendVersion(raw: String): Boolean {
     return version.isNotBlank() && version.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
 }
 
+private val backendVersionTokenRegex = Regex("""\d+|\D+""")
+
+internal fun compareBackendVersions(left: String, right: String): Int {
+    if (left == right) return 0
+    val leftTokens = backendVersionTokenRegex.findAll(left).map { it.value }.toList()
+    val rightTokens = backendVersionTokenRegex.findAll(right).map { it.value }.toList()
+    val maxSize = maxOf(leftTokens.size, rightTokens.size)
+    for (index in 0 until maxSize) {
+        val leftToken = leftTokens.getOrNull(index) ?: return -1
+        val rightToken = rightTokens.getOrNull(index) ?: return 1
+        val tokenCompare = compareBackendVersionTokens(leftToken, rightToken)
+        if (tokenCompare != 0) return tokenCompare
+    }
+    return 0
+}
+
+private fun compareBackendVersionTokens(left: String, right: String): Int {
+    val leftIsNumber = left.all { it.isDigit() }
+    val rightIsNumber = right.all { it.isDigit() }
+    return when {
+        leftIsNumber && rightIsNumber -> {
+            val normalizedLeft = left.trimStart('0').ifEmpty { "0" }
+            val normalizedRight = right.trimStart('0').ifEmpty { "0" }
+            compareValuesBy(normalizedLeft, normalizedRight, { it.length }, { it })
+        }
+        leftIsNumber != rightIsNumber -> if (leftIsNumber) 1 else -1
+        else -> left.compareTo(right)
+    }
+}
+
 private fun parseManagedProductKey(raw: String): IdeProduct {
     return parseManagedProductKeyOrNull(raw)
         ?: throw IllegalArgumentException(
