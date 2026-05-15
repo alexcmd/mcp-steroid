@@ -1408,3 +1408,50 @@ moves M1-fix in front of M11.
 6. M4 — JSON synthetic IDs.
 7. M8 — CLI parser tightening.
 8. m1 / m2 / m3 / m4 / m6 — polish.
+
+## Additional item (added 2026-05-15)
+
+### M12 — Managed-backend GUI test: stream `devrig …` output to the on-video console
+
+`test-integration/src/test/kotlin/com/jonnyzzz/mcpSteroid/integration/tests/ManagedBackendGuiIntegrationTest.kt`
+currently runs the `devrig backend download/start/stop` commands via
+container exec, captures stdout/stderr to assertion strings, and the
+video records only Xvfb's fluxbox desktop. The viewer can't see what
+the test is actually doing.
+
+Make the video more useful:
+- Run each `devrig …` invocation inside a visible `xterm` window on
+  the Xvfb display (the container's `ide-base` image already has
+  `xterm` + `xvfb` + `fluxbox` + `ffmpeg` ready).
+- Pipe the command's combined output through `tee` so the test still
+  gets the bytes for assertions, AND the xterm shows them in
+  real time.
+- The "frame" the existing tests use to spawn IDE windows is
+  reusable — see `WhatYouSeeTest` for an `xterm`-as-IDE-frame
+  precedent, and the existing `XcvbVideoDriver` for the recording
+  loop. No new infrastructure needed.
+
+Shape:
+
+```kotlin
+container.execAndAssertOnVideo(
+    title = "devrig backend download idea-community",
+    script = "/home/agent/devrig --home /tmp/mcp-home backend download idea-community",
+)
+```
+
+…where `execAndAssertOnVideo` launches `xterm -title <…> -hold -e bash -c <script>` against `DISPLAY=:0`, waits for the wrapped process to exit, captures the exit code + bytes via the `tee` sidekick (write to a file the test reads after the xterm window closes), then asserts on the captured output.
+
+Slot: between M8 (parser tightening) and the polish batch.
+
+## Revised pipeline order (2026-05-15, final)
+
+1. M1-fix — IIC resolver filter + post-unpack assertion (in flight).
+2. M11 — `backend provision`.
+3. B1 / M2 / M3 / M6 — `ManagedBackend.kt` lifecycle.
+4. B2 — `IdeUnpacker.kt` security.
+5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
+6. M4 — JSON synthetic IDs.
+7. M8 — CLI parser tightening.
+8. **M12 — managed-backend test: stream `devrig` output to the on-video xterm.**
+9. m1 / m2 / m3 / m4 / m6 — polish.
