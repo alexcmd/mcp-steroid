@@ -56,6 +56,7 @@ class BackendCommandStopListTest {
 
         assertEquals(setOf("tool", "running"), root.keys)
         val running = root["running"]!!.jsonArray.single().jsonObject
+        assertEquals(setOf("id", "pid", "displayName", "logPath"), running.keys)
         assertEquals("idea-community-2025.3.3", running["id"]!!.jsonPrimitive.content)
         assertEquals(12345L, running["pid"]!!.jsonPrimitive.long)
         assertEquals("IntelliJ IDEA Community 2025.3.3", running["displayName"]!!.jsonPrimitive.content)

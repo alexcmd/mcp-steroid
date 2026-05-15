@@ -155,9 +155,6 @@ internal fun renderBackendDownloadListRowsText(
         val versionWidth = rows
             .map { it.versionText().length }
             .maxOrNull() ?: 0
-        val releaseDateWidth = rows
-            .map { it.releaseDate.orEmpty().length }
-            .maxOrNull() ?: 0
         for ((index, row) in rows.withIndex()) {
             val indexLabel = "[${index + 1}]".padEnd(indexWidth)
             val id = row.product.id.padEnd(idWidth)
@@ -166,16 +163,7 @@ internal fun renderBackendDownloadListRowsText(
                 .takeIf { it.isNotEmpty() }
                 ?.let { "  $it" }
                 .orEmpty()
-            if (releaseDateWidth > 0) {
-                out.println(
-                    "  $indexLabel $id  $name  " +
-                        "${row.versionText().padEnd(versionWidth)}  " +
-                        row.releaseDate.orEmpty().padEnd(releaseDateWidth) +
-                        licenseSuffix
-                )
-            } else {
-                out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}$licenseSuffix")
-            }
+            out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}$licenseSuffix")
         }
     }
     out.println()
@@ -203,7 +191,7 @@ internal fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>)
             put("licenseSymbol", row.product.licenseTier.licenseSymbol)
             put("licenseNote", row.product.licenseTier.licenseNote)
             if (row.version == null) put("version", JsonNull) else put("version", row.version)
-            row.releaseDate?.let { put("releaseDate", it) }
+            if (row.releaseDate == null) put("releaseDate", JsonNull) else put("releaseDate", row.releaseDate)
             row.versionLookupError?.let { put("versionLookupError", it) }
         })
     }

@@ -63,7 +63,7 @@ class BackendCommandStartListTest {
         assertTrue(text.contains("Available IDEs (defaults to latest stable):"), text)
         assertTrue(text.contains("[1] idea-community"), text)
         assertTrue(text.contains("2025.3"), text)
-        assertTrue(text.contains("2025-12-08"), text)
+        assertTrue(!text.contains("2025-12-08"), text)
         assertTrue(text.contains("  *  Requires a JetBrains license."), text)
         assertTrue(!text.contains("Free for non-commercial use; JetBrains license required for commercial use."), text)
         assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>]"), text)
@@ -84,6 +84,7 @@ class BackendCommandStartListTest {
         assertEquals(setOf("tool", "installed"), root.keys)
         val installed = root["installed"]!!.jsonArray.map { it.jsonObject }
         val running = installed.single { it["id"]!!.jsonPrimitive.content == "idea-community-2025.3.3" }
+        assertEquals(setOf("id", "productKey", "version", "displayName", "state", "pid", "installPath", "cachePath"), running.keys)
         assertEquals("idea-community", running["productKey"]!!.jsonPrimitive.content)
         assertEquals("2025.3.3", running["version"]!!.jsonPrimitive.content)
         assertEquals("IntelliJ IDEA Community 2025.3.3", running["displayName"]!!.jsonPrimitive.content)
@@ -93,6 +94,7 @@ class BackendCommandStartListTest {
         assertEquals(homePaths.cacheDir("idea-community-2025.3.3").toString(), running["cachePath"]!!.jsonPrimitive.content)
 
         val stopped = installed.single { it["id"]!!.jsonPrimitive.content == "pycharm-community-2025.3.3" }
+        assertEquals(setOf("id", "productKey", "version", "displayName", "state", "pid", "installPath", "cachePath"), stopped.keys)
         assertEquals("installed", stopped["state"]!!.jsonPrimitive.content)
         assertNull(stopped["pid"]!!.jsonPrimitive.contentOrNull)
     }
@@ -109,8 +111,15 @@ class BackendCommandStartListTest {
         assertEquals("no managed backends installed; run 'devrig backend download <id>' first", root["hint"]!!.jsonPrimitive.content)
         val available = root["available"]!!.jsonArray.map { it.jsonObject }
         val idea = available.single { it["id"]!!.jsonPrimitive.content == "idea-community" }
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "releaseDate"), idea.keys)
         assertEquals("2025.3", idea["version"]!!.jsonPrimitive.content)
         assertEquals("2025-12-08", idea["releaseDate"]!!.jsonPrimitive.content)
+        assertEquals("", idea["licenseSymbol"]!!.jsonPrimitive.content)
+        assertEquals("", idea["licenseNote"]!!.jsonPrimitive.content)
+        val ultimate = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "releaseDate"), ultimate.keys)
+        assertEquals("*", ultimate["licenseSymbol"]!!.jsonPrimitive.content)
+        assertEquals("Requires a JetBrains license.", ultimate["licenseNote"]!!.jsonPrimitive.content)
     }
 
     private fun renderStartText(rows: List<InstalledBackendListRow>): String {
@@ -163,7 +172,8 @@ class BackendCommandStartListTest {
         ),
         AvailableBackendDownload(
             product = IdeProduct.IntelliJIdea,
-            version = null,
+            version = "2026.1.1",
+            releaseDate = "2026-04-23",
         ),
     )
 }
