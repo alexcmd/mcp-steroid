@@ -1,4 +1,5 @@
 import de.undercouch.gradle.tasks.download.Download
+import groovy.json.JsonOutput
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.file.RelativePath
 import java.nio.file.FileVisitOption
@@ -67,6 +68,12 @@ data class CorrettoPlatform(
     val archiveSuffix: String,
 )
 
+data class JdkManifestRow(
+    val os: String,
+    val cpu: String,
+    val downloadUrl: String,
+)
+
 data class JdkOverlapFileSnapshot(
     val platform: String,
     val relativePath: String,
@@ -92,6 +99,21 @@ fun jdkOverlapHashFile(path: Path): String {
     }
     return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 }
+
+fun sha512(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-512")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val bytesRead = input.read(buffer)
+            if (bytesRead < 0) break
+            if (bytesRead > 0) digest.update(buffer, 0, bytesRead)
+        }
+    }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+}
+
+fun stableJson(value: Any?): String = JsonOutput.prettyPrint(JsonOutput.toJson(value)) + "\n"
 
 fun jdkOverlapRelativePath(root: Path, file: Path): String =
     root.relativize(file).toString().replace(File.separatorChar, '/')
@@ -146,6 +168,32 @@ val correttoPlatforms = listOf(
     CorrettoPlatform("mac-arm", "macosx-aarch64.tar.gz"),
     CorrettoPlatform("windows-amd64", "windows-x64-jdk.zip"),
 )
+
+val jdkManifestRows = mapOf(
+    "linux-amd64" to JdkManifestRow(
+        os = "linux",
+        cpu = "x86-64",
+        downloadUrl = "$correttoBaseUrl/amazon-corretto-$correttoVersion-linux-x64.tar.gz",
+    ),
+    "linux-arm" to JdkManifestRow(
+        os = "linux",
+        cpu = "arm",
+        downloadUrl = "$correttoBaseUrl/amazon-corretto-$correttoVersion-linux-aarch64.tar.gz",
+    ),
+    "mac-arm" to JdkManifestRow(
+        os = "macOs",
+        cpu = "arm",
+        downloadUrl = "$correttoBaseUrl/amazon-corretto-$correttoVersion-macosx-aarch64.tar.gz",
+    ),
+    "windows-amd64" to JdkManifestRow(
+        os = "windows",
+        cpu = "x86-64",
+        downloadUrl = "$correttoBaseUrl/amazon-corretto-$correttoVersion-windows-x64-jdk.zip",
+    ),
+)
+require(jdkManifestRows.keys == correttoPlatforms.map { it.id }.toSet()) {
+    "jdkManifestRows out of sync with correttoPlatforms — keep both in lockstep"
+}
 
 val correttoDownloadDir = layout.buildDirectory.dir("jdk-download")
 val correttoExtractDir = layout.buildDirectory.dir("jdk-extracted")
@@ -436,6 +484,51 @@ correttoPlatforms.forEach { platform ->
         into(correttoExtractDir.map { it.dir(platform.id) })
     }
     extractAllJdks.configure { dependsOn(extractTask) }
+}
+
+val jdkArchiveFiles = correttoPlatforms.map { platform ->
+    tasks.named<Download>("downloadJdk_${platform.id}").map { it.outputs.files.singleFile }
+}
+val jdkManifestFile = layout.buildDirectory.file("jdk-manifest.json")
+
+val generateJdkManifest by tasks.registering {
+    group = "build"
+    description = "Emit JDK URL + SHA-512 entries for the npx-kt version.json"
+    dependsOn(correttoPlatforms.map { tasks.named("downloadJdk_${it.id}") })
+    inputs.property("correttoVersion", correttoVersion)
+    inputs.files(jdkArchiveFiles).withPropertyName("jdkArchives")
+    outputs.file(jdkManifestFile)
+
+    doLast {
+        val entries = correttoPlatforms.map { platform ->
+            val row = jdkManifestRows.getValue(platform.id)
+            val archive = tasks.named<Download>("downloadJdk_${platform.id}").get().outputs.files.singleFile
+            linkedMapOf(
+                "name" to "jdk",
+                "os" to row.os,
+                "cpu" to row.cpu,
+                "downloadUrl" to row.downloadUrl,
+                "sha-512" to sha512(archive),
+            )
+        }
+        val file = jdkManifestFile.get().asFile
+        file.parentFile.mkdirs()
+        file.writeText(stableJson(entries))
+    }
+}
+
+val jdkManifestElements by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "jdk-manifest"))
+    }
+}
+
+artifacts {
+    add(jdkManifestElements.name, jdkManifestFile) {
+        builtBy(generateJdkManifest)
+    }
 }
 
 val verifyAllJdks by tasks.registering {
