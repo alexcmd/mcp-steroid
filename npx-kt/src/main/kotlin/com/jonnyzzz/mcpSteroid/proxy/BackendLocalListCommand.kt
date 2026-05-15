@@ -2,6 +2,8 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -50,9 +52,21 @@ internal fun runBackendStartListCommand(
     homePaths: HomePaths,
     json: Boolean,
     processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
+    availableDownloads: suspend () -> List<AvailableBackendDownload> = {
+        collectAvailableBackendDownloads(versionResolver = ReleaseServiceAvailableBackendVersionResolver())
+    },
 ) {
     val rows = collectInstalledBackendListRows(homePaths, processInspector)
-    if (json) renderBackendStartListJson(rows, out) else renderBackendStartListText(rows, out)
+    val availableRows = if (rows.isEmpty()) {
+        runBlocking(Dispatchers.IO) { availableDownloads() }
+    } else {
+        null
+    }
+    if (json) {
+        renderBackendStartListJson(rows, out, availableRows)
+    } else {
+        renderBackendStartListText(rows, out, availableRows)
+    }
 }
 
 internal fun runBackendStopListCommand(
@@ -151,9 +165,24 @@ private fun readBackendPidOrNull(path: Path): Long? {
 private fun backendProductSortIndex(productKey: String): Int =
     IdeProduct.knownProducts.indexOfFirst { it.id == productKey }.takeIf { it >= 0 } ?: Int.MAX_VALUE
 
-internal fun renderBackendStartListText(rows: List<InstalledBackendListRow>, out: PrintStream) {
+internal fun renderBackendStartListText(
+    rows: List<InstalledBackendListRow>,
+    out: PrintStream,
+    availableDownloads: List<AvailableBackendDownload>? = null,
+) {
     if (rows.isEmpty()) {
-        out.println("No backends installed. Use 'devrig backend download <id>' first.")
+        if (availableDownloads == null) {
+            out.println("No backends installed. Use 'devrig backend download <id>' first.")
+        } else {
+            renderBackendDownloadListBanner(out)
+            out.println("No managed backends are installed yet.")
+            out.println()
+            renderBackendDownloadListRowsText(
+                rows = availableDownloads,
+                out = out,
+                afterRunLine = "Then: devrig backend start <id>",
+            )
+        }
         return
     }
     out.println("Installed backends:")
@@ -191,7 +220,11 @@ internal fun renderBackendStopListText(rows: List<RunningBackendListRow>, out: P
     out.println()
 }
 
-internal fun renderBackendStartListJson(rows: List<InstalledBackendListRow>, out: PrintStream) {
+internal fun renderBackendStartListJson(
+    rows: List<InstalledBackendListRow>,
+    out: PrintStream,
+    availableDownloads: List<AvailableBackendDownload>? = null,
+) {
     val payload = buildJsonObject {
         putToolJson()
         put("installed", buildJsonArray {
@@ -208,6 +241,10 @@ internal fun renderBackendStartListJson(rows: List<InstalledBackendListRow>, out
                 })
             }
         })
+        if (rows.isEmpty() && availableDownloads != null) {
+            put("available", availableBackendDownloadsJson(availableDownloads))
+            put("hint", "no managed backends installed; run 'devrig backend download <id>' first")
+        }
     }
     out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
 }

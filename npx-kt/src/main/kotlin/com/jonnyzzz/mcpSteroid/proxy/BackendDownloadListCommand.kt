@@ -145,6 +145,14 @@ internal fun renderBackendDownloadListBanner(out: PrintStream) {
 }
 
 internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownload>, out: PrintStream) {
+    renderBackendDownloadListRowsText(rows, out, afterRunLine = null)
+}
+
+internal fun renderBackendDownloadListRowsText(
+    rows: List<AvailableBackendDownload>,
+    out: PrintStream,
+    afterRunLine: String?,
+) {
     out.println("Available IDEs (defaults to latest stable):")
     out.println()
     if (rows.isNotEmpty()) {
@@ -179,28 +187,31 @@ internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownlo
     }
     out.println()
     out.println("Run:  devrig backend download <id> [--version <v>] [--allow-paid]")
+    afterRunLine?.let { out.println(it) }
     out.println()
 }
 
 internal fun renderBackendDownloadListJson(rows: List<AvailableBackendDownload>, out: PrintStream) {
     val payload = buildJsonObject {
         putToolJson()
-        put("available", buildJsonArray {
-            for (row in rows) {
-                add(buildJsonObject {
-                    put("id", row.product.id)
-                    put("code", row.product.code)
-                    put("displayName", row.product.displayName)
-                    put("licenseTier", row.product.licenseTier.cliValue)
-                    if (row.version == null) put("version", JsonNull) else put("version", row.version)
-                    row.releaseDate?.let { put("releaseDate", it) }
-                    put("requiresAllowPaid", row.requiresAllowPaid)
-                    row.versionLookupError?.let { put("versionLookupError", it) }
-                })
-            }
-        })
+        put("available", availableBackendDownloadsJson(rows))
     }
     out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
+}
+
+internal fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>) = buildJsonArray {
+    for (row in rows) {
+        add(buildJsonObject {
+            put("id", row.product.id)
+            put("code", row.product.code)
+            put("displayName", row.product.displayName)
+            put("licenseTier", row.product.licenseTier.cliValue)
+            if (row.version == null) put("version", JsonNull) else put("version", row.version)
+            row.releaseDate?.let { put("releaseDate", it) }
+            put("requiresAllowPaid", row.requiresAllowPaid)
+            row.versionLookupError?.let { put("versionLookupError", it) }
+        })
+    }
 }
 
 private fun AvailableBackendDownload.versionText(): String =

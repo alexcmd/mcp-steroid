@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -51,10 +52,20 @@ class BackendCommandStartListTest {
     }
 
     @Test
-    fun `empty text points at backend download`(@TempDir tempDir: Path) {
-        val text = renderStartText(collectInstalledBackendListRows(HomePaths(tempDir), FakeProcessInspector()))
+    fun `empty installed dir shows available downloads in text`(@TempDir tempDir: Path) {
+        val text = runStartListText(
+            homePaths = HomePaths(tempDir),
+            availableDownloads = sampleAvailableDownloads(),
+        )
 
-        assertEquals("No backends installed. Use 'devrig backend download <id>' first.\n", text)
+        assertTrue(text.startsWith("devrig v"), text)
+        assertTrue(text.contains("No managed backends are installed yet."), text)
+        assertTrue(text.contains("Available IDEs (defaults to latest stable):"), text)
+        assertTrue(text.contains("[1] idea-community"), text)
+        assertTrue(text.contains("2025.3"), text)
+        assertTrue(text.contains("2025-12-08"), text)
+        assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>] [--allow-paid]"), text)
+        assertTrue(text.contains("Then: devrig backend start <id>"), text)
     }
 
     @Test
@@ -84,6 +95,22 @@ class BackendCommandStartListTest {
         assertNull(stopped["pid"]!!.jsonPrimitive.contentOrNull)
     }
 
+    @Test
+    fun `empty installed dir shows available downloads in json`(@TempDir tempDir: Path) {
+        val root = runStartListJson(
+            homePaths = HomePaths(tempDir),
+            availableDownloads = sampleAvailableDownloads(),
+        )
+
+        assertEquals(setOf("tool", "installed", "available", "hint"), root.keys)
+        assertTrue(root["installed"]!!.jsonArray.isEmpty())
+        assertEquals("no managed backends installed; run 'devrig backend download <id>' first", root["hint"]!!.jsonPrimitive.content)
+        val available = root["available"]!!.jsonArray.map { it.jsonObject }
+        val idea = available.single { it["id"]!!.jsonPrimitive.content == "idea-community" }
+        assertEquals("2025.3", idea["version"]!!.jsonPrimitive.content)
+        assertEquals("2025-12-08", idea["releaseDate"]!!.jsonPrimitive.content)
+    }
+
     private fun renderStartText(rows: List<InstalledBackendListRow>): String {
         val buf = ByteArrayOutputStream()
         renderBackendStartListText(rows, PrintStream(buf, true, Charsets.UTF_8))
@@ -95,4 +122,46 @@ class BackendCommandStartListTest {
             renderBackendStartListJson(rows, PrintStream(buf, true, Charsets.UTF_8))
         }.toString(Charsets.UTF_8),
     ).jsonObject
+
+    private fun runStartListText(
+        homePaths: HomePaths,
+        availableDownloads: List<AvailableBackendDownload>,
+    ): String {
+        val buf = ByteArrayOutputStream()
+        runBackendStartListCommand(
+            out = PrintStream(buf, true, Charsets.UTF_8),
+            homePaths = homePaths,
+            json = false,
+            processInspector = FakeProcessInspector(),
+            availableDownloads = { availableDownloads },
+        )
+        return buf.toString(Charsets.UTF_8)
+    }
+
+    private fun runStartListJson(
+        homePaths: HomePaths,
+        availableDownloads: List<AvailableBackendDownload>,
+    ) = Json.parseToJsonElement(
+        ByteArrayOutputStream().also { buf ->
+            runBackendStartListCommand(
+                out = PrintStream(buf, true, Charsets.UTF_8),
+                homePaths = homePaths,
+                json = true,
+                processInspector = FakeProcessInspector(),
+                availableDownloads = { availableDownloads },
+            )
+        }.toString(Charsets.UTF_8),
+    ).jsonObject
+
+    private fun sampleAvailableDownloads(): List<AvailableBackendDownload> = listOf(
+        AvailableBackendDownload(
+            product = IdeProduct.IntelliJIdeaCommunity,
+            version = "2025.3",
+            releaseDate = "2025-12-08",
+        ),
+        AvailableBackendDownload(
+            product = IdeProduct.IntelliJIdea,
+            version = null,
+        ),
+    )
 }
