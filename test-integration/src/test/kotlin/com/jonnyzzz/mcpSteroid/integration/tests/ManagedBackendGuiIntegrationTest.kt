@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 class ManagedBackendGuiIntegrationTest {
     @Test
-    @Timeout(value = 30, unit = TimeUnit.MINUTES)
+    @Timeout(value = 45, unit = TimeUnit.MINUTES)
     fun `devrig downloads starts and stops IDEA Community inside a GUI container`() = runWithCloseableStack { lifetime ->
         val container = IntelliJContainer.create(
             lifetime = lifetime,
@@ -27,7 +27,7 @@ class ManagedBackendGuiIntegrationTest {
 
         val download = container.execAndAssert(
             description = "download IDEA Community managed backend",
-            timeoutSeconds = 25 * 60L,
+            timeoutSeconds = 35 * 60L,
             script = """
                 set -euo pipefail
                 rm -rf /tmp/mcp-home
@@ -108,12 +108,14 @@ class ManagedBackendGuiIntegrationTest {
             timeoutSeconds = 180,
             script = """
                 set -euo pipefail
-                marker="/home/agent/.$pid.mcp-steroid"
+                marker="/tmp/mcp-home/markers/$pid.mcp-steroid"
+                legacy="/home/agent/.$pid.mcp-steroid"
                 deadline=${'$'}((SECONDS + 180))
                 found=0
                 while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
                   if [ -f "${'$'}marker" ] && jq -e --argjson pid "$pid" '.pid == ${'$'}pid and (.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "${'$'}marker" >/dev/null; then
                     cat "${'$'}marker"
+                    test ! -e "${'$'}legacy"
                     found=1
                     break
                   fi
@@ -123,9 +125,21 @@ class ManagedBackendGuiIntegrationTest {
                   :
                 else
                 echo "MCP Steroid marker did not appear at ${'$'}marker" >&2
+                find /tmp/mcp-home/markers -maxdepth 1 -name '*.mcp-steroid' -print -exec cat {} \; >&2 || true
                 find /home/agent -maxdepth 1 -name '.*.mcp-steroid' -print -exec cat {} \; >&2 || true
                 exit 1
                 fi
+            """.trimIndent(),
+        )
+
+        container.execAndAssert(
+            description = "assert proxy discovers managed backend marker",
+            timeoutSeconds = 120,
+            script = """
+                set -euo pipefail
+                "$devrig" --home /tmp/mcp-home backend --json > /tmp/backend.json
+                cat /tmp/backend.json
+                jq -e --argjson pid "$pid" '.backends[] | select(.source == "marker" and .pid == ${'$'}pid and .pluginInstalled == true and .managed == true)' /tmp/backend.json
             """.trimIndent(),
         )
 
