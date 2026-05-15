@@ -8,6 +8,29 @@ The `McpScriptContext` is the receiver (`this`) of your script body. It provides
 
 **Source**: [`src/main/kotlin/com/jonnyzzz/intellij/mcp/execution/McpScriptContext.kt`](../../kotlin/com/jonnyzzz/intellij/mcp/execution/McpScriptContext.kt)
 
+### Real helpers vs invented names
+
+These names exist on `McpScriptContext` (or among the default imports) — use them:
+`readAction`, `writeAction`, `smartReadAction`, `writeIntentReadAction`,
+`findFile`, `findPsiFile`, `findProjectFile`, `findProjectFiles`,
+`findProjectPsiFile`, `runInspectionsDirectly`, `projectScope`, `allScope`,
+`waitForSmartMode`, `project`, `printJson`, `progress`, `takeIdeScreenshot`,
+`disposable`.
+
+These names **do not exist** — do not write them. Use the replacement on the right:
+
+| Invented (does not compile) | Use instead |
+|---|---|
+| `buildProject()`, `compileProject()` | `ProjectTaskManager.getInstance(project).buildAllModules().await()` — needs `import com.intellij.task.ProjectTaskManager` and `import org.jetbrains.concurrency.await` (neither is in the default imports) |
+| `createProjectFile("path", text)` | `findProjectFile("path")` for an existing file. For a **new** file, do everything in one `writeAction { }` block — `LocalFileSystem` alone does not create files. Pattern: `writeAction { val dir = VfsUtil.createDirectoryIfMissing(project.guessProjectDir()!!, "rel/path"); val vf = dir.createChildData(this, "Name.kt"); VfsUtil.saveText(vf, text) }` |
+| `context.project` | Just `project` — it is already in scope (no `context.` prefix) |
+| `projectDir`, `findProjectDir()` | `project.basePath` or `project.guessProjectDir()` |
+| `readText(vf)` (top-level function) | `String(vf.contentsToByteArray(), vf.charset)` — `vf.readText()` also exists as a `VirtualFile` extension but the byte-array form is what the rest of the corpus uses |
+
+Each invented name appears verbatim in this table on purpose — if a script
+fails with e.g. `unresolved reference 'buildProject'`, grep this article for
+the name and the right-hand column is the recipe.
+
 ### Core Properties
 
 ```kotlin
@@ -117,6 +140,21 @@ if (buildFile != null) {
 > **`ProblemDescriptor` results carry a live PSI reference, not a snapshot.** Accessing `.text`, `.textRange`, `psiElement.containingFile`, etc. on a returned descriptor *outside a `readAction { }` / `smartReadAction { }`* throws `ReadAccessException`. Consume the descriptors inside the same read action, or re-enter one in your post-processing loop.
 
 ### Daemon Analysis & Highlights
+
+> **Do not call IntelliJ's daemon-highlighting internals directly from a script.**
+> Symbols like `DaemonCodeAnalyzerImpl`, `DaemonCodeAnalyzerImpl.runMainPasses`,
+> `DaemonProgressIndicator`, and `HighlightingSession` require running under a
+> `DaemonProgressIndicator` with a stored `HighlightingSession` — neither
+> exists in a `steroid_execute_code` script context. Typical failures:
+> `must be run under DaemonProgressIndicator, but got: null` and
+> `No HighlightingSession stored in …`.
+>
+> For inspection diagnostics, use the supported recipes:
+> `runInspectionsDirectly(file)` (above) for the full enabled-inspection set,
+> [Inspect and fix](mcp-steroid://ide/inspect-and-fix) for a single inspection
+> with quick fix, or
+> [Inspection summary](mcp-steroid://ide/inspection-summary) for the full
+> project report.
 
 ```kotlin
 import com.intellij.openapi.fileEditor.FileEditorManager

@@ -45,7 +45,10 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 **Quick Start:**
 - Code is a suspend function body (never use runBlocking)
 - `waitForSmartMode()` runs automatically
-- Available: `project`, `println()`, `printJson()`, `progress()`
+- **Available in scope** (no imports needed): `project`, `readAction`, `writeAction`, `smartReadAction`, `writeIntentReadAction`, `findFile`, `findProjectFile`, `findProjectFiles`, `findPsiFile`, `findProjectPsiFile`, `runInspectionsDirectly`, `projectScope`, `allScope`, `waitForSmartMode`, `println`, `printJson`, `progress`, `printException`, `takeIdeScreenshot`, `disposable`.
+- **Use `project` directly** — not `context.project` (no `context.` prefix exists).
+- **Do not invent helpers.** `buildProject()`, `compileProject()`, `createProjectFile()`, `projectDir`, `findProjectDir()`, top-level `readText(vf)` do not exist. For build use `ProjectTaskManager.getInstance(project).buildAllModules().await()` (needs `import com.intellij.task.ProjectTaskManager` + `import org.jetbrains.concurrency.await`); for new files create+write inside one `writeAction` using `VfsUtil.createDirectoryIfMissing` + `dir.createChildData` + `VfsUtil.saveText`; for the project root use `project.basePath` or `project.guessProjectDir()`; for file content use `String(vf.contentsToByteArray(), vf.charset)`. Full table: `mcp-steroid://skill/coding-with-intellij-context-api` → "Real helpers vs invented names".
+- **Do not call daemon-highlighting internals** (`DaemonCodeAnalyzerImpl`, `DaemonProgressIndicator`, `HighlightingSession`) — they require state that does not exist in a script context. For inspection diagnostics use `runInspectionsDirectly(file)` or `mcp-steroid://ide/inspect-and-fix`.
 
 **Surface is fixed.** `McpScriptContext` won't grow new helpers — call IntelliJ APIs directly. See `mcp-steroid://skill/design-philosophy` Tenet 3.
 
