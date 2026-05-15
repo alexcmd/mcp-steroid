@@ -51,7 +51,6 @@ internal class ReleaseServiceAvailableBackendVersionResolver(
             product = product,
             channel = IdeChannel.STABLE,
             os = os,
-            preferWindowsZip = true,
             version = null,
         )
         AvailableBackendRelease(

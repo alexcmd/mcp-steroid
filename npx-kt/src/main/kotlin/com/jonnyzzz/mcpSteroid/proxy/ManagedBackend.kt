@@ -159,7 +159,6 @@ internal class DefaultManagedBackendDownloader(
             product = id.product,
             channel = IdeChannel.STABLE,
             os = os,
-            preferWindowsZip = true,
             version = id.version,
         )
         BackendDownloadResolution(
@@ -183,7 +182,7 @@ internal class DefaultManagedBackendDownloader(
         ).requirePaidConsent()
 
         Files.createDirectories(archiveDownloadDir)
-        val archive = distribution.resolveAndDownload(archiveDownloadDir.toFile(), os = os, preferWindowsZip = true)
+        val archive = distribution.resolveAndDownload(archiveDownloadDir.toFile(), os = os)
         unpackIdeArchive(archive, targetDir.toFile())
         sha256(archive.toPath())
     }

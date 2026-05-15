@@ -36,16 +36,14 @@ fun resolveAndroidStudioArchiveUrl(
     channel: IdeChannel,
     os: HostOs,
     architecture: HostArchitecture,
-    preferWindowsZip: Boolean,
 ): String {
-    return resolveAndroidStudioArchive(channel, os, architecture, preferWindowsZip, version = null).url
+    return resolveAndroidStudioArchive(channel, os, architecture, version = null).url
 }
 
 fun resolveAndroidStudioArchive(
     channel: IdeChannel,
     os: HostOs,
     architecture: HostArchitecture,
-    preferWindowsZip: Boolean,
     version: String?,
 ): IdeArchiveResolution {
     require(channel == IdeChannel.STABLE) {
@@ -84,8 +82,7 @@ fun resolveAndroidStudioArchive(
                 "Android Studio does not publish a Windows ARM64 build. " +
                     "Pick x86_64 or another product."
             }
-            if (preferWindowsZip) listOf("-windows.zip", "-windows.exe")
-            else listOf("-windows.exe", "-windows.zip")
+            listOf("-windows.exe")
         }
     }
 

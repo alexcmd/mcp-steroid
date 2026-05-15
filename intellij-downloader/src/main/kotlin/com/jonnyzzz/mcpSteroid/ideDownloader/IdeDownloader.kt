@@ -14,19 +14,16 @@ private val ideDownloaderLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.
  *
  * @param downloadDir the directory to store downloaded archives
  * @param os the target operating system (default: auto-detected)
- * @param preferWindowsZip on Windows, prefer the `.win.zip` over the `.exe` installer
- *  (avoids the need for 7zip on the host). Defaults to true.
  * @return the local file containing the IDE archive
  */
 fun IdeDistribution.resolveAndDownload(
     downloadDir: File,
     os: HostOs = resolveHostOs(),
-    preferWindowsZip: Boolean = true,
 ): File {
     requirePaidConsent()
     downloadDir.mkdirs()
 
-    val (url, fileName) = resolveUrlAndFileName(os, preferWindowsZip)
+    val (url, fileName) = resolveUrlAndFileName(os)
     val destFile = File(downloadDir, fileName)
 
     if (destFile.exists()) {
@@ -41,7 +38,6 @@ fun IdeDistribution.resolveAndDownload(
 
 private fun IdeDistribution.resolveUrlAndFileName(
     os: HostOs,
-    preferWindowsZip: Boolean,
 ): Pair<String, String> {
     return when (this) {
         is IdeDistribution.FromUrl -> {
@@ -49,7 +45,7 @@ private fun IdeDistribution.resolveUrlAndFileName(
             url to resolvedName
         }
         is IdeDistribution.Latest -> {
-            val resolved = resolveArchive(product, channel, os, preferWindowsZip = preferWindowsZip)
+            val resolved = resolveArchive(product, channel, os)
             val resolvedUrl = resolved.url
             val arch = resolveHostArchitecture()
             val fallbackName = if (arch.isArmArch) "${product.id}-${channel.name.lowercase()}-arm.tar.gz"

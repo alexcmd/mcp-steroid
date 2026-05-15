@@ -23,15 +23,12 @@ private val ideDownloaderMainLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSter
  *                        archive extension: .tar.gz / .tgz / .zip / .dmg (mac host only) / .exe
  *   --allow-paid         Required to download paid IDEs (IntelliJ IDEA Ultimate, PyCharm Pro).
  *                        Free + free-for-non-commercial IDEs don't need this flag.
- *   --prefer-windows-zip on Windows, prefer the .win.zip variant over the .exe installer
- *                        (default: true; pass `false` to force the .exe path).
  */
 fun main(args: Array<String>) {
     val argsMap = parseArgs(args)
     val outputDir = File(argsMap["--output-dir"] ?: error("--output-dir is required"))
     val url = argsMap["--url"]
     val allowPaid = argsMap["--allow-paid"]?.toBooleanStrictOrNull() ?: false
-    val preferWindowsZip = argsMap["--prefer-windows-zip"]?.toBooleanStrictOrNull() ?: true
 
     val os = argsMap["--os"]?.let { raw ->
         when (raw.trim().lowercase()) {
@@ -58,7 +55,7 @@ fun main(args: Array<String>) {
         IdeDistribution.Latest(product = product, channel = channel, acceptPaid = allowPaid)
     }
 
-    val archiveFile = distribution.resolveAndDownload(outputDir, os, preferWindowsZip = preferWindowsZip)
+    val archiveFile = distribution.resolveAndDownload(outputDir, os)
     ideDownloaderMainLog.debug("[IDE-DOWNLOAD] Archive: {}", archiveFile.absolutePath)
 
     val unpackDir = argsMap["--unpack-dir"]
@@ -68,11 +65,13 @@ fun main(args: Array<String>) {
 }
 
 private fun parseArgs(args: Array<String>): Map<String, String> {
+    val knownArgs = setOf("--product", "--channel", "--output-dir", "--url", "--os", "--unpack-dir", "--allow-paid")
     val result = mutableMapOf<String, String>()
     var i = 0
     while (i < args.size) {
         val key = args[i]
         require(key.startsWith("--")) { "Expected argument key starting with --, got: $key" }
+        require(key in knownArgs) { "Unknown argument: $key" }
         require(i + 1 < args.size) { "Missing value for argument: $key" }
         result[key] = args[i + 1]
         i += 2

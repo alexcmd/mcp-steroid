@@ -30,20 +30,8 @@ class IdeReleaseLookupTest {
     }
 
     @Test
-    fun `resolves IDEA Ultimate stable archive URL for Windows x64 (zip preferred)`() {
-        // IDEA Ultimate publishes windowsZip for x64. ARM64 has no windowsZipARM64 yet so
-        // the resolver intentionally falls back to .exe — that's covered in the matrix test.
-        val url = resolveArchiveUrl(
-            IdeProduct.IntelliJIdea, IdeChannel.STABLE,
-            os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64,
-            preferWindowsZip = true,
-        )
-        assertTrue("Expected .win.zip URL, got: $url", url.endsWith(".win.zip") || url.endsWith(".zip"))
-    }
-
-    @Test
-    fun `resolves IDEA Ultimate stable archive URL for Windows (exe forced)`() {
-        val url = resolveArchiveUrl(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.WINDOWS, preferWindowsZip = false)
+    fun `resolves IDEA Ultimate stable archive URL for Windows`() {
+        val url = resolveArchiveUrl(IdeProduct.IntelliJIdea, IdeChannel.STABLE, os = HostOs.WINDOWS)
         assertTrue("Expected .exe URL, got: $url", url.endsWith(".exe"))
     }
 
@@ -64,24 +52,11 @@ class IdeReleaseLookupTest {
                     IdeProduct.IntelliJIdeaCommunity,
                     IdeChannel.STABLE,
                     os = os,
-                    architecture = arch,
-                    preferWindowsZip = false, // force the canonical platform installer for shape assertions
+                    architecture = arch
                 )
                 assertExpectedExtension(IdeProduct.IntelliJIdeaCommunity, os, arch, url)
             }
         }
-    }
-
-    @Test
-    fun `IntelliJ Community on Windows x64 yields a zip when zip preferred`() {
-        // IIC publishes windowsZip for x64. On ARM64 there is no windowsZipARM64 yet so
-        // the resolver correctly falls back to the .exe installer — see the matrix test.
-        val url = resolveArchiveUrl(
-            IdeProduct.IntelliJIdeaCommunity, IdeChannel.STABLE,
-            os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64,
-            preferWindowsZip = true,
-        )
-        assertTrue("Expected .zip / .win.zip, got: $url", url.endsWith(".zip") || url.endsWith(".win.zip"))
     }
 
     // ---------- new: PyCharm Community (PCC) on every OS × arch ----------
@@ -95,25 +70,9 @@ class IdeReleaseLookupTest {
                     IdeChannel.STABLE,
                     os = os,
                     architecture = arch,
-                    preferWindowsZip = false,
                 )
                 assertExpectedExtension(IdeProduct.PyCharmCommunity, os, arch, url)
             }
-        }
-    }
-
-    @Test
-    fun `PyCharm Community on Windows yields a zip when zip preferred`() {
-        // PyCharm Community is the one product that publishes both windowsZip and
-        // windowsZipARM64 — so every arch should resolve to .zip when preferred.
-        for (arch in HostArchitecture.values()) {
-            val url = resolveArchiveUrl(
-                IdeProduct.PyCharmCommunity, IdeChannel.STABLE,
-                os = HostOs.WINDOWS, architecture = arch,
-                preferWindowsZip = true,
-            )
-            assertTrue("Expected .zip / .win.zip on Windows + arch=$arch, got: $url",
-                url.endsWith(".zip") || url.endsWith(".win.zip"))
         }
     }
 
@@ -134,21 +93,10 @@ class IdeReleaseLookupTest {
     }
 
     @Test
-    fun `Android Studio on Windows x64 yields zip when zip preferred`() {
+    fun `Android Studio on Windows x64 yields exe`() {
         val url = resolveArchiveUrl(
             IdeProduct.AndroidStudio, IdeChannel.STABLE,
             os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64,
-            preferWindowsZip = true,
-        )
-        assertTrue("Expected .zip URL, got: $url", url.endsWith("-windows.zip"))
-    }
-
-    @Test
-    fun `Android Studio on Windows x64 yields exe when zip not preferred`() {
-        val url = resolveArchiveUrl(
-            IdeProduct.AndroidStudio, IdeChannel.STABLE,
-            os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64,
-            preferWindowsZip = false,
         )
         assertTrue("Expected .exe URL, got: $url", url.endsWith("-windows.exe"))
     }
@@ -201,22 +149,13 @@ class IdeReleaseLookupTest {
     // ---------- download-key matrix ----------
 
     @Test
-    fun `resolveDownloadKey maps correctly without zip preference`() {
+    fun `resolveDownloadKey maps correctly`() {
         assertEquals("linux", resolveDownloadKey(HostOs.LINUX, HostArchitecture.X86_64))
         assertEquals("linuxARM64", resolveDownloadKey(HostOs.LINUX, HostArchitecture.ARM64))
         assertEquals("mac", resolveDownloadKey(HostOs.MAC, HostArchitecture.X86_64))
         assertEquals("macM1", resolveDownloadKey(HostOs.MAC, HostArchitecture.ARM64))
         assertEquals("windows", resolveDownloadKey(HostOs.WINDOWS, HostArchitecture.X86_64))
         assertEquals("windowsARM64", resolveDownloadKey(HostOs.WINDOWS, HostArchitecture.ARM64))
-    }
-
-    @Test
-    fun `resolveDownloadKey switches to zip when preferred`() {
-        assertEquals("windowsZip", resolveDownloadKey(HostOs.WINDOWS, HostArchitecture.X86_64, preferWindowsZip = true))
-        assertEquals("windowsZipARM64", resolveDownloadKey(HostOs.WINDOWS, HostArchitecture.ARM64, preferWindowsZip = true))
-        // Non-Windows is unaffected.
-        assertEquals("linux", resolveDownloadKey(HostOs.LINUX, HostArchitecture.X86_64, preferWindowsZip = true))
-        assertEquals("macM1", resolveDownloadKey(HostOs.MAC, HostArchitecture.ARM64, preferWindowsZip = true))
     }
 
     // ---------- product enum / aliases ----------
@@ -331,7 +270,7 @@ class IdeReleaseLookupTest {
      * Verifies that the resolved URL's extension matches the platform expectation.
      * IDEs ship one canonical archive type per platform:
      *  - linux / mac → .tar.gz / .dmg
-     *  - windows → .exe (installer) when preferWindowsZip = false
+     *  - windows → .exe (installer)
      */
     private fun assertExpectedExtension(product: IdeProduct, os: HostOs, arch: HostArchitecture, url: String) {
         val expectedSuffixes: List<String> = when (os) {

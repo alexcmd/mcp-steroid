@@ -27,48 +27,15 @@ data class IdeArchiveResolution(
 /**
  * Returns the JetBrains products-API download key for the given OS / architecture combo.
  *
- * When [preferWindowsZip] is `true`, Windows downloads resolve to the `windowsZip` /
- * `windowsZipARM64` variant. That avoids the NSIS .exe → 7zip extraction path entirely
- * for IDEs that publish a plain `.win.zip` (Community editions, all 2024.x+ IDEs).
- * Fallback to the .exe download key happens at lookup time if `windowsZip` is missing.
- *
  * @see <a href="https://data.services.jetbrains.com/products">JetBrains Products API</a>
  */
 fun resolveDownloadKey(
     os: HostOs,
     architecture: HostArchitecture,
-    preferWindowsZip: Boolean = false,
 ): String = when (os) {
     HostOs.LINUX -> if (architecture.isArmArch) "linuxARM64" else "linux"
     HostOs.MAC -> if (architecture.isArmArch) "macM1" else "mac"
-    HostOs.WINDOWS -> when {
-        preferWindowsZip && architecture.isArmArch -> "windowsZipARM64"
-        preferWindowsZip -> "windowsZip"
-        architecture.isArmArch -> "windowsARM64"
-        else -> "windows"
-    }
-}
-
-/**
- * Returns the preferred + fallback download keys for the given OS / architecture.
- *
- * Used by [resolveArchiveUrl] when [preferWindowsZip] is on: if the products API
- * doesn't list the zip variant for this combo (e.g. older releases), the resolver
- * silently falls back to the .exe.
- */
-private fun downloadKeyCandidates(
-    os: HostOs,
-    architecture: HostArchitecture,
-    preferWindowsZip: Boolean,
-): List<String> {
-    if (os != HostOs.WINDOWS || !preferWindowsZip) {
-        return listOf(resolveDownloadKey(os, architecture, preferWindowsZip = preferWindowsZip))
-    }
-    // Windows + preferZip: try zip first, then exe.
-    return listOf(
-        resolveDownloadKey(os, architecture, preferWindowsZip = true),
-        resolveDownloadKey(os, architecture, preferWindowsZip = false),
-    )
+    HostOs.WINDOWS -> if (architecture.isArmArch) "windowsARM64" else "windows"
 }
 
 /**
@@ -78,7 +45,6 @@ private fun downloadKeyCandidates(
  * @param channel the release channel (stable or EAP)
  * @param os the target operating system (default: auto-detected)
  * @param architecture the host architecture for platform-specific archive selection
- * @param preferWindowsZip on Windows, prefer the `.win.zip` (no 7zip needed) over the `.exe` installer
  * @return the direct download URL for the archive
  */
 fun resolveArchiveUrl(
@@ -86,9 +52,8 @@ fun resolveArchiveUrl(
     channel: IdeChannel,
     os: HostOs = resolveHostOs(),
     architecture: HostArchitecture = resolveHostArchitecture(),
-    preferWindowsZip: Boolean = true,
 ): String {
-    return resolveArchive(product, channel, os, architecture, preferWindowsZip).url
+    return resolveArchive(product, channel, os, architecture).url
 }
 
 fun resolveArchive(
@@ -96,12 +61,11 @@ fun resolveArchive(
     channel: IdeChannel,
     os: HostOs = resolveHostOs(),
     architecture: HostArchitecture = resolveHostArchitecture(),
-    preferWindowsZip: Boolean = true,
     version: String? = null,
 ): IdeArchiveResolution {
     // Android Studio is a Google product and lives on a different feed.
     if (product === IdeProduct.AndroidStudio) {
-        return resolveAndroidStudioArchive(channel, os, architecture, preferWindowsZip, version)
+        return resolveAndroidStudioArchive(channel, os, architecture, version)
     }
 
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
@@ -119,7 +83,7 @@ fun resolveArchive(
         ?: error("Products response does not contain '${product.code}' entry")
 
     val releases = (matchingProduct["releases"] as? JsonArray) ?: JsonArray(emptyList())
-    val candidates = downloadKeyCandidates(os, architecture, preferWindowsZip)
+    val downloadKey = resolveDownloadKey(os, architecture)
     val wantedVersion = version?.takeIf { it.isNotBlank() }
 
     for (release in releases.filterIsInstance<JsonObject>()) {
@@ -132,26 +96,24 @@ fun resolveArchive(
         if (wantedVersion != null && wantedVersion != releaseVersion && wantedVersion != build) continue
 
         val downloads = release["downloads"] as? JsonObject ?: continue
-        for (downloadKey in candidates) {
-            val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
-            val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
-            if (link.isBlank()) continue
-            return IdeArchiveResolution(
-                product = product,
-                channel = channel,
-                version = releaseVersion,
-                build = build,
-                url = link,
-                downloadKey = downloadKey,
-                releaseDate = releaseDate,
-            )
-        }
+        val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
+        val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
+        if (link.isBlank()) continue
+        return IdeArchiveResolution(
+            product = product,
+            channel = channel,
+            version = releaseVersion,
+            build = build,
+            url = link,
+            downloadKey = downloadKey,
+            releaseDate = releaseDate,
+        )
     }
 
     val versionMessage = if (wantedVersion == null) "latest" else "version '$wantedVersion'"
     error(
         "Unable to resolve $versionMessage '${channel.apiValue}' release for product '${product.code}' " +
-            "(tried download keys ${candidates.joinToString()}) from $url"
+            "(tried download key $downloadKey) from $url"
     )
 }
 

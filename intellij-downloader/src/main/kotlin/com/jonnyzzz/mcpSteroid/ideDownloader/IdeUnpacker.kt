@@ -260,8 +260,8 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
 
     val sevenZip = SevenZipLocator.locate() ?: error(
         "No 7z binary available to extract Windows installer ${archiveFile.name}. " +
-            "On Linux/Mac the bundled 7zz resource is expected (check the JAR's `7z/` resources); " +
-            "on Windows install 7-Zip or pick the .win.zip variant via preferWindowsZip=true."
+            "On Linux/Mac the bundled 7zz binary is expected; " +
+            "on Windows install 7-Zip or use the npx-kt distribution with bundled 7z."
     )
 
     unpackDir.mkdirs()
