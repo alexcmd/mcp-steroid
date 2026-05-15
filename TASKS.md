@@ -972,26 +972,60 @@ instead.
 
 ## B5 — DPAIA regression prompts in `:test-experiments`
 
-New test class under `test-experiments/src/test/kotlin/...` that fires
-each invented-helper / threading-misuse / daemon-API snippet from #47,
-#48, #51 verbatim and asserts the agent self-corrects within one retry.
+**Landed as a scaffold** (commit pending). `DpaiaPromptCorpusRegressionTest`
+under `test-experiments/.../tests/` covers three representative failure
+clusters (one test per cluster). Each test:
 
-- Gemini-key-aware: use `DockerGeminiSession` with
-  `skipTestWhenKeyMissing = true` per CLAUDE.md.
-- Not parallel (CLAUDE.md: "never run `:test-experiments` tests in
-  parallel" — each starts a Docker container).
-- One test per pattern; minimal fixtures.
+1. Spins a Docker IDE container with `IntelliJProject.ThisLoggerProject`
+2. Hands the Claude agent a neutrally phrased task (no forbidden helper
+   names in the prompt — the corpus is supposed to carry the steer)
+3. Parses the agent's raw NDJSON transcript via `readAgentExecCodeBodies`
+   to inspect actual `steroid_execute_code` script bodies
+4. Asserts on the script-body content, not the agent's final text
 
-Patterns to cover (one test each, names suggested):
-- `BuildProjectInventedHelper` — script calling `buildProject()`
-- `CreateProjectFileInventedHelper` — `createProjectFile(...)`
-- `ContextDotProject` — `val p = context.project`
-- `ProjectDirInvented` — `val dir = projectDir`
-- `WriteFromWrongThread` — VFS save without `writeAction`
-- `EdtRequiredAccess` — UI/action call without `Dispatchers.EDT`
-- `DirectDaemonIndicator` — `DaemonCodeAnalyzerImpl.runMainPasses(...)`
+The script-body inspection is the key design choice: an earlier draft
+checked the combined agent transcript, but the agent's
+`steroid_fetch_resource` calls echo the article body verbatim — so any
+substring match against the transcript passes on article echo even when
+the agent never used the helper. Both reviewers (Claude + Codex) flagged
+this and the rewrite addresses it.
 
-This is the largest task in B; defer until B1–B4 land if scope is tight.
+Tests in v1:
+- `agent compiles project via supported IntelliJ build API` (#47) —
+  must call `ProjectTaskManager.getInstance(project).buildAllModules()`;
+  must not call `buildProject(`, `compileProject(`, `createProjectFile(`.
+- `agent wraps VFS write in the correct threading wrapper` (#48) —
+  must pair a writeAction/backgroundWriteAction/edtWriteAction wrapper
+  with a `VfsUtil.saveText` / `setBinaryContent` / Document-write call.
+- `agent uses supported inspection helper not daemon highlighting
+  internals` (#51) — must use `runInspectionsDirectly` or
+  `InspectionEngine.*`; must not touch `DaemonCodeAnalyzerImpl`,
+  `DaemonProgressIndicator`, or `HighlightingSession`.
+
+**Notes for the first-run shakedown:**
+- Uses `aiAgents.claude` (not Gemini). Per `test-integration/CLAUDE.md`,
+  `ANTHROPIC_TOKEN_KEY_REF` is configured on TC but `GEMINI_API_KEY` is
+  not, so Gemini tests would skip everywhere. Claude is the only agent
+  that actually exercises the prompt corpus on TC today.
+- Compile-checked but **not run end-to-end** in the authoring session
+  (each test ~5–25 min Docker startup + Claude run + asserts, requires
+  ANTHROPIC_API_KEY). The first run on TC will surface any marker-
+  parsing or prompt-phrasing issues; treat as scaffold shakedown.
+- Per-test isolated `IntelliJContainer` (matches
+  `ThisLoggerComparisonTest`'s pattern). A shared-container variant
+  (companion object + `@BeforeAll`/`@AfterAll`, per the IMPROVEMENTS.md
+  harness pattern in `test-experiments/CLAUDE.md`) is a follow-up.
+
+**Open follow-ups (defer until v1 has at least one green run):**
+- File-content verification for the writeAction test — confirm
+  `Logging.kt` actually contains the marker line after the run. Adds
+  belt-and-suspenders behind the script-body check.
+- Cover the remaining patterns from #47/#48/#51 individually:
+  `context.project`, `projectDir`/`findProjectDir`, `readText(vf)`,
+  EDT-only access, write-from-wrong-thread runtime error recovery.
+  Each is a new `@Test` method following the same shape.
+- Migrate to shared `IntelliJContainer` via `@BeforeAll` to amortize the
+  ~2 min IDE startup across the suite.
 
 # Landed — Cluster C: structured apply_patch recovery hints (#49, #50) (2026-05-15)
 
