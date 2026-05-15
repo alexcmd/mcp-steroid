@@ -1,4 +1,5 @@
 import de.undercouch.gradle.tasks.download.Download
+import org.gradle.api.artifacts.Configuration
 import org.gradle.api.file.RelativePath
 import java.nio.file.FileVisitOption
 import java.nio.file.Files
@@ -511,6 +512,56 @@ posixAuditPlatforms.forEach { platform ->
         }
     }
     auditJdkPermissions.configure { dependsOn(audit) }
+}
+
+val correttoPlatformElements: Map<String, Configuration> =
+    correttoPlatforms.associate { platform ->
+        val configName = "jdk${platform.id.split('-').joinToString("") { it.replaceFirstChar(Char::uppercase) }}Elements"
+        val config = configurations.create(configName) {
+            isCanBeConsumed = true
+            isCanBeResolved = false
+            attributes {
+                attribute(
+                    Usage.USAGE_ATTRIBUTE,
+                    objects.named(Usage::class, "jdk-${platform.id}"),
+                )
+            }
+        }
+
+        val builderTask = if (platform.id == "windows-amd64") {
+            tasks.named("extractJdk_${platform.id}")
+        } else {
+            tasks.named("auditJdkPermissions_${platform.id}")
+        }
+        artifacts.add(config.name, correttoExtractDir.map { it.dir(platform.id) }) {
+            builtBy(builderTask)
+        }
+
+        platform.id to config
+    }
+
+val verifyJdkConfigurations by tasks.registering {
+    group = "verification"
+    description = "Smoke-test that every jdk-<platform> consumable configuration resolves"
+    doLast {
+        correttoPlatforms.forEach { platform ->
+            val cfgName = correttoPlatformElements.getValue(platform.id).name
+            val cfg = project.configurations.getByName(cfgName)
+            require(cfg.isCanBeConsumed) { "$cfgName must be consumable" }
+            require(!cfg.isCanBeResolved) { "$cfgName must NOT be resolvable" }
+            require(cfg.attributes.contains(Usage.USAGE_ATTRIBUTE)) {
+                "$cfgName must declare Usage attribute"
+            }
+            val usage = cfg.attributes.getAttribute(Usage.USAGE_ATTRIBUTE)
+            require(usage?.name == "jdk-${platform.id}") {
+                "$cfgName Usage mismatch: got $usage, expected jdk-${platform.id}"
+            }
+            require(cfg.outgoing.artifacts.isNotEmpty()) {
+                "$cfgName has no outgoing artifacts"
+            }
+        }
+        logger.lifecycle("[jdk-downloader] all 4 jdk-<platform> configurations look healthy")
+    }
 }
 
 extractAllJdks.configure { dependsOn(verifyAllJdks, auditJdkPermissions) }
