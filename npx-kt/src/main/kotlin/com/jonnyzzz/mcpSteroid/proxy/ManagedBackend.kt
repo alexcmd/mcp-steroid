@@ -19,9 +19,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.nio.channels.FileChannel
+import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -251,6 +254,12 @@ internal class BackendManager(
 
     override suspend fun start(id: BackendId): StartResult {
         homePaths.mkdirsAll()
+        return withGlobalBackendOperationLock {
+            startLocked(id)
+        }
+    }
+
+    private suspend fun startLocked(id: BackendId): StartResult {
         val resolved = resolveConcreteId(id)
         val descriptor = loadDescriptor(resolved)
         val running = scanRunningManagedProcesses()
@@ -293,6 +302,29 @@ internal class BackendManager(
             ideaLogPath = logDir.resolve("idea.log"),
             configPath = cacheDir.resolve("config"),
         )
+    }
+
+    private suspend fun <T> withGlobalBackendOperationLock(block: suspend () -> T): T {
+        Files.createDirectories(homePaths.stateDir)
+        val lockPath = homePaths.stateDir.resolve("global.lock")
+        val channel = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+        try {
+            val lock = try {
+                channel.tryLock()
+            } catch (e: OverlappingFileLockException) {
+                null
+            }
+            if (lock == null) {
+                throw ManagedBackendLockException("another devrig backend operation is in progress; retry shortly")
+            }
+            try {
+                return block()
+            } finally {
+                lock.release()
+            }
+        } finally {
+            channel.close()
+        }
     }
 
     override suspend fun stop(id: BackendId): StopResult {

@@ -2,7 +2,11 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -10,6 +14,7 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.exists
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -138,6 +143,52 @@ class SingleInstanceLockTest {
         assertTrue(error.contains("cleanup stale state under ${homePaths.stateDir}"), error)
     }
 
+    @Test
+    fun `concurrent starts fail one caller while the global operation lock is held`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        installStubBackend(homePaths, id = "idea-community-2025.3.3")
+        val firstScanEntered = CompletableDeferred<Unit>()
+        val releaseFirstScan = CompletableDeferred<Unit>()
+        val processInspector = BlockingFirstScanInspector(firstScanEntered, releaseFirstScan)
+        val firstManager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+            processInspector = processInspector,
+        )
+        val secondManager = BackendManager(
+            homePaths = homePaths,
+            downloader = StaticDownloader,
+            ideUserHome = tempDir.resolve("user-home"),
+            processInspector = processInspector,
+        )
+
+        val first = async(Dispatchers.Default) {
+            firstManager.start(parseBackendId("idea-community-2025.3.3"))
+        }
+        withTimeout(5_000) { firstScanEntered.await() }
+
+        val second = async(Dispatchers.Default) {
+            try {
+                secondManager.start(parseBackendId("idea-community-2025.3.3"))
+                "unexpected success"
+            } catch (e: ManagedBackendLockException) {
+                e.message ?: ""
+            }
+        }
+
+        assertEquals("another devrig backend operation is in progress; retry shortly", withTimeout(5_000) { second.await() })
+        releaseFirstScan.complete(Unit)
+        val started = withTimeout(5_000) { first.await() }
+        try {
+            assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
+        } finally {
+            firstManager.stop(parseBackendId("idea-community-2025.3.3"))
+        }
+    }
+
     private fun captureCli(block: () -> Int): CliCapture {
         val originalOut = System.out
         val originalErr = System.err
@@ -208,6 +259,26 @@ class SingleInstanceLockTest {
     ) : ManagedProcessInspector {
         override fun isAlive(pid: Long): Boolean = snapshots.any { it.pid == pid }
         override fun allProcesses(): List<ProcessSnapshot> = snapshots
+    }
+
+    private class BlockingFirstScanInspector(
+        private val firstScanEntered: CompletableDeferred<Unit>,
+        private val releaseFirstScan: CompletableDeferred<Unit>,
+    ) : ManagedProcessInspector {
+        private val firstScan = AtomicBoolean(true)
+
+        override fun isAlive(pid: Long): Boolean =
+            ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+
+        override fun allProcesses(): List<ProcessSnapshot> {
+            if (firstScan.compareAndSet(true, false)) {
+                firstScanEntered.complete(Unit)
+                runBlocking {
+                    withTimeout(5_000) { releaseFirstScan.await() }
+                }
+            }
+            return emptyList()
+        }
     }
 
     private object StaticDownloader : ManagedBackendDownloader {
