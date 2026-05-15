@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.URI
 import java.security.MessageDigest
@@ -87,6 +88,108 @@ class IdeDownloaderTest {
             assertTrue("expected checksum mismatch, got: ${error.message}", error.message!!.contains("SHA-256 mismatch"))
             assertFalse("corrupt cached/downloaded archive must be deleted", archive.exists())
         }
+    }
+
+    @Test
+    fun `fetchChecksumWithRetry retries IOException and stops after success`() {
+        val checksumUrl = "https://cache-redirector.jetbrains.com/archive.tar.gz.sha256"
+        val checksumText = "${"a".repeat(64)}  archive.tar.gz\n"
+        val attempts = AtomicInteger()
+        val logger = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader") as Logger
+
+        withCapturedLogger(logger) { appender ->
+            logger.level = Level.WARN
+            withChecksumTextReader(
+                reader = { url, accept ->
+                    assertEquals(checksumUrl, url)
+                    assertEquals("text/plain,*/*", accept)
+                    if (attempts.incrementAndGet() == 1) {
+                        throw IOException("CDN 502")
+                    }
+                    checksumText
+                },
+            ) {
+                assertEquals(checksumText, fetchChecksumWithRetry(checksumUrl, backoffMs = longArrayOf(0L)))
+            }
+
+            assertEquals("checksum fetch must stop after first successful retry", 2, attempts.get())
+            val warnings = appender.list.filter {
+                it.level == Level.WARN && it.formattedMessage.contains("Checksum fetch attempt 1/3 failed")
+            }
+            assertEquals("expected exactly one checksum retry warning", 1, warnings.size)
+            assertTrue(warnings.single().formattedMessage.contains("CDN 502"))
+        }
+    }
+
+    @Test
+    fun `fetchChecksumWithRetry wraps final IOException after bounded attempts`() {
+        val checksumUrl = "https://cache-redirector.jetbrains.com/archive.tar.gz.sha256"
+        val attempts = AtomicInteger()
+
+        withChecksumTextReader(
+            reader = { _, _ ->
+                val attempt = attempts.incrementAndGet()
+                throw IOException("CDN 502 attempt $attempt")
+            },
+        ) {
+            val error = expectError {
+                fetchChecksumWithRetry(checksumUrl, attempts = 3, backoffMs = longArrayOf(0L))
+            }
+
+            assertTrue("expected IOException, got: ${error.javaClass.name}", error is IOException)
+            assertEquals("checksum fetch must stop after the configured attempts", 3, attempts.get())
+            assertEquals("Failed to fetch SHA-256 checksum from $checksumUrl after 3 attempts", error.message)
+            assertEquals("CDN 502 attempt 3", error.cause?.message)
+        }
+    }
+
+    @Test
+    fun `resolveAndDownload does not retry malformed checksum text`() {
+        val checksumUrl = "https://cache-redirector.jetbrains.com/archive.tar.gz.sha256"
+        val attempts = AtomicInteger()
+
+        withChecksumTextReader(
+            reader = { _, _ ->
+                attempts.incrementAndGet()
+                "not-a-sha256\n"
+            },
+        ) {
+            val error = expectError {
+                IdeDistribution.FromUrl(
+                    product = IdeProduct.IntelliJIdeaCommunity,
+                    url = "https://cache-redirector.jetbrains.com/archive.tar.gz",
+                    checksumUrl = checksumUrl,
+                ).resolveAndDownload(tmp.root, os = HostOs.LINUX)
+            }
+
+            assertTrue("expected malformed checksum failure, got: ${error.message}", error.message!!.contains("Invalid SHA-256 checksum"))
+            assertEquals("malformed checksum text must not be retried", 1, attempts.get())
+        }
+    }
+
+    @Test
+    fun `resolveAndDownload with inline checksum does not fetch checksum URL`() {
+        val payload = "inline checksum archive".toByteArray()
+        val goodSha256 = sha256(payload)
+        val attempts = AtomicInteger()
+
+        withChecksumTextReader(
+            reader = { _, _ ->
+                attempts.incrementAndGet()
+                throw AssertionError("inline checksum must not fetch checksum URL")
+            },
+        ) {
+            withArchiveServer(payload) { url ->
+                val archive = IdeDistribution.FromUrl(
+                    product = IdeProduct.IntelliJIdeaCommunity,
+                    url = url,
+                    expectedSha256 = goodSha256,
+                ).resolveAndDownload(tmp.root, os = HostOs.LINUX)
+
+                assertArrayEquals(payload, archive.readBytes())
+            }
+        }
+        assertEquals("inline checksum path must not use the checksum text reader", 0, attempts.get())
     }
 
     @Test
@@ -315,6 +418,19 @@ class IdeDownloaderTest {
         }
         fail("Expected an exception; none thrown")
         throw AssertionError("unreachable")
+    }
+
+    private fun <T> withChecksumTextReader(
+        reader: (String, String) -> String,
+        block: () -> T,
+    ): T {
+        val originalReader = checksumTextReader
+        checksumTextReader = reader
+        try {
+            return block()
+        } finally {
+            checksumTextReader = originalReader
+        }
     }
 
     private fun withCapturedLogger(

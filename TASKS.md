@@ -1640,7 +1640,7 @@ layout (next ij-plugin release after `5e324746`).
 
 **No action now.**
 
-### F8 — Bounded retry on transient `checksumLink` fetch failures
+### F8 — Bounded retry on transient `checksumLink` fetch failures ✅ resolved
 
 M10's checksum verification fails closed if the `.sha256` URL returns
 a transient error. Safest default; but CDN blips would unnecessarily

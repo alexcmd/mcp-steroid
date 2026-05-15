@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import java.io.EOFException
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
@@ -15,6 +16,8 @@ import java.security.MessageDigest
 private val ideDownloaderLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader")
 private const val FSYNC_EVERY_BYTES = 8L * 1024L * 1024L
 private const val HTTP_RANGE_NOT_SATISFIABLE = 416
+
+internal var checksumTextReader: (String, String) -> String = ::readUrlText
 
 private data class ResolvedArchiveDownload(
     val url: String,
@@ -116,10 +119,43 @@ private fun IdeDistribution.resolveArchiveDownload(
 private fun resolveExpectedSha256(resolved: ResolvedArchiveDownload): String? {
     resolved.expectedSha256?.let { return normalizeSha256(it, "inline checksum for ${resolved.url}") }
     resolved.checksumUrl?.let { checksumUrl ->
-        val checksumText = readUrlText(checksumUrl, accept = "text/plain,*/*")
+        val checksumText = fetchChecksumWithRetry(checksumUrl)
         return parseSha256Checksum(checksumText, checksumUrl)
     }
     return null
+}
+
+internal fun fetchChecksumWithRetry(
+    checksumUrl: String,
+    attempts: Int = 3,
+    backoffMs: LongArray = longArrayOf(500L, 2_000L, 8_000L),
+): String {
+    require(attempts >= 1) { "attempts must be >= 1" }
+    var lastError: IOException? = null
+    for (attempt in 0 until attempts) {
+        try {
+            return checksumTextReader(checksumUrl, "text/plain,*/*")
+        } catch (e: IOException) {
+            lastError = e
+            ideDownloaderLog.warn(
+                "[IDE-DOWNLOAD] Checksum fetch attempt {}/{} failed for {}: {}",
+                attempt + 1,
+                attempts,
+                checksumUrl,
+                e.message,
+            )
+            if (attempt < attempts - 1) {
+                val sleepMs = if (backoffMs.isEmpty()) 0L else backoffMs[attempt.coerceAtMost(backoffMs.lastIndex)]
+                try {
+                    Thread.sleep(sleepMs)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("Interrupted while waiting to retry SHA-256 checksum fetch from $checksumUrl", interrupted)
+                }
+            }
+        }
+    }
+    throw IOException("Failed to fetch SHA-256 checksum from $checksumUrl after $attempts attempts", lastError)
 }
 
 internal fun parseSha256Checksum(text: String, sourceUrl: String): String {

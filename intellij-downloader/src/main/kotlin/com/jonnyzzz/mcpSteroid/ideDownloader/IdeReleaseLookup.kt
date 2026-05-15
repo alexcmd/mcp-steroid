@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
@@ -230,7 +231,7 @@ internal fun readUrlText(url: String, accept: String = "application/json"): Stri
             ?.use { it.readText() }
             .orEmpty()
         if (statusCode !in 200..299) {
-            error("Failed to fetch from $url. HTTP $statusCode\n$body")
+            throw IOException("Failed to fetch from $url. HTTP $statusCode\n$body")
         }
         return body
     } finally {
