@@ -17,6 +17,7 @@ include(":kotlin-cli")
 include(":prompts-api")
 include(":prompts")
 include(":intellij-downloader")
+include(":jdk-downloader")
 
 include(":ij-plugin")
 include(":mcp-core")

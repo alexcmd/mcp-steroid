@@ -217,6 +217,7 @@ val promptsSubprojects = setOf(
  * runtime infrastructure. Changes here force TeamCity to pick them up on every agent OS.
  *
  * * `ij-plugin` — the IntelliJ plugin itself (execution, vision, review, storage…).
+ * * `jdk-downloader` — placeholder for Corretto JDK download/extract infrastructure.
  * * `mcp-core` — MCP protocol types, session manager, tool/resource/prompt registries.
  * * `mcp-http` — Ktor HTTP transport implementing MCP Streamable HTTP.
  * * `ai-agents` — agent CLI configuration helpers consumed by the plugin.
@@ -227,6 +228,7 @@ val promptsSubprojects = setOf(
  */
 val pluginCoreSubprojects = setOf(
     "ij-plugin",
+    "jdk-downloader",
     "mcp-core",
     "mcp-http",
     "mcp-stdio",
