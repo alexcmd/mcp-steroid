@@ -1128,3 +1128,174 @@ extra surface.
 4. **C3** → **C2** → **C1** (recovery hints).
 5. **C4** (dryRun, deferred).
 
+---
+
+# Managed-backend review findings (2026-05-15)
+
+Three parallel `run-agent.sh codex` review passes against `mcp-5` after
+iter7. Items below are the consensus set (≥2 reviewers, with which
+reviewers agreed in parentheses). One item — first-start writers into
+the real user home — is intentionally **deferred** per user direction
+("Let's keep it so for now, we are going to review that step later").
+
+The reviewer reports are preserved at
+`.run-agent-managed-backends/reviews-{a,b,c}/run_*/FINAL_RESULT.md`.
+
+## Blockers
+
+### B1 — `backend stop` can SIGTERM/SIGKILL an unrelated process (A, B, C)
+`npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/proxy/ManagedBackend.kt:282-309`.
+Stop trusts the PID file, calls `ProcessHandle.of(pid).destroy()` without
+proving that pid still belongs to a managed IDE under
+`homePaths.backendsDir`. PID reuse → wrong process killed.
+**Fix:** before signalling, check `ProcessHandle.info().command()` is
+under `homePaths.backendsDir`, or verify the `.<pid>.mcp-steroid`
+marker matches our backend descriptor. On mismatch → delete stale PID
+file, report "stale" outcome, no signal.
+
+### B2 — Archive extraction allows path-traversal / symlink escape (A, B, C)
+`intellij-downloader/src/main/kotlin/.../IdeUnpacker.kt:76-92`, `:133-140`, `:291-293`.
+The `outputFile.canonicalPath.startsWith(unpackDir.canonicalPath)`
+prefix check is bypassable (no trailing separator); tar symlinks aren't
+target-validated.
+**Fix:** add trailing `File.separator` to the prefix check; for
+symlinks resolve `linkTarget = unpackDir.resolve(entry.linkName).normalize()`
+and reject when it escapes the unpack dir.
+
+### B3 — Build / installDist blocked by `:intellij-downloader:extractSevenZipResources` (B only)
+Likely fallout of the parallel 7zip-into-npx-kt worker mid-edit;
+expected to resolve as that worker lands. Re-check after each iter
+lands.
+
+## Majors
+
+### M1 — `idea-community` may resolve to an Ultimate (`IU-…`) bundle (A)
+iter4's marker captured `ide.build: IU-253.28294.334` while the backend
+ID was `idea-community-2025.3`. Either the resolver picked the wrong
+URL, or the plugin reports the build of a different IDE process.
+**Action:** read-only investigation first — confirm whether the
+download URL the resolver returns for `code=IIC` actually serves a
+Community binary, and whether the marker's `ide.build` reflects the
+running JVM's ApplicationInfo. Only fix if a real mismatch is found.
+
+### M2 — `backend start <product>` / `stop <product>` (no version) hits the network (B, C)
+`ManagedBackend.kt` resolves "latest stable" via the products API instead
+of consulting `homePaths.backendsDir/<product-key>-*`. Means stop
+depends on JetBrains uptime AND can target a version different from
+what's installed.
+**Fix:** for product-only argv, prefer the highest-versioned entry on
+disk. Fall back to API only when nothing is installed.
+
+### M3 — Single-instance lock is racy across concurrent CLI calls (A, B, C)
+`ManagedBackend.kt:231-273` — scan-then-spawn has no file lock; two
+concurrent `backend start` calls can both pass the scan and both spawn.
+**Fix:** `FileChannel.tryLock()` on `homePaths.stateDir/global.lock`
+for the duration of the start sequence.
+
+### M4 — JSON `backend-0` / `backend-1` order-derived IDs leak (A, B, C)
+`BackendCommand.kt:576-603` — synthetic ordinal-based identifiers
+exposed as primary keys in `backends[]`. Scripts will key on the index.
+**Fix:** drop the synthetic id; the natural id is the row's
+`<product-key>-<version>` (or `port-<n>` for port-discovered).
+
+### M5 — SevenZipLocator cache writes are racy (A, C)
+`SevenZipLocator.kt:69-73`, `:103-107`. Fixed `*.tmp` filename per
+binary; two concurrent first-runs collide.
+**Fix:** randomise tmp name with `Files.createTempFile` and atomic-move
+to the cache slot.
+
+### M6 — `backend stop --json` reports a `logPath` that `start` never writes (A, B)
+The schema lies. Either `start` writes to that path, or `stop` omits the field.
+**Fix:** drop the field, or have `start` write to that path (it's the
+log file we already capture — wire it).
+
+### M7 — Partial / interrupted downloads poison the install dir (B)
+No transactional rename; an aborted `download` leaves a half-extracted
+bundle that subsequent `download` calls treat as installed.
+**Fix:** extract to `<id>.partial/`, atomic rename to `<id>/` only on
+full success.
+
+### M8 — CLI parser accepts malformed flags / extra positional args (A, B)
+Two reviewers independently found ambiguous argv shapes that resolve
+to unexpected modes.
+**Fix:** add fuzz-style parser tests; reject unrecognised flags after
+the canonical mode prefix.
+
+## Minors
+
+| | | reviewers |
+|---|---|---|
+| m1 | `--home ~/...` not expanded; `..` normalised rather than rejected | A, B, C |
+| m2 | `NpxKtRoot` has a production-visible mutable test seam | A, B, C |
+| m3 | Text rendering uses UTF-16 `String.length`, not terminal display width | A, B |
+| m4 | Some unit tests depend on live JetBrains/Google APIs (flaky offline) | A |
+| m5 | Banned silent `catch (_:Exception)` in `IdeDownloader.kt:58-60` | A, B, C |
+| m6 | Help banner omits `--version <v>` for `backend start/stop` | C |
+| m7 | `tempFile.renameTo(dest)` success not checked in `IdeDownloader.kt:79-98` | A |
+
+## Deferred (per user, 2026-05-15)
+
+- **First-start config writers target the real user home (`~/.config/JetBrains/...`, `~/.java/...`).** Reviewers flagged this as a blocker (A, B) — managed IDEs can clobber the user's real JetBrains preferences. User direction: "Let's keep it so for now, we are going to review that step later." Re-open later with a per-backend user-home design.
+
+## Plan / execution
+
+Sequential codex runs via `~/Work/marinator/marinade/marinade/run-agent.sh codex`.
+One focused brief per task; collect handoff, push, iterate. Order:
+
+1. **M1 investigation** (read-only first; if false alarm, close out, otherwise
+   becomes a new blocker fix).
+2. **B1** + **M2** + **M3** + **M6** — all lifecycle-correctness, all in
+   `ManagedBackend.kt`. One coherent commit chain.
+3. **B2** — archive extraction security, isolated to `IdeUnpacker.kt`.
+4. **M5** + **M7** + **m5** + **m7** — download/cache atomicity & banned
+   pattern, isolated to `IdeDownloader.kt` + `SevenZipLocator.kt`.
+5. **M4** — JSON synthetic IDs, isolated to renderer.
+6. **M8** — CLI parser tightening.
+7. **m1** + **m2** + **m3** + **m4** + **m6** — polish batch.
+
+B3 watched but not actively fixed (parallel worker territory).
+
+## Additional items (added 2026-05-15 by user)
+
+### M9 — Centralised downloads folder + cleanup after unpack
+Today downloads land in per-backend dirs. Move all download staging to
+`~/.mcp-steroid/downloads/`. Once a download is unpacked into
+`~/.mcp-steroid/backends/<id>/`, **remove** the file from `downloads/`.
+`HomePaths` gets a new `downloadsDir` property; `BackendManager.download`
+routes the archive there, unpacks, then `Files.delete()`.
+
+### M10 — Recoverable downloads + checksum/signature verification
+Two parts:
+
+**Recoverable:** if `download` is interrupted, a follow-up
+`download` should resume from the saved bytes via HTTP `Range` request
+(or skip from the start if the server doesn't support 206 Partial Content).
+The `.partial` extension stays until the full size is verified.
+
+**Verified:** the JetBrains products API exposes per-download checksum
+fields (`checksumLink`, `sha256`, signature URL) and Android Studio's
+`developer.android.com/studio` page exposes SHA-256 checksums next to
+each download URL. After download, fetch the upstream checksum and
+verify SHA-256 of the local file. On mismatch → reject the file,
+delete, fail loudly.
+
+When the source doesn't expose a checksum we trust:
+  - DO log a `WARN` (visible without --debug) noting "no checksum
+    available from upstream; skipping verification".
+  - Don't fabricate a fallback; just record the gap.
+
+## Revised plan / execution
+
+Sequential codex runs. Order:
+
+1. **M1 investigation** (read-only).
+2. **B1 / M2 / M3 / M6** — lifecycle in `ManagedBackend.kt`.
+3. **B2** — archive extraction security in `IdeUnpacker.kt`.
+4. **M5 / M7 / M9 / M10 / m5 / m7** — download path overhaul:
+   centralised `downloads/` dir, resumable transfer, SHA-256
+   verification, `.partial` atomic rename, fix silent catch +
+   unchecked rename. All in `IdeDownloader.kt` + `SevenZipLocator.kt`
+   + `HomePaths.kt`.
+5. **M4** — JSON synthetic IDs.
+6. **M8** — CLI parser tightening.
+7. **m1 / m2 / m3 / m4 / m6** — polish.
