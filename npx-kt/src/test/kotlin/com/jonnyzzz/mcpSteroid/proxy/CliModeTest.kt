@@ -105,6 +105,19 @@ class CliModeTest {
     }
 
     @Test
+    fun `backend provision without id routes to port-discovery listing`() {
+        assertEquals(CliMode.Backend.ProvisionList(json = false), parseCliMode(arrayOf("backend", "provision")))
+        assertEquals(CliMode.Backend.ProvisionList(json = true), parseCliMode(arrayOf("backend", "provision", "--json")))
+        assertEquals(CliMode.Backend.ProvisionList(json = true), parseCliMode(arrayOf("backend", "provision", "--json", "--version", "2026.1.1")))
+    }
+
+    @Test
+    fun `backend provision with port id routes to concrete provision action`() {
+        assertEquals(CliMode.Backend.Provision("port-63342", json = false), parseCliMode(arrayOf("backend", "provision", "port-63342")))
+        assertEquals(CliMode.Backend.Provision("port-63342", json = true), parseCliMode(arrayOf("backend", "provision", "port-63342", "--json")))
+    }
+
+    @Test
     fun `--allow-paid is rejected because paid downloads no longer require consent flags`() {
         val mode = parseCliMode(arrayOf("backend", "download", "--allow-paid"))
 
@@ -143,6 +156,15 @@ class CliModeTest {
         assertTrue(stop is CliMode.Unknown)
         stop as CliMode.Unknown
         assertEquals("Run `devrig backend stop` with no id to list valid backend ids.", stop.hint)
+    }
+
+    @Test
+    fun `backend provision rejects non-port ids with list hint`() {
+        val mode = parseCliMode(arrayOf("backend", "provision", "idea-community"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals(listOf("backend", "provision", "idea-community"), mode.args)
+        assertEquals("Run `devrig backend provision` with no id to list valid backend ids.", mode.hint)
     }
 
     @Test

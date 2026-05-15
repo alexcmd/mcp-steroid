@@ -45,6 +45,7 @@ internal sealed interface CliMode {
         data class DownloadList(val json: Boolean) : Backend
         data class StartList(val json: Boolean) : Backend
         data class StopList(val json: Boolean) : Backend
+        data class ProvisionList(val json: Boolean) : Backend
         data class Download(
             val id: String,
             val versionOverride: String?,
@@ -58,6 +59,10 @@ internal sealed interface CliMode {
         data class Stop(
             val id: String,
             val versionOverride: String?,
+            val json: Boolean = false,
+        ) : Backend
+        data class Provision(
+            val id: String,
             val json: Boolean = false,
         ) : Backend
     }
@@ -168,13 +173,14 @@ private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
     val backendIndex = resolutionArgs.indexOf("backend")
     if (backendIndex < 0 || backendIndex == resolutionArgs.lastIndex) return null
     val subcommand = resolutionArgs.getOrNull(backendIndex + 1) ?: return null
-    if (subcommand !in setOf("download", "start", "stop")) return null
+    if (subcommand !in setOf("download", "start", "stop", "provision")) return null
     val json = args.any { it == "--json" }
     val id = resolutionArgs.getOrNull(backendIndex + 2)
         ?: return when (subcommand) {
             "download" -> CliMode.Backend.DownloadList(json = json)
             "start" -> CliMode.Backend.StartList(json = json)
             "stop" -> CliMode.Backend.StopList(json = json)
+            "provision" -> CliMode.Backend.ProvisionList(json = json)
             else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
         }
     if (id.startsWith("--")) {
@@ -182,7 +188,18 @@ private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
             "download" -> CliMode.Backend.DownloadList(json = json)
             "start" -> CliMode.Backend.StartList(json = json)
             "stop" -> CliMode.Backend.StopList(json = json)
+            "provision" -> CliMode.Backend.ProvisionList(json = json)
             else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+        }
+    }
+    if (subcommand == "provision") {
+        return if (isSupportedProvisionTargetId(id)) {
+            CliMode.Backend.Provision(id = id, json = json)
+        } else {
+            CliMode.Unknown(
+                args = listOf("backend", subcommand, id),
+                hint = "Run `devrig backend provision` with no id to list valid backend ids.",
+            )
         }
     }
     if (!isSupportedBackendLifecycleId(id)) {
@@ -229,6 +246,8 @@ private fun isSupportedBackendLifecycleId(raw: String): Boolean {
 
 private fun isKnownProductKey(raw: String): Boolean =
     com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts.any { it.id == raw }
+
+private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""").matches(raw)
 
 private fun valueAfter(args: Array<String>, flag: String): String? {
     val idx = args.indexOf(flag)
@@ -301,9 +320,14 @@ internal fun runCli(
                     runBackendStopListCommand(System.out, homePaths, json = mode.json)
                     0
                 }
+                is CliMode.Backend.ProvisionList -> {
+                    runBackendProvisionListCommand(System.out, json = mode.json)
+                    0
+                }
                 is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
+                is CliMode.Backend.Provision -> runBackendProvisionCommand(System.out, homePaths, mode)
             }
         } catch (e: ManagedBackendLockException) {
             System.err.println(e.message)
@@ -354,6 +378,11 @@ private fun printHelp(out: PrintStream) {
           mcp-steroid-proxy backend stop     [<id>] [--json]
                                                      no id → list currently running backends.
                                                      With id, stop a managed backend by pid file.
+          mcp-steroid-proxy backend provision [<id>] [--json]
+                                                     no id → list port-discovered IDEs that can be
+                                                     provisioned. With id (for example port-63342),
+                                                     install the bundled MCP Steroid plugin into
+                                                     that IDE's user plugins directory.
           mcp-steroid-proxy --version | -v           print the proxy version and exit
           mcp-steroid-proxy --help    | -h           print this help and exit
 
