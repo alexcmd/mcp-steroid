@@ -1,5 +1,11 @@
 import de.undercouch.gradle.tasks.download.Download
 import org.gradle.api.file.RelativePath
+import java.nio.file.FileVisitOption
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.Locale
+import kotlin.math.abs
 
 plugins {
     kotlin("jvm")
@@ -60,6 +66,79 @@ data class CorrettoPlatform(
     val archiveSuffix: String,
 )
 
+data class JdkOverlapFileSnapshot(
+    val platform: String,
+    val relativePath: String,
+    val size: Long,
+    val sha256: String,
+)
+
+data class JdkOverlapSharedPath(
+    val relativePath: String,
+    val size: Long,
+    val platforms: List<String>,
+)
+
+fun jdkOverlapHashFile(path: Path): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    Files.newInputStream(path).use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val bytesRead = input.read(buffer)
+            if (bytesRead < 0) break
+            if (bytesRead > 0) digest.update(buffer, 0, bytesRead)
+        }
+    }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+}
+
+fun jdkOverlapRelativePath(root: Path, file: Path): String =
+    root.relativize(file).toString().replace(File.separatorChar, '/')
+
+fun jdkOverlapScanPlatform(platformId: String, root: Path): List<JdkOverlapFileSnapshot> {
+    require(Files.isDirectory(root)) {
+        "missing extracted JDK tree for $platformId: $root; run :jdk-downloader:extractAllJdks first"
+    }
+    return Files.walk(root, FileVisitOption.FOLLOW_LINKS).use { stream ->
+        stream.parallel()
+            .filter { file -> Files.isRegularFile(file) }
+            .map { file ->
+                JdkOverlapFileSnapshot(
+                    platform = platformId,
+                    relativePath = jdkOverlapRelativePath(root, file),
+                    size = Files.size(file),
+                    sha256 = jdkOverlapHashFile(file),
+                )
+            }
+            .toList()
+    }
+}
+
+fun jdkOverlapFormatCount(value: Int): String = String.format(Locale.US, "%,d", value)
+
+fun jdkOverlapFormatBytes(bytes: Long): String {
+    val absBytes = abs(bytes.toDouble())
+    val kib = 1024.0
+    val mib = kib * 1024.0
+    val gib = mib * 1024.0
+    return when {
+        absBytes >= gib -> String.format(Locale.US, "%.1f GB", bytes / gib)
+        absBytes >= mib -> String.format(Locale.US, "%.1f MB", bytes / mib)
+        absBytes >= kib -> String.format(Locale.US, "%.1f KB", bytes / kib)
+        else -> "$bytes B"
+    }
+}
+
+fun jdkOverlapFormatPercent(part: Long, total: Long): String =
+    if (total == 0L) "0.0%" else String.format(Locale.US, "%.1f%%", part * 100.0 / total)
+
+fun jdkOverlapPlatformSummary(platforms: List<String>, platformIds: List<String>): String =
+    if (platforms.size == platformIds.size) {
+        "${platforms.size} platforms"
+    } else {
+        "${platforms.size}: ${platforms.joinToString(", ")}"
+    }
+
 val correttoPlatforms = listOf(
     CorrettoPlatform("linux-amd64", "linux-x64.tar.gz"),
     CorrettoPlatform("linux-arm", "linux-aarch64.tar.gz"),
@@ -106,6 +185,155 @@ val extractAllJdks by tasks.registering {
                 logger.warn("README.md not found in ${platform.id} extracted tree")
             }
         }
+    }
+}
+
+val analyzeJdkOverlap by tasks.registering {
+    group = "verification"
+    description = "Report files duplicated across extracted JDK platforms."
+    dependsOn(extractAllJdks)
+
+    val reportFile = layout.buildDirectory.file("jdk-overlap-report.txt")
+    outputs.file(reportFile)
+    correttoPlatforms.forEach { platform ->
+        inputs.dir(correttoExtractDir.map { it.dir(platform.id) })
+    }
+
+    doLast {
+        val platformIds = correttoPlatforms.map { it.id }
+
+        val snapshots = platformIds
+            .flatMap { platform ->
+                val root = correttoExtractDir.get().dir(platform).asFile.toPath()
+                jdkOverlapScanPlatform(platform, root)
+            }
+            .sortedWith(compareBy<JdkOverlapFileSnapshot> { it.relativePath }.thenBy { it.platform })
+        val snapshotsByRelativePath = snapshots.groupBy { it.relativePath }
+        val snapshotsBySharedContent = snapshots.groupBy { it.relativePath to it.sha256 }
+        val sharedPaths = snapshotsBySharedContent.values
+            .mapNotNull { group ->
+                val platforms = group.map { it.platform }.distinct().sorted()
+                if (platforms.size < 2) {
+                    null
+                } else {
+                    val sizes = group.map { it.size }.distinct()
+                    require(sizes.size == 1) {
+                        "SHA-256 collision or inconsistent file size for ${group.first().relativePath}"
+                    }
+                    JdkOverlapSharedPath(
+                        relativePath = group.first().relativePath,
+                        size = sizes.single(),
+                        platforms = platforms,
+                    )
+                }
+            }
+            .sortedWith(
+                compareByDescending<JdkOverlapSharedPath> { it.size }
+                    .thenByDescending { it.platforms.size }
+                    .thenBy { it.relativePath }
+            )
+
+        val presentInAllPlatforms = snapshotsByRelativePath.values
+            .filter { files -> files.map { it.platform }.distinct().size == platformIds.size }
+        val presentInAllBytes = presentInAllPlatforms.sumOf { files -> files.maxOf { it.size } }
+        val identicalInAll = sharedPaths.filter { it.platforms.size == platformIds.size }
+        val identicalInAllBytes = identicalInAll.sumOf { it.size }
+        val identicalInThree = sharedPaths.filter { it.platforms.size == 3 }
+        val identicalInThreeBytes = identicalInThree.sumOf { it.size }
+        val identicalInTwo = sharedPaths.filter { it.platforms.size == 2 }
+        val identicalInTwoBytes = identicalInTwo.sumOf { it.size }
+        val uniqueToOnePlatform = snapshotsByRelativePath.values
+            .filter { files -> files.map { it.platform }.distinct().size == 1 }
+            .map { files -> files.single() }
+            .sortedWith(compareByDescending<JdkOverlapFileSnapshot> { it.size }.thenBy { it.relativePath })
+        val uniqueToOnePlatformBytes = uniqueToOnePlatform.sumOf { it.size }
+        val totalBytes = snapshots.sumOf { it.size }
+        val saveableBytes = sharedPaths.sumOf { shared -> shared.size * (shared.platforms.size - 1) }
+        val uniqueByPlatform = uniqueToOnePlatform.groupBy { it.platform }
+
+        val reportText = buildString {
+            appendLine("Corretto JDK 21 file overlap report")
+            appendLine("====================================")
+            appendLine("Pinned version: $correttoVersion")
+            appendLine("Platforms analyzed: ${platformIds.joinToString(", ")}")
+            appendLine()
+            appendLine("Summary")
+            appendLine("-------")
+            appendLine("Total unique relative paths:          ${jdkOverlapFormatCount(snapshotsByRelativePath.size).padStart(10)}")
+            appendLine(
+                "Paths present in all ${platformIds.size} platforms:      " +
+                    "${jdkOverlapFormatCount(presentInAllPlatforms.size).padStart(10)}  " +
+                    "(size: ${jdkOverlapFormatBytes(presentInAllBytes)})"
+            )
+            appendLine(
+                "Paths identical across all ${platformIds.size}:          " +
+                    "${jdkOverlapFormatCount(identicalInAll.size).padStart(10)}  " +
+                    "(size: ${jdkOverlapFormatBytes(identicalInAllBytes)}, " +
+                    "${jdkOverlapFormatPercent(identicalInAllBytes, presentInAllBytes)} of \"in all ${platformIds.size}\")"
+            )
+            appendLine(
+                "Paths identical across 3 platforms:      " +
+                    "${jdkOverlapFormatCount(identicalInThree.size).padStart(10)}  " +
+                    "(size: ${jdkOverlapFormatBytes(identicalInThreeBytes)})"
+            )
+            appendLine(
+                "Paths identical across 2 platforms:      " +
+                    "${jdkOverlapFormatCount(identicalInTwo.size).padStart(10)}  " +
+                    "(size: ${jdkOverlapFormatBytes(identicalInTwoBytes)})"
+            )
+            appendLine(
+                "Paths unique to a single platform:       " +
+                    "${jdkOverlapFormatCount(uniqueToOnePlatform.size).padStart(10)}  " +
+                    "(size: ${jdkOverlapFormatBytes(uniqueToOnePlatformBytes)})"
+            )
+            appendLine(
+                "Bytes saveable by shared-overlay:        " +
+                    "${jdkOverlapFormatBytes(saveableBytes)} / ${jdkOverlapFormatBytes(totalBytes)} total  " +
+                    "(${jdkOverlapFormatPercent(saveableBytes, totalBytes)})"
+            )
+            appendLine()
+            appendLine("Top 50 shared paths by size")
+            appendLine("---------------------------")
+            sharedPaths.take(50).forEach { shared ->
+                appendLine(
+                    "${jdkOverlapFormatBytes(shared.size).padStart(10)}  ${shared.relativePath}  " +
+                        "(identical in ${jdkOverlapPlatformSummary(shared.platforms, platformIds)})"
+                )
+            }
+            if (sharedPaths.isEmpty()) {
+                appendLine("No byte-identical files were found in 2 or more platforms.")
+            }
+            appendLine()
+            appendLine("Per-platform deltas (files unique to each platform)")
+            appendLine("---------------------------------------------------")
+            platformIds.forEach { platformId ->
+                val uniqueFiles = uniqueByPlatform[platformId].orEmpty()
+                val uniqueBytes = uniqueFiles.sumOf { it.size }
+                appendLine(
+                    "${platformId.padEnd(13)}: ${jdkOverlapFormatCount(uniqueFiles.size).padStart(5)} " +
+                        "unique files  (size: ${jdkOverlapFormatBytes(uniqueBytes)})"
+                )
+                uniqueFiles.take(50).forEach { file ->
+                    appendLine("   ${jdkOverlapFormatBytes(file.size).padStart(10)}  ${file.relativePath}")
+                }
+                if (uniqueFiles.size > 50) {
+                    appendLine("   ... ${jdkOverlapFormatCount(uniqueFiles.size - 50)} more")
+                }
+                appendLine()
+            }
+            appendLine("Method")
+            appendLine("------")
+            appendLine("SHA-256 hashed on file content only with 64 KB read buffers.")
+            appendLine("Relative path = path under build/jdk-extracted/<platform>/.")
+            appendLine("Empty files (size 0) are reported the same as any other content.")
+            appendLine("Symlinks are followed while walking and hashing platform trees.")
+            appendLine("Reports are deterministic — identical extracts produce identical output.")
+            appendLine("Path-presence size rows count one canonical copy per relative path, using the largest platform copy when content differs.")
+            appendLine("Shared-overlay savings count one canonical copy per identical relativePath + SHA-256 group and remove duplicate platform copies.")
+        }
+
+        reportFile.get().asFile.writeText(reportText)
+        logger.lifecycle("Wrote overlap report: ${reportFile.get().asFile.absolutePath}")
     }
 }
 
