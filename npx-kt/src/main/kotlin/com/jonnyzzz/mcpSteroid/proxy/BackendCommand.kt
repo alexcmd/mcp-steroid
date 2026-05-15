@@ -546,7 +546,7 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     out.println("Discovered ${rows.size} $noun:")
     out.println()
     for ((index, row) in rows.withIndex()) {
-        out.println("  [${index + 1}] ${backendDisplayName(row)} (${backendLocatorLabel(row)})")
+        out.println("  [${index + 1}] ${backendDisplayName(row)} (${backendLocatorLabel(row)})${backendActionSuffix(row)}")
         when (row) {
             is BackendRow.FromMarker -> renderMarkerProjects(row, out)
             is BackendRow.FromPort -> out.println(
@@ -559,6 +559,12 @@ internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     // Trailing blank line so piped consumers / terminals don't glue the
     // next prompt to the last project line.
     out.println()
+}
+
+private fun backendActionSuffix(row: BackendRow): String = when (row) {
+    is BackendRow.FromPort -> " (run: ${provisionCommand(provisionTargetId(row.ide.port))})"
+    is BackendRow.FromMarker,
+    is BackendRow.FromManaged -> ""
 }
 
 /**

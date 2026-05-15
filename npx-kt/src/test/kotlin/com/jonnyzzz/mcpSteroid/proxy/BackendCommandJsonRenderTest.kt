@@ -136,6 +136,7 @@ class BackendCommandJsonRenderTest {
         assertEquals("IU-253.21581.142", backend["build"]?.jsonPrimitive?.contentOrNull)
         assertEquals(1234L, backend["pid"]?.jsonPrimitive?.long)
         assertEquals("http://localhost:6315/mcp", backend["mcpUrl"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(0, backend["actions"]!!.jsonArray.size)
         assertNull(backend["error"], "reachable marker rows must not carry an error: $backend")
         assertNull(backend["projects"], "projects are top-level now, not nested in backends: $backend")
 
@@ -203,6 +204,10 @@ class BackendCommandJsonRenderTest {
         assertEquals("IU", backend["edition"]?.jsonPrimitive?.contentOrNull)
         assertEquals(253, backend["baselineVersion"]?.jsonPrimitive?.int)
         assertEquals("IU-253.21581.142", backend["buildNumber"]?.jsonPrimitive?.contentOrNull)
+        val action = backend["actions"]!!.jsonArray.single().jsonObject
+        assertEquals("provision", action["id"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Install MCP Steroid plugin", action["label"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("devrig backend provision port-63342", action["command"]?.jsonPrimitive?.contentOrNull)
         assertNull(backend["pid"], "port row must not carry a pid: $backend")
         assertNull(backend["projects"], "port row must not carry projects: $backend")
         assertNull(backend["mcpUrl"], "port row must not carry mcpUrl: $backend")

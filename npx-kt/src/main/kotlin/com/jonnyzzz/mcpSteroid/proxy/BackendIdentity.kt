@@ -5,6 +5,8 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIdeByPort
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
@@ -92,6 +94,7 @@ internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJs
     put("displayName", backendDisplayName(row))
     put("locator", backendLocatorLabel(row))
     put("managed", row.managed)
+    put("actions", backendActionsJson(row))
     when (row) {
         is BackendRow.FromMarker -> {
             put("pluginInstalled", true)
@@ -121,6 +124,12 @@ internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJs
             put("cachePath", info.cachePath.toString())
             info.runningPid?.let { put("runningPid", it) }
         }
+    }
+}
+
+private fun backendActionsJson(row: BackendRow) = buildJsonArray {
+    if (row is BackendRow.FromPort) {
+        add(provisionActionJson(provisionTargetId(row.ide.port)))
     }
 }
 

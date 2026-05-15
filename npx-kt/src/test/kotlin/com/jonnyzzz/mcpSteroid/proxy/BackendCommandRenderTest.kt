@@ -234,7 +234,7 @@ class BackendCommandRenderTest {
         // (it already carries the marketing version from /api/about). The build
         // number lives in the locator parens so the line doesn't double up on
         // version-like tokens.
-        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342)"),
+        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342) (run: devrig backend provision port-63342)"),
             "expected the full IDE header line; got:\n$text")
         assertTrue(text.contains("mcp-steroid plugin not installed"),
             "must explain why projects are unavailable; got:\n$text")
@@ -253,7 +253,7 @@ class BackendCommandRenderTest {
         // locator should NOT print an empty `build , port N`. Just port.
         val rows = listOf(BackendRow.FromPort(portIde(buildNumber = null)))
         val text = render(rows)
-        assertTrue(text.contains("(port 63342)"),
+        assertTrue(text.contains("(port 63342) (run: devrig backend provision port-63342)"),
             "no buildNumber → locator should be `port N` only; got:\n$text")
         assertTrue(!text.contains("build ,"),
             "must not produce 'build , port …' when buildNumber is null; got:\n$text")
