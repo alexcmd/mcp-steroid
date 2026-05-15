@@ -58,7 +58,7 @@ class BackendCommandActionJsonTest {
     @Test
     fun `start action json success has the stable schema`(@TempDir tempDir: Path) {
         val homePaths = HomePaths(tempDir)
-        backendFixture(homePaths, "idea-community-2025.3.3", productKey = "idea-community", productCode = "IIC", version = "2025.3.3")
+        backendFixture(homePaths, "idea-community-2025.3.3", productKey = "idea-community", productCode = "IC", version = "2025.3.3")
         val backendService = FakeBackendService(
             startResult = StartResult(
                 id = "idea-community-2025.3.3",
@@ -223,7 +223,7 @@ class BackendCommandActionJsonTest {
         descriptor = BackendDescriptor(
             id = id,
             productKey = "idea-community",
-            productCode = "IIC",
+            productCode = "IC",
             version = "2025.3.3",
             buildNumber = "IIC-253.1",
             bundleDirName = "idea-IIC",

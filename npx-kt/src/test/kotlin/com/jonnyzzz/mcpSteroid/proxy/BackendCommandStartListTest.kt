@@ -24,8 +24,8 @@ class BackendCommandStartListTest {
     fun `text lists installed backends with running and installed states`(@TempDir tempDir: Path) {
         val homePaths = HomePaths(tempDir)
         homePaths.mkdirsAll()
-        backendFixture(homePaths, "idea-community-2025.3.3", productKey = "idea-community", productCode = "IIC", version = "2025.3.3")
-        backendFixture(homePaths, "pycharm-community-2025.3.3", productKey = "pycharm-community", productCode = "PCC", version = "2025.3.3")
+        backendFixture(homePaths, "idea-community-2025.3.3", productKey = "idea-community", productCode = "IC", version = "2025.3.3")
+        backendFixture(homePaths, "pycharm-community-2025.3.3", productKey = "pycharm-community", productCode = "PC", version = "2025.3.3")
         backendFixture(homePaths, "android-studio-2025.3.4.7", productKey = "android-studio", productCode = "AI", version = "2025.3.4.7")
         Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "12345\n")
         Files.writeString(homePaths.pidFile("pycharm-community-2025.3.3"), "54321\n")
@@ -74,8 +74,8 @@ class BackendCommandStartListTest {
     fun `json lists installed schema with null pid for stopped entries`(@TempDir tempDir: Path) {
         val homePaths = HomePaths(tempDir)
         homePaths.mkdirsAll()
-        backendFixture(homePaths, "idea-community-2025.3.3", productKey = "idea-community", productCode = "IIC", version = "2025.3.3")
-        backendFixture(homePaths, "pycharm-community-2025.3.3", productKey = "pycharm-community", productCode = "PCC", version = "2025.3.3")
+        backendFixture(homePaths, "idea-community-2025.3.3", productKey = "idea-community", productCode = "IC", version = "2025.3.3")
+        backendFixture(homePaths, "pycharm-community-2025.3.3", productKey = "pycharm-community", productCode = "PC", version = "2025.3.3")
         Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "12345\n")
         Files.writeString(homePaths.pidFile("pycharm-community-2025.3.3"), "54321\n")
 

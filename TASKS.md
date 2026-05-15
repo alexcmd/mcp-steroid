@@ -1659,7 +1659,7 @@ a cached rerun shows just the products-API fetch. Hampers forensics.
 URL + local destination at INFO (always) or DEBUG (selectable) BEFORE
 the cache check.
 
-### F10 — npx-kt fixtures conflate API product code (`IIC`) with installed `product-info.json` code (`IC`)
+### F10 — npx-kt fixtures conflate API product code (`IIC`) with installed `product-info.json` code (`IC`) ✅ resolved
 
 Naming hygiene only. Fixtures should distinguish:
 - `apiProductCode = "IIC"` — JetBrains products-API code
