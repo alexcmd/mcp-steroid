@@ -1549,3 +1549,25 @@ Both sides need updating in lockstep:
 7. M8 parser tighten.
 8. M12 video xterm.
 9. Polish m1+m2+m3+m4+m6.
+
+## Lifecycle batch (B1 + M2 + M3 + M6) — ✅ resolved 2026-05-15
+
+Codex run `task-lifecycle/run_20260515-133645-60441`. Commits pushed to
+`origin/mcp-5`:
+
+- `3a44bb88` — B1: `BackendManager.stop` verifies `ProcessHandle.info().command()`
+  resolves under `homePaths.backendsDir` or the `~/.<pid>.mcp-steroid` marker
+  decodes & matches descriptor; stale pid file deleted, `{outcome: "stale"}`
+  emitted on mismatch, no signal sent.
+- `6c5df613` — M2: product-only `backend start/stop <product>` prefers the
+  highest locally-installed `<product-key>-<version>` entry; falls back to
+  the products API only when nothing is installed.
+- `4f3e0ea3` — M3: `BackendManager.start` serialised via
+  `FileChannel.tryLock(state/global.lock)`; contended starts exit 64 with
+  "another devrig backend operation is in progress; retry shortly".
+- `1ea0fc32` — M6: launches redirect stdout/stderr to `logs/managed.log`;
+  start text + JSON report that path (Windows still uses WMI detach so
+  redirection there is best-effort).
+
+GUI integration test green (`ManagedBackendGui*`, BUILD SUCCESSFUL 2m9s),
+manual single-instance smoke green. See run dir for full transcript.
