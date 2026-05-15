@@ -116,6 +116,7 @@ private val globalBooleanFlags = setOf("--debug")
 private val globalValueFlags = setOf("--home")
 private val helpFlags = setOf("--help", "-h")
 private val versionSelectorFlags = setOf("--version", "-v")
+private val informationOverrideFlags = helpFlags + versionSelectorFlags
 private val knownModeKeywords = setOf("backend", "project")
 private val backendLifecycleSubcommands = setOf("download", "start", "stop")
 private val backendSubcommands = backendLifecycleSubcommands + "provision"
@@ -239,11 +240,12 @@ private val cliModeRules: List<ModeRule> = listOf(
  * Pure arg parser. Touches nothing but its input — safe to call before
  * stdout redirection or any class init.
  *
- * Precedence (highest first): `--mcp` → empty / global-only help → explicit
- * top-level `--help` / `-h` → explicit top-level `--version` / `-v` →
- * `backend` → `project` → Unknown. The MCP selector intentionally wins over
- * everything so a wrapper that accidentally combines flags still keeps MCP
- * framing intact; non-MCP modes are strict and reject unknown flags, missing
+ * Precedence (highest first): `--mcp` → `--help` / `-h` / empty →
+ * `--version` / `-v` → `backend` → `project` → Unknown. The MCP selector
+ * intentionally wins over everything so a wrapper that accidentally combines
+ * flags still keeps MCP framing intact. The info selectors intentionally win
+ * over data subcommands so `backend --help` prints usage instead of opening
+ * connections; non-info modes are strict and reject unknown flags, missing
  * value-flag values, and extra positional arguments.
  *
  * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
@@ -254,6 +256,8 @@ private val cliModeRules: List<ModeRule> = listOf(
 internal fun parseCliMode(args: Array<String>): CliMode {
     val rawArgs = args.toList()
     if (rawArgs.any { it == "--mcp" }) return CliMode.Mcp
+    if (rawArgs.any { it in helpFlags }) return CliMode.Help
+    if (rawArgs.hasVersionSelector()) return CliMode.Version
 
     parseValueFlagFailure(rawArgs, "--home", valueAllowedAt = { true })?.let {
         return CliMode.Unknown(args = it.args, hint = it.hint)
@@ -318,6 +322,26 @@ internal fun parseHomeOverride(args: Array<String>): String? {
 }
 
 private fun ParsedArgs.hasFlag(flag: String): Boolean = flags.containsKey(flag)
+
+private fun List<String>.hasVersionSelector(): Boolean {
+    var index = 0
+    while (index < size) {
+        when (this[index]) {
+            "-v" -> return true
+            "--version" -> {
+                val value = getOrNull(index + 1)
+                if (value == null || value.startsWith("-")) return true
+                index += 2
+            }
+            "--home" -> {
+                val value = getOrNull(index + 1)
+                index += if (value != null && !value.startsWith("--")) 2 else 1
+            }
+            else -> index++
+        }
+    }
+    return false
+}
 
 private fun parseValueFlagFailure(
     args: List<String>,
@@ -462,7 +486,7 @@ private fun removedAllowPaidFailure(parsed: ParsedArgs): CliMode.Unknown? {
 
 private fun validateRule(parsed: ParsedArgs, rule: ModeRule): CliMode.Unknown? {
     parsed.unknownFlags.firstOrNull()?.let { return unknownFlag(it) }
-    val allowedFlags = globalBooleanFlags + globalValueFlags + rule.allowedFlags + rule.valueFlags
+    val allowedFlags = globalBooleanFlags + globalValueFlags + informationOverrideFlags + rule.allowedFlags + rule.valueFlags
     parsed.flags.keys.firstOrNull { it !in allowedFlags }?.let { return unknownFlag(it) }
     if (parsed.positionals.size !in rule.expectedPositionals) {
         val firstExtraIndex = rule.expectedPositionals.last

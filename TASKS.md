@@ -1568,7 +1568,7 @@ Both sides need updating in lockstep:
 Synthesised from each codex run's `IMPROVEMENTS.md` after the
 managed-backends pipeline landed. Higher priority first.
 
-### F1 — M8 introduced a regression: `backend --help` / `backend --version` exit 64
+### F1 — M8 introduced a regression: `backend --help` / `backend --version` exit 64 ✅ resolved
 
 `Cli.kt`'s strict allow-list (commit `dc733cac`) dropped `--help` /
 `--version` from every backend mode's allowed-flag set. Pre-tightening,
