@@ -133,13 +133,7 @@ internal fun runBackendCommand(
 internal fun collectBackendRows(
     homePaths: HomePaths = resolveHomePaths(override = null),
 ): List<BackendRow> {
-    val legacyHomeDir = File(System.getProperty("user.home"))
-    val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
-    val discovery = IdeDiscoveryService(
-        markersDir = homePaths.markersDir.toFile(),
-        legacyHomeDir = legacyHomeDir,
-        allowHosts = allowHosts,
-    )
+    val discovery = createIdeDiscoveryService(homePaths)
 
     // Short-lived HTTP client. The MCP path uses an infinite-stream client;
     // here we want fast failure so a stuck IDE doesn't hang the CLI.
@@ -176,6 +170,24 @@ internal fun collectBackendRows(
         portDiscovery.close()
         httpClient.close()
     }
+}
+
+internal fun scanMarkersOnce(
+    homePaths: HomePaths = resolveHomePaths(override = null),
+): Set<DiscoveredIde> {
+    val discovery = createIdeDiscoveryService(homePaths)
+    discovery.scanOnce()
+    return discovery.ides.value
+}
+
+internal fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
+    val legacyHomeDir = File(System.getProperty("user.home"))
+    val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
+    return IdeDiscoveryService(
+        markersDir = homePaths.markersDir.toFile(),
+        legacyHomeDir = legacyHomeDir,
+        allowHosts = allowHosts,
+    )
 }
 
 internal fun runBackendDownloadCommand(
@@ -400,7 +412,7 @@ internal fun mergeRows(
  * builds (`261.23567.138`). Returns `null` for null/blank input so callers
  * can use it as a Map key without further filtering.
  */
-private fun normaliseBuildForDedup(build: String?): String? {
+internal fun normaliseBuildForDedup(build: String?): String? {
     if (build.isNullOrBlank()) return null
     return build.replaceFirst(Regex("^[A-Z]+-"), "")
 }

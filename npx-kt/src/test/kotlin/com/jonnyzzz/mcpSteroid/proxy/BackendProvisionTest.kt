@@ -1,8 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.proxy.monitor.AboutResponse
+import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIdeByPort
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -156,6 +160,102 @@ class BackendProvisionTest {
     }
 
     @Test
+    fun `provision command list keeps all port rows when no markers are discovered`() {
+        val text = renderProvisionCommandText(
+            listOf(
+                ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
+                ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
+            ),
+        )
+
+        assertTrue(text.contains("port-63342"), text)
+        assertTrue(text.contains("port-63343"), text)
+        assertTrue(text.contains("Port-discovered IDEs that can be provisioned:"), text)
+        assertFalse(text.contains("All running IDEs already have MCP Steroid installed."), text)
+    }
+
+    @Test
+    fun `provision command list hides a port row whose build matches a marker`() {
+        val text = renderProvisionCommandText(
+            targets = listOf(
+                ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
+                ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, productFullName = "GoLand 2026.1", productName = "GoLand", buildNumber = "GO-261.1")),
+            ),
+            markers = setOf(markerIde(build = "IU-261.23567.138")),
+        )
+
+        assertFalse(text.contains("port-63342"), text)
+        assertTrue(text.contains("port-63343"), text)
+        assertTrue(text.contains("Port-discovered IDEs that can be provisioned:"), text)
+    }
+
+    @Test
+    fun `provision command list reports when all port rows are already provisioned`() {
+        val text = renderProvisionCommandText(
+            targets = listOf(
+                ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
+                ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
+            ),
+            markers = setOf(
+                markerIde(pid = 11, build = "IU-261.23567.138"),
+                markerIde(pid = 12, name = "GoLand", build = "GO-261.1"),
+            ),
+        )
+
+        assertTrue(text.contains("All running IDEs already have MCP Steroid installed."), text)
+        assertTrue(text.contains("Run \"devrig backend\" to see them."), text)
+        assertFalse(text.contains("Port-discovered IDEs that can be provisioned:"), text)
+        assertFalse(text.contains("port-63342"), text)
+        assertFalse(text.contains("port-63343"), text)
+    }
+
+    @Test
+    fun `provision command list does not promote marker rows that have no matching port row`() {
+        val text = renderProvisionCommandText(
+            targets = listOf(
+                ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
+            ),
+            markers = setOf(markerIde(name = "GoLand", build = "GO-261.1")),
+        )
+
+        assertTrue(text.contains("port-63342"), text)
+        assertFalse(text.contains("GoLand"), text)
+        assertTrue(text.contains("Port-discovered IDEs that can be provisioned:"), text)
+    }
+
+    @Test
+    fun `provision command json filters targets and reports discovery note`() {
+        val root = renderProvisionCommandJson(
+            targets = listOf(
+                ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
+                ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
+            ),
+            markers = setOf(markerIde(build = "IU-261.23567.138")),
+        )
+
+        val targets = root["targets"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
+        assertEquals(listOf("port-63343"), targets)
+        assertEquals(
+            "Filtered 1 entries already provisioned. Use 'backend --json' for the full set.",
+            root["discoveryNote"]!!.jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `provision command json omits discovery note when no filtering is needed`() {
+        val root = renderProvisionCommandJson(
+            targets = listOf(
+                ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
+            ),
+            markers = setOf(markerIde(name = "GoLand", build = "GO-261.1")),
+        )
+
+        val targets = root["targets"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
+        assertEquals(listOf("port-63342"), targets)
+        assertFalse("discoveryNote" in root.keys, root.toString())
+    }
+
+    @Test
     fun `provision resolves port id and computes manual instruction paths without installing plugin`(@TempDir tempDir: Path) = runBlocking {
         val sourcePlugin = tempDir.resolve("source-plugin").createDirectories()
         val port = ServerSocket(0).use { it.localPort }
@@ -284,6 +384,53 @@ class BackendProvisionTest {
                 renderBackendProvisionListJson(rows, PrintStream(buf, true, Charsets.UTF_8))
             }.toString(Charsets.UTF_8),
         ).jsonObject
+
+    private fun renderProvisionCommandText(
+        targets: List<ProvisionTarget>,
+        markers: Set<DiscoveredIde> = emptySet(),
+    ): String {
+        val buf = ByteArrayOutputStream()
+        runBackendProvisionListCommand(
+            out = PrintStream(buf, true, Charsets.UTF_8),
+            json = false,
+            targets = { targets },
+            markers = { markers },
+        )
+        return buf.toString(Charsets.UTF_8)
+    }
+
+    private fun renderProvisionCommandJson(
+        targets: List<ProvisionTarget>,
+        markers: Set<DiscoveredIde> = emptySet(),
+    ) = parser.parseToJsonElement(
+        ByteArrayOutputStream().also { buf ->
+            runBackendProvisionListCommand(
+                out = PrintStream(buf, true, Charsets.UTF_8),
+                json = true,
+                targets = { targets },
+                markers = { markers },
+            )
+        }.toString(Charsets.UTF_8),
+    ).jsonObject
+
+    private fun markerIde(
+        name: String = "IntelliJ IDEA",
+        version: String = "2026.1.1",
+        pid: Long = 1234L,
+        build: String = "IU-261.23567.138",
+        mcpUrl: String = "http://localhost:6315/mcp",
+    ): DiscoveredIde {
+        val marker = PidMarker(
+            pid = pid,
+            mcpUrl = mcpUrl,
+            port = 0,
+            token = "",
+            ide = IdeInfo(name = name, version = version, build = build),
+            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
+            createdAt = "1970-01-01T00:00:00Z",
+        )
+        return DiscoveredIde(pid = pid, mcpUrl = mcpUrl, markerPath = "/tmp/$pid.mcp-steroid", marker = marker)
+    }
 
     private fun portIde(
         port: Int,

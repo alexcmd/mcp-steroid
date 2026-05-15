@@ -1667,15 +1667,16 @@ Naming hygiene only. Fixtures should distinguish:
 - `apiProductCode = "IIC"` — JetBrains products-API code
 - `installedProductCode = "IC"` — value in `product-info.json`
 
-### F11 — `backend provision` listing should hide IDEs already running MCP Steroid
+### F11 — `backend provision` listing should hide IDEs already running MCP Steroid ✅ resolved
 
 Today the listing scans all port-discovered IDEs, including ones
 with the plugin already loaded. Once an IDE has produced a marker
-file, the listing should annotate or hide those rows.
+file, the listing should hide those rows.
 
-**Fix:** correlate port-discovered rows against marker-discovered
-rows by build number + pid (or port → mcp-steroid health check).
-Annotate `port-<n>  (already provisioned)` and demote in the listing.
+**Fix:** provision list now runs the same marker discovery as `backend`,
+filters port-discovered rows whose normalised build already appears in
+a marker, prints the already-installed message when the filter empties
+the list, and emits `discoveryNote` in JSON when rows were removed.
 
 ### F12 — East-Asian wide characters and combining marks (display width)
 

@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -20,16 +21,19 @@ internal fun runBackendProvisionListCommand(
     out: PrintStream,
     json: Boolean,
     targets: suspend (HttpClient) -> List<ProvisionTarget> = { httpClient -> detectProvisionTargets(httpClient) },
+    markers: () -> Set<DiscoveredIde> = { scanMarkersOnce() },
 ) {
-    val rows = withProvisionHttpClient { httpClient ->
+    val (rawTargets, markerRows) = withProvisionHttpClient { httpClient ->
         runBlocking(Dispatchers.IO) {
-            targets(httpClient)
+            targets(httpClient) to markers()
         }
     }
+    val rows = filterAlreadyProvisionedTargets(rawTargets, markerRows)
+    val discoveryNote = provisionDiscoveryNote(rawTargets, rows, markerRows)
     if (json) {
-        renderBackendProvisionListJson(rows, out)
+        renderBackendProvisionListJson(rows, out, discoveryNote)
     } else {
-        renderBackendProvisionListText(rows, out)
+        renderBackendProvisionListText(rows, out, markerRows)
     }
 }
 
@@ -64,11 +68,17 @@ internal fun runBackendProvisionCommand(
 internal fun renderBackendProvisionListText(
     rows: List<ProvisionTarget>,
     out: PrintStream,
+    markerRows: Set<DiscoveredIde> = emptySet(),
 ) {
     out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
     out.println()
     if (rows.isEmpty()) {
-        out.println("No port-discovered IDEs are available.")
+        if (markerRows.isNotEmpty()) {
+            out.println("All running IDEs already have MCP Steroid installed.")
+            out.println("Run \"$BRAND_NAME backend\" to see them.")
+        } else {
+            out.println("No port-discovered IDEs are available.")
+        }
         out.println()
         return
     }
@@ -90,9 +100,11 @@ internal fun renderBackendProvisionListText(
 internal fun renderBackendProvisionListJson(
     rows: List<ProvisionTarget>,
     out: PrintStream,
+    discoveryNote: String? = null,
 ) {
     val payload = buildJsonObject {
         putToolJson()
+        discoveryNote?.let { put("discoveryNote", it) }
         put("targets", buildJsonArray {
             for (row in rows) {
                 add(provisionTargetJson(row))
@@ -100,6 +112,31 @@ internal fun renderBackendProvisionListJson(
         })
     }
     out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
+}
+
+internal fun filterAlreadyProvisionedTargets(
+    targets: List<ProvisionTarget>,
+    markerRows: Set<DiscoveredIde>,
+): List<ProvisionTarget> {
+    val markerBuilds = markerRows
+        .mapNotNull { normaliseBuildForDedup(it.marker.ide.build) }
+        .toSet()
+    return targets.filter { target ->
+        val build = normaliseBuildForDedup(target.ide.buildNumber)
+        build == null || build !in markerBuilds
+    }
+}
+
+private fun provisionDiscoveryNote(
+    rawTargets: List<ProvisionTarget>,
+    rows: List<ProvisionTarget>,
+    discoveredMarkers: Set<DiscoveredIde>,
+): String? {
+    if (discoveredMarkers.isNotEmpty() && rawTargets.isNotEmpty() && rows.size < rawTargets.size) {
+        return "Filtered ${rawTargets.size - rows.size} entries already provisioned. " +
+            "Use 'backend --json' for the full set."
+    }
+    return null
 }
 
 internal fun provisionTargetJson(target: ProvisionTarget): JsonObject = buildJsonObject {
