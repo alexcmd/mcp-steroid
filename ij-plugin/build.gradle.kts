@@ -185,7 +185,7 @@ intellijPlatform {
         }
 
         ideaVersion {
-            sinceBuild = "253"
+            sinceBuild = "252"
             untilBuild = null
         }
     }
