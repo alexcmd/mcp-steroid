@@ -2,13 +2,22 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
+import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.create
+import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
+import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
+import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 class ManagedBackendGuiIntegrationTest {
     @Test
@@ -24,8 +33,9 @@ class ManagedBackendGuiIntegrationTest {
             repoCacheDir = null,
         )
         val devrig = container.deployDevrigLauncher()
+        container.console.writeHeader("Managed-backend integration test")
 
-        val download = container.execAndAssert(
+        val download = container.execAndAssertWithConsoleStream(
             description = "download IDEA Community managed backend",
             timeoutSeconds = 35 * 60L,
             script = """
@@ -74,7 +84,7 @@ class ManagedBackendGuiIntegrationTest {
             """.trimIndent(),
         )
 
-        val start = container.execAndAssert(
+        val start = container.execAndAssertWithConsoleStream(
             description = "start IDEA Community managed backend",
             timeoutSeconds = 5 * 60L,
             script = """
@@ -103,6 +113,7 @@ class ManagedBackendGuiIntegrationTest {
 
         container.waitForIntelliJBuiltInHttpServer(timeoutSeconds = 180)
 
+        container.console.writeStep(6, "Waiting for MCP Steroid pid marker (up to 180s)...")
         container.execAndAssert(
             description = "wait for MCP Steroid pid marker",
             timeoutSeconds = 180,
@@ -131,8 +142,9 @@ class ManagedBackendGuiIntegrationTest {
                 fi
             """.trimIndent(),
         )
+        container.console.writeSuccess("MCP Steroid marker present")
 
-        container.execAndAssert(
+        container.execAndAssertWithConsoleStream(
             description = "assert proxy discovers managed backend marker",
             timeoutSeconds = 120,
             script = """
@@ -155,7 +167,7 @@ class ManagedBackendGuiIntegrationTest {
             """.trimIndent(),
         )
 
-        container.execAndAssert(
+        container.execAndAssertWithConsoleStream(
             description = "stop IDEA Community managed backend",
             timeoutSeconds = 120,
             script = """
@@ -172,5 +184,81 @@ class ManagedBackendGuiIntegrationTest {
                 fi
             """.trimIndent(),
         )
+        container.console.writeSuccess("Managed backend lifecycle verified")
     }
+}
+
+/**
+ * Runs a devrig script inside this container while live-streaming stdout/stderr
+ * to the on-video xterm. The full transcript is still returned for assertions.
+ */
+internal fun IntelliJContainer.execAndAssertWithConsoleStream(
+    description: String,
+    script: String,
+    timeoutSeconds: Long = 120,
+): ProcessResult {
+    console.writeHeader(description)
+
+    val wrappedScript = """
+        set -euo pipefail
+        (
+        ${script.trimIndent()}
+        ) 2>&1
+    """.trimIndent()
+
+    val streamedStdoutLines = AtomicInteger(0)
+    val streamedStderrLines = AtomicInteger(0)
+    val process = scope.startProcessInContainer {
+        args("bash", "-lc", wrappedScript)
+            .timeoutSeconds(timeoutSeconds)
+            .description(description)
+    }
+
+    val streamer = thread(
+        start = true,
+        isDaemon = true,
+        name = "devrig-console-stream-${System.nanoTime()}",
+    ) {
+        try {
+            runBlocking {
+                process.messagesFlow.collect { line ->
+                    when (line.type) {
+                        ProcessStreamType.STDOUT -> {
+                            streamedStdoutLines.incrementAndGet()
+                            console.writeLine("${ConsoleDriver.GREEN}[devrig]${ConsoleDriver.RESET} ${line.line}")
+                        }
+
+                        ProcessStreamType.STDERR -> {
+                            streamedStderrLines.incrementAndGet()
+                            console.writeLine("${ConsoleDriver.RED}[devrig]${ConsoleDriver.RESET} ${line.line}")
+                        }
+
+                        ProcessStreamType.INFO -> Unit
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            System.err.println("Failed to stream devrig output to the visible console: ${e.message}")
+            console.writeError("Failed to stream devrig output: ${e.message}")
+        }
+    }
+
+    val result = process.awaitForProcessFinish()
+    try {
+        streamer.join(3_000)
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        System.err.println("Interrupted while waiting for devrig console streamer: ${e.message}")
+    }
+
+    result.stdout.lineSequence()
+        .drop(streamedStdoutLines.get())
+        .filter { line -> line.isNotEmpty() }
+        .forEach { line -> console.writeLine("${ConsoleDriver.GREEN}[devrig]${ConsoleDriver.RESET} $line") }
+    result.stderr.lineSequence()
+        .drop(streamedStderrLines.get())
+        .filter { line -> line.isNotEmpty() }
+        .forEach { line -> console.writeLine("${ConsoleDriver.RED}[devrig]${ConsoleDriver.RESET} $line") }
+
+    return result.assertExitCode(0) { "$description failed\nstdout=$stdout\nstderr=$stderr" }
 }

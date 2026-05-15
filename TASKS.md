@@ -1451,6 +1451,8 @@ container.execAndAssertOnVideo(
 
 Slot: between M8 (parser tightening) and the polish batch.
 
+✅ resolved
+
 ## Revised pipeline order (2026-05-15, final)
 
 1. M1-fix — IIC resolver filter + post-unpack assertion (in flight).
