@@ -9,6 +9,7 @@ internal class HomePaths(val home: Path) {
     val logsDir: Path get() = home.resolve("logs")
     val backendsDir: Path get() = home.resolve("backends")
     val cachesDir: Path get() = home.resolve("caches")
+    val downloadsDir: Path get() = home.resolve("downloads")
     val stateDir: Path get() = home.resolve("state")
     val markersDir: Path get() = home.resolve("markers")
     val executionStorageDir: Path get() = home.resolve("execution-storage")
@@ -18,7 +19,7 @@ internal class HomePaths(val home: Path) {
     fun pidFile(id: String): Path = stateDir.resolve("$id.pid")
 
     fun mkdirsAll() {
-        listOf(logsDir, backendsDir, cachesDir, stateDir, markersDir).forEach { Files.createDirectories(it) }
+        listOf(logsDir, backendsDir, cachesDir, downloadsDir, stateDir, markersDir).forEach { Files.createDirectories(it) }
     }
 }
 

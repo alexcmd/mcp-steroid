@@ -162,6 +162,26 @@ internal class ClasspathBundledPluginResolver : BundledPluginResolver {
     }
 }
 
+internal fun migrateLegacyArchives(homePaths: HomePaths) {
+    val legacyDir = homePaths.cachesDir.resolve("_archives")
+    if (!Files.isDirectory(legacyDir)) return
+
+    Files.createDirectories(homePaths.downloadsDir)
+    Files.list(legacyDir).use { stream ->
+        stream.asSequence().forEach { source ->
+            val destination = homePaths.downloadsDir.resolve(source.fileName)
+            if (!Files.exists(destination)) {
+                Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE)
+            }
+        }
+    }
+
+    val isEmpty = Files.list(legacyDir).use { stream -> stream.findAny().isEmpty }
+    if (isEmpty) {
+        Files.deleteIfExists(legacyDir)
+    }
+}
+
 internal class DefaultManagedBackendDownloader(
     private val archiveDownloadDir: Path,
     private val os: HostOs = resolveHostOs(),
@@ -200,7 +220,7 @@ internal class DefaultManagedBackendDownloader(
 internal class BackendManager(
     private val homePaths: HomePaths,
     private val downloader: ManagedBackendDownloader = DefaultManagedBackendDownloader(
-        archiveDownloadDir = homePaths.cachesDir.resolve("_archives"),
+        archiveDownloadDir = homePaths.downloadsDir,
     ),
     private val launcherResolver: LauncherResolver = LauncherResolver(),
     private val bundledPluginResolver: BundledPluginResolver = ClasspathBundledPluginResolver(),
@@ -208,6 +228,11 @@ internal class BackendManager(
     private val ideUserHome: Path = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
     private val stopGracePeriodMillis: Long = 5_000L,
 ) : ManagedBackendService {
+    init {
+        homePaths.mkdirsAll()
+        migrateLegacyArchives(homePaths)
+    }
+
     override suspend fun download(id: BackendId): DownloadResult {
         homePaths.mkdirsAll()
         val resolution = downloader.resolve(id)

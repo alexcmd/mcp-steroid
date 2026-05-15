@@ -54,6 +54,7 @@ class HomePathsTest {
         assertEquals(tempDir.resolve("logs"), paths.logsDir)
         assertEquals(tempDir.resolve("backends"), paths.backendsDir)
         assertEquals(tempDir.resolve("caches"), paths.cachesDir)
+        assertEquals(tempDir.resolve("downloads"), paths.downloadsDir)
         assertEquals(tempDir.resolve("state"), paths.stateDir)
         assertEquals(tempDir.resolve("markers"), paths.markersDir)
         assertEquals(tempDir.resolve("execution-storage"), paths.executionStorageDir)
@@ -71,9 +72,28 @@ class HomePathsTest {
         paths.mkdirsAll()
         paths.mkdirsAll()
 
-        listOf(paths.logsDir, paths.backendsDir, paths.cachesDir, paths.stateDir, paths.markersDir).forEach { dir ->
+        listOf(paths.logsDir, paths.backendsDir, paths.cachesDir, paths.downloadsDir, paths.stateDir, paths.markersDir).forEach { dir ->
             assertTrue(dir.isDirectory(), "$dir should be a directory")
         }
         assertTrue(!Files.exists(paths.executionStorageDir), "execution-storage is reserved and not created yet")
+    }
+
+    @Test
+    fun `migrateLegacyArchives moves old archive files into downloads and is idempotent`(
+        @TempDir tempDir: Path,
+    ) {
+        val paths = HomePaths(tempDir.resolve("home"))
+        val legacyDir = paths.cachesDir.resolve("_archives")
+        val archiveName = "ideaIC-2025.3.3.tar.gz"
+        Files.createDirectories(legacyDir)
+        Files.writeString(legacyDir.resolve(archiveName), "archive bytes")
+
+        migrateLegacyArchives(paths)
+        migrateLegacyArchives(paths)
+
+        val migratedArchive = paths.downloadsDir.resolve(archiveName)
+        assertTrue(Files.isRegularFile(migratedArchive), "archive should move into downloads/")
+        assertEquals("archive bytes", Files.readString(migratedArchive))
+        assertTrue(!Files.exists(legacyDir), "empty legacy archive directory should be deleted")
     }
 }
