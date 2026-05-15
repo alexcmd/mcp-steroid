@@ -35,10 +35,12 @@ application {
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.slf4j:slf4j-api:2.0.17")
     // Runtime xz support for IdeUnpacker fallback paths that might handle .tar.xz directly.
     implementation("org.tukaani:xz:1.10")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("ch.qos.logback:logback-classic:1.5.18")
 }
 
 tasks.test {

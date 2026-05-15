@@ -4,11 +4,14 @@ package com.jonnyzzz.mcpSteroid.ideDownloader
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import org.slf4j.LoggerFactory
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+
+private val ideUnpackerLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeUnpacker")
 
 /**
  * Dispatches the IDE archive at [archiveFile] to the appropriate unpacker based on
@@ -60,7 +63,7 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
     unpackDir.mkdirs()
-    System.err.println("[IDE-DOWNLOAD] Unpacking ${archiveFile.name} -> $unpackDir")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacking {} -> {}", archiveFile.name, unpackDir)
 
     var entryCount = 0
     var lastPrinted = System.currentTimeMillis()
@@ -92,7 +95,7 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
             entryCount++
             val now = System.currentTimeMillis()
             if (now - lastPrinted >= 5_000) {
-                System.err.println("[IDE-DOWNLOAD] Unpacking: $entryCount entries extracted...")
+                ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacking: {} entries extracted...", entryCount)
                 lastPrinted = now
             }
 
@@ -100,7 +103,7 @@ fun unpackTarGz(archiveFile: File, unpackDir: File) {
         }
     }
 
-    System.err.println("[IDE-DOWNLOAD] Unpacked $entryCount entries to $unpackDir")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacked {} entries to {}", entryCount, unpackDir)
 }
 
 /**
@@ -119,7 +122,7 @@ fun unpackZip(archiveFile: File, unpackDir: File) {
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
     unpackDir.mkdirs()
-    System.err.println("[IDE-DOWNLOAD] Unpacking ${archiveFile.name} -> $unpackDir")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacking {} -> {}", archiveFile.name, unpackDir)
 
     var entryCount = 0
     var lastPrinted = System.currentTimeMillis()
@@ -143,7 +146,7 @@ fun unpackZip(archiveFile: File, unpackDir: File) {
             entryCount++
             val now = System.currentTimeMillis()
             if (now - lastPrinted >= 5_000) {
-                System.err.println("[IDE-DOWNLOAD] Unpacking: $entryCount entries extracted...")
+                ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacking: {} entries extracted...", entryCount)
                 lastPrinted = now
             }
 
@@ -151,7 +154,7 @@ fun unpackZip(archiveFile: File, unpackDir: File) {
         }
     }
 
-    System.err.println("[IDE-DOWNLOAD] Unpacked $entryCount entries to $unpackDir")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacked {} entries to {}", entryCount, unpackDir)
 }
 
 /**
@@ -185,7 +188,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
     val hdiutil = File("/usr/bin/hdiutil").takeIf { it.canExecute() }?.absolutePath ?: "hdiutil"
     val mountPoint = Files.createTempDirectory("ide-downloader-dmg-${archiveFile.nameWithoutExtension}-").toFile()
 
-    System.err.println("[IDE-DOWNLOAD] Mounting ${archiveFile.name} at $mountPoint")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Mounting {} at {}", archiveFile.name, mountPoint)
     try {
         runOrThrow(
             listOf(
@@ -198,7 +201,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
         )
 
         val sourceDir = resolveDmgPayloadDir(mountPoint)
-        System.err.println("[IDE-DOWNLOAD] Copying $sourceDir -> $unpackDir")
+        ideUnpackerLog.debug("[IDE-DOWNLOAD] Copying {} -> {}", sourceDir, unpackDir)
         // Use `cp -R` (or ditto) so symlinks / extended attributes survive — Java's
         // Files.copy doesn't preserve xattrs which matters for code-signed .app bundles.
         val copySource = if (sourceDir.name.endsWith(".app")) sourceDir.absolutePath else "${sourceDir.absolutePath}/."
@@ -206,7 +209,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
             listOf("/bin/cp", "-R", copySource, unpackDir.absolutePath),
             timeoutMinutes = 10,
         )
-        System.err.println("[IDE-DOWNLOAD] Unpacked DMG into $unpackDir")
+        ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacked DMG into {}", unpackDir)
     } finally {
         try {
             runOrThrow(
@@ -215,7 +218,7 @@ fun unpackDmgViaMount(archiveFile: File, unpackDir: File) {
                 allowedExitCodes = setOf(0, 1), // detach can race; -force returns 1 when already gone
             )
         } catch (e: Exception) {
-            System.err.println("[IDE-DOWNLOAD] WARN: failed to detach $mountPoint: ${e.message}")
+            ideUnpackerLog.debug("[IDE-DOWNLOAD] WARN: failed to detach {}: {}", mountPoint, e.message)
         }
         // Never recursively delete a still-mounted dir. After detach the temp dir is empty.
         mountPoint.delete()
@@ -262,7 +265,7 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     )
 
     unpackDir.mkdirs()
-    System.err.println("[IDE-DOWNLOAD] Extracting ${archiveFile.name} with $sevenZip -> $unpackDir")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Extracting {} with {} -> {}", archiveFile.name, sevenZip, unpackDir)
     runOrThrow(
         listOf(sevenZip, "x", "-y", "-o${unpackDir.absolutePath}", archiveFile.absolutePath),
         timeoutMinutes = 10,
@@ -273,13 +276,13 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     val nsisScratch = File(unpackDir, "\$PLUGINSDIR")
     if (nsisScratch.isDirectory) nsisScratch.deleteRecursively()
 
-    System.err.println("[IDE-DOWNLOAD] Unpacked .exe into $unpackDir")
+    ideUnpackerLog.debug("[IDE-DOWNLOAD] Unpacked .exe into {}", unpackDir)
 }
 
 private fun unpackDirAlreadyPopulated(unpackDir: File): Boolean {
     val existing = unpackDir.listFiles()?.firstOrNull { it.isDirectory || it.length() > 0 }
     if (existing != null) {
-        System.err.println("[IDE-DOWNLOAD] Already unpacked: $existing")
+        ideUnpackerLog.debug("[IDE-DOWNLOAD] Already unpacked: {}", existing)
         return true
     }
     return false

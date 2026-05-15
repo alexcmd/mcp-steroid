@@ -1,9 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
+
+private val ideDownloaderLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader")
 
 /**
  * Resolves the download URL and file name for an [IdeDistribution],
@@ -27,11 +30,11 @@ fun IdeDistribution.resolveAndDownload(
     val destFile = File(downloadDir, fileName)
 
     if (destFile.exists()) {
-        System.err.println("[IDE-DOWNLOAD] Using cached archive: $destFile")
+        ideDownloaderLog.debug("[IDE-DOWNLOAD] Using cached archive: {}", destFile)
         return destFile
     }
 
-    System.err.println("[IDE-DOWNLOAD] Downloading $url -> $destFile")
+    ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloading {} -> {}", url, destFile)
     downloadFile(url, destFile)
     return destFile
 }
@@ -90,14 +93,14 @@ private fun downloadFile(url: String, dest: File) {
                         val now = System.currentTimeMillis()
                         if (now - lastPrinted >= 5_000) {
                             val progress = if (totalBytes > 0) " (${downloaded * 100 / totalBytes}%)" else ""
-                            System.err.println("[IDE-DOWNLOAD] Progress: ${downloaded / 1024 / 1024} MB$progress")
+                            ideDownloaderLog.debug("[IDE-DOWNLOAD] Progress: {} MB{}", downloaded / 1024 / 1024, progress)
                             lastPrinted = now
                         }
                     }
                 }
             }
             tempFile.renameTo(dest)
-            System.err.println("[IDE-DOWNLOAD] Downloaded ${downloaded / 1024 / 1024} MB to $dest")
+            ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloaded {} MB to {}", downloaded / 1024 / 1024, dest)
         } catch (e: Exception) {
             tempFile.delete()
             throw e

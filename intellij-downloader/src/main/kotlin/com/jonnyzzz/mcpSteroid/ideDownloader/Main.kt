@@ -1,7 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
+import org.slf4j.LoggerFactory
 import java.io.File
+
+private val ideDownloaderMainLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.Main")
 
 /**
  * CLI entry point for downloading and optionally unpacking IDE archives.
@@ -56,7 +59,7 @@ fun main(args: Array<String>) {
     }
 
     val archiveFile = distribution.resolveAndDownload(outputDir, os, preferWindowsZip = preferWindowsZip)
-    System.err.println("[IDE-DOWNLOAD] Archive: ${archiveFile.absolutePath}")
+    ideDownloaderMainLog.debug("[IDE-DOWNLOAD] Archive: {}", archiveFile.absolutePath)
 
     val unpackDir = argsMap["--unpack-dir"]
     if (unpackDir != null) {

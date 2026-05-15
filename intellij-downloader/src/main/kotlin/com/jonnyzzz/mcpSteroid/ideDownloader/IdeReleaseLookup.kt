@@ -6,10 +6,13 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
+import org.slf4j.LoggerFactory
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+
+private val ideReleaseLookupLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeReleaseLookup")
 
 data class IdeArchiveResolution(
     val product: IdeProduct,
@@ -103,7 +106,7 @@ fun resolveArchive(
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
     val url = "https://data.services.jetbrains.com/products?code=${product.code}&release.type=$releaseType"
 
-    System.err.println("[IDE-DOWNLOAD] Fetching products info from $url")
+    logFetchingProductsInfo(url)
     val payload = readUrlText(url)
 
     val json = Json { ignoreUnknownKeys = true }
@@ -147,6 +150,10 @@ fun resolveArchive(
         "Unable to resolve $versionMessage '${channel.apiValue}' release for product '${product.code}' " +
             "(tried download keys ${candidates.joinToString()}) from $url"
     )
+}
+
+internal fun logFetchingProductsInfo(url: String) {
+    ideReleaseLookupLog.debug("[IDE-DOWNLOAD] Fetching products info from {}", url)
 }
 
 internal fun readUrlText(url: String): String {

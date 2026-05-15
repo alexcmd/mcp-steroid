@@ -1,6 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
+import org.slf4j.LoggerFactory
+
+private val androidStudioReleaseLookupLog =
+    LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.AndroidStudioReleaseLookup")
+
 /**
  * Resolves the latest stable Android Studio archive URL for ([os], [architecture]).
  *
@@ -49,7 +54,7 @@ fun resolveAndroidStudioArchive(
     }
 
     val pageUrl = "https://developer.android.com/studio"
-    System.err.println("[IDE-DOWNLOAD] Fetching Android Studio downloads from $pageUrl")
+    logFetchingAndroidStudioDownloads(pageUrl)
     val html = readUrlText(pageUrl)
 
     // Each download is an absolute https URL into edgedl.me.gvt1.com/android/studio/...
@@ -111,6 +116,10 @@ fun resolveAndroidStudioArchive(
         "No Android Studio download URL ending in ${wantedSuffixes.joinToString()} found on $pageUrl. " +
             "URLs discovered: ${allUrls.sorted().joinToString()}"
     )
+}
+
+internal fun logFetchingAndroidStudioDownloads(pageUrl: String) {
+    androidStudioReleaseLookupLog.debug("[IDE-DOWNLOAD] Fetching Android Studio downloads from {}", pageUrl)
 }
 
 internal fun inferAndroidStudioVersion(url: String): String {
