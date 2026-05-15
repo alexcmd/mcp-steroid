@@ -60,10 +60,11 @@ class CliModeOutputTest {
         assertTrue(out.contains("--mcp"), "help should advertise --mcp; got:\n$out")
         assertTrue(out.contains("--version"), "help should advertise --version; got:\n$out")
         assertTrue(out.contains("--help"), "help should advertise --help itself; got:\n$out")
-        assertTrue(out.contains("backend download [<id>]"), "help should advertise download default-listing form; got:\n$out")
+        assertTrue(out.contains("backend download [<id>] [--version <v>] [--json]"), "help should advertise download version override; got:\n$out")
         assertTrue(out.contains("no id → list IDEs available for download"), "help should explain download without id; got:\n$out")
-        assertTrue(out.contains("backend start    [<id>] [--json]"), "help should advertise start default-listing form; got:\n$out")
-        assertTrue(out.contains("backend stop     [<id>] [--json]"), "help should advertise stop default-listing form; got:\n$out")
+        assertTrue(out.contains("backend start    [<id>] [--version <v>] [--json]"), "help should advertise start version override; got:\n$out")
+        assertTrue(out.contains("backend stop     [<id>] [--version <v>] [--json]"), "help should advertise stop version override; got:\n$out")
+        assertTrue(out.contains("backend provision [<id>] [--json]"), "help should advertise provision default-listing form; got:\n$out")
         assertTrue(out.contains("Product-only id prefers the highest"), "help should explain product-only local backend resolution; got:\n$out")
     }
 

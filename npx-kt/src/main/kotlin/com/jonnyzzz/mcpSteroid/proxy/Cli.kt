@@ -622,13 +622,13 @@ private fun printHelp(out: PrintStream) {
                                                      backend under the devrig home. Accepts
                                                      <product>, <product>:<version>, or
                                                      <product>-<version>.
-          mcp-steroid-proxy backend start    [<id>] [--json]
+          mcp-steroid-proxy backend start    [<id>] [--version <v>] [--json]
                                                      no id → list installed backends. With id,
                                                      start an installed managed backend in
                                                      detached mode and print its pid/log/config
                                                      paths. Product-only id prefers the
                                                      highest locally installed backend.
-          mcp-steroid-proxy backend stop     [<id>] [--json]
+          mcp-steroid-proxy backend stop     [<id>] [--version <v>] [--json]
                                                      no id → list currently running backends.
                                                      With id, stop a managed backend by pid file.
                                                      Product-only id prefers the highest

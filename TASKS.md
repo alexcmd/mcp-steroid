@@ -1228,12 +1228,12 @@ positionals.
 
 | | | reviewers |
 |---|---|---|
-| m1 | `--home ~/...` not expanded; `..` normalised rather than rejected | A, B, C |
-| m2 | `NpxKtRoot` has a production-visible mutable test seam | A, B, C |
-| m3 | Text rendering uses UTF-16 `String.length`, not terminal display width | A, B |
-| m4 | Some unit tests depend on live JetBrains/Google APIs (flaky offline) | A |
+| m1 | `--home ~/...` not expanded; `..` normalised rather than rejected ✅ resolved | A, B, C |
+| m2 | `NpxKtRoot` has a production-visible mutable test seam ✅ resolved | A, B, C |
+| m3 | Text rendering uses UTF-16 `String.length`, not terminal display width ✅ resolved | A, B |
+| m4 | Some unit tests depend on live JetBrains/Google APIs (flaky offline) ✅ resolved | A |
 | m5 | Banned silent `catch (_:Exception)` in `IdeDownloader.kt:58-60` ✅ resolved (download-A batch) | A, B, C |
-| m6 | Help banner omits `--version <v>` for `backend start/stop` | C |
+| m6 | Help banner omits `--version <v>` for `backend start/stop` ✅ resolved | C |
 | m7 | `tempFile.renameTo(dest)` success not checked in `IdeDownloader.kt:79-98` ✅ resolved (download-A batch) | A |
 
 ## Deferred (per user, 2026-05-15)
@@ -1254,7 +1254,7 @@ One focused brief per task; collect handoff, push, iterate. Order:
    pattern, isolated to `IdeDownloader.kt` + `SevenZipLocator.kt`.
 5. **M4** — JSON synthetic IDs, isolated to renderer.
 6. **M8** — CLI parser tightening.
-7. **m1** + **m2** + **m3** + **m4** + **m6** — polish batch.
+7. **m1** + **m2** + **m3** + **m4** + **m6** — polish batch ✅ resolved.
 
 B3 watched but not actively fixed (parallel worker territory).
 
@@ -1305,7 +1305,7 @@ Sequential codex runs. Order:
    + `HomePaths.kt`.
 5. **M4** — JSON synthetic IDs.
 6. **M8** — CLI parser tightening.
-7. **m1 / m2 / m3 / m4 / m6** — polish.
+7. **m1 / m2 / m3 / m4 / m6** — polish ✅ resolved.
 
 ## Additional item (added 2026-05-15)
 
@@ -1364,7 +1364,7 @@ Slots into the pipeline **right after M1** — before the lifecycle batch.
 5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
 6. M4 — JSON synthetic IDs.
 7. M8 — CLI parser tightening.
-8. m1 / m2 / m3 / m4 / m6 — polish.
+8. m1 / m2 / m3 / m4 / m6 — polish ✅ resolved.
 
 ## M1 follow-up: confirmed bug, fix required (2026-05-15)
 
@@ -1414,7 +1414,7 @@ moves M1-fix in front of M11.
 5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
 6. M4 — JSON synthetic IDs.
 7. M8 — CLI parser tightening.
-8. m1 / m2 / m3 / m4 / m6 — polish.
+8. m1 / m2 / m3 / m4 / m6 — polish ✅ resolved.
 
 ## Additional item (added 2026-05-15)
 
@@ -1463,7 +1463,7 @@ Slot: between M8 (parser tightening) and the polish batch.
 6. M4 — JSON synthetic IDs.
 7. M8 — CLI parser tightening.
 8. **M12 — managed-backend test: stream `devrig` output to the on-video xterm.**
-9. m1 / m2 / m3 / m4 / m6 — polish.
+9. m1 / m2 / m3 / m4 / m6 — polish ✅ resolved.
 
 ## M13 — `backend provision` three explicit methods (2026-05-15)
 
@@ -1561,7 +1561,7 @@ Both sides need updating in lockstep:
 6. M4 JSON synthetic IDs.
 7. M8 parser tighten.
 8. M12 video xterm.
-9. Polish m1+m2+m3+m4+m6.
+9. Polish m1+m2+m3+m4+m6 ✅ resolved.
 
 ## Lifecycle batch (B1 + M2 + M3 + M6) — ✅ resolved 2026-05-15
 
