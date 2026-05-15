@@ -85,8 +85,8 @@ class CliModeTest {
             parseCliMode(arrayOf("backend", "download", "idea-community", "--json")),
         )
         assertEquals(
-            CliMode.Backend.Download("idea", versionOverride = "2025.3.3", acceptPaid = true),
-            parseCliMode(arrayOf("backend", "download", "idea", "--version", "2025.3.3", "--allow-paid")),
+            CliMode.Backend.Download("idea-ultimate", versionOverride = "2025.3.3", acceptPaid = true),
+            parseCliMode(arrayOf("backend", "download", "idea-ultimate", "--version", "2025.3.3", "--allow-paid")),
         )
         assertEquals(
             CliMode.Backend.Start("idea-community", versionOverride = "2025.3.3"),

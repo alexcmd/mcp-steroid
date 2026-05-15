@@ -48,7 +48,7 @@ sealed interface IdeProduct {
 
     /** IntelliJ IDEA Ultimate (paid). Kept as `IntelliJIdea` to preserve existing call sites. */
     data object IntelliJIdea : IdeProduct {
-        override val id = "idea"
+        override val id = "idea-ultimate"
         override val displayName = "IntelliJ IDEA Ultimate"
         override val code = "IIU"
         override val launcherExecutable = "idea"
@@ -68,7 +68,7 @@ sealed interface IdeProduct {
 
     /** PyCharm Professional (paid). Kept as `PyCharm` to preserve existing call sites. */
     data object PyCharm : IdeProduct {
-        override val id = "pycharm"
+        override val id = "pycharm-pro"
         override val displayName = "PyCharm Professional"
         override val code = "PCP"
         override val launcherExecutable = "pycharm"
@@ -171,6 +171,7 @@ sealed interface IdeProduct {
                     put(p.id.lowercase(), p)
                     put(p.code.lowercase(), p)
                 }
+                put("idea", IntelliJIdea)
                 put("intellij", IntelliJIdea)
                 put("intellijidea", IntelliJIdea)
                 put("intellijideaultimate", IntelliJIdea)
@@ -180,6 +181,7 @@ sealed interface IdeProduct {
                 put("community", IntelliJIdeaCommunity)
                 put("idea-ce", IntelliJIdeaCommunity)
                 put("ideac", IntelliJIdeaCommunity)
+                put("pycharm", PyCharm)
                 put("python", PyCharm)
                 put("pycharm-professional", PyCharm)
                 put("pycharm-pro", PyCharm)

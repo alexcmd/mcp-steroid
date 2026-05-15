@@ -53,8 +53,8 @@ class BackendCommandDownloadListTest {
         val pyCharmCommunity = lines.single { it.contains("pycharm-community") }
         val androidStudio = lines.single { it.contains("android-studio") }
         val goLand = lines.single { it.contains("goland") }
-        val ideaUltimate = lines.single { it.contains("idea") && it.contains("IntelliJ IDEA Ultimate") }
-        val pyCharmPro = lines.single { it.contains("pycharm") && it.contains("PyCharm Professional") }
+        val ideaUltimate = lines.single { it.contains("idea-ultimate") && it.contains("IntelliJ IDEA Ultimate") }
+        val pyCharmPro = lines.single { it.contains("pycharm-pro") && it.contains("PyCharm Professional") }
 
         assertTrue(lines.indexOf(ideaCommunity) < lines.indexOf(goLand), text)
         assertTrue(lines.indexOf(pyCharmCommunity) < lines.indexOf(goLand), text)
@@ -101,8 +101,8 @@ class BackendCommandDownloadListTest {
                 "webstorm",
                 "rider",
                 "clion",
-                "idea",
-                "pycharm",
+                "idea-ultimate",
+                "pycharm-pro",
             ),
             available.map { it["id"]!!.jsonPrimitive.content },
         )
@@ -124,7 +124,7 @@ class BackendCommandDownloadListTest {
         assertEquals("network down", android["versionLookupError"]!!.jsonPrimitive.content)
         assertFalse(android["requiresAllowPaid"]!!.jsonPrimitive.boolean)
 
-        val paid = available.single { it["id"]!!.jsonPrimitive.content == "idea" }
+        val paid = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
         assertEquals("paid", paid["licenseTier"]!!.jsonPrimitive.content)
         assertNull(paid["version"]!!.jsonPrimitive.contentOrNull)
         assertFalse("releaseDate" in paid)
@@ -141,8 +141,8 @@ class BackendCommandDownloadListTest {
             setOf("idea-community", "pycharm-community", "android-studio", "goland", "webstorm", "rider", "clion"),
             resolver.calls.toSet(),
         )
-        assertTrue("idea" !in resolver.calls, "paid IntelliJ IDEA Ultimate must not hit the release resolver")
-        assertTrue("pycharm" !in resolver.calls, "paid PyCharm Professional must not hit the release resolver")
+        assertTrue("idea-ultimate" !in resolver.calls, "paid IntelliJ IDEA Ultimate must not hit the release resolver")
+        assertTrue("pycharm-pro" !in resolver.calls, "paid PyCharm Professional must not hit the release resolver")
     }
 
     @Test

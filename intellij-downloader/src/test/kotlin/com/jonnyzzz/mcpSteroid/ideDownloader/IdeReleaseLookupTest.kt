@@ -162,11 +162,15 @@ class IdeReleaseLookupTest {
 
     @Test
     fun `IdeProduct fromString maps known aliases`() {
+        assertEquals("idea-ultimate", IdeProduct.IntelliJIdea.id)
+        assertEquals("pycharm-pro", IdeProduct.PyCharm.id)
         assertTrue(IdeProduct.fromString("idea") === IdeProduct.IntelliJIdea)
+        assertTrue(IdeProduct.fromString("idea-ultimate") === IdeProduct.IntelliJIdea)
         assertTrue(IdeProduct.fromString("idea-community") === IdeProduct.IntelliJIdeaCommunity)
         assertTrue(IdeProduct.fromString("IIC") === IdeProduct.IntelliJIdeaCommunity)
         assertTrue(IdeProduct.fromString("community") === IdeProduct.IntelliJIdeaCommunity)
         assertTrue(IdeProduct.fromString("pycharm") === IdeProduct.PyCharm)
+        assertTrue(IdeProduct.fromString("pycharm-pro") === IdeProduct.PyCharm)
         assertTrue(IdeProduct.fromString("pycharm-community") === IdeProduct.PyCharmCommunity)
         assertTrue(IdeProduct.fromString("PCC") === IdeProduct.PyCharmCommunity)
         assertTrue(IdeProduct.fromString("goland") === IdeProduct.GoLand)

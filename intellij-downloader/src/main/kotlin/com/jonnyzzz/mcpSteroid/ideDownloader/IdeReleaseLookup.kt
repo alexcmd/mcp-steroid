@@ -68,6 +68,11 @@ fun resolveArchive(
         return resolveAndroidStudioArchive(channel, os, architecture, version)
     }
 
+    // IDEA Community stable trails Ultimate. The github.com/JetBrains/intellij-community
+    // `idea/2026.1.*` tags are source-only; downloads.jetbrains.com does NOT host
+    // `ideaIC-2026.1.*` binaries today. The products API correctly reports 2025.3
+    // as latest stable for code=IIC. Don't try to synthesise a download URL —
+    // trust the API.
     val releaseType = URLEncoder.encode(channel.apiValue, StandardCharsets.UTF_8)
     val url = "https://data.services.jetbrains.com/products?code=${product.code}&release.type=$releaseType"
 

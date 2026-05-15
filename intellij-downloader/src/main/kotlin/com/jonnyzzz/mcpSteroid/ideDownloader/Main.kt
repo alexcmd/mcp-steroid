@@ -13,8 +13,9 @@ private val ideDownloaderMainLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSter
  *   java -jar intellij-downloader.jar --product idea-community --channel stable --output-dir /path/to/dir
  *
  * Arguments:
- *   --product            IDE product: idea, idea-community, pycharm, pycharm-community,
- *                        goland, webstorm, rider, clion (default: idea)
+ *   --product            IDE product: idea-ultimate, idea-community, pycharm-pro,
+ *                        pycharm-community, goland, webstorm, rider, clion
+ *                        (default: idea-ultimate; legacy aliases idea/pycharm accepted)
  *   --channel            Release channel: stable, eap (default: stable)
  *   --output-dir         Directory to store downloaded archives (required)
  *   --url                Direct download URL (overrides --product/--channel resolution)
@@ -40,11 +41,11 @@ fun main(args: Array<String>) {
     } ?: resolveHostOs()
 
     val distribution = if (url != null) {
-        val productRaw = argsMap["--product"] ?: "idea"
+        val productRaw = argsMap["--product"] ?: "idea-ultimate"
         val product = IdeProduct.fromString(productRaw)
         IdeDistribution.FromUrl(product = product, url = url)
     } else {
-        val productRaw = argsMap["--product"] ?: "idea"
+        val productRaw = argsMap["--product"] ?: "idea-ultimate"
         val channelRaw = argsMap["--channel"] ?: "stable"
         val product = IdeProduct.fromString(productRaw)
         val channel = when (channelRaw.trim().lowercase()) {
