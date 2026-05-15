@@ -20,7 +20,6 @@ fun IdeDistribution.resolveAndDownload(
     downloadDir: File,
     os: HostOs = resolveHostOs(),
 ): File {
-    requirePaidConsent()
     downloadDir.mkdirs()
 
     val (url, fileName) = resolveUrlAndFileName(os)

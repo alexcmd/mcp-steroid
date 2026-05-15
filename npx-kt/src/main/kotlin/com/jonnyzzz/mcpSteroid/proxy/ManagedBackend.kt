@@ -94,7 +94,6 @@ internal interface ManagedBackendDownloader {
     suspend fun downloadAndUnpack(
         resolution: BackendDownloadResolution,
         targetDir: Path,
-        acceptPaid: Boolean,
     ): String?
 }
 
@@ -127,7 +126,7 @@ internal object DefaultManagedProcessInspector : ManagedProcessInspector {
 internal class ManagedBackendLockException(message: String) : RuntimeException(message)
 
 internal interface ManagedBackendService {
-    suspend fun download(id: BackendId, acceptPaid: Boolean = false): DownloadResult
+    suspend fun download(id: BackendId): DownloadResult
     suspend fun start(id: BackendId): StartResult
     suspend fun stop(id: BackendId): StopResult
 }
@@ -165,14 +164,8 @@ internal class DefaultManagedBackendDownloader(
     override suspend fun downloadAndUnpack(
         resolution: BackendDownloadResolution,
         targetDir: Path,
-        acceptPaid: Boolean,
     ): String? = withContext(Dispatchers.IO) {
         val distribution = IdeDistribution.FromUrl(product = resolution.product, url = resolution.url)
-        IdeDistribution.Latest(
-            product = resolution.product,
-            channel = IdeChannel.STABLE,
-            acceptPaid = acceptPaid,
-        ).requirePaidConsent()
 
         Files.createDirectories(archiveDownloadDir)
         val archive = distribution.resolveAndDownload(archiveDownloadDir.toFile(), os = os)
@@ -192,9 +185,7 @@ internal class BackendManager(
     private val ideUserHome: Path = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
     private val stopGracePeriodMillis: Long = 5_000L,
 ) : ManagedBackendService {
-    suspend fun download(id: BackendId): DownloadResult = download(id, acceptPaid = false)
-
-    override suspend fun download(id: BackendId, acceptPaid: Boolean): DownloadResult {
+    override suspend fun download(id: BackendId): DownloadResult {
         homePaths.mkdirsAll()
         val resolution = downloader.resolve(id)
         val resolved = ResolvedBackendId(resolution.product, resolution.version)
@@ -204,7 +195,7 @@ internal class BackendManager(
         val descriptorPath = descriptorPath(backendDir)
         val existingDescriptor = readDescriptorOrNull(descriptorPath)
         val archiveSha = if (existingDescriptor == null || !backendDir.resolve(existingDescriptor.bundleDirName).isDirectory()) {
-            downloader.downloadAndUnpack(resolution, backendDir, acceptPaid)
+            downloader.downloadAndUnpack(resolution, backendDir)
         } else {
             existingDescriptor.sourceArchiveSha256
         }

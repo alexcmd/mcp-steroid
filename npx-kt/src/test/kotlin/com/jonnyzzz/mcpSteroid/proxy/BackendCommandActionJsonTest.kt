@@ -37,7 +37,7 @@ class BackendCommandActionJsonTest {
             runBackendDownloadCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false, json = true),
+                mode = CliMode.Backend.Download("idea-community", versionOverride = null, json = true),
                 backendService = backendService,
             )
         }
@@ -143,7 +143,7 @@ class BackendCommandActionJsonTest {
             runBackendDownloadCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false, json = true),
+                mode = CliMode.Backend.Download("idea-community", versionOverride = null, json = true),
                 backendService = failing,
             )
         }
@@ -216,7 +216,7 @@ class BackendCommandActionJsonTest {
         private val stopResult: StopResult? = null,
         private val error: Exception? = null,
     ) : ManagedBackendService {
-        override suspend fun download(id: BackendId, acceptPaid: Boolean): DownloadResult {
+        override suspend fun download(id: BackendId): DownloadResult {
             error?.let { throw it }
             return downloadResult ?: throw IllegalStateException("missing fake download result")
         }

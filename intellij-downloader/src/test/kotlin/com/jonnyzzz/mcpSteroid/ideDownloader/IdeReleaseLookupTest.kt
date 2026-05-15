@@ -204,48 +204,12 @@ class IdeReleaseLookupTest {
         assertEquals(LicenseTier.FreeForNonCommercial, rubymine.licenseTier)
     }
 
-    // ---------- requirePaidConsent gate ----------
-
     @Test
-    fun `requirePaidConsent passes for free SKUs by default`() {
-        IdeDistribution.Latest(IdeProduct.IntelliJIdeaCommunity, acceptPaid = false).requirePaidConsent()
-        IdeDistribution.Latest(IdeProduct.PyCharmCommunity, acceptPaid = false).requirePaidConsent()
-    }
+    fun `IdeDistribution Latest accepts paid SKUs without a consent flag`() {
+        val distribution = IdeDistribution.Latest(IdeProduct.IntelliJIdea)
 
-    @Test
-    fun `requirePaidConsent passes for free-for-non-commercial by default`() {
-        // Rider, CLion, GoLand, WebStorm have a free mode and don't need explicit opt-in.
-        IdeDistribution.Latest(IdeProduct.Rider, acceptPaid = false).requirePaidConsent()
-        IdeDistribution.Latest(IdeProduct.CLion, acceptPaid = false).requirePaidConsent()
-        IdeDistribution.Latest(IdeProduct.GoLand, acceptPaid = false).requirePaidConsent()
-        IdeDistribution.Latest(IdeProduct.WebStorm, acceptPaid = false).requirePaidConsent()
-    }
-
-    @Test
-    fun `requirePaidConsent blocks paid SKUs without consent`() {
-        val ex = expectError {
-            IdeDistribution.Latest(IdeProduct.IntelliJIdea, acceptPaid = false).requirePaidConsent()
-        }
-        assertTrue("expected paid-gate message, got: ${ex.message}",
-            ex.message!!.contains("IntelliJ IDEA Ultimate"))
-        val ex2 = expectError {
-            IdeDistribution.Latest(IdeProduct.PyCharm, acceptPaid = false).requirePaidConsent()
-        }
-        assertTrue("expected paid-gate message, got: ${ex2.message}",
-            ex2.message!!.contains("PyCharm Professional"))
-    }
-
-    @Test
-    fun `requirePaidConsent passes for paid SKUs with explicit consent`() {
-        // Default is acceptPaid = true; verifies existing call sites keep working unchanged.
-        IdeDistribution.Latest(IdeProduct.IntelliJIdea).requirePaidConsent()
-        IdeDistribution.Latest(IdeProduct.PyCharm, acceptPaid = true).requirePaidConsent()
-    }
-
-    @Test
-    fun `requirePaidConsent passes for FromUrl regardless of license tier`() {
-        // FromUrl implies the caller already picked a URL by hand.
-        IdeDistribution.FromUrl(IdeProduct.IntelliJIdea, "https://example.test/idea.zip").requirePaidConsent()
+        assertEquals(IdeProduct.IntelliJIdea, distribution.product)
+        assertEquals(IdeChannel.STABLE, distribution.channel)
     }
 
     // ---------- host helpers ----------

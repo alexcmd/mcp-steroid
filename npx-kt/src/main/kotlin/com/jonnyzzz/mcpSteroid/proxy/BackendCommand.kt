@@ -182,7 +182,7 @@ internal fun runBackendDownloadCommand(
             lateinit var result: DownloadResult
             val durationMs = measureTimeMillis {
                 result = runBlocking(Dispatchers.IO) {
-                    backendService.download(backendId, acceptPaid = mode.acceptPaid)
+                    backendService.download(backendId)
                 }
             }
             buildJsonObject {
@@ -200,7 +200,7 @@ internal fun runBackendDownloadCommand(
     }
     val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
     val result = runBlocking(Dispatchers.IO) {
-        backendService.download(backendId, acceptPaid = mode.acceptPaid)
+        backendService.download(backendId)
     }
     out.println("id: ${result.id}")
     out.println("install: ${result.backendDir}")

@@ -77,16 +77,16 @@ class CliModeTest {
     @Test
     fun `backend lifecycle subcommands route to concrete backend modes`() {
         assertEquals(
-            CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false),
+            CliMode.Backend.Download("idea-community", versionOverride = null),
             parseCliMode(arrayOf("backend", "download", "idea-community")),
         )
         assertEquals(
-            CliMode.Backend.Download("idea-community", versionOverride = null, acceptPaid = false, json = true),
+            CliMode.Backend.Download("idea-community", versionOverride = null, json = true),
             parseCliMode(arrayOf("backend", "download", "idea-community", "--json")),
         )
         assertEquals(
-            CliMode.Backend.Download("idea-ultimate", versionOverride = "2025.3.3", acceptPaid = true),
-            parseCliMode(arrayOf("backend", "download", "idea-ultimate", "--version", "2025.3.3", "--allow-paid")),
+            CliMode.Backend.Download("idea-ultimate", versionOverride = "2025.3.3"),
+            parseCliMode(arrayOf("backend", "download", "idea-ultimate", "--version", "2025.3.3")),
         )
         assertEquals(
             CliMode.Backend.Start("idea-community", versionOverride = "2025.3.3"),
@@ -102,7 +102,16 @@ class CliModeTest {
     fun `backend download without id routes to default listing`() {
         assertEquals(CliMode.Backend.DownloadList(json = false), parseCliMode(arrayOf("backend", "download")))
         assertEquals(CliMode.Backend.DownloadList(json = true), parseCliMode(arrayOf("backend", "download", "--json")))
-        assertEquals(CliMode.Backend.DownloadList(json = true), parseCliMode(arrayOf("backend", "download", "--json", "--allow-paid")))
+    }
+
+    @Test
+    fun `--allow-paid is rejected because paid downloads no longer require consent flags`() {
+        val mode = parseCliMode(arrayOf("backend", "download", "--allow-paid"))
+
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals(listOf("--allow-paid"), mode.args)
+        assertEquals("The --allow-paid flag was removed; requested JetBrains binaries are downloaded without a CLI consent flag.", mode.hint)
     }
 
     @Test

@@ -22,14 +22,11 @@ private val ideDownloaderMainLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSter
  *   --os                 Target OS: linux, mac, windows (default: auto-detected)
  *   --unpack-dir         Directory to unpack the archive into (optional). Dispatches by
  *                        archive extension: .tar.gz / .tgz / .zip / .dmg (mac host only) / .exe
- *   --allow-paid         Required to download paid IDEs (IntelliJ IDEA Ultimate, PyCharm Pro).
- *                        Free + free-for-non-commercial IDEs don't need this flag.
  */
 fun main(args: Array<String>) {
     val argsMap = parseArgs(args)
     val outputDir = File(argsMap["--output-dir"] ?: error("--output-dir is required"))
     val url = argsMap["--url"]
-    val allowPaid = argsMap["--allow-paid"]?.toBooleanStrictOrNull() ?: false
 
     val os = argsMap["--os"]?.let { raw ->
         when (raw.trim().lowercase()) {
@@ -53,7 +50,7 @@ fun main(args: Array<String>) {
             "eap" -> IdeChannel.EAP
             else -> error("Unknown channel '$channelRaw'. Use 'stable' or 'eap'.")
         }
-        IdeDistribution.Latest(product = product, channel = channel, acceptPaid = allowPaid)
+        IdeDistribution.Latest(product = product, channel = channel)
     }
 
     val archiveFile = distribution.resolveAndDownload(outputDir, os)
@@ -66,7 +63,7 @@ fun main(args: Array<String>) {
 }
 
 private fun parseArgs(args: Array<String>): Map<String, String> {
-    val knownArgs = setOf("--product", "--channel", "--output-dir", "--url", "--os", "--unpack-dir", "--allow-paid")
+    val knownArgs = setOf("--product", "--channel", "--output-dir", "--url", "--os", "--unpack-dir")
     val result = mutableMapOf<String, String>()
     var i = 0
     while (i < args.size) {

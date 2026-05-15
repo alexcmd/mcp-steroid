@@ -103,7 +103,6 @@ class PluginDeployTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-            acceptPaid: Boolean,
         ): String? {
             unpackCount++
             val bundleDir = targetDir.resolve("idea-IC-253.1")
@@ -140,7 +139,6 @@ class PluginDeployTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-            acceptPaid: Boolean,
         ): String? = error("downloadAndUnpack should not be called by deploy-only tests")
     }
 }

@@ -2,9 +2,9 @@
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
 /**
- * License tier of a JetBrains IDE. Drives whether `IdeDistribution.Latest.acceptPaid`
- * must be set explicitly. Free-for-non-commercial IDEs (Rider, CLion, GoLand, WebStorm)
- * are usable in free mode and are NOT considered paid here.
+ * License tier of a JetBrains IDE. The downloader always fetches requested binaries;
+ * licensing concerns apply when the IDE is activated, so CLI renderers use this tier
+ * only for annotations.
  */
 enum class LicenseTier {
     /** Open-source / fully free editions (IntelliJ Community, PyCharm Community). */

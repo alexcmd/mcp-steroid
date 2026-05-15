@@ -30,9 +30,7 @@ internal data class AvailableBackendDownload(
     val version: String?,
     val releaseDate: String? = null,
     val versionLookupError: String? = null,
-) {
-    val requiresAllowPaid: Boolean get() = product.licenseTier == LicenseTier.Paid
-}
+)
 
 internal data class AvailableBackendRelease(
     val version: String,
@@ -89,17 +87,13 @@ internal suspend fun collectAvailableBackendDownloads(
 ): List<AvailableBackendDownload> = coroutineScope {
     products.map { product ->
         async {
-            if (product.licenseTier == LicenseTier.Paid) {
-                AvailableBackendDownload(product = product, version = null)
-            } else {
-                val version = tryResolveLatestStableVersion(product, versionResolver, totalBudget)
-                AvailableBackendDownload(
-                    product = product,
-                    version = version.getOrNull()?.version,
-                    releaseDate = version.getOrNull()?.releaseDate,
-                    versionLookupError = version.exceptionOrNull()?.shortMessage(),
-                )
-            }
+            val version = tryResolveLatestStableVersion(product, versionResolver, totalBudget)
+            AvailableBackendDownload(
+                product = product,
+                version = version.getOrNull()?.version,
+                releaseDate = version.getOrNull()?.releaseDate,
+                versionLookupError = version.exceptionOrNull()?.shortMessage(),
+            )
         }
     }.awaitAll()
 }
@@ -159,20 +153,16 @@ internal fun renderBackendDownloadListRowsText(
         val idWidth = rows.maxOf { it.product.id.length }
         val displayWidth = rows.maxOf { it.product.displayName.length }
         val versionWidth = rows
-            .filterNot { it.requiresAllowPaid }
             .map { it.versionText().length }
             .maxOrNull() ?: 0
         val releaseDateWidth = rows
-            .filterNot { it.requiresAllowPaid }
             .map { it.releaseDate.orEmpty().length }
             .maxOrNull() ?: 0
         for ((index, row) in rows.withIndex()) {
             val indexLabel = "[${index + 1}]".padEnd(indexWidth)
             val id = row.product.id.padEnd(idWidth)
             val name = row.product.displayName.padEnd(displayWidth)
-            if (row.requiresAllowPaid) {
-                out.println("  $indexLabel $id  $name  (paid — requires --allow-paid)")
-            } else if (releaseDateWidth > 0) {
+            if (releaseDateWidth > 0) {
                 out.println(
                     "  $indexLabel $id  $name  " +
                         "${row.versionText().padEnd(versionWidth)}  " +
@@ -185,7 +175,7 @@ internal fun renderBackendDownloadListRowsText(
         }
     }
     out.println()
-    out.println("Run:  devrig backend download <id> [--version <v>] [--allow-paid]")
+    out.println("Run:  devrig backend download <id> [--version <v>]")
     afterRunLine?.let { out.println(it) }
     out.println()
 }
@@ -207,7 +197,6 @@ internal fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>)
             put("licenseTier", row.product.licenseTier.cliValue)
             if (row.version == null) put("version", JsonNull) else put("version", row.version)
             row.releaseDate?.let { put("releaseDate", it) }
-            put("requiresAllowPaid", row.requiresAllowPaid)
             row.versionLookupError?.let { put("versionLookupError", it) }
         })
     }

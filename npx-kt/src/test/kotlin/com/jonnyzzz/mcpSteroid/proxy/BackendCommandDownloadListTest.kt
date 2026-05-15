@@ -8,7 +8,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -24,7 +23,7 @@ import java.io.PrintStream
 class BackendCommandDownloadListTest {
 
     @Test
-    fun `text lists downloadable IDEs with aligned columns paid annotation and lookup errors`() = runBlocking {
+    fun `text lists downloadable IDEs with aligned columns license tiers and lookup errors`() = runBlocking {
         val rows = collectAvailableBackendDownloads(
             versionResolver = FakeVersionResolver(
                 versions = mapOf(
@@ -42,11 +41,10 @@ class BackendCommandDownloadListTest {
 
         assertTrue(text.startsWith("devrig v"), text)
         assertTrue(text.contains("Available IDEs (defaults to latest stable):"), text)
-        assertTrue(text.contains("(paid — requires --allow-paid)"), text)
         assertTrue(text.contains("free-for-non-commercial"), text)
         assertTrue(text.contains("(version lookup failed: offline products API)"), text)
         assertTrue(text.contains("2025-12-08"), text)
-        assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>] [--allow-paid]"), text)
+        assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>]"), text)
 
         val lines = productLines(text)
         val ideaCommunity = lines.single { it.contains("idea-community") }
@@ -113,7 +111,6 @@ class BackendCommandDownloadListTest {
         assertEquals("free", ideaCommunity["licenseTier"]!!.jsonPrimitive.content)
         assertEquals("2025.3.test", ideaCommunity["version"]!!.jsonPrimitive.content)
         assertEquals("2025-12-08", ideaCommunity["releaseDate"]!!.jsonPrimitive.content)
-        assertFalse(ideaCommunity["requiresAllowPaid"]!!.jsonPrimitive.boolean)
 
         val rider = available.single { it["id"]!!.jsonPrimitive.content == "rider" }
         assertEquals("free-for-non-commercial", rider["licenseTier"]!!.jsonPrimitive.content)
@@ -122,27 +119,24 @@ class BackendCommandDownloadListTest {
         val android = available.single { it["id"]!!.jsonPrimitive.content == "android-studio" }
         assertNull(android["version"]!!.jsonPrimitive.contentOrNull)
         assertEquals("network down", android["versionLookupError"]!!.jsonPrimitive.content)
-        assertFalse(android["requiresAllowPaid"]!!.jsonPrimitive.boolean)
 
         val paid = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
         assertEquals("paid", paid["licenseTier"]!!.jsonPrimitive.content)
-        assertNull(paid["version"]!!.jsonPrimitive.contentOrNull)
-        assertFalse("releaseDate" in paid)
-        assertTrue(paid["requiresAllowPaid"]!!.jsonPrimitive.boolean)
+        assertEquals("2025.3.test", paid["version"]!!.jsonPrimitive.content)
+        assertEquals("2025-12-08", paid["releaseDate"]!!.jsonPrimitive.content)
+        assertFalse("requiresAllowPaid" in paid)
     }
 
     @Test
-    fun `paid products are not resolved`() = runBlocking {
+    fun `paid products are resolved without consent flags`() = runBlocking {
         val resolver = CountingResolver()
 
         collectAvailableBackendDownloads(versionResolver = resolver)
 
         assertEquals(
-            setOf("idea-community", "pycharm-community", "android-studio", "goland", "webstorm", "rider", "clion"),
+            setOf("idea-community", "pycharm-community", "android-studio", "goland", "webstorm", "rider", "clion", "idea-ultimate", "pycharm-pro"),
             resolver.calls.toSet(),
         )
-        assertTrue("idea-ultimate" !in resolver.calls, "paid IntelliJ IDEA Ultimate must not hit the release resolver")
-        assertTrue("pycharm-pro" !in resolver.calls, "paid PyCharm Professional must not hit the release resolver")
     }
 
     @Test

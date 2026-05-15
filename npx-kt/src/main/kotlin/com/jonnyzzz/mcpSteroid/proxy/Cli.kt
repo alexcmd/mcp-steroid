@@ -48,7 +48,6 @@ internal sealed interface CliMode {
         data class Download(
             val id: String,
             val versionOverride: String?,
-            val acceptPaid: Boolean,
             val json: Boolean = false,
         ) : Backend
         data class Start(
@@ -100,10 +99,16 @@ internal fun parseCliMode(args: Array<String>): CliMode {
     // are orthogonal to mode selection and filtered out here so e.g. `--debug`
     // alone routes to Help, not Unknown.
     val modeArgs = args.withoutGlobalValueFlag("--home")
-        .filterNot { it == "--debug" || it == "--json" || it == "--allow-paid" }
+        .filterNot { it == "--debug" || it == "--json" }
         .toTypedArray()
     if (modeArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (modeArgs.isEmpty() || modeArgs.any { it == "--help" || it == "-h" }) return CliMode.Help
+    if (modeArgs.any { it == "--allow-paid" }) {
+        return CliMode.Unknown(
+            args = listOf("--allow-paid"),
+            hint = "The --allow-paid flag was removed; requested JetBrains binaries are downloaded without a CLI consent flag.",
+        )
+    }
     if (modeArgs.any { it == "backend" }) {
         parseBackendLifecycleMode(
             args.withoutGlobalValueFlag("--home")
@@ -158,7 +163,7 @@ private fun List<String>.withoutValueFlag(flag: String): List<String> {
 private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
     val resolutionArgs = args.toList()
         .withoutValueFlag("--version")
-        .filterNot { it == "--json" || it == "--allow-paid" }
+        .filterNot { it == "--json" }
         .toTypedArray()
     val backendIndex = resolutionArgs.indexOf("backend")
     if (backendIndex < 0 || backendIndex == resolutionArgs.lastIndex) return null
@@ -191,7 +196,6 @@ private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
         "download" -> CliMode.Backend.Download(
             id = id,
             versionOverride = versionOverride,
-            acceptPaid = args.any { it == "--allow-paid" },
             json = json,
         )
         "start" -> CliMode.Backend.Start(
@@ -333,13 +337,12 @@ private fun printHelp(out: PrintStream) {
           mcp-steroid-proxy project [--json]         list open projects across discovered backends.
                                                      `--json` emits a single machine-readable
                                                      object on stdout; default is human text.
-          mcp-steroid-proxy backend download [<id>] [--version <v>] [--allow-paid] [--json]
+          mcp-steroid-proxy backend download [<id>] [--version <v>] [--json]
                                                      no id → list IDEs available for download.
                                                      With id, download and install a managed
                                                      backend under the devrig home. Accepts
                                                      <product>, <product>:<version>, or
-                                                     <product>-<version>. Use --allow-paid for
-                                                     paid SKUs.
+                                                     <product>-<version>.
           mcp-steroid-proxy backend start    [<id>] [--json]
                                                      no id → list installed backends. With id,
                                                      start an installed managed backend in

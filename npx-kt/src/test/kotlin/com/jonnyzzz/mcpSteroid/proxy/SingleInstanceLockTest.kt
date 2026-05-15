@@ -222,7 +222,6 @@ class SingleInstanceLockTest {
         override suspend fun downloadAndUnpack(
             resolution: BackendDownloadResolution,
             targetDir: Path,
-            acceptPaid: Boolean,
         ): String? = error("downloadAndUnpack should not be called by single-instance tests")
     }
 }
