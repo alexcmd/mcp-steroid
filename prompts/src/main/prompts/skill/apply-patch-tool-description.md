@@ -30,5 +30,14 @@ Example hunks: `[{"file_path": "/abs/A.java", "old_string": "old", "new_string":
 Return: human-readable audit — `N hunks across M file(s) applied
 atomically` + per-hunk `path:line:col (oldLen→newLen chars)`.
 
+On error, do **not** retry blindly with the same hunks. The pre-flight
+rejection means either the file path is wrong or the `old_string` no
+longer matches the current file bytes. Inspect the file via
+`steroid_execute_code` first (`FilenameIndex.getVirtualFilesByName(...)`
+to locate, then read the relevant slice) and rebuild the hunk against
+the actual text. The "Anchor-safe editing" recipe at
+`mcp-steroid://skill/anchor-safe-editing` walks the four steps —
+locate → excerpt → unique-occurrence check → apply → verify.
+
 Same underlying engine as `steroid_execute_code`'s `applyPatch { hunk(…) }`
 DSL — identical semantics, no boilerplate, no compile overhead.

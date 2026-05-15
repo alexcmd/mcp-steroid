@@ -12,6 +12,8 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -125,7 +127,7 @@ internal suspend fun executeApplyPatch(
             // LocalFileSystem, light-test temp://, and mock VFS consistently.
             val vf: VirtualFile = resolveFile(hunk.filePath)
                 ?: throw ApplyPatchException(
-                    "Hunk #$index: file not found: ${hunk.filePath}"
+                    fileNotFoundMessage(project, index, hunk.filePath)
                 )
             if (!vf.isWritable) {
                 throw ApplyPatchException(
@@ -140,7 +142,7 @@ internal suspend fun executeApplyPatch(
             val first = text.indexOf(hunk.oldString)
             if (first < 0) {
                 throw ApplyPatchException(
-                    "Hunk #$index: old_string not found in ${hunk.filePath} — verify with Grep first"
+                    anchorNotFoundMessage(index, hunk.filePath, hunk.oldString, document, text)
                 )
             }
             val second = text.indexOf(hunk.oldString, first + 1)
@@ -227,4 +229,122 @@ internal suspend fun executeApplyPatch(
             )
         }
     )
+}
+
+/**
+ * Build a structured "file not found" message including up to 5 candidate paths
+ * from the project index by basename. Runs inside the caller's read action.
+ * Diagnostics must never themselves throw — any unexpected error falls back
+ * to the plain message.
+ */
+private fun fileNotFoundMessage(project: Project, index: Int, filePath: String): String {
+    val plain = "Hunk #$index: file not found: $filePath"
+    val basename = filePath.substringAfterLast('/').ifEmpty { return plain }
+    val candidates = try {
+        FilenameIndex.getVirtualFilesByName(basename, GlobalSearchScope.projectScope(project))
+            .asSequence()
+            .map { it.path }
+            .filter { it != filePath }
+            .take(5)
+            .toList()
+    } catch (e: ProcessCanceledException) {
+        throw e
+    } catch (e: RuntimeException) {
+        return plain
+    }
+    return buildString {
+        append(plain)
+        if (candidates.isEmpty()) {
+            append("\n(no candidates by basename '")
+            append(basename)
+            append("' in project index — check the path)")
+        } else {
+            append("\nNearby candidates by basename '")
+            append(basename)
+            append("':")
+            candidates.forEach { append("\n  ").append(it) }
+        }
+    }
+}
+
+/**
+ * Build a structured "old_string not found" message. Includes the file's line
+ * count and byte length plus up to 3 candidate lines that share the longest
+ * stable token (>= 4 chars) from `oldString`. The leading sentence preserves
+ * the original wording so consumers matching on substrings keep working —
+ * "old_string not found" stays verbatim. Diagnostics must never themselves
+ * throw, so the structured tail is built in a guarded block that falls back
+ * to the lead on any RuntimeException.
+ */
+private fun anchorNotFoundMessage(
+    index: Int,
+    filePath: String,
+    oldString: String,
+    document: Document,
+    text: String,
+): String {
+    val lead = "Hunk #$index: old_string not found in $filePath — verify with steroid_execute_code first"
+    return try {
+        buildAnchorNotFoundDetail(lead, oldString, document, text)
+    } catch (e: ProcessCanceledException) {
+        throw e
+    } catch (e: RuntimeException) {
+        lead
+    }
+}
+
+private fun buildAnchorNotFoundDetail(
+    lead: String,
+    oldString: String,
+    document: Document,
+    text: String,
+): String {
+    val tokens = Regex("[A-Za-z0-9_]{4,}").findAll(oldString).map { it.value }.toList()
+    val token = tokens.sortedByDescending { it.length }
+        .firstOrNull { text.contains(it) }
+    val candidates = if (token != null) {
+        val results = mutableListOf<Pair<Int, String>>()
+        var from = 0
+        while (results.size < 3) {
+            val found = text.indexOf(token, from)
+            if (found < 0) break
+            val lineIdx = document.getLineNumber(found)
+            // Skip duplicate hits on the same line.
+            if (results.none { it.first == lineIdx + 1 }) {
+                val lineStart = document.getLineStartOffset(lineIdx)
+                val lineEnd = document.getLineEndOffset(lineIdx)
+                results += (lineIdx + 1) to text.substring(lineStart, lineEnd).take(200)
+            }
+            from = found + token.length
+        }
+        results
+    } else emptyList()
+    val totalHits = if (token != null) countOccurrences(text, token) else 0
+    return buildString {
+        append(lead)
+        append("\nFile: ").append(document.lineCount).append(" lines, ").append(text.length).append(" bytes")
+        when {
+            token == null -> append("\n(no stable token of length >= 4 in old_string for fuzzy lookup)")
+            candidates.isEmpty() ->
+                append("\nToken '").append(token).append("' from old_string not present in file — anchor is likely stale")
+            else -> {
+                append("\nFuzzy candidates (lines containing '").append(token)
+                    .append("', showing ").append(candidates.size).append(" of ").append(totalHits).append("):")
+                candidates.forEach { (line, contents) ->
+                    append("\n  L").append(line).append(": ").append(contents)
+                }
+            }
+        }
+    }
+}
+
+private fun countOccurrences(text: String, needle: String): Int {
+    if (needle.isEmpty()) return 0
+    var count = 0
+    var idx = text.indexOf(needle)
+    while (idx >= 0) {
+        count++
+        idx = text.indexOf(needle, idx + needle.length)
+    }
+    return count
 }
