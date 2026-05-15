@@ -43,6 +43,12 @@ data class JdkPlatform(val id: String, val usageAttr: String) {
     val configName: String = "jdk${id.split('-').joinToString("") { it.replaceFirstChar(Char::uppercase) }}"
 }
 
+/**
+ * Retained for the upcoming version.json generator: these resolvable
+ * configurations keep consuming :jdk-downloader's verified Corretto outputs so
+ * that task can compute archive metadata. distZip intentionally no longer reads
+ * them; today's npx-kt package expects Java on PATH instead of bundling JDKs.
+ */
 val jdkPlatforms = listOf(
     JdkPlatform("linux-amd64", "jdk-linux-amd64"),
     JdkPlatform("linux-arm", "jdk-linux-arm"),
@@ -133,6 +139,10 @@ application {
 val ijPluginZipFile = ijPluginZip.elements.map { it.single().asFile }
 val sevenZipBinariesDir = sevenZipBinaries.elements.map { it.single().asFile }
 val sevenZipLicenseFile = sevenZipBinariesDir.map { it.resolve("7z/License.txt") }
+/**
+ * Retained with jdkPlatforms/jdkConfigs for future version.json generation even
+ * though the distribution no longer copies these extracted JDK trees.
+ */
 val jdkDirs: Map<String, Provider<File>> = jdkPlatforms.associate { platform ->
     val cfg = jdkConfigs.getValue(platform.id)
     platform.id to cfg.elements.map { it.single().asFile }
@@ -189,39 +199,7 @@ distributions {
                 from(rootProject.layout.projectDirectory.file("EULA"))
             }
 
-            // Amazon Corretto 21 JDKs, one per supported platform.
-            // The producer's permission audit (POSIX +x on bin/* and
-            // lib/server/libjvm.*) has already run before this consumer
-            // reads the tree — see :jdk-downloader's auditJdkPermissions_*
-            // tasks. distZip then defaults file modes to 0o644 and drops
-            // the +x bit, so we re-apply it here using the same canExecute
-            // rule the ij-plugin and 7z blocks already use.
-            jdkPlatforms.forEach { platform ->
-                into("jdk/jdk-${platform.id}") {
-                    from(jdkDirs.getValue(platform.id)) {
-                        eachFile {
-                            if (file.canExecute()) {
-                                permissions { unix("rwxr-xr-x") }
-                            }
-                        }
-                    }
-                }
-
-                into("licenses/corretto-jdk-21/${platform.id}") {
-                    from(jdkDirs.getValue(platform.id)) {
-                        include(
-                            "LICENSE",
-                            "ADDITIONAL_LICENSE_INFO",
-                            "ASSEMBLY_EXCEPTION",
-                            "THIRD_PARTY_README",
-                            "NOTICE",
-                            "version.txt",
-                            "legal/**",
-                        )
-                        includeEmptyDirs = false
-                    }
-                }
-            }
+            // JDK bundling intentionally disabled — see TODO-NPX-BOOTSTRAPPER.md; npx-kt expects Java on PATH today, version.json will tell future bootstraps which Corretto build to fetch.
         }
     }
 }
@@ -434,86 +412,40 @@ val verifyBundledLibraries by tasks.registering {
         }
         allFiles = (allFiles - ijPluginFiles).toSortedSet()
 
-        // jdk/ subtree: :jdk-downloader enforces each Corretto source layout and
-        // audits source executable bits. Here we sentinel-check each platform tree
-        // without enumerating every JDK file in the strict allowlist below.
-        val jdkPrefix = "jdk/"
-        val jdkFiles = allFiles.filter { it.startsWith(jdkPrefix) }.toSortedSet()
-        check(jdkFiles.isNotEmpty()) {
-            "Expected jdk/ subtree to be populated in $distName"
-        }
-        jdkPlatforms.forEach { platform ->
-            val platformPrefix = "jdk/jdk-${platform.id}/"
-            val platformFiles = jdkFiles.filter { it.startsWith(platformPrefix) }.toSortedSet()
-            check(platformFiles.isNotEmpty()) {
-                "Missing jdk-${platform.id} subtree under $jdkPrefix"
-            }
-            listOf(
-                "${platformPrefix}release",
-                "${platformPrefix}version.txt",
-            ).forEach { sentinel ->
-                check(platformFiles.any { it.removeSuffix(":X") == sentinel }) {
-                    "Missing sentinel '$sentinel' in jdk-${platform.id} subtree"
-                }
-            }
-            check(platformFiles.any { it.removeSuffix(":X").startsWith("${platformPrefix}legal/") }) {
-                "Missing non-empty legal/ directory in jdk-${platform.id} subtree"
-            }
-
-            val isWindows = platform.id == "windows-amd64"
-            val javaPath = if (isWindows) {
-                "${platformPrefix}bin/java.exe"
-            } else {
-                "${platformPrefix}bin/java"
-            }
-            check(platformFiles.any { it.removeSuffix(":X") == javaPath }) {
-                "Missing java launcher '$javaPath' in jdk-${platform.id} subtree"
-            }
-            if (!isWindows) {
-                check("$javaPath:X" in platformFiles) {
-                    "java launcher in jdk-${platform.id} is missing +x bit"
-                }
-
-                val libjvmExtension = if (platform.id == "mac-arm") "dylib" else "so"
-                val libjvmPath = "${platformPrefix}lib/server/libjvm.$libjvmExtension"
-                check(platformFiles.any { it.removeSuffix(":X") == libjvmPath }) {
-                    "Missing libjvm.$libjvmExtension in jdk-${platform.id} subtree"
-                }
-                check("$libjvmPath:X" in platformFiles) {
-                    "libjvm.$libjvmExtension in jdk-${platform.id} is missing +x bit"
-                }
-            }
-        }
-        allFiles = (allFiles - jdkFiles).toSortedSet()
-
         // licenses/ subtree: additive operator-facing consolidation of each
         // bundled component's license files. Original component-local copies stay
-        // under jdk/, 7z/, and ij-plugin/ and are verified separately above/below.
+        // under 7z/ and ij-plugin/ and are verified separately above/below.
         val licensesPrefix = "licenses/"
         val licensesFiles = allFiles.filter { it.startsWith(licensesPrefix) }.toSortedSet()
         check(licensesFiles.isNotEmpty()) {
             "licenses/ subtree must be populated in $distName"
         }
 
-        val licensesSentinels = buildList {
-            add("licenses/README.md")
-            add("licenses/seven-zip/License.txt")
-            add("licenses/mcp-steroid/EULA")
-            jdkPlatforms.forEach { platform ->
-                add("licenses/corretto-jdk-21/${platform.id}/LICENSE")
-                add("licenses/corretto-jdk-21/${platform.id}/version.txt")
-            }
+        val expectedLicensesFiles = sortedSetOf(
+            "licenses/README.md",
+            "licenses/seven-zip/License.txt",
+            "licenses/mcp-steroid/EULA",
+        )
+        if (licensesFiles != expectedLicensesFiles) {
+            val missing = expectedLicensesFiles - licensesFiles
+            val unexpected = licensesFiles - expectedLicensesFiles
+            throw GradleException(buildString {
+                appendLine("licenses/ subtree mismatch in :npx-kt distZip!")
+                if (missing.isNotEmpty()) {
+                    appendLine("Missing entries:")
+                    missing.forEach { appendLine("  - $it") }
+                }
+                if (unexpected.isNotEmpty()) {
+                    appendLine("Unexpected entries:")
+                    unexpected.forEach { appendLine("  - $it") }
+                }
+                appendLine()
+                appendLine("Update `expectedLicensesFiles` in npx-kt/build.gradle.kts if this change is intentional.")
+            })
         }
-        licensesSentinels.forEach { sentinel ->
-            check(licensesFiles.any { it.removeSuffix(":X") == sentinel }) {
+        expectedLicensesFiles.forEach { sentinel ->
+            check(sentinel in licensesFiles) {
                 "licenses/ subtree missing sentinel '$sentinel'"
-            }
-        }
-        jdkPlatforms.forEach { platform ->
-            val legalPrefix = "licenses/corretto-jdk-21/${platform.id}/legal/"
-            check(licensesFiles.any { it.startsWith(legalPrefix) }) {
-                "missing licenses/corretto-jdk-21/${platform.id}/legal/ — Corretto " +
-                        "always ships a legal directory; consolidation must capture it"
             }
         }
         allFiles = (allFiles - licensesFiles).toSortedSet()
