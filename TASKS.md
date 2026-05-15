@@ -1455,3 +1455,41 @@ Slot: between M8 (parser tightening) and the polish batch.
 7. M8 — CLI parser tightening.
 8. **M12 — managed-backend test: stream `devrig` output to the on-video xterm.**
 9. m1 / m2 / m3 / m4 / m6 — polish.
+
+## M13 — `backend provision` three explicit methods (2026-05-15)
+
+M11 landed Option-B-as-I-then-called-it (file-system install with
+PathManager-default plugin folder). User now wants all three options
+exposed as choices:
+
+- **A — install-files**: discover plugin folder via the IDE's own
+  `~/.intellij/<pid>-built-in-server.json` (written by
+  `BuiltInServerDiscoveryService` in `community/platform/built-in-server/
+  src/org/jetbrains/ide/BuiltInServerInfoService.kt` when the registry
+  flag `ij.platform.experimental.discoverability` is on). That JSON's
+  `paths.plugins` is the **authoritative** override-respecting plugins
+  folder. Write our plugin tree there; print restart hint.
+  - Fallback when the discoverability JSON isn't present: PathManager-
+    default convention (the existing M11 logic).
+- **B — install-marketplace**: GET `/api/installPlugin?pluginId=com.jonnyzzz.mcp-steroid&action=install`
+  against the target IDE. `Origin: http://localhost` is required to
+  avoid the trust prompt; even so, the IDE pops the REST API consent
+  dialog (its wording is already toned down in our parallel
+  `marinator/rest-api-dialog-wording` branch). MCP Steroid is on
+  Marketplace at plugin id 27834.
+- **C — manual**: print "to install manually: drop the plugin into
+  <suggested path>, then restart the IDE", and exit. Useful when neither
+  REST nor file-system access is desirable.
+
+CLI: `devrig backend provision <id> --method <auto|install-files|install-marketplace|manual>`. Default `auto`:
+1. install-files (prefer discoverability JSON; fall back to PathManager-default).
+2. If install-files's chosen directory isn't writable, prompt the
+   user to retry with `--method install-marketplace` or `--method manual`.
+
+JSON output adds a `method` field on every variant.
+
+## Pipeline update
+
+M13 slots **right after M11** (already done) and BEFORE the lifecycle
+batch B1/M2/M3/M6 — touches the same `BackendProvision*` files M11
+just added.
