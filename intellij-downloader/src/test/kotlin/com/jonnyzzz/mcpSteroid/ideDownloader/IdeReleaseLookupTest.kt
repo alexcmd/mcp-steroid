@@ -154,6 +154,13 @@ class IdeReleaseLookupTest {
     }
 
     @Test
+    fun `Android Studio version can be inferred from current install URL path`() {
+        val url = "https://edgedl.me.gvt1.com/android/studio/install/2025.3.4.7/android-studio-panda4-patch1-mac_arm.dmg"
+
+        assertEquals("2025.3.4.7", inferAndroidStudioVersion(url))
+    }
+
+    @Test
     fun `Android Studio rejects unsupported Linux ARM64`() {
         val ex = expectError {
             resolveArchiveUrl(IdeProduct.AndroidStudio, IdeChannel.STABLE,

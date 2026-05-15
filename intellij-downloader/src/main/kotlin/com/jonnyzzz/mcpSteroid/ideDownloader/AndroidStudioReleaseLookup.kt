@@ -113,7 +113,13 @@ fun resolveAndroidStudioArchive(
     )
 }
 
-private fun inferAndroidStudioVersion(url: String): String {
+internal fun inferAndroidStudioVersion(url: String): String {
+    val pathVersion = Regex("""/(?:install|ide-zips)/([0-9]+(?:\.[0-9]+)+)/""")
+        .find(url)
+        ?.groupValues
+        ?.get(1)
+    if (pathVersion != null) return pathVersion
+
     val fileName = url.substringAfterLast('/')
     val version = Regex("""android-studio-([0-9]+(?:\.[0-9]+)+)-""")
         .find(fileName)
