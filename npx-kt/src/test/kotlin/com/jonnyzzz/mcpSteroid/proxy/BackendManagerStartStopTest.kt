@@ -38,7 +38,8 @@ class BackendManagerStartStopTest {
         assertTrue(started.pid > 0)
         assertEquals("${started.pid}\n", Files.readString(homePaths.pidFile("idea-community-2025.3.3")))
         assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
-        val marker = tempDir.resolve("user-home").resolve(PidMarker.fileNameFor(started.pid))
+        val marker = homePaths.markersDir.resolve(PidMarker.markerFileNameFor(started.pid))
+        Files.createDirectories(marker.parent)
         Files.writeString(marker, "marker")
 
         val stopped = manager.stop(parseBackendId("idea-community-2025.3.3"))
@@ -120,10 +121,10 @@ class BackendManagerStartStopTest {
         val userHome = tempDir.resolve("user-home")
         try {
             Files.createDirectories(homePaths.stateDir)
-            Files.createDirectories(userHome)
+            Files.createDirectories(homePaths.markersDir)
             Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "${process.pid()}\n")
             Files.writeString(
-                userHome.resolve(PidMarker.fileNameFor(process.pid())),
+                homePaths.markersDir.resolve(PidMarker.markerFileNameFor(process.pid())),
                 PidMarkerJson.encode(
                     PidMarker(
                         pid = process.pid(),

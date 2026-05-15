@@ -8,6 +8,7 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -28,10 +29,9 @@ class MarkerScanTest {
     @Test
     fun `scanMarkers picks up a JSON marker for the live current pid`(@TempDir homeDir: Path) {
         val marker = sampleMarker(ourPid, "http://localhost:64531/mcp")
-        File(homeDir.toFile(), PidMarker.fileNameFor(ourPid))
-            .writeText(PidMarkerJson.encode(marker))
+        writeManagedMarker(homeDir, marker)
 
-        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"))
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
 
         assertEquals(1, entries.size, "expected the marker for our own pid to be discovered")
         val entry = entries.single()
@@ -41,18 +41,49 @@ class MarkerScanTest {
     }
 
     @Test
+    fun `scanMarkers picks up a legacy JSON marker for the transition window`(@TempDir homeDir: Path) {
+        val marker = sampleMarker(ourPid, "http://localhost:64532/mcp")
+        writeLegacyMarker(homeDir, marker)
+
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
+
+        assertEquals(listOf(ourPid), entries.map { it.pid })
+        assertEquals("http://localhost:64532/mcp", entries.single().url)
+    }
+
+    @Test
+    fun `scanMarkers prefers managed marker when both layouts exist for the same pid`(@TempDir homeDir: Path) {
+        writeLegacyMarker(homeDir, sampleMarker(ourPid, "http://localhost:64532/mcp"))
+        writeManagedMarker(homeDir, sampleMarker(ourPid, "http://localhost:64533/mcp"))
+
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
+
+        assertEquals(1, entries.size)
+        assertEquals("http://localhost:64533/mcp", entries.single().url)
+    }
+
+    @Test
     fun `scanMarkers ignores markers for dead pids`(@TempDir homeDir: Path) {
-        val deadPid = 1L  // pid=1 is init on Linux, on macOS launchd; very unlikely to belong to our user
-                         // The Java check ProcessHandle.of(deadPid).isPresent returns true on most systems.
-                         // To get a guaranteed-dead pid we use a pid we just spawned + waited on:
+        // To get a guaranteed-dead pid we use a pid we just spawned + waited on.
         val process = ProcessBuilder("/bin/echo", "marker-test").start()
         process.waitFor()
         val gonePid = process.pid()
         val marker = sampleMarker(gonePid, "http://localhost:64531/mcp")
-        File(homeDir.toFile(), PidMarker.fileNameFor(gonePid))
-            .writeText(PidMarkerJson.encode(marker))
+        writeManagedMarker(homeDir, marker)
 
-        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"))
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
+        assertEquals(emptyList(), entries.map { it.pid })
+    }
+
+    @Test
+    fun `scanMarkers ignores dead pids in legacy location`(@TempDir homeDir: Path) {
+        val process = ProcessBuilder("/bin/echo", "marker-test").start()
+        process.waitFor()
+        val gonePid = process.pid()
+        writeLegacyMarker(homeDir, sampleMarker(gonePid, "http://localhost:64531/mcp"))
+
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
+
         assertEquals(emptyList(), entries.map { it.pid })
     }
 
@@ -69,9 +100,9 @@ class MarkerScanTest {
               "futureField": {"nested": [1,2,3]}
             }
         """.trimIndent()
-        File(homeDir.toFile(), PidMarker.fileNameFor(ourPid)).writeText(futureJson)
+        writeManagedMarkerText(homeDir, ourPid, futureJson)
 
-        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"))
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
         val entry = entries.single()
         assertEquals(ourPid, entry.pid)
     }
@@ -79,18 +110,17 @@ class MarkerScanTest {
     @Test
     fun `scanMarkers skips markers whose mcpUrl host is not in the allowlist`(@TempDir homeDir: Path) {
         val marker = sampleMarker(ourPid, "http://malicious.example.com:8080/mcp")
-        File(homeDir.toFile(), PidMarker.fileNameFor(ourPid))
-            .writeText(PidMarkerJson.encode(marker))
+        writeManagedMarker(homeDir, marker)
 
-        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost", "127.0.0.1"))
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost", "127.0.0.1"), env = emptyMap())
         assertEquals(emptyList(), entries.map { it.pid })
     }
 
     @Test
     fun `scanMarkers tolerates corrupt marker files without crashing`(@TempDir homeDir: Path) {
-        File(homeDir.toFile(), PidMarker.fileNameFor(ourPid)).writeText("not even close to JSON {{{")
+        writeManagedMarkerText(homeDir, ourPid, "not even close to JSON {{{")
 
-        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"))
+        val entries = scanMarkers(homeDir.toFile(), allowHosts = listOf("localhost"), env = emptyMap())
         assertEquals(emptyList(), entries)
     }
 
@@ -113,4 +143,18 @@ class MarkerScanTest {
         assertEquals("http://127.0.0.1:8765/mcp", parsed.url)
         assertEquals("GoLand", parsed.label)
     }
+
+    private fun writeManagedMarker(homeDir: Path, marker: PidMarker): File =
+        writeManagedMarkerText(homeDir, marker.pid, PidMarkerJson.encode(marker))
+
+    private fun writeManagedMarkerText(homeDir: Path, pid: Long, text: String): File {
+        val markerDir = PidMarker.markerDirectory(homeDir, env = emptyMap())
+        Files.createDirectories(markerDir)
+        return markerDir.resolve(PidMarker.markerFileNameFor(pid)).toFile().also { it.writeText(text) }
+    }
+
+    private fun writeLegacyMarker(homeDir: Path, marker: PidMarker): File =
+        homeDir.resolve(".${marker.pid}.mcp-steroid").toFile().also {
+            it.writeText(PidMarkerJson.encode(marker))
+        }
 }

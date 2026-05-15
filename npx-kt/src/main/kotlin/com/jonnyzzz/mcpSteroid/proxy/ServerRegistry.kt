@@ -191,7 +191,8 @@ class ServerRegistry(val config: ProxyConfig, private val traffic: TrafficLogger
         refreshing = true
         try {
             val homeDir = java.io.File(config.homeDir ?: System.getProperty("user.home"))
-            val discovered = scanMarkers(homeDir, config.allowHosts)
+            val markerEnv = if (config.homeDir == null) System.getenv() else emptyMap()
+            val discovered = scanMarkers(homeDir, config.allowHosts, env = markerEnv)
             val seen = mutableSetOf<String>()
 
             for (entry in discovered) {

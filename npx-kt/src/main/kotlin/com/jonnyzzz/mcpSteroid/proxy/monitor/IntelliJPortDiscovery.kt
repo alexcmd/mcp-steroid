@@ -64,8 +64,8 @@ data class DiscoveredIdeByPort(
  * probing common HTTP-server ports.
  *
  * Complements [IdeDiscoveryService] (which discovers `mcp-steroid`-aware
- * IDEs via their `.<pid>.mcp-steroid` JSON marker). Port-based
- * discovery finds *any* JetBrains IDE — even ones without the
+ * IDEs via their managed PID marker). Port-based discovery finds *any*
+ * JetBrains IDE — even ones without the
  * `mcp-steroid` plugin installed.
  *
  * Scope of the scan: by default 63342..63361 (the IntelliJ Platform's

@@ -50,7 +50,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * End-to-end round-trip: a tiny Ktor server stands in for the IDE, we point
- * an [IdeDiscoveryService] at a fake `~/.<pid>.mcp-steroid` marker, and
+ * an [IdeDiscoveryService] at a fake `~/.mcp-steroid/markers/<pid>.mcp-steroid` marker, and
  * verify that [IdeMonitorService] connects, receives the IDE's snapshot
  * envelopes, and updates [IdeMonitorService.states].
  */
@@ -130,7 +130,8 @@ class IdeMonitorServiceTest {
         script += snapshot(listOf(ProjectInfo("alpha", "/p/alpha")))
 
         val discovery = IdeDiscoveryService(
-            homeDir = homeDir.toFile(),
+            markersDir = PidMarker.markerDirectory(homeDir, env = emptyMap()).toFile(),
+            legacyHomeDir = homeDir.toFile(),
             allowHosts = listOf("127.0.0.1"),
             scanInterval = 200.milliseconds,
         )
@@ -169,7 +170,8 @@ class IdeMonitorServiceTest {
         script += snapshot(listOf(ProjectInfo("alpha", "/p/alpha")))
 
         val discovery = IdeDiscoveryService(
-            homeDir = homeDir.toFile(),
+            markersDir = PidMarker.markerDirectory(homeDir, env = emptyMap()).toFile(),
+            legacyHomeDir = homeDir.toFile(),
             allowHosts = listOf("127.0.0.1"),
             scanInterval = 200.milliseconds,
         )
@@ -204,7 +206,8 @@ class IdeMonitorServiceTest {
         script += snapshot(listOf(ProjectInfo("b", "/p/b")))
 
         val discovery = IdeDiscoveryService(
-            homeDir = homeDir.toFile(),
+            markersDir = PidMarker.markerDirectory(homeDir, env = emptyMap()).toFile(),
+            legacyHomeDir = homeDir.toFile(),
             allowHosts = listOf("127.0.0.1"),
             scanInterval = 200.milliseconds,
         )
@@ -237,7 +240,9 @@ class IdeMonitorServiceTest {
             plugin = PluginInfo(id = "x", name = "y", version = "z"),
             createdAt = "2026-05-10T12:34:56Z",
         )
-        File(homeDir.toFile(), PidMarker.fileNameFor(ourPid))
+        val markerDir = PidMarker.markerDirectory(homeDir, env = emptyMap())
+        java.nio.file.Files.createDirectories(markerDir)
+        File(markerDir.toFile(), PidMarker.markerFileNameFor(ourPid))
             .writeText(PidMarkerJson.encode(marker))
     }
 

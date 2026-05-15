@@ -18,7 +18,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * One IDE instance discovered through a `~/.<pid>.mcp-steroid` JSON marker.
+ * One IDE instance discovered through a `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON marker.
  * Equality is keyed off the marker contents that affect the connection
  * (pid + mcpUrl) so [IdeDiscoveryService] can compare snapshots cheaply.
  */
@@ -36,7 +36,7 @@ data class DiscoveredIde(
 }
 
 /**
- * Polling discovery layer for `~/.<pid>.mcp-steroid` JSON markers.
+ * Polling discovery layer for `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON markers.
  *
  * The legacy proxy ([com.jonnyzzz.mcpSteroid.proxy.scanMarkers]) does the
  * same thing but is locked into [com.jonnyzzz.mcpSteroid.proxy.MarkerEntry];
@@ -44,8 +44,10 @@ data class DiscoveredIde(
  * source of truth for the new monitor stack.
  *
  * Behaviour:
- *  - Scans [homeDir] every [scanInterval] and emits a fresh value on the
+ *  - Scans [markersDir] every [scanInterval] and emits a fresh value on the
  *    flow whenever the discovered set changes (by [DiscoveredIde] equality).
+ *  - Also scans [legacyHomeDir] for one release so proxies can still find
+ *    IDEs running an older plugin that writes `~/.<pid>.mcp-steroid`.
  *  - Skips markers whose host is not in [allowHosts] — the same allowlist
  *    discipline as the legacy proxy.
  *  - Skips markers whose pid is no longer alive.
@@ -53,7 +55,8 @@ data class DiscoveredIde(
  *    excluded; the rest of the scan continues.
  */
 class IdeDiscoveryService(
-    private val homeDir: File,
+    private val markersDir: File,
+    private val legacyHomeDir: File = File(System.getProperty("user.home")),
     private val allowHosts: List<String>,
     private val scanInterval: Duration = 2.seconds,
 ) {
@@ -79,10 +82,33 @@ class IdeDiscoveryService(
     }
 
     private fun scanCurrent(): Set<DiscoveredIde> {
-        val files = homeDir.listFiles() ?: return emptySet()
-        val out = mutableSetOf<DiscoveredIde>()
+        val out = linkedMapOf<Long, DiscoveredIde>()
+        for (ide in scanDirectory(markersDir, legacyOnly = false)) {
+            out[ide.pid] = ide
+        }
+        val legacy = scanDirectory(legacyHomeDir, legacyOnly = true)
+        if (legacy.isNotEmpty()) {
+            log.debug(
+                "Discovered {} MCP Steroid marker(s) in legacy home-root location {}; keeping transition fallback active",
+                legacy.size,
+                legacyHomeDir.absolutePath,
+            )
+        }
+        for (ide in legacy) {
+            out.putIfAbsent(ide.pid, ide)
+        }
+        return out.values.toSet()
+    }
+
+    private fun scanDirectory(
+        dir: File,
+        legacyOnly: Boolean,
+    ): List<DiscoveredIde> {
+        val files = dir.listFiles() ?: return emptyList()
+        val out = mutableListOf<DiscoveredIde>()
         for (file in files) {
             if (!file.isFile) continue
+            if (legacyOnly && !file.name.startsWith(".")) continue
             val pid = PidMarker.pidFromFileName(file.name) ?: continue
             if (!ProcessHandle.of(pid).isPresent) continue
             val text = try { file.readText() } catch (e: Exception) {

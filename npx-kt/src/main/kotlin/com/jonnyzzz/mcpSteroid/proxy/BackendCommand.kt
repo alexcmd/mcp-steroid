@@ -40,8 +40,9 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * One row in the `backend` subcommand's output. Two sources:
- *  - [FromMarker]: discovered via `~/.<pid>.mcp-steroid` JSON marker. Projects
- *    are queryable through the IDE's `/npx/v1/projects/stream`.
+ *  - [FromMarker]: discovered via
+ *    `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON marker. Projects are
+ *    queryable through the IDE's `/npx/v1/projects/stream`.
  *  - [FromPort]: discovered via port scan of the IntelliJ built-in HTTP
  *    server (`/api/about`). No project list is available — older IDEs and
  *    IDEs without the mcp-steroid plugin still surface here so the operator
@@ -101,7 +102,7 @@ internal sealed interface BackendRow {
 /**
  * Entry point invoked by [runCli] when [CliMode.Backend] is selected. Walks
  * both discovery paths in parallel:
- *  1. `~/.<pid>.mcp-steroid` JSON markers → IDEs with project lists.
+ *  1. `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON markers → IDEs with project lists.
  *  2. Port scan of `127.0.0.1:63342..63361` and `:64342..64361` → IDEs
  *     reachable through their built-in HTTP server, including older ones
  *     that never wrote a marker.
@@ -129,9 +130,13 @@ internal fun runBackendCommand(
 internal fun collectBackendRows(
     homePaths: HomePaths = resolveHomePaths(override = null),
 ): List<BackendRow> {
-    val homeDir = File(System.getProperty("user.home"))
+    val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
-    val discovery = IdeDiscoveryService(homeDir = homeDir, allowHosts = allowHosts)
+    val discovery = IdeDiscoveryService(
+        markersDir = homePaths.markersDir.toFile(),
+        legacyHomeDir = legacyHomeDir,
+        allowHosts = allowHosts,
+    )
 
     // Short-lived HTTP client. The MCP path uses an infinite-stream client;
     // here we want fast failure so a stuck IDE doesn't hang the CLI.

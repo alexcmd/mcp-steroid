@@ -1540,6 +1540,8 @@ Both sides need updating in lockstep:
 
 6. **Tests**: bump the existing discovery tests to use the new location; add one to confirm the proxy still reads a legacy `~/.<pid>.mcp-steroid` (with a DEBUG log) for the transition window.
 
+✅ resolved
+
 ## Pipeline update (2026-05-15, again)
 
 1. Lifecycle batch B1/M2/M3/M6 (running).

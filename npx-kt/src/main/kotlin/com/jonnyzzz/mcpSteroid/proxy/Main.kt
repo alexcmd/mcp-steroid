@@ -92,7 +92,7 @@ internal fun MainContext.mainImpl() {
     // Construct every dependent service explicitly here — the npx-kt module
     // does not use any DI framework, so main.kt is the wiring root.
     val proxyVersion = loadProxyVersion()
-    val homeDir = File(System.getProperty("user.home"))
+    val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     val clientInfo = NpxStreamClientInfo(
         client = "mcp-steroid-proxy (npx-kt)",
@@ -115,7 +115,11 @@ internal fun MainContext.mainImpl() {
         expectSuccess = false
     }
 
-    val discovery = IdeDiscoveryService(homeDir = homeDir, allowHosts = allowHosts)
+    val discovery = IdeDiscoveryService(
+        markersDir = homePaths.markersDir.toFile(),
+        legacyHomeDir = legacyHomeDir,
+        allowHosts = allowHosts,
+    )
     val monitor = IdeMonitorService(
         httpClient = httpClient,
         discovery = discovery,
@@ -135,7 +139,8 @@ internal fun MainContext.mainImpl() {
     // so the existing proxy classes keep compiling.
     //
     // Alongside the stdio server, the new IDE monitor runs:
-    //   discovery → reads .<pid>.mcp-steroid JSON markers from $HOME
+    //   discovery → reads <pid>.mcp-steroid JSON markers from $MCP_STEROID_HOME/markers
+    //               plus legacy .<pid>.mcp-steroid markers from $HOME during the transition
     //   monitor   → opens one POST /npx/v1/projects/stream per IDE,
     //               receives push notifications on project open/close
     runBlocking {

@@ -33,7 +33,7 @@ data class MarkerEntry(
 data class ParsedMarker(val url: String, val label: String)
 
 /**
- * Parses a `.<pid>.mcp-steroid` marker file's JSON content. Returns null on
+ * Parses a marker file's JSON content. Returns null on
  * malformed JSON, schema mismatch, or any other decode failure — the legacy
  * line-based text format is no longer supported.
  */
@@ -57,13 +57,37 @@ fun isAllowedHost(urlValue: String, allowHosts: List<String>): Boolean {
     }
 }
 
-fun scanMarkers(homeDir: java.io.File, allowHosts: List<String>): List<MarkerEntry> {
-    return homeDir.listFiles()
+fun scanMarkers(
+    homeDir: java.io.File,
+    allowHosts: List<String>,
+    env: Map<String, String> = System.getenv(),
+): List<MarkerEntry> {
+    val markersDir = PidMarker.markerDirectory(homeDir.toPath(), env).toFile()
+    val current = scanMarkerDirectory(markersDir, allowHosts, legacyOnly = false)
+    val legacy = scanMarkerDirectory(homeDir, allowHosts, legacyOnly = true)
+    val byPid = linkedMapOf<Long, MarkerEntry>()
+    current.forEach { byPid[it.pid] = it }
+    legacy.forEach { byPid.putIfAbsent(it.pid, it) }
+    return byPid.values.toList()
+}
+
+private fun scanMarkerDirectory(
+    dir: java.io.File,
+    allowHosts: List<String>,
+    legacyOnly: Boolean,
+): List<MarkerEntry> {
+    return dir.listFiles()
         ?.filter { it.isFile }
         ?.mapNotNull { file ->
+            if (legacyOnly && !file.name.startsWith(".")) return@mapNotNull null
             val pid = PidMarker.pidFromFileName(file.name) ?: return@mapNotNull null
             if (!isPidAlive(pid)) return@mapNotNull null
-            val content = try { file.readText() } catch (e: Exception) { return@mapNotNull null }
+            val content = try {
+                file.readText()
+            } catch (e: Exception) {
+                System.err.println("WARN: failed to read marker file ${file.absolutePath}: ${e.message}")
+                return@mapNotNull null
+            }
             val parsed = parseMarkerContent(content, pid) ?: return@mapNotNull null
             if (!isAllowedHost(parsed.url, allowHosts)) return@mapNotNull null
             MarkerEntry(pid = pid, url = parsed.url, label = parsed.label, markerPath = file.absolutePath)

@@ -93,10 +93,11 @@ private fun ContainerDriver.deployNpxProxy(
     val guestLockFile = "$guestDir/package-lock.json"
     val guestConfig = "$guestDir/proxy.json"
     val markerPid = 1L
-    val markerPath = "$userHome/${PidMarker.fileNameFor(markerPid)}"
+    val markerPath = "$userHome/.mcp-steroid/markers/${PidMarker.markerFileNameFor(markerPid)}"
 
     mkdirs(guestDir)
     mkdirs(guestDistDir)
+    mkdirs("$userHome/.mcp-steroid/markers")
     copyToContainer(hostPackageJson, guestPackageJson)
     copyIfPresent(hostLockFile, guestLockFile)
     copyToContainer(hostDistFile, guestIndex)

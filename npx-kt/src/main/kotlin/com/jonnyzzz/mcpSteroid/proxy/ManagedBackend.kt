@@ -291,7 +291,13 @@ internal class BackendManager(
         writeIdeUserStartupConfigFiles(ideUserHome)
 
         val managedLog = logDir.resolve("managed.log")
-        val pid = spawnIdeProcess(launcher, bundleDir, managedLog.toFile(), managedLog.toFile())
+        val pid = spawnIdeProcess(
+            launcher = launcher,
+            workDir = bundleDir,
+            stdoutLog = managedLog.toFile(),
+            stderrLog = managedLog.toFile(),
+            environment = mapOf(PidMarker.MCP_STEROID_HOME_ENV to homePaths.home.toString()),
+        )
 
         Files.createDirectories(pidFile.parent)
         Files.writeString(pidFile, "$pid\n")
@@ -394,8 +400,7 @@ internal class BackendManager(
     }
 
     private fun pidMarkerMatchesDescriptor(pid: Long, descriptor: BackendDescriptor): Boolean {
-        val markerPath = ideUserHome.resolve(PidMarker.fileNameFor(pid))
-        if (!Files.isRegularFile(markerPath)) return false
+        val markerPath = markerPathsForPid(pid).firstOrNull { Files.isRegularFile(it) } ?: return false
         val marker = try {
             PidMarkerJson.decode(Files.readString(markerPath))
         } catch (e: Exception) {
@@ -407,13 +412,20 @@ internal class BackendManager(
     }
 
     private fun deleteMcpMarker(pid: Long) {
-        val marker = ideUserHome.resolve(PidMarker.fileNameFor(pid))
-        try {
-            Files.deleteIfExists(marker)
-        } catch (e: Exception) {
-            System.err.println("WARN: failed to delete MCP Steroid marker file $marker: ${e.message}")
+        for (marker in markerPathsForPid(pid)) {
+            try {
+                Files.deleteIfExists(marker)
+            } catch (e: Exception) {
+                System.err.println("WARN: failed to delete MCP Steroid marker file $marker: ${e.message}")
+            }
         }
     }
+
+    private fun markerPathsForPid(pid: Long): List<Path> = listOf(
+        homePaths.markersDir.resolve(PidMarker.markerFileNameFor(pid)),
+        PidMarker.markerDirectory(ideUserHome, env = emptyMap()).resolve(PidMarker.markerFileNameFor(pid)),
+        ideUserHome.resolve(".$pid.mcp-steroid"),
+    ).distinct()
 
     fun list(): List<ManagedBackendInfo> {
         if (!Files.isDirectory(homePaths.backendsDir)) return emptyList()
@@ -703,13 +715,15 @@ private fun spawnIdeProcess(
     workDir: Path,
     stdoutLog: File,
     stderrLog: File,
+    environment: Map<String, String>,
 ): Long = if (resolveHostOs() == HostOs.WINDOWS) {
     // stdoutLog/stderrLog are not propagated on Windows; the WMI-spawned child
     // is created by the winmgmt service and has no caller-attached stdio.
     // idea64.exe is GUI-subsystem and writes idea.log itself anyway.
-    spawnDetachedOnWindows(launcher, workDir)
+    spawnDetachedOnWindows(launcher, workDir, environment)
 } else {
     ProcessBuilder(launcher.toString())
+        .also { builder -> builder.environment().putAll(environment) }
         .directory(workDir.toFile())
         .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
         .redirectOutput(ProcessBuilder.Redirect.appendTo(stdoutLog))
@@ -721,6 +735,7 @@ private fun spawnIdeProcess(
 private fun spawnDetachedOnWindows(
     launcher: Path,
     workDir: Path,
+    environment: Map<String, String>,
 ): Long {
     // Spawn via WMI's Win32_Process.Create, executed in winmgmt.exe (the WMI
     // service) so the new IDE process has *no* relationship to our process tree:
@@ -738,8 +753,16 @@ private fun spawnDetachedOnWindows(
         val script = buildString {
             // Quote the launcher path so paths containing spaces parse correctly.
             append("\$cmd = '\"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
+            if (environment.isEmpty()) {
+                append("\$startup = \$null; ")
+            } else {
+                append("\$startup = ([wmiclass]'\\\\.\\root\\cimv2:Win32_ProcessStartup').CreateInstance(); ")
+                append("\$startup.EnvironmentVariables = @(")
+                append(environment.entries.joinToString(", ") { "'${psQuote("${it.key}=${it.value}")}'" })
+                append("); ")
+            }
             append("\$r = ([wmiclass]'\\\\.\\root\\cimv2:Win32_Process').Create(\$cmd, '")
-            append(psQuote(workDir.toString())).append("'); ")
+            append(psQuote(workDir.toString())).append("', \$startup); ")
             append("if (\$r.ReturnValue -ne 0) { Write-Error (\"Win32_Process.Create returned \" + \$r.ReturnValue); exit \$r.ReturnValue }; ")
             append("\$r.ProcessId | Out-File -FilePath '").append(psQuote(pidFile.toAbsolutePath().toString())).append("' -Encoding ASCII")
         }
