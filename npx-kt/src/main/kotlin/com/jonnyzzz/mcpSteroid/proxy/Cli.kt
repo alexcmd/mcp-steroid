@@ -9,7 +9,7 @@ internal const val BRAND_NAME: String = "devrig"
 
 /** Tagline used by the help banner and the `backend` subcommand's header. */
 internal const val BRAND_TAGLINE: String =
-    "the AI-empowered development environment for your project."
+    "This environment empowers your AI with the best deterministic coding tools."
 
 internal const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 

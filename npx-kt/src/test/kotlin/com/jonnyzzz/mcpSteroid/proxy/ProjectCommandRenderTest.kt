@@ -72,7 +72,7 @@ class ProjectCommandRenderTest {
         val lines = text.lines()
         assertTrue(lines[0].startsWith("devrig v"),
             "first line must be the devrig banner; got: ${lines[0]}")
-        assertTrue(lines[0].contains("the AI-empowered"),
+        assertTrue(lines[0].contains("This environment empowers your AI"),
             "banner must include the tagline; got: ${lines[0]}")
         assertEquals("", lines[1], "second line must be blank to separate banner from body")
     }
