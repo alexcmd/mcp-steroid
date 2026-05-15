@@ -28,26 +28,36 @@ import kotlin.time.Duration.Companion.seconds
 internal data class AvailableBackendDownload(
     val product: IdeProduct,
     val version: String?,
+    val releaseDate: String? = null,
     val versionLookupError: String? = null,
 ) {
     val requiresAllowPaid: Boolean get() = product.licenseTier == LicenseTier.Paid
 }
 
+internal data class AvailableBackendRelease(
+    val version: String,
+    val releaseDate: String? = null,
+)
+
 internal interface AvailableBackendVersionResolver {
-    suspend fun resolveLatestStableVersion(product: IdeProduct): String
+    suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease
 }
 
 internal class ReleaseServiceAvailableBackendVersionResolver(
     private val os: HostOs = resolveHostOs(),
 ) : AvailableBackendVersionResolver {
-    override suspend fun resolveLatestStableVersion(product: IdeProduct): String = withContext(Dispatchers.IO) {
-        resolveArchive(
+    override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease = withContext(Dispatchers.IO) {
+        val archive = resolveArchive(
             product = product,
             channel = IdeChannel.STABLE,
             os = os,
             preferWindowsZip = true,
             version = null,
-        ).version
+        )
+        AvailableBackendRelease(
+            version = archive.version,
+            releaseDate = archive.releaseDate,
+        )
     }
 }
 
@@ -86,7 +96,8 @@ internal suspend fun collectAvailableBackendDownloads(
                 val version = tryResolveLatestStableVersion(product, versionResolver, totalBudget)
                 AvailableBackendDownload(
                     product = product,
-                    version = version.getOrNull(),
+                    version = version.getOrNull()?.version,
+                    releaseDate = version.getOrNull()?.releaseDate,
                     versionLookupError = version.exceptionOrNull()?.shortMessage(),
                 )
             }
@@ -98,10 +109,10 @@ private suspend fun tryResolveLatestStableVersion(
     product: IdeProduct,
     versionResolver: AvailableBackendVersionResolver,
     timeout: Duration,
-): Result<String> {
+): Result<AvailableBackendRelease> {
     val version = try {
         withTimeoutOrNull(timeout) {
-            versionResolver.resolveLatestStableVersion(product)
+            versionResolver.resolveLatestStableRelease(product)
         } ?: return Result.failure(IllegalStateException("timed out after ${timeout.inWholeSeconds}s"))
     } catch (e: Exception) {
         return Result.failure(e)
@@ -144,12 +155,23 @@ internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownlo
             .filterNot { it.requiresAllowPaid }
             .map { it.versionText().length }
             .maxOrNull() ?: 0
+        val releaseDateWidth = rows
+            .filterNot { it.requiresAllowPaid }
+            .map { it.releaseDate.orEmpty().length }
+            .maxOrNull() ?: 0
         for ((index, row) in rows.withIndex()) {
             val indexLabel = "[${index + 1}]".padEnd(indexWidth)
             val id = row.product.id.padEnd(idWidth)
             val name = row.product.displayName.padEnd(displayWidth)
             if (row.requiresAllowPaid) {
                 out.println("  $indexLabel $id  $name  (paid — requires --allow-paid)")
+            } else if (releaseDateWidth > 0) {
+                out.println(
+                    "  $indexLabel $id  $name  " +
+                        "${row.versionText().padEnd(versionWidth)}  " +
+                        "${row.releaseDate.orEmpty().padEnd(releaseDateWidth)}  " +
+                        row.product.licenseTier.cliValue
+                )
             } else {
                 out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}  ${row.product.licenseTier.cliValue}")
             }
@@ -171,6 +193,7 @@ internal fun renderBackendDownloadListJson(rows: List<AvailableBackendDownload>,
                     put("displayName", row.product.displayName)
                     put("licenseTier", row.product.licenseTier.cliValue)
                     if (row.version == null) put("version", JsonNull) else put("version", row.version)
+                    row.releaseDate?.let { put("releaseDate", it) }
                     put("requiresAllowPaid", row.requiresAllowPaid)
                     row.versionLookupError?.let { put("versionLookupError", it) }
                 })

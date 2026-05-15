@@ -28,13 +28,13 @@ class BackendCommandDownloadListTest {
         val rows = collectAvailableBackendDownloads(
             versionResolver = FakeVersionResolver(
                 versions = mapOf(
-                    "idea-community" to Result.success("2025.3.3"),
-                    "pycharm-community" to Result.success("2025.3.3"),
+                    "idea-community" to Result.success(AvailableBackendRelease("2025.3.3", "2025-12-08")),
+                    "pycharm-community" to Result.success(AvailableBackendRelease("2025.3.3", "2025-12-08")),
                     "android-studio" to Result.failure(IllegalStateException("offline products API")),
-                    "goland" to Result.success("2025.3.0"),
-                    "webstorm" to Result.success("2025.3.0"),
-                    "rider" to Result.success("2025.3.0"),
-                    "clion" to Result.success("2025.3.0"),
+                    "goland" to Result.success(AvailableBackendRelease("2025.3.0", "2025-12-09")),
+                    "webstorm" to Result.success(AvailableBackendRelease("2025.3.0", "2025-12-09")),
+                    "rider" to Result.success(AvailableBackendRelease("2025.3.0", "2025-12-09")),
+                    "clion" to Result.success(AvailableBackendRelease("2025.3.0", "2025-12-09")),
                 ),
             ),
         )
@@ -45,6 +45,7 @@ class BackendCommandDownloadListTest {
         assertTrue(text.contains("(paid — requires --allow-paid)"), text)
         assertTrue(text.contains("free-for-non-commercial"), text)
         assertTrue(text.contains("(version lookup failed: offline products API)"), text)
+        assertTrue(text.contains("2025-12-08"), text)
         assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>] [--allow-paid]"), text)
 
         val lines = productLines(text)
@@ -68,6 +69,13 @@ class BackendCommandDownloadListTest {
             goLand to "2025.3.0",
         ).map { (line, version) -> line.indexOf(version) }.toSet()
         assertEquals(1, versionColumns.size, "version column must align in:\n$text")
+
+        val dateColumns = mapOf(
+            ideaCommunity to "2025-12-08",
+            pyCharmCommunity to "2025-12-08",
+            goLand to "2025-12-09",
+        ).map { (line, releaseDate) -> line.indexOf(releaseDate) }.toSet()
+        assertEquals(1, dateColumns.size, "release date column must align in:\n$text")
     }
 
     @Test
@@ -104,6 +112,7 @@ class BackendCommandDownloadListTest {
         assertEquals("IntelliJ IDEA Community", ideaCommunity["displayName"]!!.jsonPrimitive.content)
         assertEquals("free", ideaCommunity["licenseTier"]!!.jsonPrimitive.content)
         assertEquals("2025.3.test", ideaCommunity["version"]!!.jsonPrimitive.content)
+        assertEquals("2025-12-08", ideaCommunity["releaseDate"]!!.jsonPrimitive.content)
         assertFalse(ideaCommunity["requiresAllowPaid"]!!.jsonPrimitive.boolean)
 
         val rider = available.single { it["id"]!!.jsonPrimitive.content == "rider" }
@@ -118,6 +127,7 @@ class BackendCommandDownloadListTest {
         val paid = available.single { it["id"]!!.jsonPrimitive.content == "idea" }
         assertEquals("paid", paid["licenseTier"]!!.jsonPrimitive.content)
         assertNull(paid["version"]!!.jsonPrimitive.contentOrNull)
+        assertFalse("releaseDate" in paid)
         assertTrue(paid["requiresAllowPaid"]!!.jsonPrimitive.boolean)
     }
 
@@ -181,18 +191,18 @@ class BackendCommandDownloadListTest {
         .filter { it.trimStart().startsWith("[") }
 
     private class FakeVersionResolver(
-        private val versions: Map<String, Result<String>>,
+        private val versions: Map<String, Result<AvailableBackendRelease>>,
     ) : AvailableBackendVersionResolver {
-        override suspend fun resolveLatestStableVersion(product: IdeProduct): String =
-            versions[product.id]?.getOrThrow() ?: "2025.3.test"
+        override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease =
+            versions[product.id]?.getOrThrow() ?: AvailableBackendRelease("2025.3.test", "2025-12-08")
     }
 
     private class CountingResolver : AvailableBackendVersionResolver {
         val calls = mutableListOf<String>()
 
-        override suspend fun resolveLatestStableVersion(product: IdeProduct): String {
+        override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease {
             calls += product.id
-            return "2025.3.test"
+            return AvailableBackendRelease("2025.3.test", "2025-12-08")
         }
     }
 }

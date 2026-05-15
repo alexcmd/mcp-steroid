@@ -21,6 +21,7 @@ data class IdeArchiveResolution(
     val build: String,
     val url: String,
     val downloadKey: String,
+    val releaseDate: String? = null,
 )
 
 /**
@@ -125,6 +126,7 @@ fun resolveArchive(
         val type = (release["type"] as? JsonPrimitive)?.content
         val releaseVersion = (release["version"] as? JsonPrimitive)?.content
         val build = (release["build"] as? JsonPrimitive)?.content
+        val releaseDate = (release["date"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
         if (!type.equals(channel.apiValue, ignoreCase = true)) continue
         if (releaseVersion.isNullOrBlank() || build.isNullOrBlank()) continue
         if (wantedVersion != null && wantedVersion != releaseVersion && wantedVersion != build) continue
@@ -141,6 +143,7 @@ fun resolveArchive(
                 build = build,
                 url = link,
                 downloadKey = downloadKey,
+                releaseDate = releaseDate,
             )
         }
     }
