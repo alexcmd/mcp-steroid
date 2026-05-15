@@ -1299,3 +1299,62 @@ Sequential codex runs. Order:
 5. **M4** — JSON synthetic IDs.
 6. **M8** — CLI parser tightening.
 7. **m1 / m2 / m3 / m4 / m6** — polish.
+
+## Additional item (added 2026-05-15)
+
+### M11 — `devrig backend provision <id>` — install MCP Steroid into an existing IDE
+
+New CLI subcommand to provision the MCP Steroid plugin into an
+**already-running** IDE that was discovered by port scan but doesn't
+yet have the plugin installed. The current listing already
+distinguishes port-discovered ("mcp-steroid plugin not installed —
+project list unavailable") rows; promote the action by appending a
+clear pointer:
+
+```
+  [3] IntelliJ IDEA Ultimate (port 63342)
+        run: devrig backend provision port-63342
+```
+
+Identifier: stable port-based id (e.g. `port-63342`) since port-
+discovered IDEs don't have a `<product-key>-<version>` natural id.
+Surface the same id in the JSON `backends[]` row so machine
+consumers can pipe it.
+
+**Research first** (read-only, single codex pass):
+- Inspect `~/Work/intellij` for the built-in HTTP server (`org.jetbrains.builtInWebServer` / `BuiltInServerManager` / the `WebServerPathHandler` SPI).
+  Document every action the running IDE exposes — specifically:
+  - is there an endpoint that returns the plugins / config / system path?
+  - is there an endpoint that installs a plugin (with or without restart)?
+  - what's the auth model (CSRF token / Origin / nothing)?
+- Cross-reference with what Toolbox / Settings Sync uses. Toolbox is
+  known to inject plugins; figure out how.
+- If no useful endpoint exists, derive the plugins folder from
+  `/api/about`'s `productCode` + `baselineVersion` + `buildNumber`
+  and the per-OS JetBrains config convention
+  (`~/Library/Application Support/JetBrains/<ProductSlug><Version>/plugins/`
+  on Mac; `$XDG_CONFIG_HOME/JetBrains/<ProductSlug><Version>/plugins/`
+  on Linux; `%APPDATA%\JetBrains\<ProductSlug><Version>\plugins\`
+  on Windows).
+
+**Implementation** (after research lands):
+- Spawn the same plugin-source resolution as `BackendManager.download`'s
+  plugin deploy step: `NpxKtRoot.ijPluginDir()` → copy into the
+  target IDE's plugins dir.
+- Hot-reload if possible (Plugin Hot Reload plugin or built-in
+  dynamic-plugin reloader); otherwise prompt the user to restart the
+  IDE.
+- JSON output shape: `{tool, action: "provision", id, productCode, pluginsDir, hotReloaded: <true|false>, restartRequired: <true|false>}`.
+
+Slots into the pipeline **right after M1** — before the lifecycle batch.
+
+## Revised pipeline order (2026-05-15)
+
+1. M1 investigation (in flight).
+2. **M11 — `backend provision`** (research → design → implement).
+3. B1 / M2 / M3 / M6 — `ManagedBackend.kt` lifecycle.
+4. B2 — `IdeUnpacker.kt` security.
+5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
+6. M4 — JSON synthetic IDs.
+7. M8 — CLI parser tightening.
+8. m1 / m2 / m3 / m4 / m6 — polish.
