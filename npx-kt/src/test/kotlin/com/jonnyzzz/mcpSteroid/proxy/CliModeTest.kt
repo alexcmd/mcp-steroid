@@ -108,7 +108,6 @@ class CliModeTest {
     fun `backend provision without id routes to port-discovery listing`() {
         assertEquals(CliMode.Backend.ProvisionList(json = false), parseCliMode(arrayOf("backend", "provision")))
         assertEquals(CliMode.Backend.ProvisionList(json = true), parseCliMode(arrayOf("backend", "provision", "--json")))
-        assertEquals(CliMode.Backend.ProvisionList(json = true), parseCliMode(arrayOf("backend", "provision", "--json", "--version", "2026.1.1")))
     }
 
     @Test
@@ -168,15 +167,11 @@ class CliModeTest {
     }
 
     @Test
-    fun `--json without backend is ignored at the mode level`() {
-        // `--json` only modifies data subcommands; on any other mode it's
-        // filtered out by the parser, just like `--debug`. So `--json` alone
-        // routes to Help (same as no args).
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("--json")))
-        // And combined with another mode it doesn't override it.
+    fun `--json without a data mode is rejected`() {
+        assertTrue(parseCliMode(arrayOf("--json")) is CliMode.Unknown)
         assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--json")))
-        assertEquals(CliMode.Version, parseCliMode(arrayOf("--version", "--json")))
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("--help", "--json")))
+        assertTrue(parseCliMode(arrayOf("--version", "--json")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("--help", "--json")) is CliMode.Unknown)
     }
 
     @Test
@@ -188,19 +183,20 @@ class CliModeTest {
     }
 
     @Test
-    fun `parseHomeOverride returns the value immediately after --home`() {
+    fun `parseHomeOverride returns only non-flag values after --home`() {
         assertEquals("/tmp/devrig-home", parseHomeOverride(arrayOf("--home", "/tmp/devrig-home")))
         assertEquals("relative", parseHomeOverride(arrayOf("backend", "--home", "relative", "--json")))
         assertEquals(null, parseHomeOverride(emptyArray()))
         assertEquals(null, parseHomeOverride(arrayOf("--home")))
+        assertEquals(null, parseHomeOverride(arrayOf("--home", "--debug", "backend")))
     }
 
     @Test
-    fun `--json with --help still routes to Help (help wins over backend)`() {
-        // Subtle: `backend --json --help` could be interpreted as "JSON help".
-        // We deliberately keep Help text-only for now — pin that decision so
-        // a future JSON-help feature doesn't sneak in by accident.
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("backend", "--json", "--help")))
+    fun `--json with --help after backend is rejected by the backend allow-list`() {
+        val mode = parseCliMode(arrayOf("backend", "--json", "--help"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals("Unknown flag: --help", mode.hint)
     }
 
     // ----------------------------- precedence ------------------------------
@@ -242,55 +238,98 @@ class CliModeTest {
     }
 
     @Test
-    fun `--help wins over backend subcommand`() {
-        // `mcp-steroid-proxy backend --help` should print help, NOT open connections
-        // to discovered IDEs. Help asks "what does this do?" and the answer is text.
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("backend", "--help")))
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("-h", "backend")))
+    fun `mcp ignored token list excludes global flags that still apply`() {
+        assertEquals(listOf("backend"), mcpIgnoredTokens(arrayOf("--mcp", "--debug", "backend")))
+        assertEquals(listOf("backend", "--json"), mcpIgnoredTokens(arrayOf("--home", "/tmp/devrig-home", "--mcp", "backend", "--json")))
     }
 
     @Test
-    fun `--help wins over project subcommand`() {
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("project", "--help")))
+    fun `--help combined with backend tokens is rejected outside MCP mode`() {
+        val backendHelp = parseCliMode(arrayOf("backend", "--help"))
+        assertTrue(backendHelp is CliMode.Unknown)
+        backendHelp as CliMode.Unknown
+        assertEquals("Unknown flag: --help", backendHelp.hint)
+
+        val topLevelHelpWithExtra = parseCliMode(arrayOf("-h", "backend"))
+        assertTrue(topLevelHelpWithExtra is CliMode.Unknown)
+        topLevelHelpWithExtra as CliMode.Unknown
+        assertEquals("Unknown flag: -h", topLevelHelpWithExtra.hint)
     }
 
     @Test
-    fun `--version wins over backend subcommand`() {
-        assertEquals(CliMode.Version, parseCliMode(arrayOf("backend", "--version")))
+    fun `--help combined with project tokens is rejected outside MCP mode`() {
+        val mode = parseCliMode(arrayOf("project", "--help"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals("Unknown flag: --help", mode.hint)
     }
 
     @Test
-    fun `backend with extra unknown args still routes to Backend`() {
-        // We don't yet validate subcommand args strictly — extra tokens are accepted
-        // so the door stays open for future `backend --json` style options without
-        // breaking compatibility.
-        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("backend", "extra")))
-        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("extra", "backend")))
+    fun `--version after backend info mode is rejected`() {
+        val mode = parseCliMode(arrayOf("backend", "--version"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals("Unknown flag: --version", mode.hint)
     }
 
     @Test
-    fun `backend wins over project when both subcommands are present`() {
-        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("backend", "project")))
+    fun `backend with extra positional args routes to Unknown`() {
+        val trailing = parseCliMode(arrayOf("backend", "extra"))
+        assertTrue(trailing is CliMode.Unknown)
+        trailing as CliMode.Unknown
+        assertEquals("Unexpected extra argument: extra", trailing.hint)
+
+        val leading = parseCliMode(arrayOf("extra", "backend"))
+        assertTrue(leading is CliMode.Unknown)
+        leading as CliMode.Unknown
+        assertEquals(listOf("extra", "backend"), leading.args)
     }
 
     @Test
-    fun `--help wins over --version when both are present`() {
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("--version", "--help")))
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("--help", "--version")))
+    fun `backend with project as an extra positional is rejected`() {
+        val mode = parseCliMode(arrayOf("backend", "project"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals("Unexpected extra argument: project", mode.hint)
     }
 
     @Test
-    fun `--help wins over unknown args`() {
-        // Useful for `mcp-steroid-proxy --foo --help` — the user is asking for
-        // help and the unknown token shouldn't override that into Unknown.
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("--foo", "--help")))
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("-h", "garbage")))
+    fun `--help and --version together are rejected as ambiguous`() {
+        val versionThenHelp = parseCliMode(arrayOf("--version", "--help"))
+        assertTrue(versionThenHelp is CliMode.Unknown)
+        versionThenHelp as CliMode.Unknown
+        assertEquals("Unknown flag: --version", versionThenHelp.hint)
+
+        val helpThenVersion = parseCliMode(arrayOf("--help", "--version"))
+        assertTrue(helpThenVersion is CliMode.Unknown)
+        helpThenVersion as CliMode.Unknown
+        assertEquals("Unknown flag: --version", helpThenVersion.hint)
     }
 
     @Test
-    fun `--version wins over unknown args`() {
-        assertEquals(CliMode.Version, parseCliMode(arrayOf("--what", "--version")))
-        assertEquals(CliMode.Version, parseCliMode(arrayOf("-v", "leftover")))
+    fun `--help with unknown flags or extra args is rejected`() {
+        val unknownFlag = parseCliMode(arrayOf("--foo", "--help"))
+        assertTrue(unknownFlag is CliMode.Unknown)
+        unknownFlag as CliMode.Unknown
+        assertEquals("Unknown flag: --foo", unknownFlag.hint)
+
+        val extra = parseCliMode(arrayOf("-h", "garbage"))
+        assertTrue(extra is CliMode.Unknown)
+        extra as CliMode.Unknown
+        assertEquals("Unexpected extra argument: garbage", extra.hint)
+    }
+
+    @Test
+    fun `--version with unknown flags or extra args is rejected`() {
+        val unknownFlag = parseCliMode(arrayOf("--what", "--version"))
+        assertTrue(unknownFlag is CliMode.Unknown)
+        unknownFlag as CliMode.Unknown
+        assertEquals("Unknown flag: --what", unknownFlag.hint)
+
+        val extra = parseCliMode(arrayOf("-v", "leftover"))
+        assertTrue(extra is CliMode.Unknown)
+        extra as CliMode.Unknown
+        assertEquals("Unexpected extra argument: leftover", extra.hint)
     }
 
     // -------------------------- exact-match semantics ----------------------
@@ -344,10 +383,12 @@ class CliModeTest {
     }
 
     @Test
-    fun `multiple unknown args are preserved in their original order`() {
+    fun `first unknown flag is reported with a hint`() {
         val mode = parseCliMode(arrayOf("--what", "--never", "ever"))
         assertTrue(mode is CliMode.Unknown)
-        assertEquals(listOf("--what", "--never", "ever"), (mode as CliMode.Unknown).args)
+        mode as CliMode.Unknown
+        assertEquals(listOf("--what"), mode.args)
+        assertEquals("Unknown flag: --what", mode.hint)
     }
 
     // ------------------------- duplicates / weird shapes -------------------

@@ -74,6 +74,12 @@ fun main(args: Array<String>) {
 
     System.setOut(System.err)
 
+    val ignoredMcpTokens = mcpIgnoredTokens(args)
+    if (ignoredMcpTokens.isNotEmpty()) {
+        org.slf4j.LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.Main")
+            .debug("--mcp selected; ignored CLI argument(s): {}", ignoredMcpTokens.joinToString(" "))
+    }
+
     try {
         MainContext(
             args = args.toList(),

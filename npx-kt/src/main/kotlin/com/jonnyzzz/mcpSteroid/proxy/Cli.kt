@@ -85,50 +85,222 @@ internal sealed interface CliMode {
 }
 
 /**
+ * Normalised argv shape used by [parseCliMode]. Flags keep their leading dash;
+ * boolean flags have a `null` value, value flags store the parsed value.
+ * [positionals] are the non-flag tokens after [mode], excluding [subcommand].
+ */
+internal data class ParsedArgs(
+    val mode: String?,
+    val subcommand: String?,
+    val positionals: List<String>,
+    val flags: Map<String, String?>,
+    val unknownFlags: List<String>,
+    val rawArgs: List<String>,
+)
+
+private data class ParseFailure(
+    val args: List<String>,
+    val hint: String,
+)
+
+private data class ModeRule(
+    val mode: String?,
+    val subcommand: String?,
+    val expectedPositionals: IntRange,
+    val allowedFlags: Set<String>,
+    val valueFlags: Set<String> = emptySet(),
+    val build: (ParsedArgs) -> CliMode,
+)
+
+private val globalBooleanFlags = setOf("--debug")
+private val globalValueFlags = setOf("--home")
+private val helpFlags = setOf("--help", "-h")
+private val versionSelectorFlags = setOf("--version", "-v")
+private val knownModeKeywords = setOf("backend", "project")
+private val backendLifecycleSubcommands = setOf("download", "start", "stop")
+private val backendSubcommands = backendLifecycleSubcommands + "provision"
+private val knownFlags = globalBooleanFlags + globalValueFlags + helpFlags + versionSelectorFlags + setOf("--mcp", "--json", "--allow-paid")
+
+private val cliModeRules: List<ModeRule> = listOf(
+    ModeRule(
+        mode = null,
+        subcommand = "help",
+        expectedPositionals = 0..0,
+        allowedFlags = helpFlags,
+    ) { CliMode.Help },
+    ModeRule(
+        mode = null,
+        subcommand = "version",
+        expectedPositionals = 0..0,
+        allowedFlags = versionSelectorFlags,
+    ) { CliMode.Version },
+    ModeRule(
+        mode = "backend",
+        subcommand = "download",
+        expectedPositionals = 0..1,
+        allowedFlags = setOf("--json"),
+        valueFlags = setOf("--version"),
+    ) { parsed ->
+        val json = parsed.hasFlag("--json")
+        val id = parsed.positionals.firstOrNull()
+            ?: return@ModeRule CliMode.Backend.DownloadList(json = json)
+        if (!isSupportedBackendLifecycleId(id)) {
+            return@ModeRule CliMode.Unknown(
+                args = listOf("backend", "download", id),
+                hint = "Run `devrig backend download` with no id to list valid backend ids.",
+            )
+        }
+        CliMode.Backend.Download(
+            id = id,
+            versionOverride = parsed.flags["--version"],
+            json = json,
+        )
+    },
+    ModeRule(
+        mode = "backend",
+        subcommand = "start",
+        expectedPositionals = 0..1,
+        allowedFlags = setOf("--json"),
+        valueFlags = setOf("--version"),
+    ) { parsed ->
+        val json = parsed.hasFlag("--json")
+        val id = parsed.positionals.firstOrNull()
+            ?: return@ModeRule CliMode.Backend.StartList(json = json)
+        if (!isSupportedBackendLifecycleId(id)) {
+            return@ModeRule CliMode.Unknown(
+                args = listOf("backend", "start", id),
+                hint = "Run `devrig backend start` with no id to list valid backend ids.",
+            )
+        }
+        CliMode.Backend.Start(
+            id = id,
+            versionOverride = parsed.flags["--version"],
+            json = json,
+        )
+    },
+    ModeRule(
+        mode = "backend",
+        subcommand = "stop",
+        expectedPositionals = 0..1,
+        allowedFlags = setOf("--json"),
+        valueFlags = setOf("--version"),
+    ) { parsed ->
+        val json = parsed.hasFlag("--json")
+        val id = parsed.positionals.firstOrNull()
+            ?: return@ModeRule CliMode.Backend.StopList(json = json)
+        if (!isSupportedBackendLifecycleId(id)) {
+            return@ModeRule CliMode.Unknown(
+                args = listOf("backend", "stop", id),
+                hint = "Run `devrig backend stop` with no id to list valid backend ids.",
+            )
+        }
+        CliMode.Backend.Stop(
+            id = id,
+            versionOverride = parsed.flags["--version"],
+            json = json,
+        )
+    },
+    ModeRule(
+        mode = "backend",
+        subcommand = "provision",
+        expectedPositionals = 0..1,
+        allowedFlags = setOf("--json"),
+    ) { parsed ->
+        val json = parsed.hasFlag("--json")
+        val id = parsed.positionals.firstOrNull()
+            ?: return@ModeRule CliMode.Backend.ProvisionList(json = json)
+        if (!isSupportedProvisionTargetId(id)) {
+            return@ModeRule CliMode.Unknown(
+                args = listOf("backend", "provision", id),
+                hint = "Run `devrig backend provision` with no id to list valid backend ids.",
+            )
+        }
+        CliMode.Backend.Provision(id = id, json = json)
+    },
+    ModeRule(
+        mode = "backend",
+        subcommand = null,
+        expectedPositionals = 0..0,
+        allowedFlags = setOf("--json"),
+    ) { parsed ->
+        if (parsed.hasFlag("--json")) CliMode.Backend.Json else CliMode.Backend.Text
+    },
+    ModeRule(
+        mode = "project",
+        subcommand = null,
+        expectedPositionals = 0..0,
+        allowedFlags = setOf("--json"),
+    ) { parsed ->
+        if (parsed.hasFlag("--json")) CliMode.Project.Json else CliMode.Project.Text
+    },
+)
+
+/**
  * Pure arg parser. Touches nothing but its input — safe to call before
  * stdout redirection or any class init.
  *
- * Precedence (highest first): `--mcp` → `--help` / `-h` / empty → `--version`
- * / `-v` → `backend` → `project` → Unknown. The "info" modes (help, version)
- * intentionally win over data subcommands so `backend --help` prints help
- * instead of opening connections, and `--mcp` wins over everything so a wrapper
- * that accidentally combines flags still keeps MCP framing intact.
+ * Precedence (highest first): `--mcp` → empty / global-only help → explicit
+ * top-level `--help` / `-h` → explicit top-level `--version` / `-v` →
+ * `backend` → `project` → Unknown. The MCP selector intentionally wins over
+ * everything so a wrapper that accidentally combines flags still keeps MCP
+ * framing intact; non-MCP modes are strict and reject unknown flags, missing
+ * value-flag values, and extra positional arguments.
  *
  * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
- * [parseDebugFlag]) and is filtered out here so e.g. `--debug` alone routes
- * to Help, not Unknown, and `--debug backend` routes to Backend.
+ * [parseDebugFlag]) and is accepted in every mode. `--home <path>` is also
+ * global, but it must still have a value that does not look like another long
+ * flag.
  */
 internal fun parseCliMode(args: Array<String>): CliMode {
-    // `--debug` is a logging-verbosity toggle; `--json` is a backend-only output
-    // format selector. `--home <path>` is a storage-root override. All three
-    // are orthogonal to mode selection and filtered out here so e.g. `--debug`
-    // alone routes to Help, not Unknown.
-    val modeArgs = args.withoutGlobalValueFlag("--home")
-        .filterNot { it == "--debug" || it == "--json" }
-        .toTypedArray()
-    if (modeArgs.any { it == "--mcp" }) return CliMode.Mcp
-    if (modeArgs.isEmpty() || modeArgs.any { it == "--help" || it == "-h" }) return CliMode.Help
-    if (modeArgs.any { it == "--allow-paid" }) {
-        return CliMode.Unknown(
-            args = listOf("--allow-paid"),
-            hint = "The --allow-paid flag was removed; requested JetBrains binaries are downloaded without a CLI consent flag.",
-        )
+    val rawArgs = args.toList()
+    if (rawArgs.any { it == "--mcp" }) return CliMode.Mcp
+
+    parseValueFlagFailure(rawArgs, "--home", valueAllowedAt = { true })?.let {
+        return CliMode.Unknown(args = it.args, hint = it.hint)
     }
-    if (modeArgs.any { it == "backend" }) {
-        parseBackendLifecycleMode(
-            args.withoutGlobalValueFlag("--home")
-                .filterNot { it == "--debug" }
-                .toTypedArray(),
-        )?.let { return it }
+
+    val modeIndex = findModeIndex(rawArgs)
+    val mode = modeIndex?.let { rawArgs[it] }
+    val subcommand = if (mode == "backend") findBackendSubcommand(rawArgs, modeIndex) else null
+    val backendModeIndex = modeIndex ?: -1
+    val versionValueAllowedAt: (Int) -> Boolean = { index ->
+        mode == "backend" && subcommand in backendLifecycleSubcommands && index > backendModeIndex
     }
-    if (modeArgs.any { it == "--version" || it == "-v" }) return CliMode.Version
-    if (modeArgs.any { it == "backend" }) {
-        return if (args.any { it == "--json" }) CliMode.Backend.Json else CliMode.Backend.Text
+    parseValueFlagFailure(rawArgs, "--version", valueAllowedAt = versionValueAllowedAt)?.let {
+        return CliMode.Unknown(args = it.args, hint = it.hint)
     }
-    if (modeArgs.any { it == "project" }) {
-        return if (args.any { it == "--json" }) CliMode.Project.Json else CliMode.Project.Text
+
+    val parsed = parseArgs(rawArgs, modeIndex, mode, subcommand, versionValueAllowedAt)
+    removedAllowPaidFailure(parsed)?.let { return it }
+
+    val rule = selectModeRule(parsed)
+        ?: return unknownTopLevel(parsed)
+
+    validateRule(parsed, rule)?.let { return it }
+    return rule.build(parsed)
+}
+
+/**
+ * Tokens that are deliberately ignored once `--mcp` is present. Used only for a
+ * DEBUG stderr log after stdout has been reserved for MCP framing.
+ */
+internal fun mcpIgnoredTokens(args: Array<String>): List<String> {
+    val ignored = mutableListOf<String>()
+    var index = 0
+    while (index < args.size) {
+        val arg = args[index]
+        when (arg) {
+            "--mcp", "--debug" -> index++
+            "--home" -> {
+                index += if (index < args.lastIndex && !args[index + 1].startsWith("--")) 2 else 1
+            }
+            else -> {
+                ignored += arg
+                index++
+            }
+        }
     }
-    return CliMode.Unknown(modeArgs.toList())
+    return ignored
 }
 
 /**
@@ -141,92 +313,178 @@ internal fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--
 internal fun parseHomeOverride(args: Array<String>): String? {
     val idx = args.indexOf("--home")
     if (idx < 0 || idx == args.lastIndex) return null
-    return args[idx + 1]
+    val value = args[idx + 1]
+    return if (value.startsWith("--")) null else value
 }
 
-private fun Array<String>.withoutGlobalValueFlag(flag: String): List<String> {
-    return toList().withoutValueFlag(flag)
+private fun ParsedArgs.hasFlag(flag: String): Boolean = flags.containsKey(flag)
+
+private fun parseValueFlagFailure(
+    args: List<String>,
+    flag: String,
+    valueAllowedAt: (Int) -> Boolean,
+): ParseFailure? {
+    args.forEachIndexed { index, arg ->
+        if (arg == flag && valueAllowedAt(index)) {
+            val value = args.getOrNull(index + 1)
+            if (value == null || value.startsWith("--")) {
+                return ParseFailure(
+                    args = listOfNotNull(flag, value),
+                    hint = "Missing value for $flag",
+                )
+            }
+        }
+    }
+    return null
 }
 
-private fun List<String>.withoutValueFlag(flag: String): List<String> {
-    val result = mutableListOf<String>()
-    var skipNext = false
-    for (arg in this) {
-        if (skipNext) {
-            skipNext = false
-            continue
+private fun findModeIndex(args: List<String>): Int? {
+    var index = 0
+    while (index < args.size) {
+        val arg = args[index]
+        when {
+            arg == "--home" && index < args.lastIndex && !args[index + 1].startsWith("--") -> index += 2
+            arg.startsWith("-") -> index++
+            arg in knownModeKeywords -> return index
+            else -> return null
         }
-        if (arg == flag) {
-            skipNext = true
-            continue
-        }
-        result += arg
     }
-    return result
+    return null
 }
 
-private fun parseBackendLifecycleMode(args: Array<String>): CliMode? {
-    val resolutionArgs = args.toList()
-        .withoutValueFlag("--version")
-        .filterNot { it == "--json" }
-        .toTypedArray()
-    val backendIndex = resolutionArgs.indexOf("backend")
-    if (backendIndex < 0 || backendIndex == resolutionArgs.lastIndex) return null
-    val subcommand = resolutionArgs.getOrNull(backendIndex + 1) ?: return null
-    if (subcommand !in setOf("download", "start", "stop", "provision")) return null
-    val json = args.any { it == "--json" }
-    val id = resolutionArgs.getOrNull(backendIndex + 2)
-        ?: return when (subcommand) {
-            "download" -> CliMode.Backend.DownloadList(json = json)
-            "start" -> CliMode.Backend.StartList(json = json)
-            "stop" -> CliMode.Backend.StopList(json = json)
-            "provision" -> CliMode.Backend.ProvisionList(json = json)
-            else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
-        }
-    if (id.startsWith("--")) {
-        return when (subcommand) {
-            "download" -> CliMode.Backend.DownloadList(json = json)
-            "start" -> CliMode.Backend.StartList(json = json)
-            "stop" -> CliMode.Backend.StopList(json = json)
-            "provision" -> CliMode.Backend.ProvisionList(json = json)
-            else -> CliMode.Unknown(listOf("backend", subcommand, "<missing-id>"))
+private fun findBackendSubcommand(args: List<String>, backendIndex: Int): String? {
+    var index = backendIndex + 1
+    while (index < args.size) {
+        val arg = args[index]
+        when {
+            arg == "--home" && index < args.lastIndex && !args[index + 1].startsWith("--") -> index += 2
+            arg == "--version" && index < args.lastIndex && !args[index + 1].startsWith("--") -> index += 2
+            arg.startsWith("-") -> index++
+            arg in backendSubcommands -> return arg
+            else -> return null
         }
     }
-    if (subcommand == "provision") {
-        return if (isSupportedProvisionTargetId(id)) {
-            CliMode.Backend.Provision(id = id, json = json)
-        } else {
-            CliMode.Unknown(
-                args = listOf("backend", subcommand, id),
-                hint = "Run `devrig backend provision` with no id to list valid backend ids.",
-            )
+    return null
+}
+
+private fun parseArgs(
+    args: List<String>,
+    modeIndex: Int?,
+    mode: String?,
+    subcommand: String?,
+    versionValueAllowedAt: (Int) -> Boolean,
+): ParsedArgs {
+    val positionals = mutableListOf<String>()
+    val flags = linkedMapOf<String, String?>()
+    val unknownFlags = mutableListOf<String>()
+    var subcommandConsumed = false
+    var index = 0
+    while (index < args.size) {
+        val arg = args[index]
+        when {
+            arg == "--home" -> {
+                val value = args.getOrNull(index + 1)
+                if (value != null && !value.startsWith("--")) {
+                    flags[arg] = value
+                    index += 2
+                } else {
+                    flags[arg] = null
+                    index++
+                }
+            }
+            arg == "--version" && versionValueAllowedAt(index) -> {
+                val value = args.getOrNull(index + 1)
+                if (value != null && !value.startsWith("--")) {
+                    flags[arg] = value
+                    index += 2
+                } else {
+                    flags[arg] = null
+                    index++
+                }
+            }
+            arg.startsWith("-") -> {
+                flags[arg] = null
+                if (arg !in knownFlags) unknownFlags += arg
+                index++
+            }
+            index == modeIndex -> {
+                index++
+            }
+            mode == "backend" && subcommand != null && !subcommandConsumed && arg == subcommand && modeIndex != null && index > modeIndex -> {
+                subcommandConsumed = true
+                index++
+            }
+            modeIndex == null || index > modeIndex -> {
+                positionals += arg
+                index++
+            }
+            else -> {
+                positionals += arg
+                index++
+            }
         }
     }
-    if (!isSupportedBackendLifecycleId(id)) {
+    return ParsedArgs(
+        mode = mode,
+        subcommand = subcommand,
+        positionals = positionals,
+        flags = flags,
+        unknownFlags = unknownFlags,
+        rawArgs = args,
+    )
+}
+
+private fun selectModeRule(parsed: ParsedArgs): ModeRule? {
+    if (parsed.mode == null) {
+        if (parsed.rawArgs.isEmpty() || parsed.onlyGlobalFlagsAndValues()) {
+            return cliModeRules.first { it.mode == null && it.subcommand == "help" }
+        }
+        val hasHelp = parsed.flags.keys.any { it in helpFlags }
+        if (hasHelp) return cliModeRules.first { it.mode == null && it.subcommand == "help" }
+        val hasVersion = parsed.flags.keys.any { it in versionSelectorFlags }
+        if (hasVersion) return cliModeRules.first { it.mode == null && it.subcommand == "version" }
+        return null
+    }
+    return cliModeRules.firstOrNull { it.mode == parsed.mode && it.subcommand == parsed.subcommand }
+}
+
+private fun ParsedArgs.onlyGlobalFlagsAndValues(): Boolean {
+    return positionals.isEmpty() && flags.keys.all { it in globalBooleanFlags || it in globalValueFlags }
+}
+
+private fun removedAllowPaidFailure(parsed: ParsedArgs): CliMode.Unknown? {
+    if (!parsed.flags.containsKey("--allow-paid")) return null
+    return CliMode.Unknown(
+        args = listOf("--allow-paid"),
+        hint = "The --allow-paid flag was removed; requested JetBrains binaries are downloaded without a CLI consent flag.",
+    )
+}
+
+private fun validateRule(parsed: ParsedArgs, rule: ModeRule): CliMode.Unknown? {
+    parsed.unknownFlags.firstOrNull()?.let { return unknownFlag(it) }
+    val allowedFlags = globalBooleanFlags + globalValueFlags + rule.allowedFlags + rule.valueFlags
+    parsed.flags.keys.firstOrNull { it !in allowedFlags }?.let { return unknownFlag(it) }
+    if (parsed.positionals.size !in rule.expectedPositionals) {
+        val firstExtraIndex = rule.expectedPositionals.last
+        val remainder = parsed.positionals.drop(firstExtraIndex).ifEmpty { parsed.positionals }
+        val extra = remainder.first()
         return CliMode.Unknown(
-            args = listOf("backend", subcommand, id),
-            hint = "Run `devrig backend $subcommand` with no id to list valid backend ids.",
+            args = remainder,
+            hint = "Unexpected extra argument: $extra",
         )
     }
-    val versionOverride = valueAfter(args, "--version")
-    return when (subcommand) {
-        "download" -> CliMode.Backend.Download(
-            id = id,
-            versionOverride = versionOverride,
-            json = json,
-        )
-        "start" -> CliMode.Backend.Start(
-            id = id,
-            versionOverride = versionOverride,
-            json = json,
-        )
-        "stop" -> CliMode.Backend.Stop(
-            id = id,
-            versionOverride = versionOverride,
-            json = json,
-        )
-        else -> null
-    }
+    return null
+}
+
+private fun unknownFlag(flag: String): CliMode.Unknown = CliMode.Unknown(
+    args = listOf(flag),
+    hint = "Unknown flag: $flag",
+)
+
+private fun unknownTopLevel(parsed: ParsedArgs): CliMode.Unknown {
+    parsed.unknownFlags.firstOrNull()?.let { return unknownFlag(it) }
+    parsed.flags.keys.firstOrNull { it !in globalBooleanFlags && it !in globalValueFlags }?.let { return unknownFlag(it) }
+    return CliMode.Unknown(parsed.rawArgs)
 }
 
 private fun isSupportedBackendLifecycleId(raw: String): Boolean {
@@ -248,12 +506,6 @@ private fun isKnownProductKey(raw: String): Boolean =
     com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts.any { it.id == raw }
 
 private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""").matches(raw)
-
-private fun valueAfter(args: Array<String>, flag: String): String? {
-    val idx = args.indexOf(flag)
-    if (idx < 0 || idx == args.lastIndex) return null
-    return args[idx + 1]
-}
 
 /**
  * Wire the `--debug` flag into the bundled logback configuration. Reads the
@@ -395,6 +647,9 @@ private fun printHelp(out: PrintStream) {
                                                      ${'$'}MCP_STEROID_HOME / ~/.mcp-steroid
           --debug                                    enable verbose stderr logging (DEBUG)
                                                      — without it, only WARN+ are shown.
+
+        Unknown flags or extra arguments are rejected with exit code 64.
+        Run with --debug for verbose logging.
 
         The MCP mode is intentionally opt-in: the launcher behaves like a regular CLI by
         default so it can be inspected (`--help`, `--version`, `backend`, `project`) without

@@ -1217,11 +1217,12 @@ bundle that subsequent `download` calls treat as installed.
 **Fix:** extract to `<id>.partial/`, atomic rename to `<id>/` only on
 full success.
 
-### M8 — CLI parser accepts malformed flags / extra positional args (A, B)
+### M8 — CLI parser accepts malformed flags / extra positional args (A, B) ✅ resolved
 Two reviewers independently found ambiguous argv shapes that resolve
 to unexpected modes.
-**Fix:** add fuzz-style parser tests; reject unrecognised flags after
-the canonical mode prefix.
+**Fix:** added table-driven parser validation plus fuzz-style parser tests;
+reject unrecognised flags, missing value-flag values, and extra
+positionals.
 
 ## Minors
 
