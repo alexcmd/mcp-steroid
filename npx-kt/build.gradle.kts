@@ -337,7 +337,15 @@ dependencies {
     "integrationTestImplementation"(project(":ai-agents"))
 }
 
-val installDistTask = tasks.named<Sync>("installDist")
+val installDistTask = tasks.named<Sync>("installDist") {
+    doFirst {
+        destinationDir.takeIf { it.exists() }?.walkBottomUp()?.forEach { file ->
+            if (!file.setWritable(true)) {
+                logger.debug("installDist pre-clean: could not chmod +w on {}", file)
+            }
+        }
+    }
+}
 
 tasks.register<Test>("integrationTest") {
     description = "Stdio MCP server integration tests (subprocess-driven). Requires installDist."
