@@ -22,6 +22,8 @@ data class IdeArchiveResolution(
     val url: String,
     val downloadKey: String,
     val releaseDate: String? = null,
+    val checksumUrl: String? = null,
+    val expectedSha256: String? = null,
 )
 
 /**
@@ -120,6 +122,7 @@ internal fun resolveArchiveFromProductsApiPayload(
         val platformDownload = downloads[downloadKey] as? JsonObject ?: continue
         val link = (platformDownload["link"] as? JsonPrimitive)?.content ?: continue
         if (link.isBlank()) continue
+        val checksumLink = (platformDownload["checksumLink"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
         val filename = downloadFilenameFromUrl(link)
         if (!product.acceptsDownloadFilename(filename)) {
             skippedWrongFilename += "$releaseVersion -> $filename"
@@ -133,6 +136,7 @@ internal fun resolveArchiveFromProductsApiPayload(
             url = link,
             downloadKey = downloadKey,
             releaseDate = releaseDate,
+            checksumUrl = checksumLink,
         )
     }
 
@@ -177,12 +181,12 @@ internal fun logFetchingProductsInfo(url: String) {
     ideReleaseLookupLog.debug("[IDE-DOWNLOAD] Fetching products info from {}", url)
 }
 
-internal fun readUrlText(url: String): String {
+internal fun readUrlText(url: String, accept: String = "application/json"): String {
     val connection = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
         connectTimeout = 15_000
         readTimeout = 15_000
-        setRequestProperty("Accept", "application/json")
+        setRequestProperty("Accept", accept)
     }
     try {
         val statusCode = connection.responseCode

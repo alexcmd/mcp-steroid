@@ -2,14 +2,26 @@
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
 import org.slf4j.LoggerFactory
+import java.io.EOFException
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 private val ideDownloaderLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader")
+private const val FSYNC_EVERY_BYTES = 8L * 1024L * 1024L
+private const val HTTP_RANGE_NOT_SATISFIABLE = 416
+
+private data class ResolvedArchiveDownload(
+    val url: String,
+    val fileName: String,
+    val checksumUrl: String?,
+    val expectedSha256: String?,
+)
 
 /**
  * Resolves the download URL and file name for an [IdeDistribution],
@@ -25,37 +37,115 @@ fun IdeDistribution.resolveAndDownload(
 ): File {
     downloadDir.mkdirs()
 
-    val (url, fileName) = resolveUrlAndFileName(os)
-    val destFile = File(downloadDir, fileName)
-
-    if (destFile.exists()) {
-        ideDownloaderLog.debug("[IDE-DOWNLOAD] Using cached archive: {}", destFile)
-        return destFile
+    val resolved = resolveArchiveDownload(os)
+    val destFile = File(downloadDir, resolved.fileName)
+    val expectedSha256 = resolveExpectedSha256(resolved)
+    if (expectedSha256 == null) {
+        ideDownloaderLog.warn(
+            "[IDE-DOWNLOAD] No SHA-256 checksum available for {}; archive will not be verified",
+            resolved.url,
+        )
     }
 
-    ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloading {} -> {}", url, destFile)
-    downloadFile(url, destFile)
+    if (destFile.exists()) {
+        if (expectedSha256 == null) {
+            ideDownloaderLog.debug("[IDE-DOWNLOAD] Using cached archive: {}", destFile)
+            return destFile
+        }
+
+        val actualSha256 = sha256(destFile)
+        if (actualSha256 == expectedSha256) {
+            ideDownloaderLog.debug("[IDE-DOWNLOAD] Using verified cached archive: {}", destFile)
+            return destFile
+        }
+
+        Files.deleteIfExists(destFile.toPath())
+        ideDownloaderLog.warn(
+            "[IDE-DOWNLOAD] Cached archive checksum mismatch for {}; expected {}, actual {}; re-downloading",
+            destFile,
+            expectedSha256,
+            actualSha256,
+        )
+    }
+
+    ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloading {} -> {}", resolved.url, destFile)
+    downloadFile(resolved.url, destFile)
+
+    if (expectedSha256 != null) {
+        val actualSha256 = sha256(destFile)
+        if (actualSha256 != expectedSha256) {
+            Files.deleteIfExists(destFile.toPath())
+            error(
+                "SHA-256 mismatch for ${resolved.url}: expected $expectedSha256, actual $actualSha256. " +
+                    "Deleted corrupted archive $destFile"
+            )
+        }
+        ideDownloaderLog.debug("[IDE-DOWNLOAD] Verified SHA-256 {} for {}", expectedSha256, destFile)
+    }
+
     return destFile
 }
 
-private fun IdeDistribution.resolveUrlAndFileName(
+private fun IdeDistribution.resolveArchiveDownload(
     os: HostOs,
-): Pair<String, String> {
+): ResolvedArchiveDownload {
     return when (this) {
         is IdeDistribution.FromUrl -> {
+            check(checksumUrl == null || expectedSha256 == null) {
+                "checksumUrl and expectedSha256 are mutually exclusive for $url"
+            }
             val resolvedName = fileName ?: archiveFileNameFromUrl(url, "${product.id}.tar.gz")
-            url to resolvedName
+            ResolvedArchiveDownload(url, resolvedName, checksumUrl, expectedSha256)
         }
         is IdeDistribution.Latest -> {
             val resolved = resolveArchive(product, channel, os)
-            val resolvedUrl = resolved.url
             val arch = resolveHostArchitecture()
             val fallbackName = if (arch.isArmArch) "${product.id}-${channel.name.lowercase()}-arm.tar.gz"
                                else "${product.id}-${channel.name.lowercase()}-x86.tar.gz"
-            val resolvedName = archiveFileNameFromUrl(resolvedUrl, fallbackName)
-            resolvedUrl to resolvedName
+            val resolvedName = archiveFileNameFromUrl(resolved.url, fallbackName)
+            ResolvedArchiveDownload(resolved.url, resolvedName, resolved.checksumUrl, resolved.expectedSha256)
         }
     }
+}
+
+private fun resolveExpectedSha256(resolved: ResolvedArchiveDownload): String? {
+    resolved.expectedSha256?.let { return normalizeSha256(it, "inline checksum for ${resolved.url}") }
+    resolved.checksumUrl?.let { checksumUrl ->
+        val checksumText = readUrlText(checksumUrl, accept = "text/plain,*/*")
+        return parseSha256Checksum(checksumText, checksumUrl)
+    }
+    return null
+}
+
+internal fun parseSha256Checksum(text: String, sourceUrl: String): String {
+    val firstToken = text.lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.isNotEmpty() }
+        ?.split(Regex("\\s+"))
+        ?.firstOrNull()
+        ?: error("SHA-256 checksum response is empty: $sourceUrl")
+    return normalizeSha256(firstToken, sourceUrl)
+}
+
+private fun normalizeSha256(value: String, source: String): String {
+    val normalized = value.trim().lowercase()
+    if (!Regex("[0-9a-f]{64}").matches(normalized)) {
+        error("Invalid SHA-256 checksum from $source: '$value'")
+    }
+    return normalized
+}
+
+private fun sha256(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
 internal fun archiveFileNameFromUrl(url: String, fallbackFileName: String): String {
@@ -69,48 +159,121 @@ internal fun archiveFileNameFromUrl(url: String, fallbackFileName: String): Stri
 }
 
 internal fun downloadFile(url: String, dest: File) {
-    val connection = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
+    val parentDir = dest.parentFile ?: File(".")
+    val tempFile = File(parentDir, "${dest.name}.tmp")
+    var resumeOffset = if (tempFile.isFile) tempFile.length() else 0L
+
+    while (true) {
+        val connection = openDownloadConnection(url, resumeOffset.takeIf { it > 0L })
+        try {
+            val statusCode = connection.responseCode
+            if (resumeOffset > 0L && statusCode == HTTP_RANGE_NOT_SATISFIABLE) {
+                ideDownloaderLog.debug(
+                    "[IDE-DOWNLOAD] Server rejected resume offset {} for {}; restarting download",
+                    resumeOffset,
+                    url,
+                )
+                Files.deleteIfExists(tempFile.toPath())
+                resumeOffset = 0L
+                continue
+            }
+            if (statusCode !in 200..299) {
+                error("Failed to download $url. HTTP $statusCode")
+            }
+
+            val append = resumeOffset > 0L && statusCode == HttpURLConnection.HTTP_PARTIAL
+            if (resumeOffset > 0L && statusCode == HttpURLConnection.HTTP_OK) {
+                ideDownloaderLog.debug(
+                    "[IDE-DOWNLOAD] Server ignored Range for {}; discarding {} resume bytes",
+                    url,
+                    resumeOffset,
+                )
+                Files.deleteIfExists(tempFile.toPath())
+                resumeOffset = 0L
+            } else if (resumeOffset > 0L && !append) {
+                error("Failed to resume $url from byte $resumeOffset. HTTP $statusCode")
+            }
+
+            val totalBytes = when {
+                append && connection.contentLengthLong > 0L -> resumeOffset + connection.contentLengthLong
+                else -> connection.contentLengthLong
+            }
+            val bytesReadThisResponse = writeDownloadResponse(
+                connection = connection,
+                tempFile = tempFile,
+                append = append,
+                existingBytes = if (append) resumeOffset else 0L,
+                totalBytes = totalBytes,
+            )
+            val expectedBytesThisResponse = connection.contentLengthLong
+            if (expectedBytesThisResponse >= 0L && bytesReadThisResponse != expectedBytesThisResponse) {
+                throw EOFException(
+                    "Incomplete download from $url: read $bytesReadThisResponse of $expectedBytesThisResponse bytes"
+                )
+            }
+
+            moveDownloadedFile(tempFile, dest)
+            val downloadedBytes = if (append) resumeOffset + bytesReadThisResponse else bytesReadThisResponse
+            ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloaded {} MB to {}", downloadedBytes / 1024 / 1024, dest)
+            return
+        } finally {
+            connection.disconnect()
+        }
+    }
+}
+
+private fun openDownloadConnection(url: String, resumeOffset: Long?): HttpURLConnection {
+    return (URI(url).toURL().openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
         connectTimeout = 30_000
         readTimeout = 15 * 60_000
         instanceFollowRedirects = true
-    }
-    try {
-        val statusCode = connection.responseCode
-        if (statusCode !in 200..299) {
-            error("Failed to download $url. HTTP $statusCode")
+        if (resumeOffset != null) {
+            setRequestProperty("Range", "bytes=$resumeOffset-")
         }
-        val totalBytes = connection.contentLengthLong
-        var downloaded = 0L
-        var lastPrinted = 0L
+    }
+}
 
-        val tempFile = File(dest.parent, "${dest.name}.tmp")
-        try {
-            connection.inputStream.use { input ->
-                tempFile.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        val now = System.currentTimeMillis()
-                        if (now - lastPrinted >= 5_000) {
-                            val progress = if (totalBytes > 0) " (${downloaded * 100 / totalBytes}%)" else ""
-                            ideDownloaderLog.debug("[IDE-DOWNLOAD] Progress: {} MB{}", downloaded / 1024 / 1024, progress)
-                            lastPrinted = now
-                        }
-                    }
+private fun writeDownloadResponse(
+    connection: HttpURLConnection,
+    tempFile: File,
+    append: Boolean,
+    existingBytes: Long,
+    totalBytes: Long,
+): Long {
+    var bytesReadThisResponse = 0L
+    var bytesSinceForce = 0L
+    var lastPrinted = 0L
+
+    connection.inputStream.use { input ->
+        FileOutputStream(tempFile, append).use { output ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                output.write(buffer, 0, read)
+                bytesReadThisResponse += read
+                bytesSinceForce += read
+                if (bytesSinceForce >= FSYNC_EVERY_BYTES) {
+                    output.flush()
+                    output.fd.sync()
+                    bytesSinceForce = 0L
+                }
+
+                val now = System.currentTimeMillis()
+                if (now - lastPrinted >= 5_000) {
+                    val downloaded = existingBytes + bytesReadThisResponse
+                    val progress = if (totalBytes > 0) " (${downloaded * 100 / totalBytes}%)" else ""
+                    ideDownloaderLog.debug("[IDE-DOWNLOAD] Progress: {} MB{}", downloaded / 1024 / 1024, progress)
+                    lastPrinted = now
                 }
             }
-            moveDownloadedFile(tempFile, dest)
-            ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloaded {} MB to {}", downloaded / 1024 / 1024, dest)
-        } catch (e: Exception) {
-            Files.deleteIfExists(tempFile.toPath())
-            throw e
+            output.flush()
+            output.fd.sync()
         }
-    } finally {
-        connection.disconnect()
     }
+
+    return bytesReadThisResponse
 }
 
 private fun moveDownloadedFile(tempFile: File, dest: File) {

@@ -80,6 +80,88 @@ class IdeReleaseLookupTest {
     }
 
     @Test
+    fun `resolver surfaces checksumLink when products API provides it`() {
+        val checksumLink = "https://download.jetbrains.com/idea/ideaIC-2025.2.6.2-aarch64.dmg.sha256"
+        val payload = productsPayload(
+            IdeProduct.IntelliJIdeaCommunity,
+            listOf(
+                FixtureRelease(
+                    version = "2025.2.6.2",
+                    build = "252.28238.39",
+                    link = "https://download.jetbrains.com/idea/ideaIC-2025.2.6.2-aarch64.dmg",
+                    checksumLink = checksumLink,
+                ),
+            ),
+        )
+
+        val resolution = resolveArchiveFromProductsApiPayload(
+            product = IdeProduct.IntelliJIdeaCommunity,
+            channel = IdeChannel.STABLE,
+            os = HostOs.MAC,
+            architecture = HostArchitecture.ARM64,
+            productsApiUrl = "fixture://products?code=IIC",
+            payload = payload,
+        )
+
+        assertEquals(checksumLink, resolution.checksumUrl)
+        assertEquals(null, resolution.expectedSha256)
+    }
+
+    @Test
+    fun `resolver keeps checksumLink null when products API omits it`() {
+        val payload = productsPayload(
+            IdeProduct.IntelliJIdeaCommunity,
+            listOf(
+                FixtureRelease(
+                    version = "2025.2.6.2",
+                    build = "252.28238.39",
+                    link = "https://download.jetbrains.com/idea/ideaIC-2025.2.6.2-aarch64.dmg",
+                ),
+            ),
+        )
+
+        val resolution = resolveArchiveFromProductsApiPayload(
+            product = IdeProduct.IntelliJIdeaCommunity,
+            channel = IdeChannel.STABLE,
+            os = HostOs.MAC,
+            architecture = HostArchitecture.ARM64,
+            productsApiUrl = "fixture://products?code=IIC",
+            payload = payload,
+        )
+
+        assertEquals(null, resolution.checksumUrl)
+        assertEquals(null, resolution.expectedSha256)
+    }
+
+    @Test
+    fun `Android Studio parser surfaces inline SHA-256 for selected download`() {
+        val expectedSha256 = "aae8f332f124afd23ca495dc770915a456da7480c8f859e01535ad42fcb4ca06"
+        val html = """
+            <a href="https://edgedl.me.gvt1.com/android/studio/ide-zips/2025.3.4.7/android-studio-panda4-patch1-linux.tar.gz">download</a>
+            <table class="download">
+              <tr>
+                <td>Linux<br>(64-bit)</td>
+                <td><button>android-studio-panda4-patch1-linux.tar.gz</button></td>
+                <td>1.5 GB</td>
+                <td>$expectedSha256</td>
+              </tr>
+            </table>
+        """.trimIndent()
+
+        val resolution = resolveAndroidStudioArchiveFromHtml(
+            channel = IdeChannel.STABLE,
+            os = HostOs.LINUX,
+            architecture = HostArchitecture.X86_64,
+            version = null,
+            pageUrl = "fixture://android-studio",
+            html = html,
+        )
+
+        assertEquals(expectedSha256, resolution.expectedSha256)
+        assertEquals(null, resolution.checksumUrl)
+    }
+
+    @Test
     fun `resolver fails clearly when no release filename matches the product tokens`() {
         val payload = productsPayload(
             IdeProduct.IntelliJIdeaCommunity,
@@ -375,6 +457,7 @@ class IdeReleaseLookupTest {
         val build: String,
         val link: String,
         val type: String = IdeChannel.STABLE.apiValue,
+        val checksumLink: String? = null,
     )
 
     private fun productsPayload(product: IdeProduct, releases: List<FixtureRelease>): String {
@@ -391,6 +474,9 @@ class IdeReleaseLookupTest {
                             put("downloads", buildJsonObject {
                                 put("macM1", buildJsonObject {
                                     put("link", release.link)
+                                    if (release.checksumLink != null) {
+                                        put("checksumLink", release.checksumLink)
+                                    }
                                 })
                             })
                         })

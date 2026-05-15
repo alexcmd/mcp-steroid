@@ -14,6 +14,8 @@ sealed class IdeDistribution {
         override val product: IdeProduct,
         val url: String,
         val fileName: String? = null,
+        val checksumUrl: String? = null,
+        val expectedSha256: String? = null,
     ) : IdeDistribution()
 
 }

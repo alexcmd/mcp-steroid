@@ -53,8 +53,18 @@ fun resolveAndroidStudioArchive(
 
     val pageUrl = "https://developer.android.com/studio"
     logFetchingAndroidStudioDownloads(pageUrl)
-    val html = readUrlText(pageUrl)
+    val html = readUrlText(pageUrl, accept = "text/html,*/*")
+    return resolveAndroidStudioArchiveFromHtml(channel, os, architecture, version, pageUrl, html)
+}
 
+internal fun resolveAndroidStudioArchiveFromHtml(
+    channel: IdeChannel,
+    os: HostOs,
+    architecture: HostArchitecture,
+    version: String?,
+    pageUrl: String,
+    html: String,
+): IdeArchiveResolution {
     // Each download is an absolute https URL into edgedl.me.gvt1.com/android/studio/...
     // We pull every match out of the page and pick by suffix — that's stable across
     // the marketing-name segment in the filename ("panda4-patch1"), which we can't
@@ -63,6 +73,7 @@ fun resolveAndroidStudioArchive(
         .findAll(html)
         .map { it.value }
         .toSet()
+    val checksumsByFileName = androidStudioChecksumsByFileName(html)
 
     if (allUrls.isEmpty()) {
         error("Could not find any android-studio download URL on $pageUrl. Page format may have changed.")
@@ -105,6 +116,7 @@ fun resolveAndroidStudioArchive(
                 url = match,
                 downloadKey = suffix.removePrefix("-").removeSuffix(".tar.gz").removeSuffix(".dmg")
                     .removeSuffix(".zip").removeSuffix(".exe"),
+                expectedSha256 = checksumsByFileName[downloadFilenameFromUrl(match)],
             )
         }
     }
@@ -117,6 +129,16 @@ fun resolveAndroidStudioArchive(
 
 internal fun logFetchingAndroidStudioDownloads(pageUrl: String) {
     androidStudioReleaseLookupLog.debug("[IDE-DOWNLOAD] Fetching Android Studio downloads from {}", pageUrl)
+}
+
+internal fun androidStudioChecksumsByFileName(html: String): Map<String, String> {
+    val rowRegex = Regex(
+        """<tr\b[^>]*>.*?<button\b[^>]*>\s*([^<]*android-studio[^<]*\.(?:zip|tar\.gz|dmg|exe))\s*</button>.*?<td>\s*([0-9a-fA-F]{64})\s*</td>.*?</tr>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+    )
+    return rowRegex.findAll(html).associate { match ->
+        match.groupValues[1].trim() to match.groupValues[2].lowercase()
+    }
 }
 
 internal fun inferAndroidStudioVersion(url: String): String {

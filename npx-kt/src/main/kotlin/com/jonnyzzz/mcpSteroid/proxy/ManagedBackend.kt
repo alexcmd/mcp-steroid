@@ -99,6 +99,8 @@ internal data class BackendDownloadResolution(
     val version: String,
     val build: String,
     val url: String,
+    val checksumUrl: String? = null,
+    val expectedSha256: String? = null,
 )
 
 internal data class BackendDownloadArtifact(
@@ -198,6 +200,8 @@ internal class DefaultManagedBackendDownloader(
             version = archive.version,
             build = archive.build,
             url = archive.url,
+            checksumUrl = archive.checksumUrl,
+            expectedSha256 = archive.expectedSha256,
         )
     }
 
@@ -205,7 +209,12 @@ internal class DefaultManagedBackendDownloader(
         resolution: BackendDownloadResolution,
         targetDir: Path,
     ): BackendDownloadArtifact = withContext(Dispatchers.IO) {
-        val distribution = IdeDistribution.FromUrl(product = resolution.product, url = resolution.url)
+        val distribution = IdeDistribution.FromUrl(
+            product = resolution.product,
+            url = resolution.url,
+            checksumUrl = resolution.checksumUrl,
+            expectedSha256 = resolution.expectedSha256,
+        )
 
         Files.createDirectories(archiveDownloadDir)
         val archive = distribution.resolveAndDownload(archiveDownloadDir.toFile(), os = os)
