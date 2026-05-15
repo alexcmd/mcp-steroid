@@ -31,8 +31,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.OutputStream
 import java.io.PrintStream
 import java.util.UUID
+import kotlin.system.measureTimeMillis
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -172,25 +174,67 @@ internal fun runBackendDownloadCommand(
     out: PrintStream,
     homePaths: HomePaths,
     mode: CliMode.Backend.Download,
-) {
+    backendService: ManagedBackendService = BackendManager(homePaths),
+): Int {
+    if (mode.json) {
+        return runBackendActionJson(out, action = "download", id = mode.id) {
+            val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+            lateinit var result: DownloadResult
+            val durationMs = measureTimeMillis {
+                result = runBlocking(Dispatchers.IO) {
+                    backendService.download(backendId, acceptPaid = mode.acceptPaid)
+                }
+            }
+            buildJsonObject {
+                putToolJson()
+                put("action", "download")
+                put("id", result.id)
+                put("productKey", result.descriptor.productKey)
+                put("version", result.descriptor.version)
+                put("installPath", result.backendDir.toString())
+                put("cachePath", homePaths.cacheDir(result.id).toString())
+                put("vmoptionsPath", result.vmOptionsPath.toString())
+                put("downloadDurationMs", durationMs)
+            }
+        }
+    }
     val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
     val result = runBlocking(Dispatchers.IO) {
-        BackendManager(homePaths).download(backendId, acceptPaid = mode.acceptPaid)
+        backendService.download(backendId, acceptPaid = mode.acceptPaid)
     }
     out.println("id: ${result.id}")
     out.println("install: ${result.backendDir}")
     out.println("launcher: ${result.backendDir.resolve(result.descriptor.bundleDirName).resolve(result.descriptor.launcherPath)}")
     out.println("vmoptions: ${result.vmOptionsPath}")
+    return 0
 }
 
 internal fun runBackendStartCommand(
     out: PrintStream,
     homePaths: HomePaths,
     mode: CliMode.Backend.Start,
-) {
+    backendService: ManagedBackendService = BackendManager(homePaths),
+): Int {
+    if (mode.json) {
+        return runBackendActionJson(out, action = "start", id = mode.id) {
+            val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+            val result = runBlocking(Dispatchers.IO) {
+                backendService.start(backendId)
+            }
+            buildJsonObject {
+                putToolJson()
+                put("action", "start")
+                put("id", result.id)
+                put("pid", result.pid)
+                put("logPath", result.ideaLogPath.toString())
+                put("configPath", result.configPath.toString())
+                put("vmoptionsPath", backendVmOptionsPath(homePaths, result.id).toString())
+            }
+        }
+    }
     val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
     val result = runBlocking(Dispatchers.IO) {
-        BackendManager(homePaths).start(backendId)
+        backendService.start(backendId)
     }
     if (result.alreadyRunning) {
         out.println("already running: ${result.id} (pid ${result.pid})")
@@ -198,19 +242,87 @@ internal fun runBackendStartCommand(
     out.println("pid: ${result.pid}")
     out.println("log: ${result.ideaLogPath}")
     out.println("config: ${result.configPath}")
+    return 0
 }
 
 internal fun runBackendStopCommand(
     out: PrintStream,
     homePaths: HomePaths,
     mode: CliMode.Backend.Stop,
-) {
+    backendService: ManagedBackendService = BackendManager(homePaths),
+): Int {
+    if (mode.json) {
+        return runBackendActionJson(out, action = "stop", id = mode.id) {
+            val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+            lateinit var result: StopResult
+            val durationMs = measureTimeMillis {
+                result = runBlocking(Dispatchers.IO) {
+                    backendService.stop(backendId)
+                }
+            }
+            buildJsonObject {
+                putToolJson()
+                put("action", "stop")
+                put("id", result.id)
+                if (result.pid == null) {
+                    put("stoppedPid", kotlinx.serialization.json.JsonNull)
+                } else {
+                    put("stoppedPid", result.pid)
+                }
+                put("graceful", result.outcome != "killed")
+                put("durationMs", durationMs)
+            }
+        }
+    }
     val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
     val result = runBlocking(Dispatchers.IO) {
-        BackendManager(homePaths).stop(backendId)
+        backendService.stop(backendId)
     }
     val pidSuffix = result.pid?.let { " pid $it" }.orEmpty()
     out.println("${result.outcome}: ${result.id}$pidSuffix")
+    return 0
+}
+
+private fun runBackendActionJson(
+    out: PrintStream,
+    action: String,
+    id: String,
+    block: () -> JsonObject,
+): Int {
+    val originalOut = System.out
+    val originalErr = System.err
+    val sink = PrintStream(OutputStream.nullOutputStream(), true, Charsets.UTF_8)
+    try {
+        System.setOut(sink)
+        System.setErr(sink)
+        val payload = block()
+        System.setOut(originalOut)
+        System.setErr(originalErr)
+        out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
+        return 0
+    } catch (e: Exception) {
+        System.setOut(originalOut)
+        System.setErr(originalErr)
+        val payload = buildJsonObject {
+            putToolJson()
+            put("action", action)
+            put("id", id)
+            put("error", e.shortMessage())
+            put("exitCode", 64)
+        }
+        out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
+        return 64
+    } finally {
+        System.setOut(originalOut)
+        System.setErr(originalErr)
+        sink.close()
+    }
+}
+
+private fun backendVmOptionsPath(homePaths: HomePaths, id: String): java.nio.file.Path {
+    val descriptor = readDescriptorOrNull(descriptorPath(homePaths.backendDir(id)))
+        ?: error("Managed backend '$id' is not installed. Run `devrig backend download ${id.substringBeforeLast('-')}` first.")
+    return homePaths.backendDir(id).resolve("${descriptor.bundleDirName}.vmoptions")
 }
 
 /**

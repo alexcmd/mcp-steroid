@@ -277,16 +277,30 @@ internal fun runCli(
     is CliMode.Backend -> {
         try {
             when (mode) {
-                CliMode.Backend.Text -> runBackendCommand(System.out, json = false, homePaths = homePaths)
-                CliMode.Backend.Json -> runBackendCommand(System.out, json = true, homePaths = homePaths)
-                is CliMode.Backend.DownloadList -> runBackendDownloadListCommand(System.out, json = mode.json)
-                is CliMode.Backend.StartList -> runBackendStartListCommand(System.out, homePaths, json = mode.json)
-                is CliMode.Backend.StopList -> runBackendStopListCommand(System.out, homePaths, json = mode.json)
+                CliMode.Backend.Text -> {
+                    runBackendCommand(System.out, json = false, homePaths = homePaths)
+                    0
+                }
+                CliMode.Backend.Json -> {
+                    runBackendCommand(System.out, json = true, homePaths = homePaths)
+                    0
+                }
+                is CliMode.Backend.DownloadList -> {
+                    runBackendDownloadListCommand(System.out, json = mode.json)
+                    0
+                }
+                is CliMode.Backend.StartList -> {
+                    runBackendStartListCommand(System.out, homePaths, json = mode.json)
+                    0
+                }
+                is CliMode.Backend.StopList -> {
+                    runBackendStopListCommand(System.out, homePaths, json = mode.json)
+                    0
+                }
                 is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
             }
-            0
         } catch (e: ManagedBackendLockException) {
             System.err.println(e.message)
             64
@@ -319,14 +333,21 @@ private fun printHelp(out: PrintStream) {
           mcp-steroid-proxy project [--json]         list open projects across discovered backends.
                                                      `--json` emits a single machine-readable
                                                      object on stdout; default is human text.
-          mcp-steroid-proxy backend download <id>    download and install a managed backend under
-                                                     the devrig home. Accepts <product>,
-                                                     <product>:<version>, or <product>-<version>.
-                                                     Use --version <v> to override the positional
-                                                     version and --allow-paid for paid SKUs.
-          mcp-steroid-proxy backend start <id>       start an installed managed backend in detached
-                                                     mode and print its pid/log/config paths.
-          mcp-steroid-proxy backend stop <id>        stop a managed backend by pid file.
+          mcp-steroid-proxy backend download [<id>] [--version <v>] [--allow-paid] [--json]
+                                                     no id → list IDEs available for download.
+                                                     With id, download and install a managed
+                                                     backend under the devrig home. Accepts
+                                                     <product>, <product>:<version>, or
+                                                     <product>-<version>. Use --allow-paid for
+                                                     paid SKUs.
+          mcp-steroid-proxy backend start    [<id>] [--json]
+                                                     no id → list installed backends. With id,
+                                                     start an installed managed backend in
+                                                     detached mode and print its pid/log/config
+                                                     paths.
+          mcp-steroid-proxy backend stop     [<id>] [--json]
+                                                     no id → list currently running backends.
+                                                     With id, stop a managed backend by pid file.
           mcp-steroid-proxy --version | -v           print the proxy version and exit
           mcp-steroid-proxy --help    | -h           print this help and exit
 

@@ -125,6 +125,12 @@ internal object DefaultManagedProcessInspector : ManagedProcessInspector {
 
 internal class ManagedBackendLockException(message: String) : RuntimeException(message)
 
+internal interface ManagedBackendService {
+    suspend fun download(id: BackendId, acceptPaid: Boolean = false): DownloadResult
+    suspend fun start(id: BackendId): StartResult
+    suspend fun stop(id: BackendId): StopResult
+}
+
 internal class ClasspathBundledPluginResolver(
     private val anchorClass: Class<*> = BackendManager::class.java,
 ) : BundledPluginResolver {
@@ -192,8 +198,10 @@ internal class BackendManager(
     private val processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
     private val ideUserHome: Path = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
     private val stopGracePeriodMillis: Long = 5_000L,
-) {
-    suspend fun download(id: BackendId, acceptPaid: Boolean = false): DownloadResult {
+) : ManagedBackendService {
+    suspend fun download(id: BackendId): DownloadResult = download(id, acceptPaid = false)
+
+    override suspend fun download(id: BackendId, acceptPaid: Boolean): DownloadResult {
         homePaths.mkdirsAll()
         val resolution = downloader.resolve(id)
         val resolved = ResolvedBackendId(resolution.product, resolution.version)
@@ -236,7 +244,7 @@ internal class BackendManager(
         return target
     }
 
-    suspend fun start(id: BackendId): StartResult {
+    override suspend fun start(id: BackendId): StartResult {
         homePaths.mkdirsAll()
         val resolved = resolveConcreteId(id)
         val descriptor = loadDescriptor(resolved)
@@ -287,7 +295,7 @@ internal class BackendManager(
         )
     }
 
-    suspend fun stop(id: BackendId): StopResult {
+    override suspend fun stop(id: BackendId): StopResult {
         val resolved = resolveConcreteId(id)
         val pidFile = homePaths.pidFile(resolved.id)
         val pid = readPid(pidFile)
