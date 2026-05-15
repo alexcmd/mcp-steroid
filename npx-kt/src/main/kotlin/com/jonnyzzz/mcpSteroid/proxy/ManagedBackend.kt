@@ -23,6 +23,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.jvm.optionals.getOrNull
@@ -280,18 +281,13 @@ internal class BackendManager(
 
         val stdoutLog = logDir.resolve("devrig-launcher.out.log").toFile()
         val stderrLog = logDir.resolve("devrig-launcher.err.log").toFile()
-        val process = ProcessBuilder(launcher.toString())
-            .directory(bundleDir.toFile())
-            .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
-            .redirectOutput(ProcessBuilder.Redirect.appendTo(stdoutLog))
-            .redirectError(ProcessBuilder.Redirect.appendTo(stderrLog))
-            .start()
+        val pid = spawnIdeProcess(launcher, bundleDir, stdoutLog, stderrLog)
 
         Files.createDirectories(pidFile.parent)
-        Files.writeString(pidFile, "${process.pid()}\n")
+        Files.writeString(pidFile, "$pid\n")
         return StartResult(
             id = resolved.id,
-            pid = process.pid(),
+            pid = pid,
             ideaLogPath = logDir.resolve("idea.log"),
             configPath = cacheDir.resolve("config"),
         )
@@ -587,6 +583,96 @@ private fun deleteRecursively(path: Path) {
 private fun nullDevice(): File {
     return if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) File("NUL") else File("/dev/null")
 }
+
+/**
+ * Spawn the IDE launcher detached from the current process's lifetime, so it
+ * survives the proxy's own termination (and, on Windows, the surrounding shell's).
+ *
+ * Linux / macOS — [ProcessBuilder] is sufficient: the child gets its own session
+ * and outlives the parent without special flags.
+ *
+ * Windows — see [spawnDetachedOnWindows].
+ */
+private fun spawnIdeProcess(
+    launcher: Path,
+    workDir: Path,
+    stdoutLog: File,
+    stderrLog: File,
+): Long = if (resolveHostOs() == HostOs.WINDOWS) {
+    // stdoutLog/stderrLog are intentionally not propagated on Windows; the WMI-
+    // spawned child is created by the winmgmt service and has no caller-attached
+    // stdio. idea64.exe is GUI-subsystem and writes idea.log itself anyway.
+    spawnDetachedOnWindows(launcher, workDir)
+} else {
+    ProcessBuilder(launcher.toString())
+        .directory(workDir.toFile())
+        .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
+        .redirectOutput(ProcessBuilder.Redirect.appendTo(stdoutLog))
+        .redirectError(ProcessBuilder.Redirect.appendTo(stderrLog))
+        .start()
+        .pid()
+}
+
+private fun spawnDetachedOnWindows(
+    launcher: Path,
+    workDir: Path,
+): Long {
+    // Spawn via WMI's Win32_Process.Create, executed in winmgmt.exe (the WMI
+    // service) so the new IDE process has *no* relationship to our process tree:
+    // - not a child of the proxy → survives the proxy's exit
+    // - not in our console group → no CTRL_CLOSE_EVENT propagation
+    // - not in our Job Object → SSH session teardown can't kill it
+    //
+    // Neither Java's ProcessBuilder (no detach flags) nor PowerShell's
+    // Start-Process (still inherits the caller's Job Object on Windows) is
+    // sufficient — the IDE dies the moment a non-interactive shell session
+    // (e.g. SSH-spawned cmd.exe) closes. WMI is the only stdlib-only escape.
+    val pidFile = Files.createTempFile("devrig-spawn-", ".pid")
+    val errFile = Files.createTempFile("devrig-spawn-", ".err")
+    try {
+        val script = buildString {
+            // Quote the launcher path so paths containing spaces parse correctly.
+            append("\$cmd = '\"' + '").append(psQuote(launcher.toString())).append("' + '\"'; ")
+            append("\$r = ([wmiclass]'\\\\.\\root\\cimv2:Win32_Process').Create(\$cmd, '")
+            append(psQuote(workDir.toString())).append("'); ")
+            append("if (\$r.ReturnValue -ne 0) { Write-Error (\"Win32_Process.Create returned \" + \$r.ReturnValue); exit \$r.ReturnValue }; ")
+            append("\$r.ProcessId | Out-File -FilePath '").append(psQuote(pidFile.toAbsolutePath().toString())).append("' -Encoding ASCII")
+        }
+
+        val helper = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+            .redirectInput(ProcessBuilder.Redirect.from(nullDevice()))
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(errFile.toFile())
+            .start()
+
+        val finished = helper.waitFor(10, TimeUnit.SECONDS)
+        if (!finished) {
+            helper.destroyForcibly()
+            error("WMI spawn helper timed out launching $launcher")
+        }
+        if (helper.exitValue() != 0) {
+            val errOutput = Files.readString(errFile).trim()
+            error("WMI spawn helper exited ${helper.exitValue()} launching $launcher; stderr: $errOutput")
+        }
+        val pidText = Files.readString(pidFile).trim()
+        return pidText.toLongOrNull()
+            ?: error("Could not parse pid from WMI spawn helper output: '$pidText'")
+    } finally {
+        deleteTempQuietly(pidFile)
+        deleteTempQuietly(errFile)
+    }
+}
+
+private fun deleteTempQuietly(path: Path) {
+    try {
+        Files.deleteIfExists(path)
+    } catch (e: Exception) {
+        System.err.println("Failed to delete temp file $path: $e")
+    }
+}
+
+/** Doubles single quotes for embedding inside a PowerShell single-quoted string literal. */
+private fun psQuote(s: String): String = s.replace("'", "''")
 
 private fun sha256(path: Path): String {
     val digest = MessageDigest.getInstance("SHA-256")
