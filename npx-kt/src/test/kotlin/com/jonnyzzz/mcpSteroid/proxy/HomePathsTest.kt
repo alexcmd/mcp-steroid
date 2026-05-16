@@ -21,7 +21,7 @@ class HomePathsTest {
         val envHome = tempDir.resolve("env").toString()
         val errBytes = ByteArrayOutputStream()
 
-        val paths = resolveHomePaths(
+        val paths = resolveHomePathsFromEnvironment(
             env = mapOf(DEVRIG_HOME_ENV to envHome),
             err = PrintStream(errBytes, true, Charsets.UTF_8),
         )
@@ -34,7 +34,7 @@ class HomePathsTest {
     fun `DEVRIG_HOME expands bare tilde to user home`() {
         val expected = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()
 
-        val paths = resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "~"))
+        val paths = resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~"), err = null)
 
         assertEquals(expected, paths.home)
     }
@@ -43,7 +43,7 @@ class HomePathsTest {
     fun `DEVRIG_HOME expands tilde slash prefix to user home child`() {
         val expected = Path.of(System.getProperty("user.home")).resolve("foo").toAbsolutePath().normalize()
 
-        val paths = resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "~/foo"))
+        val paths = resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~/foo"), err = null)
 
         assertEquals(expected, paths.home)
     }
@@ -51,7 +51,7 @@ class HomePathsTest {
     @Test
     fun `DEVRIG_HOME rejects unsupported other user tilde form`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "~root"))
+            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~root"), err = null)
         }
 
         assertTrue(ex.message.orEmpty().contains("~user"), "Expected ~user hint, got: ${ex.message}")
@@ -60,7 +60,7 @@ class HomePathsTest {
     @Test
     fun `DEVRIG_HOME rejects dot dot path segments`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "/tmp/../etc"))
+            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "/tmp/../etc"), err = null)
         }
 
         assertTrue(ex.message.orEmpty().contains(".."), "Expected '..' hint, got: ${ex.message}")
@@ -74,7 +74,7 @@ class HomePathsTest {
             .toAbsolutePath()
             .normalize()
 
-        val paths = resolveHomePaths(env = mapOf("MCP_STEROID_HOME" to tempDir.resolve("ignored").toString()))
+        val paths = resolveHomePathsFromEnvironment(env = mapOf("MCP_STEROID_HOME" to tempDir.resolve("ignored").toString()), err = null)
 
         assertEquals(expected, paths.home)
     }
@@ -85,7 +85,7 @@ class HomePathsTest {
             .toAbsolutePath()
             .normalize()
 
-        val paths = resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "   "))
+        val paths = resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "   "), err = null)
 
         assertEquals(expected, paths.home)
     }

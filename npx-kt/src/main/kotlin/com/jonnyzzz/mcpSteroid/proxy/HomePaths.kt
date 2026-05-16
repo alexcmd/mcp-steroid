@@ -26,9 +26,14 @@ class HomePaths(val home: Path) {
     }
 }
 
-fun resolveHomePaths(
-    env: Map<String, String> = System.getenv(),
-    err: PrintStream? = null,
+fun resolveHomePaths(): HomePaths = resolveHomePathsFromEnvironment(
+    env = System.getenv(),
+    err = System.err,
+)
+
+internal fun resolveHomePathsFromEnvironment(
+    env: Map<String, String>,
+    err: PrintStream?,
 ): HomePaths {
     val override = env[DEVRIG_HOME_ENV]?.takeIf { it.isNotBlank() }
     val raw = if (override == null) {
@@ -44,7 +49,7 @@ fun resolveHomePaths(
 
 fun resolveHomePathsOrDie(): HomePaths {
     try {
-        val homePaths = resolveHomePaths(err = System.err)
+        val homePaths = resolveHomePaths()
         homePaths.mkdirsAll()
         return homePaths
     } catch (e: Throwable) {
