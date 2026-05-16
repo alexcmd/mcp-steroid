@@ -28,10 +28,19 @@ Follow this sequence of resources for a complete debug session:
 1. `mcp-steroid://debugger/add-breakpoint` - set breakpoint on target line
 2. `mcp-steroid://debugger/create-application-config` - create run config (if needed)
 3. `mcp-steroid://debugger/debug-run-configuration` - start debug session
+   - For JVM/Kotlin tests, prefer the `JUnitConfiguration` recipe in
+     `mcp-steroid://debugger/demo-debug-test` (deterministic — sets
+     `MAIN_CLASS_NAME`, `TEST_OBJECT = TEST_CLASS`, and the test module).
+     A context-menu `DebugClass` action can silently no-op when the caret
+     lands on a keyword instead of an identifier.
 4. `mcp-steroid://debugger/wait-for-suspend` - wait for breakpoint hit
+   (distinguishes "no session started" from "session never paused" so you
+   know whether to retry the launch or diagnose the breakpoint).
 5. `mcp-steroid://debugger/evaluate-expression` - evaluate variables at breakpoint
 6. `mcp-steroid://debugger/step-over` - step to next line
 7. `mcp-steroid://debugger/evaluate-expression` - evaluate again to see changes
+8. `mcp-steroid://debugger/cleanup` - remove temporary breakpoints and
+   delete temporary debug run configurations once the bug is confirmed.
 
 Each step should be a separate `steroid_execute_code` call. Do NOT combine steps into one large script.
 
@@ -53,9 +62,10 @@ Each step should be a separate `steroid_execute_code` call. Do NOT combine steps
 - `mcp-steroid://debugger/step-over` - step over current line and observe changes
 
 ### Session management
-- `mcp-steroid://debugger/debug-session-control` - pause/resume/stop the current session
+- `mcp-steroid://debugger/debug-session-control` - pause/resume/stop the current session (all require EDT)
 - `mcp-steroid://debugger/debug-list-threads` - list execution stacks (threads)
 - `mcp-steroid://debugger/debug-thread-dump` - build a basic thread dump from stacks
+- `mcp-steroid://debugger/cleanup` - remove temporary breakpoints + delete temporary run configurations after verification
 
 ### Demos
 - `mcp-steroid://debugger/demo-debug-test` - end-to-end debug + test results demo
@@ -129,6 +139,7 @@ When a debugger script fails with unresolved imports/APIs or runtime setup error
 - [Demo Debug Test](mcp-steroid://debugger/demo-debug-test) - End-to-end debug + test results demo
 - [List Threads](mcp-steroid://debugger/debug-list-threads) - Inspect execution stacks
 - [Thread Dump](mcp-steroid://debugger/debug-thread-dump) - Generate thread dumps
+- [Cleanup](mcp-steroid://debugger/cleanup) - Remove temporary breakpoints + delete temporary run configurations after verification
 
 ### Related Example Guides
 - [Test Examples](mcp-steroid://test/overview) - Test execution and result inspection

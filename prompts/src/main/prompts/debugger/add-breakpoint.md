@@ -46,14 +46,24 @@ val breakpointType = readAction {
 @Suppress("UNCHECKED_CAST")
 val bpType = breakpointType as XLineBreakpointType<XBreakpointProperties<*>>
 
-// Check if breakpoint already exists (idempotent — safe to call repeatedly)
+// Check if breakpoint already exists (idempotent — safe to call repeatedly).
+// `findBreakpointsAtLine` reads a lock-guarded breakpoint table, not PSI;
+// it does not require a `readAction` wrap.
 val existing = breakpointManager.findBreakpointsAtLine(bpType, virtualFile, lineIndex)
 if (existing.isNotEmpty()) {
     println("Breakpoint already exists at $filePath:$lineNumberInEditor")
     println("Breakpoint:", existing.first())
 } else {
+    // Property creation reads PSI/VFS for the target line → `readAction`.
     val properties = readAction { bpType.createBreakpointProperties(virtualFile, lineIndex) }
-    val breakpoint = breakpointManager.addLineBreakpoint(bpType, virtualFile.url, lineIndex, properties)
+    // `addLineBreakpoint` is the contract the breakpoint platform's Kotlin
+    // listeners assert. The fix the issue reported (#53 gap 1) is to call
+    // it under `writeIntentReadAction` — bare `readAction` fails the
+    // write-intent assertion the Kotlin breakpoint type emits during
+    // install, and `writeAction` is the wrong contract for this site.
+    val breakpoint = writeIntentReadAction {
+        breakpointManager.addLineBreakpoint(bpType, virtualFile.url, lineIndex, properties)
+    }
     println("Created breakpoint at $filePath:$lineNumberInEditor")
     println("Breakpoint:", breakpoint)
 }

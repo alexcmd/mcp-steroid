@@ -84,7 +84,13 @@ if (alreadyHere) {
 
 // createProperties() encodes the variant's exact location (e.g., lambda ordinal for JavaLineBreakpointProperties)
 val properties = readAction { chosen.createProperties() }
-val breakpoint = breakpointManager.addLineBreakpoint(bpType, virtualFile.url, lineIndex, properties)
+// Same write-intent contract as the plain add-breakpoint recipe: the
+// Kotlin breakpoint type's listeners assert write-intent during install.
+// Bare `readAction` fails that assertion; `writeAction` is the wrong
+// contract for this site.
+val breakpoint = writeIntentReadAction {
+    breakpointManager.addLineBreakpoint(bpType, virtualFile.url, lineIndex, properties)
+}
 println("Created breakpoint at $filePath:$lineNumberInEditor [${chosen.text}]: $breakpoint")
 ```
 
