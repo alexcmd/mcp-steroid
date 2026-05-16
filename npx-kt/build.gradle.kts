@@ -127,6 +127,7 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("com.posthog:posthog-server:2.3.0")
     implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation(project(":closeable-stack"))
 
     // MCP transport: framed/NDJSON parser + McpStdioServer (replaces the old
     // StdioServer in this module — kept compiled but no longer wired into main()).

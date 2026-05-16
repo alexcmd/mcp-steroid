@@ -1,6 +1,7 @@
 import org.gradle.api.attributes.Usage
 
 plugins {
+    `java-library`
     kotlin("jvm")
 }
 
@@ -18,6 +19,7 @@ val npxPackage by configurations.creating {
 
 dependencies {
     npxPackage(project(path = ":npx", configuration = "npxPackageElements"))
+    api(project(":closeable-stack"))
     implementation(project(":ai-agents"))
     implementation(project(":agent-output-filter"))
     // PidMarker / IdeInfo / PluginInfo for the test-only fake marker file.

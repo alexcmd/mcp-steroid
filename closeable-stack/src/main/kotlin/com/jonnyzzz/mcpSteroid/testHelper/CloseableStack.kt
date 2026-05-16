@@ -3,12 +3,12 @@ package com.jonnyzzz.mcpSteroid.testHelper
 
 interface CloseableStack {
     fun registerCleanupAction(cleanupAction: () -> Unit)
-    fun nestedStack(name: String) : CloseableStackDriver
+    fun nestedStack(name: String): CloseableStackDriver
 
     companion object
 }
 
-interface CloseableStackDriver : CloseableStack{
+interface CloseableStackDriver : CloseableStack {
     fun closeAllStacks()
 }
 
@@ -22,7 +22,7 @@ class CloseableStackHost(val name: String = "root") : CloseableStack, CloseableS
     override fun nestedStack(name: String): CloseableStackDriver {
         val child = CloseableStackHost(name)
         registerCleanupAction {
-            //we assume next cleanup does nothing, if ever
+            // We assume the next cleanup does nothing, if ever.
             child.closeAllStacks()
         }
         return child
@@ -53,7 +53,6 @@ class CloseableStackHost(val name: String = "root") : CloseableStack, CloseableS
         }
     }
 }
-
 
 fun runWithCloseableStack(action: (CloseableStack) -> Unit) {
     val stack = CloseableStackHost("root")

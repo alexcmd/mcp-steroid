@@ -11,6 +11,7 @@ rootProject.name = "mcp-steroid"
 
 include(":ai-agents")
 include(":agent-output-filter")
+include(":closeable-stack")
 
 include(":prompt-generator")
 include(":kotlin-cli")
