@@ -71,7 +71,7 @@ class ManagedBackendTartIntegrationTest {
                 timeout = Duration.ofMinutes(25),
                 script = """
                     set -euo pipefail
-                    "${'$'}HOME/devrig-cli/devrig" --home /tmp/mcp-home backend download idea-community
+                    DEVRIG_HOME=/tmp/mcp-home "${'$'}HOME/devrig-cli/devrig" backend download idea-community
                     backend_dir="${'$'}(find /tmp/mcp-home/backends -mindepth 1 -maxdepth 1 -type d -name 'idea-community-*' | head -1)"
                     test -n "${'$'}backend_dir"
                     id="${'$'}(basename "${'$'}backend_dir")"
@@ -94,7 +94,7 @@ class ManagedBackendTartIntegrationTest {
                 timeout = Duration.ofMinutes(5),
                 script = """
                     set -euo pipefail
-                    "${'$'}HOME/devrig-cli/devrig" --home /tmp/mcp-home backend start idea-community | tee /tmp/managed-backend-start.txt
+                    DEVRIG_HOME=/tmp/mcp-home "${'$'}HOME/devrig-cli/devrig" backend start idea-community | tee /tmp/managed-backend-start.txt
                     grep -E '^pid: [0-9]+' /tmp/managed-backend-start.txt
                     for _ in ${'$'}(seq 1 60); do
                       if pgrep -f 'IntelliJ IDEA( CE)?[.]app|com.intellij.idea.Main|/Contents/MacOS/idea' >/dev/null; then
@@ -117,7 +117,7 @@ class ManagedBackendTartIntegrationTest {
                 timeout = Duration.ofMinutes(3),
                 script = """
                     set -euo pipefail
-                    "${'$'}HOME/devrig-cli/devrig" --home /tmp/mcp-home backend stop idea-community
+                    DEVRIG_HOME=/tmp/mcp-home "${'$'}HOME/devrig-cli/devrig" backend stop idea-community
                     for _ in ${'$'}(seq 1 30); do
                       if ! pgrep -f 'IntelliJ IDEA( CE)?[.]app|com.intellij.idea.Main|/Contents/MacOS/idea' >/dev/null; then
                         exit 0

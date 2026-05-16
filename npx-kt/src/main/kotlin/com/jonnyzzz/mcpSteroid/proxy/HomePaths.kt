@@ -1,10 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
-import com.jonnyzzz.mcpSteroid.PidMarker
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.system.exitProcess
+
+const val DEVRIG_HOME_ENV: String = "DEVRIG_HOME"
 
 class HomePaths(val home: Path) {
     val logsDir: Path get() = home.resolve("logs")
@@ -25,19 +27,24 @@ class HomePaths(val home: Path) {
 }
 
 fun resolveHomePaths(
-    override: String?,
     env: Map<String, String> = System.getenv(),
+    err: PrintStream? = null,
 ): HomePaths {
-    val raw = override?.let(::expandTilde)
-        ?: PidMarker.markerHomeDirectory(Path.of(System.getProperty("user.home")), env).toString()
+    val override = env[DEVRIG_HOME_ENV]?.takeIf { it.isNotBlank() }
+    val raw = if (override == null) {
+        Path.of(System.getProperty("user.home"), ".mcp-steroid").toString()
+    } else {
+        err?.println("Using $DEVRIG_HOME_ENV as devrig home override.")
+        expandTilde(override)
+    }
     val path = Path.of(raw)
     rejectDotDot(path)
     return HomePaths(path.toAbsolutePath().normalize())
 }
 
-fun resolveHomePathsOrDie(args: NpxKtArgs): HomePaths {
+fun resolveHomePathsOrDie(): HomePaths {
     try {
-        val homePaths = resolveHomePaths(args.parseHomeOverride())
+        val homePaths = resolveHomePaths(err = System.err)
         homePaths.mkdirsAll()
         return homePaths
     } catch (e: Throwable) {
@@ -51,7 +58,7 @@ private fun expandTilde(raw: String): String {
     if (raw == "~") return System.getProperty("user.home")
     if (raw.startsWith("~/")) return System.getProperty("user.home") + raw.substring(1)
     if (raw.startsWith("~")) {
-        throw IllegalArgumentException("--home: unsupported '~user' form. Use \"${'$'}HOME\" or an absolute path.")
+        throw IllegalArgumentException("$DEVRIG_HOME_ENV: unsupported '~user' form. Use \"${'$'}HOME\" or an absolute path.")
     }
     return raw
 }
@@ -59,6 +66,6 @@ private fun expandTilde(raw: String): String {
 private fun rejectDotDot(path: Path) {
     val hasDotDot = path.iterator().asSequence().any { it.toString() == ".." }
     if (hasDotDot) {
-        throw IllegalArgumentException("--home: '..' segments are not allowed; pass an explicit absolute path.")
+        throw IllegalArgumentException("$DEVRIG_HOME_ENV: '..' segments are not allowed; pass an explicit absolute path.")
     }
 }

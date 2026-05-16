@@ -119,7 +119,7 @@ internal sealed interface BackendRow {
 internal fun runBackendCommand(
     out: PrintStream,
     json: Boolean = false,
-    homePaths: HomePaths = resolveHomePaths(override = null),
+    homePaths: HomePaths = resolveHomePaths(),
 ) {
     val rows = collectBackendRows(homePaths)
     if (json) {
@@ -130,7 +130,7 @@ internal fun runBackendCommand(
 }
 
 internal fun collectBackendRows(
-    homePaths: HomePaths = resolveHomePaths(override = null),
+    homePaths: HomePaths = resolveHomePaths(),
 ): List<BackendRow> {
     val discovery = createIdeDiscoveryService(homePaths)
 
@@ -172,7 +172,7 @@ internal fun collectBackendRows(
 }
 
 internal fun scanMarkersOnce(
-    homePaths: HomePaths = resolveHomePaths(override = null),
+    homePaths: HomePaths = resolveHomePaths(),
 ): Set<DiscoveredIde> {
     val discovery = createIdeDiscoveryService(homePaths)
     discovery.scanOnce()

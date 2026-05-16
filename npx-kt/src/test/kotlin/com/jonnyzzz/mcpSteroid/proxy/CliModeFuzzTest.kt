@@ -62,12 +62,13 @@ class CliModeFuzzTest {
             Arguments.of(arrayOf("backend", "--frobnicate"), "Unknown flag"),
             Arguments.of(arrayOf("backend", "download", "idea-community", "--xyz"), "Unknown flag"),
             Arguments.of(arrayOf("backend", "download", "idea-community", "extra"), "Unexpected extra argument"),
-            Arguments.of(arrayOf("--home", "--debug", "backend"), "Missing value for --home"),
+            Arguments.of(arrayOf("--home", "--debug", "backend"), "Unknown flag"),
             Arguments.of(arrayOf("backend", "stop", "idea-community", "stop-also-idea-ultimate"), "Unexpected extra argument"),
             Arguments.of(arrayOf("backend", "provision", "port-63342", "--method", "install"), "Unknown flag"),
             Arguments.of(arrayOf("project", "foo"), "Unexpected extra argument"),
             Arguments.of(arrayOf("project", "foo", "bar", "baz"), "Unexpected extra argument"),
             Arguments.of(arrayOf("backend", "--weasel"), "Unknown flag"),
+            Arguments.of(arrayOf("--home", "/tmp/x", "backend"), "Unknown flag"),
         )
 
         @JvmStatic
@@ -110,7 +111,6 @@ class CliModeFuzzTest {
                 arrayOf("backend", "provision", "port-63342"),
                 CliMode.Backend.Provision(id = "port-63342", json = false),
             ),
-            Arguments.of(arrayOf("--home", "/tmp/x", "backend"), CliMode.Backend.Text),
             Arguments.of(arrayOf("project"), CliMode.Project.Text),
             Arguments.of(arrayOf("project", "--json"), CliMode.Project.Json),
         )

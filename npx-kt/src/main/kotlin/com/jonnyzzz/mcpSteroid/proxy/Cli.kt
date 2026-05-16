@@ -6,7 +6,6 @@ import java.io.PrintStream
 class NpxKtArgs(args: Array<String>) {
     val args = args.toList()
 
-    fun parseHomeOverride() = parseHomeOverride(args.toTypedArray())
     fun parseDebugFlag() = parseDebugFlag(args.toTypedArray())
 
     fun parseCliMode() = parseCliMode(args.toTypedArray())
@@ -126,14 +125,13 @@ private data class ModeRule(
 )
 
 private val globalBooleanFlags = setOf("--debug")
-private val globalValueFlags = setOf("--home")
 private val helpFlags = setOf("--help", "-h")
 private val versionSelectorFlags = setOf("--version", "-v")
 private val informationOverrideFlags = helpFlags + versionSelectorFlags
 private val knownModeKeywords = setOf("backend", "project")
 private val backendLifecycleSubcommands = setOf("download", "start", "stop")
 private val backendSubcommands = backendLifecycleSubcommands + "provision"
-private val knownFlags = globalBooleanFlags + globalValueFlags + helpFlags + versionSelectorFlags + setOf("--mcp", "--json", "--allow-paid")
+private val knownFlags = globalBooleanFlags + helpFlags + versionSelectorFlags + setOf("--mcp", "--json", "--allow-paid")
 
 private val cliModeRules: List<ModeRule> = listOf(
     ModeRule(
@@ -262,19 +260,13 @@ private val cliModeRules: List<ModeRule> = listOf(
  * value-flag values, and extra positional arguments.
  *
  * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
- * [parseDebugFlag]) and is accepted in every mode. `--home <path>` is also
- * global, but it must still have a value that does not look like another long
- * flag.
+ * [parseDebugFlag]) and is accepted in every mode.
  */
 fun parseCliMode(args: Array<String>): CliMode {
     val rawArgs = args.toList()
     if (rawArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (rawArgs.any { it in helpFlags }) return CliMode.Help
     if (rawArgs.hasVersionSelector()) return CliMode.Version
-
-    parseValueFlagFailure(rawArgs, "--home", valueAllowedAt = { true })?.let {
-        return CliMode.Unknown(args = it.args, hint = it.hint)
-    }
 
     val modeIndex = findModeIndex(rawArgs)
     val mode = modeIndex?.let { rawArgs[it] }
@@ -308,9 +300,6 @@ fun mcpIgnoredTokens(args: Array<String>): List<String> {
         val arg = args[index]
         when (arg) {
             "--mcp", "--debug" -> index++
-            "--home" -> {
-                index += if (index < args.lastIndex && !args[index + 1].startsWith("--")) 2 else 1
-            }
             else -> {
                 ignored += arg
                 index++
@@ -327,13 +316,6 @@ fun mcpIgnoredTokens(args: Array<String>): List<String> {
  */
 fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
 
-fun parseHomeOverride(args: Array<String>): String? {
-    val idx = args.indexOf("--home")
-    if (idx < 0 || idx == args.lastIndex) return null
-    val value = args[idx + 1]
-    return if (value.startsWith("--")) null else value
-}
-
 private fun ParsedArgs.hasFlag(flag: String): Boolean = flags.containsKey(flag)
 
 private fun List<String>.hasVersionSelector(): Boolean {
@@ -345,10 +327,6 @@ private fun List<String>.hasVersionSelector(): Boolean {
                 val value = getOrNull(index + 1)
                 if (value == null || value.startsWith("-")) return true
                 index += 2
-            }
-            "--home" -> {
-                val value = getOrNull(index + 1)
-                index += if (value != null && !value.startsWith("--")) 2 else 1
             }
             else -> index++
         }
@@ -380,7 +358,6 @@ private fun findModeIndex(args: List<String>): Int? {
     while (index < args.size) {
         val arg = args[index]
         when {
-            arg == "--home" && index < args.lastIndex && !args[index + 1].startsWith("--") -> index += 2
             arg.startsWith("-") -> index++
             arg in knownModeKeywords -> return index
             else -> return null
@@ -394,7 +371,6 @@ private fun findBackendSubcommand(args: List<String>, backendIndex: Int): String
     while (index < args.size) {
         val arg = args[index]
         when {
-            arg == "--home" && index < args.lastIndex && !args[index + 1].startsWith("--") -> index += 2
             arg == "--version" && index < args.lastIndex && !args[index + 1].startsWith("--") -> index += 2
             arg.startsWith("-") -> index++
             arg in backendSubcommands -> return arg
@@ -419,9 +395,6 @@ private fun parseArgs(
     while (index < args.size) {
         val arg = args[index]
         when {
-            arg == "--home" -> {
-                index = consumeOptionalFlagValue(args, index, flags)
-            }
             arg == "--version" && versionValueAllowedAt(index) -> {
                 index = consumeOptionalFlagValue(args, index, flags)
             }
@@ -488,7 +461,7 @@ private fun selectModeRule(parsed: ParsedArgs): ModeRule? {
 }
 
 private fun ParsedArgs.onlyGlobalFlagsAndValues(): Boolean {
-    return positionals.isEmpty() && flags.keys.all { it in globalBooleanFlags || it in globalValueFlags }
+    return positionals.isEmpty() && flags.keys.all { it in globalBooleanFlags }
 }
 
 private fun removedAllowPaidFailure(parsed: ParsedArgs): CliMode.Unknown? {
@@ -501,7 +474,7 @@ private fun removedAllowPaidFailure(parsed: ParsedArgs): CliMode.Unknown? {
 
 private fun validateRule(parsed: ParsedArgs, rule: ModeRule): CliMode.Unknown? {
     parsed.unknownFlags.firstOrNull()?.let { return unknownFlag(it) }
-    val allowedFlags = globalBooleanFlags + globalValueFlags + informationOverrideFlags + rule.allowedFlags + rule.valueFlags
+    val allowedFlags = globalBooleanFlags + informationOverrideFlags + rule.allowedFlags + rule.valueFlags
     parsed.flags.keys.firstOrNull { it !in allowedFlags }?.let { return unknownFlag(it) }
     if (parsed.positionals.size !in rule.expectedPositionals) {
         val firstExtraIndex = rule.expectedPositionals.last
@@ -522,7 +495,7 @@ private fun unknownFlag(flag: String): CliMode.Unknown = CliMode.Unknown(
 
 private fun unknownTopLevel(parsed: ParsedArgs): CliMode.Unknown {
     parsed.unknownFlags.firstOrNull()?.let { return unknownFlag(it) }
-    parsed.flags.keys.firstOrNull { it !in globalBooleanFlags && it !in globalValueFlags }?.let { return unknownFlag(it) }
+    parsed.flags.keys.firstOrNull { it !in globalBooleanFlags }?.let { return unknownFlag(it) }
     return CliMode.Unknown(parsed.rawArgs)
 }
 
@@ -663,11 +636,13 @@ private fun printHelp(out: PrintStream) {
           mcp-steroid-proxy --help    | -h           print this help and exit
 
         Options applicable to every mode:
-          --home <path>                              store devrig logs, managed backends, caches,
-                                                     and state under <path> instead of
-                                                     ${'$'}MCP_STEROID_HOME / ~/.mcp-steroid
           --debug                                    enable verbose stderr logging (DEBUG)
                                                      — without it, INFO+ are shown.
+
+        Environment:
+          $DEVRIG_HOME_ENV=<path>                    store devrig logs, managed backends, caches,
+                                                     and state under <path> instead of
+                                                     ~/.mcp-steroid
 
         Unknown flags or extra arguments are rejected with exit code 64.
         Run with --debug for verbose logging.

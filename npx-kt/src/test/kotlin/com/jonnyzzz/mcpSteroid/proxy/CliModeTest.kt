@@ -205,20 +205,29 @@ class CliModeTest {
     }
 
     @Test
-    fun `--home value is ignored at the mode level`() {
-        assertEquals(CliMode.Help, parseCliMode(arrayOf("--home", "/tmp/devrig-home")))
-        assertEquals(CliMode.Backend.Text, parseCliMode(arrayOf("--home", "/tmp/devrig-home", "backend")))
-        assertEquals(CliMode.Backend.Json, parseCliMode(arrayOf("backend", "--home", "/tmp/devrig-home", "--json")))
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--home", "/tmp/devrig-home", "--mcp")))
+    fun `--home is rejected outside MCP mode`() {
+        val topLevel = parseCliMode(arrayOf("--home", "/tmp/devrig-home"))
+        assertTrue(topLevel is CliMode.Unknown)
+        topLevel as CliMode.Unknown
+        assertEquals(listOf("--home"), topLevel.args)
+        assertEquals("Unknown flag: --home", topLevel.hint)
+
+        val backend = parseCliMode(arrayOf("--home", "/tmp/devrig-home", "backend"))
+        assertTrue(backend is CliMode.Unknown)
+        backend as CliMode.Unknown
+        assertEquals(listOf("--home"), backend.args)
+        assertEquals("Unknown flag: --home", backend.hint)
+
+        val backendJson = parseCliMode(arrayOf("backend", "--home", "/tmp/devrig-home", "--json"))
+        assertTrue(backendJson is CliMode.Unknown)
+        backendJson as CliMode.Unknown
+        assertEquals(listOf("--home"), backendJson.args)
+        assertEquals("Unknown flag: --home", backendJson.hint)
     }
 
     @Test
-    fun `parseHomeOverride returns only non-flag values after --home`() {
-        assertEquals("/tmp/devrig-home", parseHomeOverride(arrayOf("--home", "/tmp/devrig-home")))
-        assertEquals("relative", parseHomeOverride(arrayOf("backend", "--home", "relative", "--json")))
-        assertEquals(null, parseHomeOverride(emptyArray()))
-        assertEquals(null, parseHomeOverride(arrayOf("--home")))
-        assertEquals(null, parseHomeOverride(arrayOf("--home", "--debug", "backend")))
+    fun `--mcp still wins over removed home flag`() {
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--home", "/tmp/devrig-home", "--mcp")))
     }
 
     @Test
@@ -267,7 +276,10 @@ class CliModeTest {
     @Test
     fun `mcp ignored token list excludes global flags that still apply`() {
         assertEquals(listOf("backend"), mcpIgnoredTokens(arrayOf("--mcp", "--debug", "backend")))
-        assertEquals(listOf("backend", "--json"), mcpIgnoredTokens(arrayOf("--home", "/tmp/devrig-home", "--mcp", "backend", "--json")))
+        assertEquals(
+            listOf("--home", "/tmp/devrig-home", "backend", "--json"),
+            mcpIgnoredTokens(arrayOf("--home", "/tmp/devrig-home", "--mcp", "backend", "--json")),
+        )
     }
 
     @Test

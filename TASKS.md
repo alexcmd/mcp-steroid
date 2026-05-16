@@ -1228,7 +1228,7 @@ positionals.
 
 | | | reviewers |
 |---|---|---|
-| m1 | `--home ~/...` not expanded; `..` normalised rather than rejected ✅ resolved | A, B, C |
+| m1 | `DEVRIG_HOME=~/...` not expanded; `..` normalised rather than rejected ✅ resolved | A, B, C |
 | m2 | `NpxKtRoot` has a production-visible mutable test seam ✅ resolved | A, B, C |
 | m3 | Text rendering uses UTF-16 `String.length`, not terminal display width ✅ resolved | A, B |
 | m4 | Some unit tests depend on live JetBrains/Google APIs (flaky offline) ✅ resolved | A |
@@ -1443,7 +1443,7 @@ Shape:
 ```kotlin
 container.execAndAssertOnVideo(
     title = "devrig backend download idea-community",
-    script = "/home/agent/devrig --home /tmp/mcp-home backend download idea-community",
+    script = "DEVRIG_HOME=/tmp/mcp-home /home/agent/devrig backend download idea-community",
 )
 ```
 

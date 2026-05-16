@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 fun main(args: Array<String>) {
     val args = NpxKtArgs(args)
 
-    val homePaths = resolveHomePathsOrDie(args)
+    val homePaths = resolveHomePathsOrDie()
 
     //setup logging. That is essential to avoid logger usages BEFORE this statement
     configureLoggingAndLogStarted(homePaths, args)
@@ -151,7 +151,7 @@ suspend fun NpxKtServices.mainImplMcp(mcpStdin: InputStream, mcpStdout: PrintStr
     // unreachable; the source is retained in the attic package.
     //
     // Alongside the stdio server, the new IDE monitor runs:
-    //   discovery → reads <pid>.mcp-steroid JSON markers from $MCP_STEROID_HOME/markers
+    //   discovery → reads <pid>.mcp-steroid JSON markers from the devrig home markers directory
     //               plus legacy .<pid>.mcp-steroid markers from $HOME during the transition
     //   monitor   → opens one POST /npx/v1/projects/stream per IDE,
     //               receives push notifications on project open/close

@@ -60,7 +60,7 @@ class ManagedBackendGuiIntegrationTest {
             script = """
                 set -euo pipefail
                 mkdir -p /tmp/mcp-home/downloads
-                "$devrig" --debug --home /tmp/mcp-home backend download idea-community
+                DEVRIG_HOME=/tmp/mcp-home "$devrig" --debug backend download idea-community
             """.trimIndent(),
         )
         assertTrue(download.stdout.contains("id: idea-community-"), download.stdout)
@@ -110,7 +110,7 @@ class ManagedBackendGuiIntegrationTest {
             timeoutSeconds = 5 * 60L,
             script = """
                 set -euo pipefail
-                "$devrig" --home /tmp/mcp-home backend start idea-community
+                DEVRIG_HOME=/tmp/mcp-home "$devrig" backend start idea-community
             """.trimIndent(),
         )
         val pid = Regex("""pid: (\d+)""").find(start.stdout)?.groupValues?.get(1)
@@ -170,7 +170,7 @@ class ManagedBackendGuiIntegrationTest {
             timeoutSeconds = 120,
             script = """
                 set -euo pipefail
-                "$devrig" --home /tmp/mcp-home backend --json > /tmp/backend.json
+                DEVRIG_HOME=/tmp/mcp-home "$devrig" backend --json > /tmp/backend.json
                 cat /tmp/backend.json
                 jq -e --argjson pid "$pid" '.backends[] | select(.source == "marker" and .pid == ${'$'}pid and .pluginInstalled == true and .managed == true)' /tmp/backend.json
             """.trimIndent(),
@@ -193,7 +193,7 @@ class ManagedBackendGuiIntegrationTest {
             timeoutSeconds = 120,
             script = """
                 set -euo pipefail
-                "$devrig" --home /tmp/mcp-home backend stop idea-community
+                DEVRIG_HOME=/tmp/mcp-home "$devrig" backend stop idea-community
                 test ! -f "/tmp/mcp-home/state/$id.pid"
                 deadline=${'$'}((SECONDS + 30))
                 while kill -0 $pid 2>/dev/null && [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do

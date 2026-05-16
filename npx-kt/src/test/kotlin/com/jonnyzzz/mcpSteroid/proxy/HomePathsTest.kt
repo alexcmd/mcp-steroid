@@ -1,6 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -13,62 +15,68 @@ import kotlin.test.assertTrue
 class HomePathsTest {
 
     @Test
-    fun `CLI override wins over environment and resolves to an absolute normalized path`(
+    fun `DEVRIG_HOME resolves to an absolute normalized path and reports override to stderr`(
         @TempDir tempDir: Path,
     ) {
-        val override = tempDir.resolve("chosen").toString()
         val envHome = tempDir.resolve("env").toString()
+        val errBytes = ByteArrayOutputStream()
 
-        val paths = resolveHomePaths(override, env = mapOf("MCP_STEROID_HOME" to envHome))
+        val paths = resolveHomePaths(
+            env = mapOf(DEVRIG_HOME_ENV to envHome),
+            err = PrintStream(errBytes, true, Charsets.UTF_8),
+        )
 
-        assertEquals(tempDir.resolve("chosen").toAbsolutePath().normalize(), paths.home)
+        assertEquals(tempDir.resolve("env").toAbsolutePath().normalize(), paths.home)
+        assertTrue(errBytes.toString(Charsets.UTF_8).contains(DEVRIG_HOME_ENV))
     }
 
     @Test
-    fun `CLI override expands bare tilde to user home`() {
+    fun `DEVRIG_HOME expands bare tilde to user home`() {
         val expected = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()
 
-        val paths = resolveHomePaths("~", env = emptyMap())
+        val paths = resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "~"))
 
         assertEquals(expected, paths.home)
     }
 
     @Test
-    fun `CLI override expands tilde slash prefix to user home child`() {
+    fun `DEVRIG_HOME expands tilde slash prefix to user home child`() {
         val expected = Path.of(System.getProperty("user.home")).resolve("foo").toAbsolutePath().normalize()
 
-        val paths = resolveHomePaths("~/foo", env = emptyMap())
+        val paths = resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "~/foo"))
 
         assertEquals(expected, paths.home)
     }
 
     @Test
-    fun `CLI override rejects unsupported other user tilde form`() {
+    fun `DEVRIG_HOME rejects unsupported other user tilde form`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            resolveHomePaths("~root", env = emptyMap())
+            resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "~root"))
         }
 
         assertTrue(ex.message.orEmpty().contains("~user"), "Expected ~user hint, got: ${ex.message}")
     }
 
     @Test
-    fun `CLI override rejects dot dot path segments`() {
+    fun `DEVRIG_HOME rejects dot dot path segments`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            resolveHomePaths("/tmp/../etc", env = emptyMap())
+            resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "/tmp/../etc"))
         }
 
         assertTrue(ex.message.orEmpty().contains(".."), "Expected '..' hint, got: ${ex.message}")
     }
 
     @Test
-    fun `environment wins over default when CLI override is absent`(
+    fun `MCP_STEROID_HOME no longer overrides npx home`(
         @TempDir tempDir: Path,
     ) {
-        val envHome = tempDir.resolve("env-home").toString()
+        val expected = Path.of(System.getProperty("user.home"), ".mcp-steroid")
+            .toAbsolutePath()
+            .normalize()
 
-        val paths = resolveHomePaths(null, env = mapOf("MCP_STEROID_HOME" to envHome))
+        val paths = resolveHomePaths(env = mapOf("MCP_STEROID_HOME" to tempDir.resolve("ignored").toString()))
 
-        assertEquals(tempDir.resolve("env-home").toAbsolutePath().normalize(), paths.home)
+        assertEquals(expected, paths.home)
     }
 
     @Test
@@ -77,7 +85,7 @@ class HomePathsTest {
             .toAbsolutePath()
             .normalize()
 
-        val paths = resolveHomePaths(null, env = mapOf("MCP_STEROID_HOME" to "   "))
+        val paths = resolveHomePaths(env = mapOf(DEVRIG_HOME_ENV to "   "))
 
         assertEquals(expected, paths.home)
     }
