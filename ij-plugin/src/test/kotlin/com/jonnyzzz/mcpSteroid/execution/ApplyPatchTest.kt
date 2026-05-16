@@ -693,6 +693,120 @@ class ApplyPatchTest : BasePlatformTestCase() {
             original, vf.readViaIde())
     }
 
+    // -- C1: structured candidate tails on rejection -----------------------
+    //
+    // These tests pin that the structured tail produced by fileNotFoundMessage
+    // and anchorNotFoundMessage actually reaches the agent. The earlier
+    // ApplyPatch tests assert the leading wording ("file not found",
+    // "old_string not found") but not the candidate listing, which is the
+    // whole point of issue #50's recovery-hint contract. A future change that
+    // accidentally drops the helpers would be invisible without these.
+
+    fun testAnchorNotFoundIncludesFileSizeAndFuzzyCandidates(): Unit = timeoutRunBlocking(30.seconds) {
+        val ctx = createContext()
+        // Two lines containing "findByStatus" — the longest stable token in
+        // the bad anchor — so the fuzzy candidates should surface both lines.
+        val content = """
+            class FeatureService {
+                fun findByStatus(status: Status): List<Feature> = listOf()
+                fun findByStatusAndOwner(status: Status, owner: User): List<Feature> = listOf()
+            }
+        """.trimIndent()
+        val vf = writeTempFile("Fuzzy_FeatureService.java", content)
+
+        val err = try {
+            ctx.applyPatch {
+                // Anchor doesn't exist literally, but "findByStatus" does — the
+                // diagnostic must pick that token and list candidate lines.
+                hunk(
+                    filePath = vf.toString(),
+                    oldString = "fun findByStatus(BadSignatureUnique): NoSuchType<Anchor>",
+                    newString = "REPLACED",
+                )
+            }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull("Expected ApplyPatchException for missing anchor", err)
+        val msg = err!!.message!!
+        assertTrue("Lead preserved: $msg", msg.contains("old_string not found"))
+        assertTrue("File line count surfaced: $msg", Regex("""\d+ lines""").containsMatchIn(msg))
+        assertTrue("File byte count surfaced: $msg", Regex("""\d+ bytes""").containsMatchIn(msg))
+        assertTrue(
+            "Fuzzy candidates section present: $msg",
+            msg.contains("Fuzzy candidates"),
+        )
+        assertTrue(
+            "Stable token 'findByStatus' named in the candidates section: $msg",
+            msg.contains("findByStatus"),
+        )
+        assertTrue(
+            "At least one candidate line number (Lnnn:) printed: $msg",
+            Regex("""\bL\d+:""").containsMatchIn(msg),
+        )
+    }
+
+    fun testAnchorNotFoundShowsStaleAnchorHintWhenTokenIsAbsent(): Unit = timeoutRunBlocking(30.seconds) {
+        // Anchor has a 4+ char token but the file does NOT contain any token
+        // from it — the diagnostic must say so explicitly, so the agent
+        // knows expanding the anchor won't help.
+        val ctx = createContext()
+        val vf = writeTempFile("Stale_File.java", "class A {}\n")
+
+        val err = try {
+            ctx.applyPatch {
+                // "UniqueXyzZZZ_NotInFile" is a single 4+ char token (per the
+                // [A-Za-z0-9_]{4,} regex) that does not appear in the file.
+                hunk(vf.toString(), "UniqueXyzZZZ_NotInFile", "REPLACED")
+            }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull(err)
+        val msg = err!!.message!!
+        assertTrue("Lead preserved: $msg", msg.contains("old_string not found"))
+        assertTrue("File size surfaced: $msg", msg.contains(" bytes"))
+        assertTrue(
+            "Either 'not present in file' or 'no stable token' hint appears: $msg",
+            msg.contains("not present in file") || msg.contains("no stable token"),
+        )
+    }
+
+    fun testFileNotFoundIncludesBasenameDiagnostic(): Unit = timeoutRunBlocking(30.seconds) {
+        // Light test project has no files in scope by this basename, so the
+        // diagnostic falls back to the "no candidates by basename" message.
+        // Either branch is acceptable for the contract — what matters is the
+        // structured tail mentions the basename so the agent can grep for it.
+        val ctx = createContext()
+        val missing = tempRoot.resolve("DoesNotExist_Unique_XYZ.java").toString()
+
+        val err = try {
+            ctx.applyPatch {
+                hunk(missing, "anything", "replacement")
+            }
+            null
+        } catch (e: ApplyPatchException) {
+            e
+        }
+
+        assertNotNull(err)
+        val msg = err!!.message!!
+        assertTrue("Lead preserved: $msg", msg.contains("file not found"))
+        assertTrue(
+            "Either nearby-candidates or no-candidates note is present: $msg",
+            msg.contains("Nearby candidates by basename") ||
+                msg.contains("no candidates by basename"),
+        )
+        assertTrue(
+            "Basename is surfaced for grep: $msg",
+            msg.contains("DoesNotExist_Unique_XYZ.java"),
+        )
+    }
+
     fun testDryRunMultiFileAllOrNothingOnPartialFailure(): Unit = timeoutRunBlocking(30.seconds) {
         // Multi-file preflight: one valid + one missing-anchor hunk. Dry-run
         // must reject the batch atomically — no per-file partial "would apply"
