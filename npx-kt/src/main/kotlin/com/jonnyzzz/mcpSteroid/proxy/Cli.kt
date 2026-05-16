@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import java.io.PrintStream
-import kotlin.system.exitProcess
 
 /** Brand presented in CLI banners — see [BRAND_TAGLINE] for the full slogan. */
 internal const val BRAND_NAME: String = "devrig"
@@ -407,24 +406,10 @@ private fun parseArgs(
         val arg = args[index]
         when {
             arg == "--home" -> {
-                val value = args.getOrNull(index + 1)
-                if (value != null && !value.startsWith("--")) {
-                    flags[arg] = value
-                    index += 2
-                } else {
-                    flags[arg] = null
-                    index++
-                }
+                index = consumeOptionalFlagValue(args, index, flags)
             }
             arg == "--version" && versionValueAllowedAt(index) -> {
-                val value = args.getOrNull(index + 1)
-                if (value != null && !value.startsWith("--")) {
-                    flags[arg] = value
-                    index += 2
-                } else {
-                    flags[arg] = null
-                    index++
-                }
+                index = consumeOptionalFlagValue(args, index, flags)
             }
             arg.startsWith("-") -> {
                 flags[arg] = null
@@ -456,6 +441,22 @@ private fun parseArgs(
         unknownFlags = unknownFlags,
         rawArgs = args,
     )
+}
+
+private fun consumeOptionalFlagValue(
+    args: List<String>,
+    index: Int,
+    flags: MutableMap<String, String?>,
+): Int {
+    val flag = args[index]
+    val value = args.getOrNull(index + 1)
+    return if (value != null && !value.startsWith("--")) {
+        flags[flag] = value
+        index + 2
+    } else {
+        flags[flag] = null
+        index + 1
+    }
 }
 
 private fun selectModeRule(parsed: ParsedArgs): ModeRule? {
@@ -570,7 +571,7 @@ internal fun runCli(
         0
     }
     CliMode.Version -> {
-        System.out.println(loadProxyVersion())
+        println(loadProxyVersion())
         0
     }
     is CliMode.Backend -> {
@@ -603,7 +604,7 @@ internal fun runCli(
                 is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
                 is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
-                is CliMode.Backend.Provision -> runBackendProvisionCommand(System.out, homePaths, mode)
+                is CliMode.Backend.Provision -> runBackendProvisionCommand(System.out, mode)
             }
         } catch (e: ManagedBackendLockException) {
             System.err.println(e.message)
@@ -680,12 +681,4 @@ private fun printHelp(out: PrintStream) {
         consuming stdin or committing stdout to the JSON-RPC framing convention.
         """.trimIndent() + "\n"
     )
-}
-
-/**
- * Exit-process wrapper for `runCli`. Kept separate so unit tests can exercise
- * [runCli] without killing the JVM.
- */
-internal fun runCliAndExit(mode: CliMode): Nothing {
-    exitProcess(runCli(mode))
 }

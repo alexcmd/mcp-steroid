@@ -12,6 +12,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
@@ -82,7 +83,7 @@ fun main(args: Array<String>) {
 
     val ignoredMcpTokens = mcpIgnoredTokens(args)
     if (ignoredMcpTokens.isNotEmpty()) {
-        org.slf4j.LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.Main")
+        LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.Main")
             .debug("--mcp selected; ignored CLI argument(s): {}", ignoredMcpTokens.joinToString(" "))
     }
 

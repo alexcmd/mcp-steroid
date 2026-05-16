@@ -5,12 +5,6 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import com.jonnyzzz.mcpSteroid.server.NPX_PROJECTS_STREAM_PATH
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
@@ -24,13 +18,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.readUTF8Line
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.OutputStream
 import java.io.PrintStream
@@ -38,6 +25,18 @@ import java.util.UUID
 import kotlin.system.measureTimeMillis
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.slf4j.LoggerFactory
 
 private val backendCommandLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.BackendCommand")
 

@@ -5,14 +5,13 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import java.io.PrintStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.io.PrintStream
 
 private const val SUGGESTED_DESTINATION_NOTE =
     "Suggested destination assumes the default plugins directory; user-customised paths require manual adjustment."
@@ -39,10 +38,9 @@ internal fun runBackendProvisionListCommand(
 
 internal fun runBackendProvisionCommand(
     out: PrintStream,
-    homePaths: HomePaths,
     mode: CliMode.Backend.Provision,
     provision: suspend (HttpClient) -> ProvisionResult = { httpClient ->
-        BackendManager(homePaths).provision(mode.id, httpClient)
+        provisionBackend(mode.id, httpClient)
     },
 ): Int {
     if (mode.json) {
@@ -205,17 +203,12 @@ private fun provisionResultJson(result: ProvisionResult): JsonObject = buildJson
 }
 
 private fun <T> withProvisionHttpClient(block: (HttpClient) -> T): T {
-    val httpClient = HttpClient(CIO) {
+    return HttpClient(CIO) {
         install(HttpTimeout) {
             connectTimeoutMillis = 3_000
             requestTimeoutMillis = 10_000
             socketTimeoutMillis = 10_000
         }
         expectSuccess = false
-    }
-    try {
-        return block(httpClient)
-    } finally {
-        httpClient.close()
-    }
+    }.use(block)
 }

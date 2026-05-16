@@ -13,12 +13,6 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
 import com.jonnyzzz.mcpSteroid.ideDownloader.unpackIdeArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeStartupConfigFiles
 import com.jonnyzzz.mcpSteroid.ideDownloader.writeIdeUserStartupConfigFiles
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import org.apache.commons.compress.archivers.zip.ZipFile
 import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -33,6 +27,11 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.jvm.optionals.getOrNull
 import kotlin.streams.asSequence
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import org.apache.commons.compress.archivers.zip.ZipFile
 
 @Serializable
 internal data class BackendDescriptor(
@@ -434,8 +433,7 @@ internal class BackendManager(
     private suspend fun <T> withGlobalBackendOperationLock(block: suspend () -> T): T {
         Files.createDirectories(homePaths.stateDir)
         val lockPath = homePaths.stateDir.resolve("global.lock")
-        val channel = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
-        try {
+        FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
             val lock = try {
                 channel.tryLock()
             } catch (e: OverlappingFileLockException) {
@@ -444,13 +442,9 @@ internal class BackendManager(
             if (lock == null) {
                 throw ManagedBackendLockException("another devrig backend operation is in progress; retry shortly")
             }
-            try {
+            lock.use {
                 return block()
-            } finally {
-                lock.release()
             }
-        } finally {
-            channel.close()
         }
     }
 

@@ -109,16 +109,11 @@ internal class NpxUpdateChecker(
 }
 
 internal fun updateNotice(currentVersion: String, newVersion: String): String =
-    "A new version of MCP Steroid is available: $newVersion (current: ${extractBaseVersion(currentVersion)}). " +
+    "A new version of $BRAND_NAME is available: $newVersion (current: ${extractBaseVersion(currentVersion)}). " +
         "Download: https://mcp-steroid.jonnyzzz.com/releases/"
 
-internal fun extractBaseVersion(fullVersion: String): String {
-    val snapshotIndex = fullVersion.indexOf("-SNAPSHOT")
-    if (snapshotIndex > 0) return fullVersion.substring(0, snapshotIndex)
-    val dashIndex = fullVersion.indexOf('-')
-    if (dashIndex > 0) return fullVersion.substring(0, dashIndex)
-    return fullVersion
-}
+internal fun extractBaseVersion(fullVersion: String): String =
+    fullVersion.substringBefore("-SNAPSHOT").substringBefore('-')
 
 @Serializable
 private data class NpxVersionInfo(

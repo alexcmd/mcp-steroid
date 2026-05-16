@@ -14,6 +14,10 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -22,16 +26,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
-import java.time.Instant
-import java.time.format.DateTimeFormatter
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 /** Liveness state of a monitored IDE connection. */
-enum class IdeMonitorStatus { CONNECTING, CONNECTED, RECONNECTING, OFFLINE }
+enum class IdeMonitorStatus { CONNECTING, CONNECTED, RECONNECTING }
 
 /**
  * Per-IDE monitoring state held by [IdeMonitorService.states].

@@ -21,7 +21,7 @@ class NpxUpdateCheckerTest {
         checker.checkForUpdates()
 
         val text = err.toString(Charsets.UTF_8)
-        assertTrue(text.contains("A new version of MCP Steroid is available: 0.96.0"), text)
+        assertTrue(text.contains("A new version of $BRAND_NAME is available: 0.96.0"), text)
         assertTrue(text.contains("current: 0.95.0"), text)
         assertTrue(text.contains("https://mcp-steroid.jonnyzzz.com/releases/"), text)
     }
@@ -52,7 +52,7 @@ class NpxUpdateCheckerTest {
         checker.checkForUpdates()
         checker.checkForUpdates()
 
-        assertEquals(1, err.toString(Charsets.UTF_8).lineSequence().filter { it.isNotBlank() }.count())
+        assertEquals(1, err.toString(Charsets.UTF_8).lineSequence().count { it.isNotBlank() })
     }
 
     private class StaticVersionSource(private val version: String?) : NpxVersionSource {

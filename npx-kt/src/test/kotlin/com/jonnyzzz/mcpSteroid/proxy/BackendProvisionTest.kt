@@ -19,6 +19,12 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
+import java.net.ServerSocket
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.notExists
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -30,12 +36,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
-import java.net.ServerSocket
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.notExists
 
 class BackendProvisionTest {
     private val parser = Json { ignoreUnknownKeys = true }
@@ -304,7 +304,6 @@ class BackendProvisionTest {
 
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
-            homePaths = HomePaths(tempDir),
             mode = CliMode.Backend.Provision("port-63342", json = false),
             provision = { result },
         )
@@ -328,7 +327,6 @@ class BackendProvisionTest {
         val buf = ByteArrayOutputStream()
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
-            homePaths = HomePaths(tempDir),
             mode = CliMode.Backend.Provision("port-63342", json = true),
             provision = { result },
         )

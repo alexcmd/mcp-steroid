@@ -2,19 +2,18 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.name
 import kotlin.streams.asSequence
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 internal enum class LocalBackendState(val cliValue: String) {
     INSTALLED("installed"),

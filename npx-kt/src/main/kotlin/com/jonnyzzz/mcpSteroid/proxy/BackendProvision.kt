@@ -36,7 +36,7 @@ internal data class ProvisionTarget(
     val command: String get() = provisionCommand(id)
 }
 
-internal suspend fun BackendManager.provision(
+internal suspend fun provisionBackend(
     id: String,
     httpClient: HttpClient,
 ): ProvisionResult = BackendProvisioner().provision(id, httpClient)
@@ -82,14 +82,11 @@ internal suspend fun detectProvisionTargets(
     httpClient: HttpClient,
     portRanges: List<IntRange> = IntelliJPortDiscovery.DEFAULT_PORT_RANGES,
 ): List<ProvisionTarget> {
-    val discovery = IntelliJPortDiscovery(httpClient = httpClient, portRanges = portRanges)
-    try {
+    return IntelliJPortDiscovery(httpClient = httpClient, portRanges = portRanges).use { discovery ->
         discovery.scanOnce()
-        return discovery.detected.value
+        discovery.detected.value
             .sortedBy { it.port }
             .map { ProvisionTarget(id = provisionTargetId(it.port), ide = it) }
-    } finally {
-        discovery.close()
     }
 }
 

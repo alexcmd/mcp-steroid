@@ -7,6 +7,9 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import com.jonnyzzz.mcpSteroid.ideDownloader.LicenseTier
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveArchive
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveHostOs
+import java.io.PrintStream
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -17,13 +20,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.io.PrintStream
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 internal data class AvailableBackendDownload(
     val product: IdeProduct,
@@ -152,9 +151,7 @@ internal fun renderBackendDownloadListRowsText(
         val indexWidth = rows.size.toString().length + 2
         val idWidth = rows.maxOf { it.product.id.length }
         val displayWidth = rows.maxOf { it.product.displayName.codePointWidth() }
-        val versionWidth = rows
-            .map { it.versionText().length }
-            .maxOrNull() ?: 0
+        val versionWidth = rows.maxOfOrNull { it.versionText().length } ?: 0
         for ((index, row) in rows.withIndex()) {
             val indexLabel = "[${index + 1}]".padEnd(indexWidth)
             val id = row.product.id.padEnd(idWidth)
