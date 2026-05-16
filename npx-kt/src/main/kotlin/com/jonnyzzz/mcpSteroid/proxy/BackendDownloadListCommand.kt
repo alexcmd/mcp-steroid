@@ -129,6 +129,11 @@ internal fun renderBackendDownloadListText(rows: List<AvailableBackendDownload>,
     renderBackendDownloadListRowsText(rows, out)
 }
 
+internal fun renderBackendDownloadListBanner(out: PrintStream) {
+    out.println("Available IDEs (defaults to latest stable):")
+    out.println()
+}
+
 internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownload>, out: PrintStream) {
     renderBackendDownloadListRowsText(rows, out, afterRunLine = null)
 }
@@ -138,8 +143,7 @@ internal fun renderBackendDownloadListRowsText(
     out: PrintStream,
     afterRunLine: String?,
 ) {
-    out.println("Available IDEs (defaults to latest stable):")
-    out.println()
+    renderBackendDownloadListBanner(out)
     if (rows.isNotEmpty()) {
         val indexWidth = rows.size.toString().length + 2
         val idWidth = rows.maxOf { it.product.id.length }

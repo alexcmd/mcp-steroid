@@ -18,7 +18,7 @@ import java.util.Locale
  * no-args, and unknown-arg paths — driven through the real `installDist`
  * launcher (`bin/mcp-steroid-proxy` / `.bat`).
  *
- * The unit tests in `CliModeTest` / `CliModeOutputTest` already pin the parser
+ * The unit tests in `NpxKtCommandTest` / `NpxKtCommandOutputTest` already pin command selection
  * and routing behaviour inside the JVM; this class extends that to the shell
  * launcher script and JNI boundaries. The same launcher is exercised in MCP
  * mode by `CliMcpStdioIntegrationTest` and for stdout-cleanliness by

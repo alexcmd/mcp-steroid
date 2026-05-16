@@ -69,19 +69,14 @@ class BackendCommandRenderTest {
         buildNumber = buildNumber,
     )
 
-    // ------------------------------ banner ---------------------------------
+    // ------------------------------ shape ---------------------------------
 
     @Test
-    fun `output always starts with the devrig banner + blank line`() {
-        // The banner is a contract: every backend run identifies the tool
-        // first, before any data. Pin both shape and trailing-blank-line.
+    fun `empty output starts with the no-backends message`() {
         val text = render(emptyList())
         val lines = text.lines()
-        assertTrue(lines[0].startsWith("devrig v"),
-            "first line must be the devrig banner; got: ${lines[0]}")
-        assertTrue(lines[0].contains("This environment empowers your AI"),
-            "banner must include the tagline; got: ${lines[0]}")
-        assertEquals("", lines[1], "second line must be blank to separate banner from body")
+        assertEquals("No backends detected.", lines[0])
+        assertEquals("", lines[1])
     }
 
     @Test
@@ -106,16 +101,14 @@ class BackendCommandRenderTest {
     }
 
     @Test
-    fun `empty row list prints banner + the no-backends message + trailing blank`() {
+    fun `empty row list prints the no-backends message + trailing blank`() {
         val text = render(emptyList())
         assertTrue(text.contains("No backends detected."), "missing message; got:\n$text")
-        // Three structural pieces: banner / blank / message / trailing blank.
         val lines = text.lines()
-        // Layout: [0]=banner, [1]="", [2]="No backends detected.", [3]="", [4]=""
-        // (the [4] is the empty tail after the final \n).
-        assertTrue(lines[0].startsWith("devrig v"), lines[0])
+        // Layout: [0]="No backends detected.", [1]="", [2]="".
+        // (the [2] is the empty tail after the final \n).
+        assertEquals("No backends detected.", lines[0])
         assertEquals("", lines[1])
-        assertEquals("No backends detected.", lines[2])
     }
 
     // --------------------- marker rows: happy paths ------------------------

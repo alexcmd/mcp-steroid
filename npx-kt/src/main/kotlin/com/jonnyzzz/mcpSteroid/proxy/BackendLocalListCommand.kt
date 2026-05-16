@@ -177,7 +177,6 @@ internal fun renderBackendStartListText(
         if (availableDownloads == null) {
             out.println("No backends installed. Use 'devrig backend download <id>' first.")
         } else {
-            renderBackendDownloadListBanner(out)
             out.println("No managed backends are installed yet.")
             out.println()
             renderBackendDownloadListRowsText(

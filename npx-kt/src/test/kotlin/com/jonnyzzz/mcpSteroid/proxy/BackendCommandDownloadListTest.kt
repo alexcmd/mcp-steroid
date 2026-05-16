@@ -2,11 +2,7 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -39,7 +35,7 @@ class BackendCommandDownloadListTest {
         )
         val text = renderText(rows)
 
-        assertTrue(text.startsWith("devrig v"), text)
+        assertTrue(text.startsWith("Available IDEs (defaults to latest stable):"), text)
         assertTrue(text.contains("Available IDEs (defaults to latest stable):"), text)
         assertFalse(text.contains("free-for-non-commercial"), text)
         assertTrue(text.contains("  *  Requires a JetBrains license."), text)
@@ -174,32 +170,30 @@ class BackendCommandDownloadListTest {
     }
 
     @Test
-    fun `text command flushes banner before resolver work`() = runBlocking {
+    fun `text command renders rows after resolver work`() {
         val buf = ByteArrayOutputStream()
         val out = PrintStream(buf, true, Charsets.UTF_8)
-        val resolverEntered = CompletableDeferred<String>()
-        val releaseResolver = CompletableDeferred<Unit>()
+        var resolverEntered = false
 
-        val job = launch(Dispatchers.Default) {
-            runBackendDownloadListCommand(
-                out = out,
-                json = false,
-                availableDownloads = {
-                    resolverEntered.complete(buf.toString(Charsets.UTF_8))
-                    releaseResolver.await()
-                    emptyList()
-                },
-            )
-        }
+        runBackendDownloadListCommand(
+            out = out,
+            json = false,
+            availableDownloads = {
+                resolverEntered = true
+                listOf(
+                    AvailableBackendDownload(
+                        product = IdeProduct.IntelliJIdeaCommunity,
+                        version = "2025.3",
+                    ),
+                )
+            },
+        )
 
-        val stdoutAtResolverStart = withTimeout(5_000) {
-            resolverEntered.await()
-        }
-        assertTrue(stdoutAtResolverStart.startsWith("devrig v"), stdoutAtResolverStart)
-        assertFalse(stdoutAtResolverStart.contains("Available IDEs"), stdoutAtResolverStart)
-
-        releaseResolver.complete(Unit)
-        job.join()
+        val text = buf.toString(Charsets.UTF_8)
+        assertTrue(resolverEntered)
+        assertTrue(text.startsWith("Available IDEs (defaults to latest stable):"), text)
+        assertTrue(text.contains("idea-community"), text)
+        assertTrue(text.contains("2025.3"), text)
     }
 
     private fun renderText(rows: List<AvailableBackendDownload>): String {

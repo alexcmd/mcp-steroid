@@ -135,7 +135,6 @@ class BackendProvisionTest {
             )
         )
 
-        assertTrue(text.startsWith("devrig v"), text)
         assertTrue(text.contains("Port-discovered IDEs that can be provisioned:"), text)
         assertTrue(text.contains("port-63342"), text)
         assertTrue(text.contains("run: devrig backend provision port-63342"), text)
@@ -304,13 +303,12 @@ class BackendProvisionTest {
 
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
-            mode = CliMode.Backend.Provision("port-63342", json = false),
+            command = NpxKtCommand.NpxCommandBackendProvision(NpxKtArgs(arrayOf("port-63342"))),
             provision = { result },
         )
         val text = buf.toString(Charsets.UTF_8)
 
         assertEquals(0, exit)
-        assertTrue(text.startsWith("devrig v"), text)
         assertTrue(text.contains("Target: IntelliJ IDEA Ultimate 2026.1.1 (port 63342)"), text)
         assertTrue(text.contains("MCP Steroid is not installed in this IDE. To install:"), text)
         assertTrue(text.contains("Settings → Plugins → Marketplace → search \"MCP Steroid\" → Install"), text)
@@ -327,7 +325,7 @@ class BackendProvisionTest {
         val buf = ByteArrayOutputStream()
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
-            mode = CliMode.Backend.Provision("port-63342", json = true),
+            command = NpxKtCommand.NpxCommandBackendProvision(NpxKtArgs(arrayOf("port-63342", "--json"))),
             provision = { result },
         )
         val root = parser.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject

@@ -60,9 +60,13 @@ class NpxBeacon(
 
     fun captureStarted(cliMode: NpxKtCommand?) {
         val mode = when (cliMode) {
-            NpxKtCommand.MCP -> "mcp"
-            NpxKtCommand.NpxCommandBackend -> "backend"
-            NpxKtCommand.NpxCommandProject -> "project"
+            is NpxKtCommand.MCP -> "mcp"
+            is NpxKtCommand.NpxCommandBackend,
+            is NpxKtCommand.NpxCommandBackendDownload,
+            is NpxKtCommand.NpxCommandBackendStart,
+            is NpxKtCommand.NpxCommandBackendStop,
+            is NpxKtCommand.NpxCommandBackendProvision -> "backend"
+            is NpxKtCommand.NpxCommandProject -> "project"
             NpxKtCommand.NpxCommandHelp -> null
             NpxKtCommand.NpxCommandVersion -> null
             null -> null

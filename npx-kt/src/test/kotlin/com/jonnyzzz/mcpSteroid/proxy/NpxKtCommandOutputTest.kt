@@ -1,6 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -23,7 +25,7 @@ import java.nio.file.Path
  * restoration even on assertion failure so a single failing case doesn't poison
  * unrelated tests in the suite.
  */
-class CliModeOutputTest {
+class NpxKtCommandOutputTest {
 
     private lateinit var originalOut: PrintStream
     private lateinit var originalErr: PrintStream
@@ -53,18 +55,26 @@ class CliModeOutputTest {
 
     private fun stdout(): String = outBuf.toString(Charsets.UTF_8)
     private fun stderr(): String = errBuf.toString(Charsets.UTF_8)
-    private fun runCliForTest(mode: CliMode): Int = runCli(mode, homePaths)
+    private fun runCliForTest(command: NpxKtCommand?, vararg rawArgs: String): Int {
+        val lifetime = CloseableStackHost()
+        return try {
+            runBlocking {
+                NpxKtServices(homePaths, NpxKtArgs(rawArgs.toList().toTypedArray()), lifetime).runCli(command)
+            }
+        } finally {
+            lifetime.closeAllStacks()
+        }
+    }
 
     // ------------------------------- Help ----------------------------------
 
     @Test
     fun `Help writes the usage banner to stdout, nothing to stderr`() {
-        val exit = runCliForTest(CliMode.Help)
+        val exit = runCliForTest(NpxKtCommand.NpxCommandHelp)
         assertEquals(0, exit)
         assertEquals("", stderr(), "stderr must stay clean for --help; got: ${stderr()}")
         val out = stdout()
         assertTrue(out.contains("Usage:"), "help output should mention 'Usage:'; got:\n$out")
-        assertTrue(out.contains("This environment empowers your AI with the best deterministic coding tools."), "help output should include tagline; got:\n$out")
         assertTrue(out.contains("devrig mpc"), "help should advertise mpc subcommand; got:\n$out")
         assertTrue(out.contains("--version"), "help should advertise --version; got:\n$out")
         assertTrue(out.contains("--help"), "help should advertise --help itself; got:\n$out")
@@ -81,7 +91,7 @@ class CliModeOutputTest {
         // `command --help | tail -n1` should not see a partial line; the launcher
         // must finish its banner with a newline so shells / piped consumers
         // behave predictably.
-        runCliForTest(CliMode.Help)
+        runCliForTest(NpxKtCommand.NpxCommandHelp)
         assertTrue(stdout().endsWith("\n"), "help output must end with a newline; got: '${stdout().takeLast(20)}'")
     }
 
@@ -89,7 +99,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Version writes loadProxyVersion()'s value to stdout`() {
-        val exit = runCliForTest(CliMode.Version)
+        val exit = runCliForTest(NpxKtCommand.NpxCommandVersion)
         assertEquals(0, exit)
         assertEquals("", stderr(), "stderr must stay clean for --version; got: ${stderr()}")
         val expectedVersion = ProxyVersionMetadata.getProxyVersion()
@@ -101,7 +111,7 @@ class CliModeOutputTest {
     fun `Version output is a single line`() {
         // Some monitoring scripts grep `--version | head -1`. Pinning single-line
         // output prevents an accidental multi-line banner sneaking in.
-        runCliForTest(CliMode.Version)
+        runCliForTest(NpxKtCommand.NpxCommandVersion)
         val lines = stdout().trimEnd().lines()
         assertEquals(1, lines.size, "version must be a single line; got: ${stdout()}")
     }
@@ -110,7 +120,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Unknown writes an error and the usage banner, both to stderr`() {
-        val exit = runCliForTest(CliMode.Unknown(listOf("--no-such", "thing")))
+        val exit = runCliForTest(null, "--no-such", "thing")
         assertEquals(64, exit)
         assertEquals("", stdout(), "stdout must stay clean for unknown-arg errors; got: ${stdout()}")
         val err = stderr()
@@ -122,7 +132,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Unknown with multiple tokens joins them with a single space`() {
-        runCliForTest(CliMode.Unknown(listOf("a", "b", "c")))
+        runCliForTest(null, "a", "b", "c")
         val err = stderr()
         assertTrue(err.contains("Unknown argument(s): a b c"),
             "stderr should join multiple unknown tokens with single spaces; got:\n$err")
@@ -130,7 +140,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Unknown with a single token still produces a coherent error`() {
-        runCliForTest(CliMode.Unknown(listOf("--what")))
+        runCliForTest(null, "--what")
         val err = stderr()
         assertTrue(err.contains("Unknown argument(s): --what"), "got: $err")
     }

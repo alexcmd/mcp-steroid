@@ -62,7 +62,7 @@ class CliMcpStdioStdoutCleanlinessTest {
         check(launcher.isFile) { "launcher missing at ${launcher.absolutePath}" }
 
         // `mpc` is the launcher's opt-in subcommand for stdio MCP mode (see
-        // `com.jonnyzzz.mcpSteroid.proxy.parseCliMode`). Without it the launcher behaves
+        // `com.jonnyzzz.mcpSteroid.proxy.NpxKtArgs.command`). Without it the launcher behaves
         // like a normal CLI (`--help`) and prints help text to stdout — which would make
         // this very test fail for the wrong reason.
         val command = if (isWindows) {

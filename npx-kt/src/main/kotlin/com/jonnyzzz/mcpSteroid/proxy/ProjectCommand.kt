@@ -12,10 +12,18 @@ internal data class ProjectListing(
 
 internal fun runProjectCommand(
     out: PrintStream,
-    json: Boolean,
+    command: NpxKtCommand.NpxCommandProject,
 ) : Int {
+    val unknown = command.restArgs.unknownOptions(setOf("--json", "--debug"))
+    if (unknown.isNotEmpty()) {
+        return unknownArguments(listOf(unknown.first()), "Unknown flag: ${unknown.first()}")
+    }
+    val positionals = command.restArgs.positionals()
+    if (positionals.isNotEmpty()) {
+        return unknownArguments(positionals, "Unexpected extra argument: ${positionals.first()}")
+    }
     val listing = projectListingFromRows(collectBackendRows())
-    if (json) {
+    if (command.restArgs.jsonFlag()) {
         renderProjectJson(listing, out)
     } else {
         renderProjectOutput(listing, out)
@@ -34,8 +42,6 @@ internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = Pr
  *
  * Output shape:
  * ```
- * devrig v<version> — <tagline>
- *
  * Listing N open project(s) across M backend(s):
  *
  *   [1] <project-name>  →  <project-path>

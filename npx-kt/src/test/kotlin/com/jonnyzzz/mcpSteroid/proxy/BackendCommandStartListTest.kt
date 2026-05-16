@@ -58,7 +58,7 @@ class BackendCommandStartListTest {
             availableDownloads = sampleAvailableDownloads(),
         )
 
-        assertTrue(text.startsWith("devrig v"), text)
+        assertTrue(text.startsWith("No managed backends are installed yet."), text)
         assertTrue(text.contains("No managed backends are installed yet."), text)
         assertTrue(text.contains("Available IDEs (defaults to latest stable):"), text)
         assertTrue(text.contains("[1] idea-community"), text)

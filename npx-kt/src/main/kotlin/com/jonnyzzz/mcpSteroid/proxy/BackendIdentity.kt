@@ -32,25 +32,25 @@ fun portBackendLocatorLabel(ide: DiscoveredIdeByPort): String = buildString {
     append("port ").append(ide.port)
 }
 
-fun backendDisplayName(row: BackendRow): String = when (row) {
+internal fun backendDisplayName(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> markerBackendDisplayName(row.ide)
     is BackendRow.FromPort -> portBackendDisplayName(row.ide)
     is BackendRow.FromManaged -> row.displayName
 }
 
-fun backendLocatorLabel(row: BackendRow): String = when (row) {
+internal fun backendLocatorLabel(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> markerBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
     is BackendRow.FromPort -> portBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
     is BackendRow.FromManaged -> row.locatorLabel
 }
 
-fun backendStableId(row: BackendRow): String = when (row) {
+internal fun backendStableId(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> "pid-${row.ide.pid}"
     is BackendRow.FromPort -> "port-${row.ide.port}"
     is BackendRow.FromManaged -> row.info.id
 }
 
-fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
+internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
     put("id", id)
     put("type", BACKEND_TYPE_INTELLIJ)
     put("source", backendSource(row))

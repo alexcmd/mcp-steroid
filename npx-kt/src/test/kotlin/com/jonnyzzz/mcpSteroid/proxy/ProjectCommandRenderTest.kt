@@ -64,17 +64,14 @@ class ProjectCommandRenderTest {
         buildNumber = buildNumber,
     )
 
-    // ------------------------------ banner ---------------------------------
+    // ------------------------------ shape ---------------------------------
 
     @Test
-    fun `output always starts with the devrig banner + blank line`() {
+    fun `empty output starts with the no-backends message`() {
         val text = render(ProjectListing(emptyList(), emptyList()))
         val lines = text.lines()
-        assertTrue(lines[0].startsWith("devrig v"),
-            "first line must be the devrig banner; got: ${lines[0]}")
-        assertTrue(lines[0].contains("This environment empowers your AI"),
-            "banner must include the tagline; got: ${lines[0]}")
-        assertEquals("", lines[1], "second line must be blank to separate banner from body")
+        assertEquals("No backends detected.", lines[0])
+        assertEquals("", lines[1])
     }
 
     @Test
@@ -91,13 +88,12 @@ class ProjectCommandRenderTest {
     // -------------------------- empty / no-backend branch ----------------------
 
     @Test
-    fun `empty listing prints banner + the no-backends message + trailing blank`() {
+    fun `empty listing prints the no-backends message + trailing blank`() {
         val text = render(ProjectListing(emptyList(), emptyList()))
         assertTrue(text.contains("No backends detected."), "missing message; got:\n$text")
         val lines = text.lines()
-        assertTrue(lines[0].startsWith("devrig v"), lines[0])
+        assertEquals("No backends detected.", lines[0])
         assertEquals("", lines[1])
-        assertEquals("No backends detected.", lines[2])
     }
 
     // ----------------------------- projects --------------------------------

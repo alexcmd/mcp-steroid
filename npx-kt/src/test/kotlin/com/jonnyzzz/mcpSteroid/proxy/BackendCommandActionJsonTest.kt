@@ -37,7 +37,7 @@ class BackendCommandActionJsonTest {
             runBackendDownloadCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Download("idea-community", versionOverride = null, json = true),
+                command = downloadCommand("idea-community"),
                 backendService = backendService,
             )
         }
@@ -72,7 +72,7 @@ class BackendCommandActionJsonTest {
             runBackendStartCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Start("idea-community-2025.3.3", versionOverride = null, json = true),
+                command = startCommand("idea-community-2025.3.3"),
                 backendService = backendService,
             )
         }
@@ -99,7 +99,7 @@ class BackendCommandActionJsonTest {
             runBackendStopCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Stop("idea-community-2025.3.3", versionOverride = null, json = true),
+                command = stopCommand("idea-community-2025.3.3"),
                 backendService = backendService,
             )
         }
@@ -125,7 +125,7 @@ class BackendCommandActionJsonTest {
             runBackendStopCommand(
                 out = it,
                 homePaths = HomePaths(tempDir),
-                mode = CliMode.Backend.Stop("idea-community-2025.3.3", versionOverride = null, json = true),
+                command = stopCommand("idea-community-2025.3.3"),
                 backendService = backendService,
             )
         }
@@ -151,7 +151,7 @@ class BackendCommandActionJsonTest {
             runBackendStopCommand(
                 out = it,
                 homePaths = HomePaths(tempDir),
-                mode = CliMode.Backend.Stop("idea-community-2025.3.3", versionOverride = null, json = true),
+                command = stopCommand("idea-community-2025.3.3"),
                 backendService = backendService,
             )
         }
@@ -173,7 +173,7 @@ class BackendCommandActionJsonTest {
             runBackendDownloadCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Download("idea-community", versionOverride = null, json = true),
+                command = downloadCommand("idea-community"),
                 backendService = failing,
             )
         }
@@ -181,7 +181,7 @@ class BackendCommandActionJsonTest {
             runBackendStartCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Start("idea-community-2025.3.3", versionOverride = null, json = true),
+                command = startCommand("idea-community-2025.3.3"),
                 backendService = failing,
             )
         }
@@ -189,7 +189,7 @@ class BackendCommandActionJsonTest {
             runBackendStopCommand(
                 out = it,
                 homePaths = homePaths,
-                mode = CliMode.Backend.Stop("idea-community-2025.3.3", versionOverride = null, json = true),
+                command = stopCommand("idea-community-2025.3.3"),
                 backendService = failing,
             )
         }
@@ -217,6 +217,15 @@ class BackendCommandActionJsonTest {
             stderr = errBuf.toString(Charsets.UTF_8),
         )
     }
+
+    private fun downloadCommand(id: String): NpxKtCommand.NpxCommandBackendDownload =
+        NpxKtCommand.NpxCommandBackendDownload(NpxKtArgs(arrayOf(id, "--json")))
+
+    private fun startCommand(id: String): NpxKtCommand.NpxCommandBackendStart =
+        NpxKtCommand.NpxCommandBackendStart(NpxKtArgs(arrayOf(id, "--json")))
+
+    private fun stopCommand(id: String): NpxKtCommand.NpxCommandBackendStop =
+        NpxKtCommand.NpxCommandBackendStop(NpxKtArgs(arrayOf(id, "--json")))
 
     private fun downloadResult(homePaths: HomePaths, id: String) = DownloadResult(
         id = id,

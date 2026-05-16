@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -37,10 +38,7 @@ class SingleInstanceLockTest {
             Files.writeString(homePaths.pidFile("idea-community-2025.3.2"), "${otherProcess.pid()}\n")
 
             val (exit, stdout, stderr) = captureCli {
-                runCli(
-                    CliMode.Backend.Start("idea-community-2025.3.3", versionOverride = null),
-                    homePaths = homePaths,
-                )
+                runStartCli(homePaths, "idea-community-2025.3.3")
             }
 
             assertEquals(64, exit)
@@ -71,10 +69,7 @@ class SingleInstanceLockTest {
         Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "$pid\n")
 
         val (exit, stdout, stderr) = captureCli {
-            runCli(
-                CliMode.Backend.Start("idea-community-2025.3.3", versionOverride = null),
-                homePaths = homePaths,
-            )
+            runStartCli(homePaths, "idea-community-2025.3.3")
         }
 
         assertEquals(0, exit)
@@ -234,6 +229,21 @@ class SingleInstanceLockTest {
                 downloadedAt = "2026-05-14T21:00:00Z",
             ),
         )
+    }
+
+    private fun runStartCli(homePaths: HomePaths, id: String): Int {
+        val lifetime = CloseableStackHost()
+        return try {
+            runBlocking {
+                NpxKtServices(
+                    homePaths = homePaths,
+                    args = NpxKtArgs(arrayOf("backend", "start", id)),
+                    lifetime = lifetime,
+                ).runCli(NpxKtCommand.NpxCommandBackendStart(NpxKtArgs(arrayOf(id))))
+            }
+        } finally {
+            lifetime.closeAllStacks()
+        }
     }
 
     private fun gracefulLauncher(): String =

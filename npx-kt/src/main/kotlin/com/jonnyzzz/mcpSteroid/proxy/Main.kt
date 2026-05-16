@@ -94,11 +94,12 @@ suspend fun NpxKtServices.mainImpl2() : Unit = coroutineScope {
             t.printStackTrace(System.err)
             exitProcess(64)
         }
+        return@coroutineScope
     }
 
     println(headliner)
     try {
-        val cliResult = runCli(command, homePaths)
+        val cliResult = runCli(command)
         exitProcess(cliResult)
     } catch (t: Throwable) {
         System.err.println("Unexpected error calling $command. ${t.message}")

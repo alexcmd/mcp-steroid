@@ -50,7 +50,7 @@ private val backendCommandLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid
  *    IDEs without the mcp-steroid plugin still surface here so the operator
  *    sees the full picture.
  */
-sealed interface BackendRow {
+internal sealed interface BackendRow {
     /**
      * Full IDE identifier for the text header — includes the marketing version
      * already. Examples:
@@ -102,7 +102,7 @@ sealed interface BackendRow {
 }
 
 /**
- * Entry point invoked by [runCli] when [CliMode.Backend] is selected. Walks
+ * Entry point invoked by [runCli] when the `backend` command is selected. Walks
  * both discovery paths in parallel:
  *  1. `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON markers → IDEs with project lists.
  *  2. Port scan of `127.0.0.1:63342..63361` and `:64342..64361` → IDEs
@@ -113,14 +113,20 @@ sealed interface BackendRow {
  * running" is a steady state on most machines, not a CLI error.
  *
  * @param json `true` ⇒ emit a single machine-readable JSON object instead of
- *  the human-readable banner+list. The JSON is pretty-printed so a human can
+ *  the human-readable list. The JSON is pretty-printed so a human can
  *  still read it without `jq`; `jq` accepts both forms equally.
  */
-fun runBackendCommand(
+internal fun runBackendCommand(
     out: PrintStream,
-    json: Boolean = false,
     homePaths: HomePaths = resolveHomePaths(),
+    command: NpxKtCommand.NpxCommandBackend = NpxKtCommand.NpxCommandBackend(NpxKtArgs(emptyArray())),
 ) : Int {
+    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--debug"))?.let { return it }
+    val positionals = command.restArgs.positionals()
+    if (positionals.isNotEmpty()) {
+        return unknownArguments(positionals, "Unexpected extra argument: ${positionals.first()}")
+    }
+    val json = command.restArgs.jsonFlag()
     val rows = collectBackendRows(homePaths)
     if (json) {
         renderBackendJson(rows, out)
@@ -130,7 +136,7 @@ fun runBackendCommand(
     return 0
 }
 
-fun collectBackendRows(
+internal fun collectBackendRows(
     homePaths: HomePaths = resolveHomePaths(),
 ): List<BackendRow> {
     val discovery = createIdeDiscoveryService(homePaths)
@@ -172,7 +178,7 @@ fun collectBackendRows(
     }
 }
 
-fun scanMarkersOnce(
+internal fun scanMarkersOnce(
     homePaths: HomePaths = resolveHomePaths(),
 ): Set<DiscoveredIde> {
     val discovery = createIdeDiscoveryService(homePaths)
@@ -180,7 +186,7 @@ fun scanMarkersOnce(
     return discovery.ides.value
 }
 
-fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
+internal fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
     val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     return IdeDiscoveryService(
@@ -190,15 +196,35 @@ fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
     )
 }
 
-fun runBackendDownloadCommand(
+internal fun runBackendDownloadCommand(
     out: PrintStream,
     homePaths: HomePaths,
-    mode: CliMode.Backend.Download,
+    command: NpxKtCommand.NpxCommandBackendDownload,
     backendService: ManagedBackendService = BackendManager(homePaths),
 ): Int {
-    if (mode.json) {
-        return runBackendActionJson(out, action = "download", id = mode.id) {
-            val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--version", "--debug"))?.let { return it }
+    val versionOverride = when (val value = command.restArgs.optionValue("--version")) {
+        OptionValue.Absent -> null
+        is OptionValue.Present -> value.value
+        is OptionValue.Missing -> return unknownArguments(listOf(value.option), "Missing value for ${value.option}")
+    }
+    val positionals = command.restArgs.positionals()
+    val id = positionals.firstOrNull() ?: run {
+        runBackendDownloadListCommand(out, json = command.restArgs.jsonFlag())
+        return 0
+    }
+    if (positionals.size > 1) {
+        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
+    }
+    if (!isSupportedBackendLifecycleId(id)) {
+        return unknownArguments(
+            listOf("backend", "download", id),
+            "Run `devrig backend download` with no id to list valid backend ids.",
+        )
+    }
+    if (command.restArgs.jsonFlag()) {
+        return runBackendActionJson(out, action = "download", id = id) {
+            val backendId = parseBackendId(id).withVersionOverride(versionOverride)
             lateinit var result: DownloadResult
             val durationMs = measureTimeMillis {
                 result = runBlocking(Dispatchers.IO) {
@@ -218,7 +244,7 @@ fun runBackendDownloadCommand(
             }
         }
     }
-    val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    val backendId = parseBackendId(id).withVersionOverride(versionOverride)
     val result = runBlocking(Dispatchers.IO) {
         backendService.download(backendId)
     }
@@ -229,15 +255,35 @@ fun runBackendDownloadCommand(
     return 0
 }
 
-fun runBackendStartCommand(
+internal fun runBackendStartCommand(
     out: PrintStream,
     homePaths: HomePaths,
-    mode: CliMode.Backend.Start,
+    command: NpxKtCommand.NpxCommandBackendStart,
     backendService: ManagedBackendService = BackendManager(homePaths),
 ): Int {
-    if (mode.json) {
-        return runBackendActionJson(out, action = "start", id = mode.id) {
-            val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--version", "--debug"))?.let { return it }
+    val versionOverride = when (val value = command.restArgs.optionValue("--version")) {
+        OptionValue.Absent -> null
+        is OptionValue.Present -> value.value
+        is OptionValue.Missing -> return unknownArguments(listOf(value.option), "Missing value for ${value.option}")
+    }
+    val positionals = command.restArgs.positionals()
+    val id = positionals.firstOrNull() ?: run {
+        runBackendStartListCommand(out, homePaths, json = command.restArgs.jsonFlag())
+        return 0
+    }
+    if (positionals.size > 1) {
+        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
+    }
+    if (!isSupportedBackendLifecycleId(id)) {
+        return unknownArguments(
+            listOf("backend", "start", id),
+            "Run `devrig backend start` with no id to list valid backend ids.",
+        )
+    }
+    if (command.restArgs.jsonFlag()) {
+        return runBackendActionJson(out, action = "start", id = id) {
+            val backendId = parseBackendId(id).withVersionOverride(versionOverride)
             val result = runBlocking(Dispatchers.IO) {
                 backendService.start(backendId)
             }
@@ -252,7 +298,7 @@ fun runBackendStartCommand(
             }
         }
     }
-    val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    val backendId = parseBackendId(id).withVersionOverride(versionOverride)
     val result = runBlocking(Dispatchers.IO) {
         backendService.start(backendId)
     }
@@ -265,15 +311,35 @@ fun runBackendStartCommand(
     return 0
 }
 
-fun runBackendStopCommand(
+internal fun runBackendStopCommand(
     out: PrintStream,
     homePaths: HomePaths,
-    mode: CliMode.Backend.Stop,
+    command: NpxKtCommand.NpxCommandBackendStop,
     backendService: ManagedBackendService = BackendManager(homePaths),
 ): Int {
-    if (mode.json) {
-        return runBackendActionJson(out, action = "stop", id = mode.id) {
-            val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--version", "--debug"))?.let { return it }
+    val versionOverride = when (val value = command.restArgs.optionValue("--version")) {
+        OptionValue.Absent -> null
+        is OptionValue.Present -> value.value
+        is OptionValue.Missing -> return unknownArguments(listOf(value.option), "Missing value for ${value.option}")
+    }
+    val positionals = command.restArgs.positionals()
+    val id = positionals.firstOrNull() ?: run {
+        runBackendStopListCommand(out, homePaths, json = command.restArgs.jsonFlag())
+        return 0
+    }
+    if (positionals.size > 1) {
+        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
+    }
+    if (!isSupportedBackendLifecycleId(id)) {
+        return unknownArguments(
+            listOf("backend", "stop", id),
+            "Run `devrig backend stop` with no id to list valid backend ids.",
+        )
+    }
+    if (command.restArgs.jsonFlag()) {
+        return runBackendActionJson(out, action = "stop", id = id) {
+            val backendId = parseBackendId(id).withVersionOverride(versionOverride)
             lateinit var result: StopResult
             val durationMs = measureTimeMillis {
                 result = runBlocking(Dispatchers.IO) {
@@ -296,7 +362,7 @@ fun runBackendStopCommand(
             }
         }
     }
-    val backendId = parseBackendId(mode.id).withVersionOverride(mode.versionOverride)
+    val backendId = parseBackendId(id).withVersionOverride(versionOverride)
     val result = runBlocking(Dispatchers.IO) {
         backendService.stop(backendId)
     }
@@ -306,7 +372,7 @@ fun runBackendStopCommand(
     return 0
 }
 
-fun runBackendActionJson(
+internal fun runBackendActionJson(
     out: PrintStream,
     action: String,
     id: String,
@@ -348,6 +414,30 @@ private fun backendVmOptionsPath(homePaths: HomePaths, id: String): java.nio.fil
     return homePaths.backendDir(id).resolve("${descriptor.bundleDirName}.vmoptions")
 }
 
+internal fun validateBackendOptions(args: NpxKtArgs, allowed: Set<String>): Int? {
+    val unknown = args.unknownOptions(allowed)
+    if (unknown.isEmpty()) return null
+    return unknownArguments(listOf(unknown.first()), "Unknown flag: ${unknown.first()}")
+}
+
+internal fun isSupportedBackendLifecycleId(raw: String): Boolean {
+    if (raw.isBlank()) return false
+    val colonParts = raw.split(':')
+    if (colonParts.size > 2) return false
+    if (colonParts.size == 2) {
+        return isKnownProductKey(colonParts[0]) && isSupportedBackendVersion(colonParts[1])
+    }
+    if (isKnownProductKey(raw)) return true
+    val product = com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts
+        .sortedByDescending { it.id.length }
+        .firstOrNull { raw.startsWith("${it.id}-") }
+        ?: return false
+    return isSupportedBackendVersion(raw.removePrefix("${product.id}-"))
+}
+
+private fun isKnownProductKey(raw: String): Boolean =
+    com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct.knownProducts.any { it.id == raw }
+
 /**
  * One-shot port scan. Wraps [IntelliJPortDiscovery.scanOnce] + reads the
  * resulting set. Separate function so tests can drive it independently.
@@ -369,7 +459,7 @@ suspend fun collectPortDiscoveredIdes(
  *
  * Exposed `internal` so a dedupe test can drive it without HTTP.
  */
-fun mergeRows(
+internal fun mergeRows(
     markerRows: List<BackendRow.FromMarker>,
     portIdes: Set<DiscoveredIdeByPort>,
     managedBackends: List<ManagedBackendInfo> = emptyList(),
@@ -412,7 +502,7 @@ fun mergeRows(
  * builds (`261.23567.138`). Returns `null` for null/blank input so callers
  * can use it as a Map key without further filtering.
  */
-fun normaliseBuildForDedup(build: String?): String? {
+internal fun normaliseBuildForDedup(build: String?): String? {
     if (build.isNullOrBlank()) return null
     return build.replaceFirst(Regex("^[A-Z]+-"), "")
 }
@@ -456,7 +546,7 @@ private fun matchingManagedIds(
  * [BackendRow.FromMarker.projects] = `null` so the renderer can flag the
  * IDE without taking down the whole list.
  */
-suspend fun collectMarkerSnapshots(
+internal suspend fun collectMarkerSnapshots(
     httpClient: HttpClient,
     ides: List<DiscoveredIde>,
     perIdeTimeout: Duration,
@@ -542,8 +632,6 @@ private suspend fun fetchFirstSnapshot(
  *
  * Output shape:
  * ```
- * devrig v<version> — <tagline>
- *
  * Discovered N backend(s):
  *
  *   [1] <IDE name> <version> (<locator>)
@@ -554,11 +642,10 @@ private suspend fun fetchFirstSnapshot(
  *         (mcp-steroid plugin not installed — project list unavailable)
  *
  * ```
- * The opening banner identifies the tool, a blank line separates banner from
- * list, the list itself uses `[N]` index markers so it visibly is a list,
- * and the trailing blank line gives shells a clean separator.
+ * The list uses `[N]` index markers so it visibly is a list, and the trailing
+ * blank line gives shells a clean separator.
  */
-fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
+internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     if (rows.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
@@ -601,7 +688,7 @@ private fun backendActionSuffix(row: BackendRow): String = when (row) {
  * Example query:
  *   mcp-steroid-proxy backend --json | jq '.backends[] | select(.source=="marker")'
  */
-fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
+internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
     val rowsWithIds = backendRowsWithStableIds(rows)
     val json = Json { prettyPrint = true; encodeDefaults = true }
     val payload = buildJsonObject {

@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.proxy
 import java.io.PrintStream
 
 fun printVersion(out: PrintStream) : Int {
-    println(ProxyVersionMetadata.getProxyVersion())
+    out.println(ProxyVersionMetadata.getProxyVersion())
     return 0
 }
 
