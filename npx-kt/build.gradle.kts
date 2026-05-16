@@ -126,7 +126,7 @@ dependencies {
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("com.posthog:posthog-server:2.3.0")
-    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
     implementation(project(":closeable-stack"))
 
     // MCP transport: framed/NDJSON parser + McpStdioServer (replaces the old
@@ -577,10 +577,10 @@ val verifyBundledLibraries by tasks.registering {
 
             // Other transitives.
             "lib/annotations-23.0.0.jar",
-            "lib/commons-codec-1.17.1.jar",
-            "lib/commons-compress-1.27.1.jar",
-            "lib/commons-io-2.16.1.jar",
-            "lib/commons-lang3-3.16.0.jar",
+            "lib/commons-codec-1.19.0.jar",
+            "lib/commons-compress-1.28.0.jar",
+            "lib/commons-io-2.20.0.jar",
+            "lib/commons-lang3-3.18.0.jar",
             "lib/xz-1.10.jar",
         ).toSortedSet()
 

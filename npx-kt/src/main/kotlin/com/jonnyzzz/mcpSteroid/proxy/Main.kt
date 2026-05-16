@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.proxy.server.runStubStdioMcpServer
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
-import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -19,10 +18,15 @@ import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
 import java.util.UUID
+import kotlin.random.Random
 import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Resolved CLI input + the captured stdio streams reserved for the MCP transport.
@@ -60,30 +64,30 @@ fun main(args: Array<String>) {
     }
 }
 
-class NpxKtServices(
-    val homePaths: HomePaths,
-    val args: NpxKtArgs,
-    private val lifetime: CloseableStack
-) {
-    fun lifetime(name: String): CloseableStack = lifetime.nestedStack(name)
+fun NpxKtServices.mainImpl1() {
+    class DevrigCoroutineExceptionHandler
 
-    val version by lazy { ProxyVersionMetadata.getProxyVersion() }
-
-    val beacon by lazy {
-        NpxBeacon(proxyVersion = version).also { lifetime.registerCleanupAction { it.close() } }
+    val log = logger<DevrigCoroutineExceptionHandler>()
+    val exceptionHandler = CoroutineExceptionHandler { context, throwable ->
+        log.warn("devrig coroutine exception: ${throwable.message} in $context", throwable)
     }
 
-    val updates by lazy {
-        NpxUpdateChecker(currentVersion = version).also { lifetime.registerCleanupAction { it.close() } }
+    runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler + SupervisorJob()) {
+        coroutineScope {
+            mainImpl2()
+        }
     }
 }
 
+suspend fun NpxKtServices.mainImpl2() = coroutineScope{
+    launch {
+        delay(Random.nextInt(200, 1300).milliseconds)
+        checkForUpdates()
+    }
 
-fun NpxKtServices.mainImpl1() {
     val mode = args.parseCliMode()
     if (mode !is CliMode.Mcp) {
         beacon.startInteractive(beaconInvocation(mode))
-        updates.startOneShot()
         try {
             val cliResult = runCli(mode, homePaths)
             exitProcess(cliResult)
@@ -99,7 +103,6 @@ fun NpxKtServices.mainImpl1() {
     System.setOut(System.err)
 
     beacon.startMcp()
-    updates.startPeriodic()
 
     try {
         MainContext(

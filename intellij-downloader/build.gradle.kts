@@ -10,7 +10,7 @@ buildscript {
         // Used by the inline doLast block below to extract `7zz` from 7-zip.org tar.xz archives
         // at configuration/build time. Gradle's built-in `resources.{gzip,bzip2}` helpers don't
         // include xz, so we do the decoding ourselves.
-        classpath("org.apache.commons:commons-compress:1.27.1")
+        classpath("org.apache.commons:commons-compress:1.28.0")
         classpath("org.tukaani:xz:1.10")
     }
 }
@@ -36,13 +36,13 @@ application {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.slf4j:slf4j-api:2.0.17")
     // Runtime xz support for IdeUnpacker fallback paths that might handle .tar.xz directly.
     implementation("org.tukaani:xz:1.10")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("ch.qos.logback:logback-classic:1.5.18")
+    testImplementation("org.slf4j:slf4j-simple:2.0.17")
 }
 
 tasks.test {
