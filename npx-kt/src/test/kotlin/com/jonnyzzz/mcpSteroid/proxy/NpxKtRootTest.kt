@@ -27,19 +27,19 @@ class NpxKtRootTest {
         val jar = root.resolve("lib/npx-kt-1.2.3.jar")
         Files.createDirectories(jar.parent)
         Files.writeString(jar, "fake jar")
-        Files.createDirectories(root.resolve("ij-plugin"))
+        Files.writeString(root.resolve("ij-plugin.zip"), "fake plugin zip")
         Files.createDirectories(root.resolve("7z/mac"))
         Files.writeString(root.resolve("7z/mac/7zz"), "fake binary")
 
         NpxKtRootTestSupport.overrideCodeSource(jar)
 
         assertEquals(root, NpxKtRoot.path)
-        assertEquals(root.resolve("ij-plugin"), NpxKtRoot.ijPluginDir())
+        assertEquals(root.resolve("ij-plugin.zip"), NpxKtRoot.ijPluginZip())
         assertEquals(root.resolve("7z"), NpxKtRoot.sevenZipDir())
     }
 
     @Test
-    fun `throws when no package subtree exists next to lib`(
+    fun `throws when no package payload exists next to lib`(
         @TempDir tempDir: Path,
     ) {
         val root = tempDir.resolve("mcp-steroid-proxy")
@@ -66,7 +66,7 @@ class NpxKtRootTest {
         val sevenZip = root.resolve("7z/mac/7zz")
         Files.createDirectories(jar.parent)
         Files.writeString(jar, "fake jar")
-        Files.createDirectories(root.resolve("ij-plugin"))
+        Files.writeString(root.resolve("ij-plugin.zip"), "fake plugin zip")
         Files.createDirectories(sevenZip.parent)
         Files.writeString(sevenZip, "fake bundled seven zip")
         Files.writeString(sevenZip.parent.resolve("License.txt"), "license")

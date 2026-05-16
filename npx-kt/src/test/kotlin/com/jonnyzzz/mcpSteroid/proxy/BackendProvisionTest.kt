@@ -33,8 +33,8 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.ServerSocket
+import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
 import kotlin.io.path.notExists
 
 class BackendProvisionTest {
@@ -257,7 +257,8 @@ class BackendProvisionTest {
 
     @Test
     fun `provision resolves port id and computes manual instruction paths without installing plugin`(@TempDir tempDir: Path) = runBlocking {
-        val sourcePlugin = tempDir.resolve("source-plugin").createDirectories()
+        val sourcePlugin = tempDir.resolve("source-plugin.zip")
+        Files.writeString(sourcePlugin, "fake plugin zip")
         val port = ServerSocket(0).use { it.localPort }
         val installPluginCalls = mutableListOf<Unit>()
         val server = ideServer(
@@ -368,7 +369,7 @@ class BackendProvisionTest {
         productCode = "IU",
         selector = "IntelliJIdea2026.1",
         pluginsDir = tempDir.resolve("plugins"),
-        pluginSource = tempDir.resolve("ij-plugin"),
+        pluginSource = tempDir.resolve("ij-plugin.zip"),
         suggestedDestination = tempDir.resolve("plugins/mcp-steroid"),
     )
 
@@ -478,7 +479,7 @@ class BackendProvisionTest {
         return server
     }
 
-    private class FixedBundledPluginResolver(private val dir: Path) : BundledPluginResolver {
-        override fun resolveBundledPluginDir(): Path = dir
+    private class FixedBundledPluginResolver(private val zip: Path) : BundledPluginResolver {
+        override fun resolveBundledPluginZip(): Path = zip
     }
 }

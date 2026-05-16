@@ -6,11 +6,11 @@ import kotlin.io.path.isDirectory
 
 /**
  * Resolves the `npx-kt` installDist root — the directory that contains `lib/` (the runtime classpath),
- * `bin/` (the launcher scripts), and the bundled package subtrees (`ij-plugin/`, `7z/`).
+ * `bin/` (the launcher scripts), and the bundled package payloads (`ij-plugin.zip`, `7z/`).
  *
  * Hard requirement: this function MUST succeed when called from any production class in the proxy.
  * If it cannot locate the root, throw an [IllegalStateException] with the diagnostic path it inspected;
- * there is no fallback. Callers may rely on [path].resolve("7z") and [path].resolve("ij-plugin")
+ * there is no fallback. Callers may rely on [path].resolve("7z") and [path].resolve("ij-plugin.zip")
  * existing on disk.
  */
 object NpxKtRoot {
@@ -35,7 +35,7 @@ object NpxKtRoot {
 
     fun sevenZipDir(): Path = path.resolve("7z")
 
-    fun ijPluginDir(): Path = path.resolve("ij-plugin")
+    fun ijPluginZip(): Path = path.resolve("ij-plugin.zip")
 
     private fun resolveOrFail(): Path {
         val codeSourcePath = codeSourcePathForTests ?: realCodeSourcePath()
@@ -43,7 +43,7 @@ object NpxKtRoot {
             ?: error(
                 "Cannot resolve npx-kt root from $codeSourcePath. " +
                     "Expected to find a parent dir containing both 'lib/' and at least " +
-                    "one of 'ij-plugin/' or '7z/'. The proxy must be launched via " +
+                    "one of 'ij-plugin.zip' or '7z/'. The proxy must be launched via " +
                     "the installDist tree (`./npx-kt/build/install/mcp-steroid-proxy/bin/...`)."
             )
 
@@ -71,14 +71,14 @@ object NpxKtRoot {
 
     /**
      * Walk parent dirs of [start] up to the filesystem root. Return the first parent that has `lib/`
-     * and at least one bundled package subtree. Return `null` if no such parent exists.
+     * and at least one bundled package payload. Return `null` if no such parent exists.
      */
     private fun walkUpForInstallDistRoot(start: Path): Path? {
         var p: Path? = start.parent
         while (p != null) {
             val hasLib = p.resolve("lib").isDirectory()
-            val hasPackageSubtree = p.resolve("ij-plugin").isDirectory() || p.resolve("7z").isDirectory()
-            if (hasLib && hasPackageSubtree) return p
+            val hasPackagePayload = p.resolve("ij-plugin.zip").toFile().isFile || p.resolve("7z").isDirectory()
+            if (hasLib && hasPackagePayload) return p
             p = p.parent
         }
         return null

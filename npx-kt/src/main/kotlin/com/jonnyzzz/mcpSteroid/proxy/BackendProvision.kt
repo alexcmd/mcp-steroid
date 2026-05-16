@@ -64,7 +64,7 @@ internal class BackendProvisioner(
             env = env,
         )
         val suggestedDestination = pluginsDir.resolve(MCP_STEROID_PLUGIN_DIR_NAME)
-        val pluginSource = bundledPluginResolver.resolveBundledPluginDir()
+        val pluginSource = bundledPluginResolver.resolveBundledPluginZip()
         return ProvisionResult(
             id = id,
             ide = target.ide,

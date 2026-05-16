@@ -58,9 +58,8 @@ fun parseJdkManifest(json: String): List<LinkedHashMap<String, Any?>> {
 }
 
 // Resolvable: pulls :ij-plugin's `buildPlugin` archive through the "plugin-zip"
-// Usage attribute (same hook :test-integration uses). The zip lands here so the
-// distribution can unpack it into ij-plugin/ — see `distributions { main { … } }`
-// further down.
+// Usage attribute (same hook :test-integration uses). The distribution bundles
+// this archive directly as ij-plugin.zip.
 val ijPluginZip by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -125,6 +124,7 @@ dependencies {
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("com.posthog:posthog-server:2.3.0")
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
     // MCP transport: framed/NDJSON parser + McpStdioServer (replaces the old
     // StdioServer in this module — kept compiled but no longer wired into main()).
@@ -144,7 +144,7 @@ dependencies {
     // of carrying a second product-feed / archive-extraction implementation.
     implementation(project(":intellij-downloader"))
 
-    // Bundles :ij-plugin's buildPlugin archive into the distZip under ij-plugin/.
+    // Bundles :ij-plugin's buildPlugin archive into the distZip as ij-plugin.zip.
     // Resolved through the `ijPluginZip` configuration above.
     ijPluginZip(project(":ij-plugin"))
 
@@ -211,32 +211,17 @@ distributions {
             // its own license text alongside the launcher and bundled plugin.
             from(rootProject.layout.projectDirectory.file("EULA"))
 
-            // Unpacked :ij-plugin contents — strip the plugin zip's natural
-            // `mcp-steroid/{EULA,lib,…}` wrapper so `ij-plugin/` is the exact plugin
-            // root copied into a managed IDE's plugins/mcp-steroid directory.
-            // distZip rewrites file modes to 0o644 by
-            // default and drops the executable bit. Re-apply +x for any source
-            // file the OS reports as executable, so every executable inside
-            // the plugin (kotlinc launchers, ocr-tesseract binary, plus any
-            // new ones :ij-plugin starts shipping) survives without a narrow
-            // per-pattern allowlist.
-            into("ij-plugin") {
-                from(zipTree(ijPluginZipFile)) {
-                    includeEmptyDirs = false
-                    eachFile {
-                        path = path.replace("ij-plugin/mcp-steroid/", "ij-plugin/")
-                        if (file.canExecute()) {
-                            permissions { unix("rwxr-xr-x") }
-                        }
-                    }
-                }
+            // Keep the plugin as the original archive. Managed backend install
+            // expands it on demand, which avoids re-packing the plugin payload and
+            // preserves the mode bits recorded by :ij-plugin.
+            from(ijPluginZipFile) {
+                rename { "ij-plugin.zip" }
             }
 
             // 7-Zip binaries from :intellij-downloader's extractSevenZipResources.
             // Bundled unpacked at the dist root under `7z/<platform>/` so the proxy
             // can call <install>/7z/<platform>/7zz directly — no extraction-on-
-            // first-use detour. The +x bit is preserved on the 7zz binaries, same
-            // logic that runs for kotlinc/bin/* under ij-plugin/.
+            // first-use detour. The +x bit is preserved on the 7zz binaries.
             from(sevenZipBinariesDir) {
                 eachFile {
                     if (file.canExecute()) {
@@ -459,69 +444,16 @@ val verifyBundledLibraries by tasks.registering {
         allFiles = allFiles.map { it.removePrefix(pluginPrefix) }.toSortedSet()
         check(allFiles.isNotEmpty()) { "distZip has no entries" }
 
-        // ij-plugin/ subtree: full contents are enforced by :ij-plugin's own
-        // `verifyBundledLibraries` task before the archive ever reaches us. Here we
-        // just sentinel-check that the unpack + relocate step did what it claimed:
-        // (1) the natural `mcp-steroid/` plugin folder was stripped, (2) the key jars
-        // from the plugin zip are present.
-        val ijPluginPrefix = "ij-plugin/"
-        val ijPluginFiles = allFiles.filter { it.startsWith(ijPluginPrefix) }.toSortedSet()
-        check(ijPluginFiles.isNotEmpty()) {
-            "Expected ij-plugin/ subtree to be populated in $distName"
+        val ijPluginZipEntry = "ij-plugin.zip"
+        check(ijPluginZipEntry in allFiles) {
+            "Expected $ijPluginZipEntry to be bundled in $distName"
         }
-        listOf(
-            "ij-plugin/EULA",
-            "ij-plugin/lib/ij-plugin-$proxyVersion.jar",
-            "ij-plugin/lib/execution-storage-$proxyVersion.jar",
-            "ij-plugin/lib/mcp-steroid-server-$proxyVersion.jar",
-            "ij-plugin/kotlinc/build.txt",
-        ).forEach { sentinel ->
-            check(ijPluginFiles.any { it.removeSuffix(":X") == sentinel }) {
-                "ij-plugin/ subtree is missing sentinel '$sentinel'. Present prefix sample: " +
-                        ijPluginFiles.take(10).joinToString("\n  ", prefix = "\n  ")
-            }
+        check("$ijPluginZipEntry:X" !in allFiles) {
+            "$ijPluginZipEntry must not be marked executable"
         }
-        // POSIX launchers inside the plugin must keep their executable bit through
-        // the unpack + repack. The `.bat` siblings stay non-executable — Windows
-        // ignores the bit and the `eachFile` rule only promotes files whose source
-        // mode already had +x. The exact 6-file list mirrors what the plugin zip
-        // ships today; a future plugin launcher landing here without +x in the
-        // dist will fail this check loudly, prompting an investigation rather
-        // than silently shipping a broken script.
-        listOf(
-            "ij-plugin/kotlinc/bin/kapt:X",
-            "ij-plugin/kotlinc/bin/kotlin:X",
-            "ij-plugin/kotlinc/bin/kotlinc:X",
-            "ij-plugin/kotlinc/bin/kotlinc-js:X",
-            "ij-plugin/kotlinc/bin/kotlinc-jvm:X",
-            "ij-plugin/ocr-tesseract/bin/ocr-tesseract:X",
-        ).forEach { sentinel ->
-            check(sentinel in ijPluginFiles) {
-                "ij-plugin/ subtree is missing executable sentinel '$sentinel'. " +
-                        "Check that distZip's eachFile { permissions { … } } block " +
-                        "preserves the +x bit on POSIX launchers."
-            }
-        }
-        // Conversely, the `.bat` siblings MUST NOT carry +x — Windows ignores it
-        // but a stray bit would mean our eachFile rule mis-promoted a non-source-
-        // executable file, signaling a regression in the rule itself.
-        listOf(
-            "ij-plugin/kotlinc/bin/kotlinc.bat",
-            "ij-plugin/ocr-tesseract/bin/ocr-tesseract.bat",
-        ).forEach { batPath ->
-            check(batPath in ijPluginFiles) {
-                "ij-plugin/ subtree is missing '$batPath' (expected as non-executable .bat sibling)."
-            }
-            check("$batPath:X" !in ijPluginFiles) {
-                "ij-plugin/ subtree wrongly marked '$batPath' executable; eachFile { } rule " +
-                        "should only promote files whose source mode had +x."
-            }
-        }
-        allFiles = (allFiles - ijPluginFiles).toSortedSet()
-
         // licenses/ subtree: additive operator-facing consolidation of each
         // bundled component's license files. Original component-local copies stay
-        // under 7z/ and ij-plugin/ and are verified separately above/below.
+        // under 7z/ and inside ij-plugin.zip.
         val licensesPrefix = "licenses/"
         val licensesFiles = allFiles.filter { it.startsWith(licensesPrefix) }.toSortedSet()
         check(licensesFiles.isNotEmpty()) {
@@ -598,6 +530,7 @@ val verifyBundledLibraries by tasks.registering {
             // EULA — repo-root EULA at the distribution root, mirroring the
             // copy `:ij-plugin` ships inside its plugin zip.
             "EULA",
+            "ij-plugin.zip",
 
             // Launchers — the `application` plugin marks BOTH executable in the zip
             // (Windows ignores the bit; Unix needs it for the shell launcher).

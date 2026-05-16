@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.apache.commons.compress.archivers.zip.ZipFile
 import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -118,7 +119,7 @@ internal interface ManagedBackendDownloader {
 }
 
 internal interface BundledPluginResolver {
-    fun resolveBundledPluginDir(): Path
+    fun resolveBundledPluginZip(): Path
 }
 
 internal data class ProcessSnapshot(
@@ -154,13 +155,39 @@ internal interface ManagedBackendService {
 }
 
 internal class ClasspathBundledPluginResolver : BundledPluginResolver {
-    override fun resolveBundledPluginDir(): Path {
-        val pluginDir = NpxKtRoot.ijPluginDir().toAbsolutePath().normalize()
-        require(Files.isDirectory(pluginDir)) {
-            "Bundled ij-plugin/ directory is missing: $pluginDir. " +
+    override fun resolveBundledPluginZip(): Path {
+        val pluginZip = NpxKtRoot.ijPluginZip().toAbsolutePath().normalize()
+        require(Files.isRegularFile(pluginZip)) {
+            "Bundled ij-plugin.zip is missing: $pluginZip. " +
                 "Build and launch devrig from :npx-kt:installDist so the bundled plugin is available."
         }
-        return pluginDir
+        return pluginZip
+    }
+}
+
+private fun unpackPluginZip(source: Path, target: Path) {
+    val normalizedTarget = target.toAbsolutePath().normalize()
+    Files.createDirectories(normalizedTarget)
+    ZipFile.builder().setPath(source).get().use { zip ->
+        val entries = zip.entries
+        while (entries.hasMoreElements()) {
+            val entry = entries.nextElement()
+            val destination = normalizedTarget.resolve(entry.name).normalize()
+            require(destination.startsWith(normalizedTarget)) {
+                "Plugin ZIP entry escapes target directory: ${entry.name}"
+            }
+            if (entry.isDirectory) {
+                Files.createDirectories(destination)
+            } else {
+                Files.createDirectories(destination.parent)
+                zip.getInputStream(entry).use { input ->
+                    Files.copy(input, destination, StandardCopyOption.REPLACE_EXISTING)
+                }
+                if (entry.unixMode and 0b001_000_000 != 0) {
+                    destination.toFile().setExecutable(true, false)
+                }
+            }
+        }
     }
 }
 
@@ -328,11 +355,22 @@ internal class BackendManager(
     }
 
     fun deployMcpSteroidPlugin(id: String): Path {
-        val source = bundledPluginResolver.resolveBundledPluginDir()
-        require(Files.isDirectory(source)) { "Bundled ij-plugin/ directory is missing: $source" }
+        val source = bundledPluginResolver.resolveBundledPluginZip()
+        require(Files.isRegularFile(source)) { "Bundled ij-plugin.zip is missing: $source" }
         val target = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        val partial = homePaths.cacheDir(id).resolve("plugins/.mcp-steroid-unpack.partial")
         deleteRecursively(target)
-        copyDirectory(source, target)
+        deleteRecursively(partial)
+        Files.createDirectories(partial)
+        try {
+            unpackPluginZip(source, partial)
+            val unpackedPluginRoot = partial.resolve(MCP_STEROID_PLUGIN_DIR_NAME)
+                .takeIf { Files.isDirectory(it) }
+                ?: partial
+            copyDirectory(unpackedPluginRoot, target)
+        } finally {
+            deleteRecursively(partial)
+        }
         return target
     }
 

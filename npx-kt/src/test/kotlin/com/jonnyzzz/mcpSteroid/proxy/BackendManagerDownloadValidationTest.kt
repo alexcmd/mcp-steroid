@@ -3,6 +3,8 @@ package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import kotlinx.coroutines.runBlocking
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.EOFException
@@ -25,7 +27,7 @@ class BackendManagerDownloadValidationTest {
         val manager = BackendManager(
             homePaths = homePaths,
             downloader = InstallingDownloader(productCode = "IC", archivePath = archivePath),
-            bundledPluginResolver = FixedPluginResolver(pluginFixture(tempDir.resolve("dist/ij-plugin"))),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
         )
 
         val result = manager.download(parseBackendId("idea-community-2025.3.3"))
@@ -62,7 +64,7 @@ class BackendManagerDownloadValidationTest {
         val manager = BackendManager(
             homePaths = homePaths,
             downloader = InstallingDownloader(productCode = "IU", archivePath = archivePath),
-            bundledPluginResolver = FixedPluginResolver(pluginFixture(tempDir.resolve("dist/ij-plugin"))),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
         )
 
         val error = assertFailsWith<ManagedBackendValidationException> {
@@ -94,7 +96,7 @@ class BackendManagerDownloadValidationTest {
         val manager = BackendManager(
             homePaths = homePaths,
             downloader = downloader,
-            bundledPluginResolver = FixedPluginResolver(pluginFixture(tempDir.resolve("dist/ij-plugin"))),
+            bundledPluginResolver = FixedPluginResolver(pluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"))),
         )
 
         assertFailsWith<EOFException> {
@@ -168,14 +170,23 @@ class BackendManagerDownloadValidationTest {
         return archive
     }
 
-    private fun pluginFixture(root: Path): Path {
-        Files.createDirectories(root.resolve("lib"))
-        Files.writeString(root.resolve("lib/plugin.txt"), "plugin")
-        return root
+    private fun pluginZipFixture(zip: Path): Path {
+        Files.createDirectories(zip.parent)
+        ZipArchiveOutputStream(Files.newOutputStream(zip)).use { out ->
+            val bytes = "plugin".toByteArray(Charsets.UTF_8)
+            val entry = ZipArchiveEntry("mcp-steroid/lib/plugin.txt").apply {
+                size = bytes.size.toLong()
+                unixMode = 0b110_100_100
+            }
+            out.putArchiveEntry(entry)
+            out.write(bytes)
+            out.closeArchiveEntry()
+        }
+        return zip
     }
 
-    private class FixedPluginResolver(private val dir: Path) : BundledPluginResolver {
-        override fun resolveBundledPluginDir(): Path = dir
+    private class FixedPluginResolver(private val zip: Path) : BundledPluginResolver {
+        override fun resolveBundledPluginZip(): Path = zip
     }
 
     private class FailingOnceDownloader(
