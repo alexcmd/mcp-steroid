@@ -50,7 +50,7 @@ private val backendCommandLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid
  *    IDEs without the mcp-steroid plugin still surface here so the operator
  *    sees the full picture.
  */
-internal sealed interface BackendRow {
+sealed interface BackendRow {
     /**
      * Full IDE identifier for the text header — includes the marketing version
      * already. Examples:
@@ -116,20 +116,21 @@ internal sealed interface BackendRow {
  *  the human-readable banner+list. The JSON is pretty-printed so a human can
  *  still read it without `jq`; `jq` accepts both forms equally.
  */
-internal fun runBackendCommand(
+fun runBackendCommand(
     out: PrintStream,
     json: Boolean = false,
     homePaths: HomePaths = resolveHomePaths(),
-) {
+) : Int {
     val rows = collectBackendRows(homePaths)
     if (json) {
         renderBackendJson(rows, out)
     } else {
         renderBackendOutput(rows, out)
     }
+    return 0
 }
 
-internal fun collectBackendRows(
+fun collectBackendRows(
     homePaths: HomePaths = resolveHomePaths(),
 ): List<BackendRow> {
     val discovery = createIdeDiscoveryService(homePaths)
@@ -171,7 +172,7 @@ internal fun collectBackendRows(
     }
 }
 
-internal fun scanMarkersOnce(
+fun scanMarkersOnce(
     homePaths: HomePaths = resolveHomePaths(),
 ): Set<DiscoveredIde> {
     val discovery = createIdeDiscoveryService(homePaths)
@@ -179,7 +180,7 @@ internal fun scanMarkersOnce(
     return discovery.ides.value
 }
 
-internal fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
+fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
     val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     return IdeDiscoveryService(
@@ -189,7 +190,7 @@ internal fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryServic
     )
 }
 
-internal fun runBackendDownloadCommand(
+fun runBackendDownloadCommand(
     out: PrintStream,
     homePaths: HomePaths,
     mode: CliMode.Backend.Download,
@@ -228,7 +229,7 @@ internal fun runBackendDownloadCommand(
     return 0
 }
 
-internal fun runBackendStartCommand(
+fun runBackendStartCommand(
     out: PrintStream,
     homePaths: HomePaths,
     mode: CliMode.Backend.Start,
@@ -264,7 +265,7 @@ internal fun runBackendStartCommand(
     return 0
 }
 
-internal fun runBackendStopCommand(
+fun runBackendStopCommand(
     out: PrintStream,
     homePaths: HomePaths,
     mode: CliMode.Backend.Stop,
@@ -305,7 +306,7 @@ internal fun runBackendStopCommand(
     return 0
 }
 
-internal fun runBackendActionJson(
+fun runBackendActionJson(
     out: PrintStream,
     action: String,
     id: String,
@@ -351,7 +352,7 @@ private fun backendVmOptionsPath(homePaths: HomePaths, id: String): java.nio.fil
  * One-shot port scan. Wraps [IntelliJPortDiscovery.scanOnce] + reads the
  * resulting set. Separate function so tests can drive it independently.
  */
-internal suspend fun collectPortDiscoveredIdes(
+suspend fun collectPortDiscoveredIdes(
     portDiscovery: IntelliJPortDiscovery,
 ): Set<DiscoveredIdeByPort> {
     portDiscovery.scanOnce()
@@ -368,7 +369,7 @@ internal suspend fun collectPortDiscoveredIdes(
  *
  * Exposed `internal` so a dedupe test can drive it without HTTP.
  */
-internal fun mergeRows(
+fun mergeRows(
     markerRows: List<BackendRow.FromMarker>,
     portIdes: Set<DiscoveredIdeByPort>,
     managedBackends: List<ManagedBackendInfo> = emptyList(),
@@ -411,7 +412,7 @@ internal fun mergeRows(
  * builds (`261.23567.138`). Returns `null` for null/blank input so callers
  * can use it as a Map key without further filtering.
  */
-internal fun normaliseBuildForDedup(build: String?): String? {
+fun normaliseBuildForDedup(build: String?): String? {
     if (build.isNullOrBlank()) return null
     return build.replaceFirst(Regex("^[A-Z]+-"), "")
 }
@@ -455,7 +456,7 @@ private fun matchingManagedIds(
  * [BackendRow.FromMarker.projects] = `null` so the renderer can flag the
  * IDE without taking down the whole list.
  */
-internal suspend fun collectMarkerSnapshots(
+suspend fun collectMarkerSnapshots(
     httpClient: HttpClient,
     ides: List<DiscoveredIde>,
     perIdeTimeout: Duration,
@@ -557,10 +558,7 @@ private suspend fun fetchFirstSnapshot(
  * list, the list itself uses `[N]` index markers so it visibly is a list,
  * and the trailing blank line gives shells a clean separator.
  */
-internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
-    out.println()
+fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     if (rows.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
@@ -603,12 +601,12 @@ private fun backendActionSuffix(row: BackendRow): String = when (row) {
  * Example query:
  *   mcp-steroid-proxy backend --json | jq '.backends[] | select(.source=="marker")'
  */
-internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
+fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
     val rowsWithIds = backendRowsWithStableIds(rows)
     val json = Json { prettyPrint = true; encodeDefaults = true }
     val payload = buildJsonObject {
         put("tool", buildJsonObject {
-            put("name", BRAND_NAME)
+            put("name", "devrig")
             put("version", ProxyVersionMetadata.getProxyVersion())
         })
         put("backends", buildJsonArray {

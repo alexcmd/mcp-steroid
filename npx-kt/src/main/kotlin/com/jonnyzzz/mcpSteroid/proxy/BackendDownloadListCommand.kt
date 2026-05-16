@@ -66,7 +66,6 @@ internal fun runBackendDownloadListCommand(
     },
 ) {
     if (!json) {
-        renderBackendDownloadListBanner(out)
         out.flush()
     }
     val rows = runBlocking(Dispatchers.IO) {
@@ -127,14 +126,7 @@ private fun licenseTierSortKey(tier: LicenseTier): Int = when (tier) {
 }
 
 internal fun renderBackendDownloadListText(rows: List<AvailableBackendDownload>, out: PrintStream) {
-    renderBackendDownloadListBanner(out)
     renderBackendDownloadListRowsText(rows, out)
-}
-
-internal fun renderBackendDownloadListBanner(out: PrintStream) {
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
-    out.println()
 }
 
 internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownload>, out: PrintStream) {
@@ -241,7 +233,7 @@ internal val backendPrettyJson: Json = Json {
 
 internal fun kotlinx.serialization.json.JsonObjectBuilder.putToolJson() {
     put("tool", buildJsonObject {
-        put("name", BRAND_NAME)
+        put("name", "devrig")
         put("version", ProxyVersionMetadata.getProxyVersion())
     })
 }

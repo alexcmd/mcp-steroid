@@ -1,100 +1,120 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
-import java.io.PrintStream
-
-class NpxKtArgs(args: Array<String>) {
+class NpxKtArgs(
+    args: Array<String>,
+    private val parent: NpxKtArgs? = null
+) {
     val args = args.toList()
 
-    fun parseDebugFlag() = parseDebugFlag(args.toTypedArray())
-
-    fun parseCliMode() = parseCliMode(args.toTypedArray())
+    fun parseDebugFlag() = option("--debug")
+    fun jsonFlag() : Boolean = option("--json")
 
     override fun toString(): String {
-        return "NpxKtArgs(${args.joinToString(" ")})"
+        val s = "NpxKtArgs(${args.joinToString(" ")})"
+        if (parent != null) return s + parent.toString()
+        return s
     }
-}
 
+    fun command() : NpxKtCommand? {
+        val isMcp = arg("mcp")
+        if (isMcp) return NpxKtCommand.MCP()
 
-/** Brand presented in CLI banners — see [BRAND_TAGLINE] for the full slogan. */
-const val BRAND_NAME: String = "devrig"
+        argsSliceAfterPrefix("backend")?.let { restArgs ->
+            restArgs.argsSliceAfterPrefix("start")?.let { restArgs ->
+                return NpxKtCommand.NpxCommandBackendStart(restArgs)
+            }
 
-/** Tagline used by the help banner and the `backend` subcommand's header. */
-const val BRAND_TAGLINE: String =
-    "This environment empowers your AI with the best deterministic coding tools."
+            restArgs.argsSliceAfterPrefix("stop")?.let { restArgs ->
+                return NpxKtCommand.NpxCommandBackendStop(restArgs)
+            }
 
-const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
+            restArgs.argsSliceAfterPrefix("download")?.let { restArgs ->
+                return NpxKtCommand.NpxCommandBackendDownload(restArgs)
+            }
 
-/**
- * What the user asked the launcher to do. Resolved by [parseCliMode] BEFORE any
- * other code runs — the MCP path must redirect `System.out` to stderr before
- * any logger / class loader has a chance to print to it, so we keep this
- * function pure and dependency-free.
- */
-sealed interface CliMode {
-    /** `mpc` was passed. Run as the stdio MCP server. */
-    object Mcp : CliMode
+            restArgs.argsSliceAfterPrefix("provision")?.let { restArgs ->
+                return NpxKtCommand.NpxCommandBackendProvision(restArgs)
+            }
 
-    /** `--help`, `-h`, or no args — print usage on stdout and exit 0. */
-    object Help : CliMode
+            return NpxKtCommand.NpxCommandBackendX(restArgs)
+        }
 
-    /** `--version` or `-v` — print the proxy version on stdout and exit 0. */
-    object Version : CliMode
+        argsSliceAfterPrefix("project")?.let {
+            return NpxKtCommand.NpxCommandProject(it)
+        }
 
-    /**
-     * `backend` subcommand — print the set of discovered IDEs (version + open
-     * projects) on stdout and exit 0. One-shot snapshot, no streaming.
-     *
-     * Output format is selected by the `--json` flag: omitted ⇒ [Text] (human
-     * banner + numbered list), present ⇒ [Json] (single object on stdout
-     * suitable for `jq` / scripting). Sealed interface so callers can pattern-
-     * match without losing the format-orthogonal "this is the backend mode"
-     * signal.
-     */
-    sealed interface Backend : CliMode {
-        data object Text : Backend
-        data object Json : Backend
-        data class DownloadList(val json: Boolean) : Backend
-        data class StartList(val json: Boolean) : Backend
-        data class StopList(val json: Boolean) : Backend
-        data class ProvisionList(val json: Boolean) : Backend
-        data class Download(
-            val id: String,
-            val versionOverride: String?,
-            val json: Boolean = false,
-        ) : Backend
-        data class Start(
-            val id: String,
-            val versionOverride: String?,
-            val json: Boolean = false,
-        ) : Backend
-        data class Stop(
-            val id: String,
-            val versionOverride: String?,
-            val json: Boolean = false,
-        ) : Backend
-        data class Provision(
-            val id: String,
-            val json: Boolean = false,
-        ) : Backend
+        val isVersion = arg("version") || arg("--version") || arg("-v")
+        if (isVersion) return NpxKtCommand.NpxCommandVersion()
+
+        val isHelp = arg("--help") || arg("-h") || arg("help")
+        if (isHelp) return NpxKtCommand.NpxCommandHelp()
+
+        return null
     }
 
     /**
-     * `project` subcommand — print every open project across discovered IDEs
-     * that have the mcp-steroid plugin installed. One-shot snapshot, no
-     * streaming.
-     *
-     * Output format mirrors [Backend]: omitted `--json` ⇒ [Text], present
-     * `--json` ⇒ [Json].
+     * Looks in the commandline for [cmdArg] and returns all arguments after it
      */
-    sealed interface Project : CliMode {
-        data object Text : Project
-        data object Json : Project
+    fun argsSliceAfterPrefix(cmdArg: String): NpxKtArgs? {
+        require(!cmdArg.startsWith("--"))
+
+        val command = args.withIndex()
+            .singleOrNull { it.value.equals(cmdArg, ignoreCase = true) }
+            ?: return null
+
+        val index = command.index
+        //TODO: include all --args too
+        return NpxKtArgs(args.subList(index + 1, args.size).toTypedArray(), parent = this)
     }
 
-    /** Unknown arg(s). Print usage on stderr and exit non-zero. */
-    data class Unknown(val args: List<String>, val hint: String? = null) : CliMode
+    fun arg(arg: String): Boolean {
+        require(!arg.startsWith("--"))
+
+        return args.any {
+            it.equals(arg, ignoreCase = true)
+        }
+    }
+
+    fun option(arg: String): Boolean {
+        require(arg.startsWith("--"))
+
+        return args.any {
+            it.equals(arg, ignoreCase = true)
+        } || parent?.option(arg) ?: false
+    }
+
+    fun arg(arg1: String, arg2: String): Boolean {
+        require(!arg1.startsWith("--"))
+        require(!arg2.startsWith("--"))
+
+        for (i in args.indices) {
+            if (i == args.lastIndex) continue
+            if (!args[i].equals(arg1, ignoreCase = true)) continue
+            if (!args[i+1].equals(arg2, ignoreCase = true)) continue
+            return true
+        }
+
+        return false
+    }
+
 }
+
+sealed interface NpxKtCommand {
+    class MCP : NpxKtCommand
+
+    class NpxCommandBackendX(val restArgs: NpxKtArgs): NpxKtCommand
+    class NpxCommandBackendDownload(val restArgs: NpxKtArgs): NpxKtCommand
+    class NpxCommandBackendStart(val restArgs: NpxKtArgs): NpxKtCommand
+    class NpxCommandBackendStop(val restArgs: NpxKtArgs): NpxKtCommand
+    class NpxCommandBackendProvision(val restArgs: NpxKtArgs): NpxKtCommand
+
+    class NpxCommandProject(val restArgs: NpxKtArgs) : NpxKtCommand
+
+    class NpxCommandHelp : NpxKtCommand
+    class NpxCommandVersion : NpxKtCommand
+}
+
 
 /**
  * Normalised argv shape used by [parseCliMode]. Flags keep their leading dash;
@@ -292,30 +312,6 @@ fun parseCliMode(args: Array<String>): CliMode {
     return rule.build(parsed)
 }
 
-/**
- * `--debug` toggles verbose stderr logging (DEBUG instead of INFO). Pure and
- * orthogonal to [parseCliMode] — `--debug` is valid in EVERY mode, including
- * `mpc` where it still goes to stderr (stdout stays reserved for NDJSON).
- */
-fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
-
-private fun ParsedArgs.hasFlag(flag: String): Boolean = flags.containsKey(flag)
-
-private fun List<String>.hasVersionSelector(): Boolean {
-    var index = 0
-    while (index < size) {
-        when (this[index]) {
-            "-v" -> return true
-            "--version" -> {
-                val value = getOrNull(index + 1)
-                if (value == null || value.startsWith("-") || value in knownModeKeywords) return true
-                index += 2
-            }
-            else -> index++
-        }
-    }
-    return false
-}
 
 private fun parseValueFlagFailure(
     args: List<String>,
@@ -512,122 +508,56 @@ private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\
  * [main]. Help and version go to stdout (standard CLI convention); the
  * error variant goes to stderr.
  */
-fun runCli(
-    mode: CliMode,
+suspend fun NpxKtServices.runCli(
+    command: NpxKtCommand?,
     homePaths: HomePaths,
-): Int = when (mode) {
-    CliMode.Mcp -> error("runCli called with CliMode.Mcp — caller should branch to mainImpl instead")
-    CliMode.Help -> {
-        printHelp(System.out)
-        0
-    }
-    CliMode.Version -> {
-        println(ProxyVersionMetadata.getProxyVersion())
-        0
-    }
-    is CliMode.Backend -> {
-        try {
-            when (mode) {
-                CliMode.Backend.Text -> {
-                    runBackendCommand(System.out, json = false, homePaths = homePaths)
-                    0
-                }
-                CliMode.Backend.Json -> {
-                    runBackendCommand(System.out, json = true, homePaths = homePaths)
-                    0
-                }
-                is CliMode.Backend.DownloadList -> {
-                    runBackendDownloadListCommand(System.out, json = mode.json)
-                    0
-                }
-                is CliMode.Backend.StartList -> {
-                    runBackendStartListCommand(System.out, homePaths, json = mode.json)
-                    0
-                }
-                is CliMode.Backend.StopList -> {
-                    runBackendStopListCommand(System.out, homePaths, json = mode.json)
-                    0
-                }
-                is CliMode.Backend.ProvisionList -> {
-                    runBackendProvisionListCommand(System.out, json = mode.json)
-                    0
-                }
-                is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
-                is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
-                is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
-                is CliMode.Backend.Provision -> runBackendProvisionCommand(System.out, mode)
-            }
-        } catch (e: ManagedBackendLockException) {
-            System.err.println(e.message)
-            64
-        } catch (e: ManagedBackendValidationException) {
-            System.err.println(e.message)
-            64
-        }
-    }
-    is CliMode.Project -> {
-        runProjectCommand(System.out, json = mode is CliMode.Project.Json)
-        0
-    }
-    is CliMode.Unknown -> {
-        System.err.println("Unknown argument(s): ${mode.args.joinToString(" ")}")
-        mode.hint?.let { System.err.println(it) }
+): Int = when (command) {
+    is NpxKtCommand.MCP-> error("runCli called with NpxKtCommand.MCP")
+
+
+    NpxKtCommand.NpxCommandHelp -> printHelp(System.out)
+    NpxKtCommand.NpxCommandVersion -> printVersion(System.out)
+
+
+    null -> {
+        System.err.println("Unknown argument(s): ${args.args.joinToString(" ")}")
         printHelp(System.err)
         64
     }
+    NpxKtCommand.NpxCommandBackend -> handleBackendCommandFamily(homePaths)
+    NpxKtCommand.NpxCommandProject -> runProjectCommand(System.out, json = args.jsonFlag())
 }
 
-private fun printHelp(out: PrintStream) {
-    val version = ProxyVersionMetadata.getProxyVersion()
-    out.print(
-        """
-        $BRAND_NAME v$version — $BRAND_TAGLINE
+suspend fun NpxKtServices.handleBackendCommandFamily(): Int {
+    try {
+        val isDownload = args.arg("backend", "download")
+        val isStart = args.arg("backend", "start")
+        val isStop = args.arg("backend", "stop")
+        val isProvision = args.arg("backend", "provision")
 
-        Usage:
-          devrig mpc                           run as an MCP stdio server
-                                               (stdin / stdout reserved for the MCP transport)
-          devrig backend [--json]              list discovered backends (with versions) and the
-                                               projects each one has open. `--json` emits a
-                                               single machine-readable object on stdout
-                                               (pipe through `jq`); default is human text.
-          devrig project [--json]              list open projects across discovered backends.
-                                               `--json` emits a single machine-readable
-                                               object on stdout; default is human text.
-          devrig backend download [<id>] [--version <v>] [--json]
-                                               no id → list IDEs available for download.
-                                               With id, download and install a managed
-                                               backend under the devrig home. Accepts
-                                               <product>, <product>:<version>, or
-                                               <product>-<version>.
-          devrig backend start    [<id>] [--version <v>] [--json]
-                                               no id → list installed backends. With id,
-                                               start an installed managed backend in
-                                               detached mode and print its pid/log/config
-                                               paths. Product-only id prefers the
-                                               highest locally installed backend.
-          devrig backend stop     [<id>] [--version <v>] [--json]
-                                               no id → list currently running backends.
-                                               With id, stop a managed backend by pid file.
-                                               Product-only id prefers the highest
-                                               locally installed backend.
-          devrig backend provision [<id>] [--json]
-                                               no id → list port-discovered IDEs that can be
-                                               provisioned. With id (for example port-63342),
-                                               print manual MCP Steroid plugin install
-                                               instructions for that IDE.
-          devrig --version | -v                print the proxy version and exit
-          devrig --help    | -h                print this help and exit
+        val isJson = args.jsonFlag()
 
-        Options applicable to every mode:
-          --debug                              enable verbose stderr logging (DEBUG)
-                                               — without it, INFO+ are shown.
+        when {
+            isDownload -> runBackendDownloadListCommand(System.out, json = isJson)
+            isStart -> runBackendStartListCommand(System.out, homePaths, json = isJson)
+            isStop -> runBackendStopListCommand(System.out, homePaths, json = isJson)
+            isProvision -> runBackendProvisionListCommand(System.out, json = isJson)
 
-        Unknown flags or extra arguments are rejected with exit code 64.
-        Run with --debug for verbose logging.
+            else -> runBackendCommand(System.out, json = isJson, homePaths = homePaths)
 
-        The MCP mode is intentionally opt-in: the launcher behaves like a regular CLI by
-        default so it can be inspected (`--help`, `--version`, `backend`, `project`) without
-        consuming stdin or committing stdout to the JSON-RPC framing convention.
-        """.trimIndent() + "\n"
-    )
+
+
+            is CliMode.Backend.Download -> runBackendDownloadCommand(System.out, homePaths, mode)
+            is CliMode.Backend.Start -> runBackendStartCommand(System.out, homePaths, mode)
+            is CliMode.Backend.Stop -> runBackendStopCommand(System.out, homePaths, mode)
+            is CliMode.Backend.Provision -> runBackendProvisionCommand(System.out, mode)
+        }
+
+    } catch (e: ManagedBackendLockException) {
+        System.err.println(e.message)
+        64
+    } catch (e: ManagedBackendValidationException) {
+        System.err.println(e.message)
+        64
+    }
 }

@@ -55,7 +55,7 @@ suspend fun checkForUpdates() {
     val newVersion = remoteVersion.versionBase
     val message = buildString {
         appendLine()
-        appendLine("A new version of $BRAND_NAME is available: $newVersion (current: $currentVersion)")
+        appendLine("A new version of devrig is available: $newVersion (current: $currentVersion)")
         appendLine("Download update from: https://mcp-steroid.jonnyzzz.com/releases/")
         appendLine()
     }

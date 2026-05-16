@@ -62,42 +62,46 @@ fun NpxKtServices.mainImpl1() {
     }
 }
 
-suspend fun NpxKtServices.mainImpl2() = coroutineScope{
+suspend fun NpxKtServices.mainImpl2() : Unit = coroutineScope {
     launch {
         delay(Random.nextInt(200, 1300).milliseconds)
         checkForUpdates()
     }
 
-    val mode = args.parseCliMode()
-
+    val command = args.command()
     launch {
-        beacon.captureStarted(mode)
+        beacon.captureStarted(command)
     }
 
-    if (mode is CliMode.Mcp) {
+    val headliner = buildString {
+        val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+        appendLine("devrig v$proxyVersion — This environment empowers your AI with the best deterministic coding tools.")
+        appendLine()
+    }
+
+    if (command is NpxKtCommand.MCP) {
         beacon.runHeartbeat()
-    }
 
+        val mcpStdin: InputStream = System.`in`
+        val mcpStdout: PrintStream = System.out
+        System.setOut(System.err)
+        System.err.println(headliner)
 
-    if (mode !is CliMode.Mcp) {
         try {
-            val cliResult = runCli(mode, homePaths)
-            exitProcess(cliResult)
+            mainImplMcp(mcpStdin, mcpStdout)
         } catch (t: Throwable) {
-            System.err.println("Unexpected error calling $mode. ${t.message}")
+            System.err.println("Unexpected error ${t.message}")
             t.printStackTrace(System.err)
             exitProcess(64)
         }
     }
 
-    val mcpStdin: InputStream = System.`in`
-    val mcpStdout: PrintStream = System.out
-    System.setOut(System.err)
-
+    println(headliner)
     try {
-        mainImplMcp(mcpStdin, mcpStdout)
+        val cliResult = runCli(command, homePaths)
+        exitProcess(cliResult)
     } catch (t: Throwable) {
-        System.err.println("Unexpected error ${t.message}")
+        System.err.println("Unexpected error calling $command. ${t.message}")
         t.printStackTrace(System.err)
         exitProcess(64)
     }

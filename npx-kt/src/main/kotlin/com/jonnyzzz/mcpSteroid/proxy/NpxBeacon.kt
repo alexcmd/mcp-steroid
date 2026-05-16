@@ -58,16 +58,14 @@ class NpxBeacon(
         }
     }
 
-    fun captureStarted(cliMode: CliMode) {
+    fun captureStarted(cliMode: NpxKtCommand?) {
         val mode = when (cliMode) {
-            is CliMode.Mcp -> "mcp"
-            is CliMode.Backend.Start -> "start"
-            is CliMode.Backend -> "backend"
-            is CliMode.Project -> "project"
-
-            is CliMode.Help -> null
-            is CliMode.Version -> null
-            is CliMode.Unknown -> null
+            NpxKtCommand.MCP -> "mcp"
+            NpxKtCommand.NpxCommandBackend -> "backend"
+            NpxKtCommand.NpxCommandProject -> "project"
+            NpxKtCommand.NpxCommandHelp -> null
+            NpxKtCommand.NpxCommandVersion -> null
+            null -> null
         } ?: return
 
         capture("devrig_started", mapOf("mode" to mode))

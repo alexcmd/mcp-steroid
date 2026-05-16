@@ -92,18 +92,18 @@ internal suspend fun detectProvisionTargets(
 
 internal fun provisionTargetId(port: Int): String = "port-$port"
 
-internal fun provisionCommand(id: String): String = "$BRAND_NAME backend provision $id"
+internal fun provisionCommand(id: String): String = "devrig backend provision $id"
 
 private fun unknownProvisionTargetMessage(id: String, targets: List<ProvisionTarget>): String = buildString {
     appendLine("Unknown backend provision target '$id'.")
     if (targets.isEmpty()) {
-        append("No port-discovered IDEs are available. Run `$BRAND_NAME backend provision` to scan again.")
+        append("No port-discovered IDEs are available. Run `devrig backend provision` to scan again.")
     } else {
         appendLine("Available provision targets:")
         for (target in targets) {
             appendLine("  ${target.id}  ${portBackendDisplayName(target.ide)} (${portBackendLocatorLabel(target.ide)})")
         }
-        append("Run `$BRAND_NAME backend provision <id>` with one of the ids above.")
+        append("Run `devrig backend provision <id>` with one of the ids above.")
     }
 }
 

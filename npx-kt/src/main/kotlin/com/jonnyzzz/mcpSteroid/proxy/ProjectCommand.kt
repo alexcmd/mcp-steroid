@@ -12,14 +12,15 @@ internal data class ProjectListing(
 
 internal fun runProjectCommand(
     out: PrintStream,
-    json: Boolean = false,
-) {
+    json: Boolean,
+) : Int {
     val listing = projectListingFromRows(collectBackendRows())
     if (json) {
         renderProjectJson(listing, out)
     } else {
         renderProjectOutput(listing, out)
     }
+    return 0
 }
 
 internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = ProjectListing(
@@ -50,10 +51,6 @@ internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = Pr
  * fetch failed are excluded from the project list and reported in a footer.
  */
 internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
-    out.println()
-
     if (listing.markerRows.isEmpty() && listing.portRows.isEmpty() && listing.managedRows.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()

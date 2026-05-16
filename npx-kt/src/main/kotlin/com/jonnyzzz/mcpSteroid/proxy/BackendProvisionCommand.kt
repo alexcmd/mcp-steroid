@@ -68,13 +68,10 @@ internal fun renderBackendProvisionListText(
     out: PrintStream,
     markerRows: Set<DiscoveredIde> = emptySet(),
 ) {
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
-    out.println()
     if (rows.isEmpty()) {
         if (markerRows.isNotEmpty()) {
             out.println("All running IDEs already have MCP Steroid installed.")
-            out.println("Run \"$BRAND_NAME backend\" to see them.")
+            out.println("Run \"devrig backend\" to see them.")
         } else {
             out.println("No port-discovered IDEs are available.")
         }
@@ -92,7 +89,7 @@ internal fun renderBackendProvisionListText(
         out.println("        run: ${row.command}")
     }
     out.println()
-    out.println("Run:  $BRAND_NAME backend provision <id>")
+    out.println("Run:  devrig backend provision <id>")
     out.println()
 }
 
@@ -157,9 +154,6 @@ internal fun provisionActionJson(id: String): JsonObject = buildJsonObject {
 private fun renderProvisionInstructionsText(result: ProvisionResult, out: PrintStream) {
     val productName = provisionTargetProductName(result.about, result.selector)
     val version = provisionTargetVersion(result.about)
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
-    out.println()
     out.println("Target: $productName $version (port ${result.ide.port})")
     out.println()
     out.println("MCP Steroid is not installed in this IDE. To install:")
