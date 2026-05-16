@@ -5,7 +5,7 @@ import com.jonnyzzz.mcpSteroid.PidMarker
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal class HomePaths(val home: Path) {
+class HomePaths(val home: Path) {
     val logsDir: Path get() = home.resolve("logs")
     val backendsDir: Path get() = home.resolve("backends")
     val cachesDir: Path get() = home.resolve("caches")
@@ -23,7 +23,7 @@ internal class HomePaths(val home: Path) {
     }
 }
 
-internal fun resolveHomePaths(
+fun resolveHomePaths(
     override: String?,
     env: Map<String, String> = System.getenv(),
 ): HomePaths {
