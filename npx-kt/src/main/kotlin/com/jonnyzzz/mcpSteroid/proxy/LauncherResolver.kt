@@ -9,14 +9,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 
-internal data class LauncherResolution(
+data class LauncherResolution(
     val launcherPath: String,
     val launcherAbsolutePath: Path,
     val productCode: String?,
     val buildNumber: String?,
 )
 
-internal class LauncherResolver(
+class LauncherResolver(
     private val hostOs: HostOs = resolveHostOs(),
 ) {
     fun resolve(bundleDir: Path): LauncherResolution {

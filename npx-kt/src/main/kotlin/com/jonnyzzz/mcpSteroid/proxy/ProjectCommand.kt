@@ -4,13 +4,13 @@ package com.jonnyzzz.mcpSteroid.proxy
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import java.io.PrintStream
 
-internal data class ProjectListing(
+data class ProjectListing(
     val markerRows: List<BackendRow.FromMarker>,
     val portRows: List<BackendRow.FromPort>,
     val managedRows: List<BackendRow.FromManaged> = emptyList(),
 )
 
-internal fun runProjectCommand(
+fun runProjectCommand(
     out: PrintStream,
     command: NpxKtCommand.NpxCommandProject,
 ) : Int {
@@ -31,7 +31,7 @@ internal fun runProjectCommand(
     return 0
 }
 
-internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = ProjectListing(
+fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = ProjectListing(
     markerRows = rows.filterIsInstance<BackendRow.FromMarker>(),
     portRows = rows.filterIsInstance<BackendRow.FromPort>(),
     managedRows = rows.filterIsInstance<BackendRow.FromManaged>(),
@@ -56,7 +56,7 @@ internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = Pr
  * `backend` command fetches. Port-only IDEs and marker IDEs whose snapshot
  * fetch failed are excluded from the project list and reported in a footer.
  */
-internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
+fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
     if (listing.markerRows.isEmpty() && listing.portRows.isEmpty() && listing.managedRows.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
@@ -108,7 +108,7 @@ internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
  * Delegates to [renderBackendJson] so `project --json` is byte-for-byte
  * identical to `backend --json` for the same discovery rows.
  */
-internal fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
+fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
     val rows: List<BackendRow> = listing.markerRows + listing.portRows + listing.managedRows
     renderBackendJson(rows, out)
 }

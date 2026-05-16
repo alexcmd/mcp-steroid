@@ -24,23 +24,23 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-internal data class AvailableBackendDownload(
+data class AvailableBackendDownload(
     val product: IdeProduct,
     val version: String?,
     val releaseDate: String? = null,
     val versionLookupError: String? = null,
 )
 
-internal data class AvailableBackendRelease(
+data class AvailableBackendRelease(
     val version: String,
     val releaseDate: String? = null,
 )
 
-internal interface AvailableBackendVersionResolver {
+interface AvailableBackendVersionResolver {
     suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease
 }
 
-internal class ReleaseServiceAvailableBackendVersionResolver(
+class ReleaseServiceAvailableBackendVersionResolver(
     private val os: HostOs = resolveHostOs(),
 ) : AvailableBackendVersionResolver {
     override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease = withContext(Dispatchers.IO) {
@@ -57,7 +57,7 @@ internal class ReleaseServiceAvailableBackendVersionResolver(
     }
 }
 
-internal fun runBackendDownloadListCommand(
+fun runBackendDownloadListCommand(
     out: PrintStream,
     json: Boolean,
     versionResolver: AvailableBackendVersionResolver = ReleaseServiceAvailableBackendVersionResolver(),
@@ -78,7 +78,7 @@ internal fun runBackendDownloadListCommand(
     }
 }
 
-internal suspend fun collectAvailableBackendDownloads(
+suspend fun collectAvailableBackendDownloads(
     products: List<IdeProduct> = orderedKnownBackendProducts(),
     versionResolver: AvailableBackendVersionResolver,
     totalBudget: Duration = 15.seconds,
@@ -125,20 +125,20 @@ private fun licenseTierSortKey(tier: LicenseTier): Int = when (tier) {
     LicenseTier.Paid -> 2
 }
 
-internal fun renderBackendDownloadListText(rows: List<AvailableBackendDownload>, out: PrintStream) {
+fun renderBackendDownloadListText(rows: List<AvailableBackendDownload>, out: PrintStream) {
     renderBackendDownloadListRowsText(rows, out)
 }
 
-internal fun renderBackendDownloadListBanner(out: PrintStream) {
+fun renderBackendDownloadListBanner(out: PrintStream) {
     out.println("Available IDEs (defaults to latest stable):")
     out.println()
 }
 
-internal fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownload>, out: PrintStream) {
+fun renderBackendDownloadListRowsText(rows: List<AvailableBackendDownload>, out: PrintStream) {
     renderBackendDownloadListRowsText(rows, out, afterRunLine = null)
 }
 
-internal fun renderBackendDownloadListRowsText(
+fun renderBackendDownloadListRowsText(
     rows: List<AvailableBackendDownload>,
     out: PrintStream,
     afterRunLine: String?,
@@ -167,7 +167,7 @@ internal fun renderBackendDownloadListRowsText(
     out.println()
 }
 
-internal fun renderBackendDownloadListJson(rows: List<AvailableBackendDownload>, out: PrintStream) {
+fun renderBackendDownloadListJson(rows: List<AvailableBackendDownload>, out: PrintStream) {
     val payload = buildJsonObject {
         putToolJson()
         put("available", availableBackendDownloadsJson(rows))
@@ -175,7 +175,7 @@ internal fun renderBackendDownloadListJson(rows: List<AvailableBackendDownload>,
     out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
 }
 
-internal fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>) = buildJsonArray {
+fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>) = buildJsonArray {
     for (row in rows) {
         add(buildJsonObject {
             put("id", row.product.id)
@@ -204,38 +204,38 @@ private fun renderLicenseLegend(rows: List<AvailableBackendDownload>, out: Print
 private fun AvailableBackendDownload.versionText(): String =
     version ?: "(version lookup failed: ${versionLookupError ?: "unknown"})"
 
-internal val LicenseTier.cliValue: String
+val LicenseTier.cliValue: String
     get() = when (this) {
         LicenseTier.Free -> "free"
         LicenseTier.FreeForNonCommercial -> "free-for-non-commercial"
         LicenseTier.Paid -> "paid"
     }
 
-internal val LicenseTier.licenseSymbol: String
+val LicenseTier.licenseSymbol: String
     get() = when (this) {
         LicenseTier.Free -> ""
         LicenseTier.FreeForNonCommercial -> "**"
         LicenseTier.Paid -> "*"
     }
 
-internal val LicenseTier.licenseNote: String
+val LicenseTier.licenseNote: String
     get() = when (this) {
         LicenseTier.Free -> ""
         LicenseTier.FreeForNonCommercial -> "Free for non-commercial use; JetBrains license required for commercial use."
         LicenseTier.Paid -> "Requires a JetBrains license."
     }
 
-internal fun Throwable.shortMessage(): String {
+fun Throwable.shortMessage(): String {
     val raw = message?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() } ?: this::class.simpleName ?: "failed"
     return raw.take(140)
 }
 
-internal val backendPrettyJson: Json = Json {
+val backendPrettyJson: Json = Json {
     prettyPrint = true
     encodeDefaults = true
 }
 
-internal fun kotlinx.serialization.json.JsonObjectBuilder.putToolJson() {
+fun kotlinx.serialization.json.JsonObjectBuilder.putToolJson() {
     put("tool", buildJsonObject {
         put("name", "devrig")
         put("version", ProxyVersionMetadata.getProxyVersion())

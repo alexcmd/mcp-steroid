@@ -11,7 +11,7 @@ import java.nio.file.Path
  * accidentally pin root resolution to synthetic paths; tests go through this
  * helper, making the intent explicit at call sites.
  */
-internal object NpxKtRootTestSupport {
+object NpxKtRootTestSupport {
     fun overrideCodeSource(path: Path?) {
         setPrivateField("codeSourcePathForTests", path)
         setPrivateField("cachedPath", null)

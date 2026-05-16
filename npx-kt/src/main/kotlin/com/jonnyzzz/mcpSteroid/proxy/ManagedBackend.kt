@@ -34,7 +34,7 @@ import kotlinx.serialization.json.Json
 import org.apache.commons.compress.archivers.zip.ZipFile
 
 @Serializable
-internal data class BackendDescriptor(
+data class BackendDescriptor(
     val schemaVersion: Int = 1,
     val id: String,
     val productKey: String,
@@ -47,7 +47,7 @@ internal data class BackendDescriptor(
     val sourceArchiveSha256: String? = null,
 )
 
-internal data class DownloadResult(
+data class DownloadResult(
     val id: String,
     val descriptor: BackendDescriptor,
     val backendDir: Path,
@@ -61,7 +61,7 @@ private data class PreparedBackendInstall(
     val downloadedAt: String?,
 )
 
-internal data class StartResult(
+data class StartResult(
     val id: String,
     val pid: Long,
     val ideaLogPath: Path,
@@ -69,20 +69,20 @@ internal data class StartResult(
     val alreadyRunning: Boolean = false,
 )
 
-internal data class StopResult(
+data class StopResult(
     val id: String,
     val pid: Long?,
     val outcome: String,
     val message: String? = null,
 )
 
-internal enum class ManagedBackendState {
+enum class ManagedBackendState {
     INSTALLED,
     RUNNING,
     UNREACHABLE,
 }
 
-internal data class ManagedBackendInfo(
+data class ManagedBackendInfo(
     val id: String,
     val productKey: String,
     val productCode: String,
@@ -94,7 +94,7 @@ internal data class ManagedBackendInfo(
     val state: ManagedBackendState,
 )
 
-internal data class BackendDownloadResolution(
+data class BackendDownloadResolution(
     val product: IdeProduct,
     val version: String,
     val build: String,
@@ -103,12 +103,12 @@ internal data class BackendDownloadResolution(
     val expectedSha256: String? = null,
 )
 
-internal data class BackendDownloadArtifact(
+data class BackendDownloadArtifact(
     val sourceArchiveSha256: String?,
     val archivePath: Path? = null,
 )
 
-internal interface ManagedBackendDownloader {
+interface ManagedBackendDownloader {
     suspend fun resolve(id: BackendId): BackendDownloadResolution
 
     suspend fun downloadAndUnpack(
@@ -117,21 +117,21 @@ internal interface ManagedBackendDownloader {
     ): BackendDownloadArtifact
 }
 
-internal interface BundledPluginResolver {
+interface BundledPluginResolver {
     fun resolveBundledPluginZip(): Path
 }
 
-internal data class ProcessSnapshot(
+data class ProcessSnapshot(
     val pid: Long,
     val command: String?,
 )
 
-internal interface ManagedProcessInspector {
+interface ManagedProcessInspector {
     fun isAlive(pid: Long): Boolean
     fun allProcesses(): List<ProcessSnapshot>
 }
 
-internal object DefaultManagedProcessInspector : ManagedProcessInspector {
+object DefaultManagedProcessInspector : ManagedProcessInspector {
     override fun isAlive(pid: Long): Boolean =
         ProcessHandle.of(pid).getOrNull()?.isAlive == true
 
@@ -143,17 +143,17 @@ internal object DefaultManagedProcessInspector : ManagedProcessInspector {
         }
 }
 
-internal class ManagedBackendLockException(message: String) : RuntimeException(message)
+class ManagedBackendLockException(message: String) : RuntimeException(message)
 
-internal class ManagedBackendValidationException(message: String) : RuntimeException(message)
+class ManagedBackendValidationException(message: String) : RuntimeException(message)
 
-internal interface ManagedBackendService {
+interface ManagedBackendService {
     suspend fun download(id: BackendId): DownloadResult
     suspend fun start(id: BackendId): StartResult
     suspend fun stop(id: BackendId): StopResult
 }
 
-internal class ClasspathBundledPluginResolver : BundledPluginResolver {
+class ClasspathBundledPluginResolver : BundledPluginResolver {
     override fun resolveBundledPluginZip(): Path {
         val pluginZip = NpxKtRoot.ijPluginZip().toAbsolutePath().normalize()
         require(Files.isRegularFile(pluginZip)) {
@@ -190,7 +190,7 @@ private fun unpackPluginZip(source: Path, target: Path) {
     }
 }
 
-internal fun migrateLegacyArchives(homePaths: HomePaths) {
+fun migrateLegacyArchives(homePaths: HomePaths) {
     val legacyDir = homePaths.cachesDir.resolve("_archives")
     if (!Files.isDirectory(legacyDir)) return
 
@@ -210,7 +210,7 @@ internal fun migrateLegacyArchives(homePaths: HomePaths) {
     }
 }
 
-internal class DefaultManagedBackendDownloader(
+class DefaultManagedBackendDownloader(
     private val archiveDownloadDir: Path,
     private val os: HostOs = resolveHostOs(),
 ) : ManagedBackendDownloader {
@@ -252,7 +252,7 @@ internal class DefaultManagedBackendDownloader(
     }
 }
 
-internal class BackendManager(
+class BackendManager(
     private val homePaths: HomePaths,
     private val downloader: ManagedBackendDownloader = DefaultManagedBackendDownloader(
         archiveDownloadDir = homePaths.downloadsDir,
@@ -674,7 +674,7 @@ private data class RunningManagedProcess(
 private fun String.pathKey(): String =
     replace('\\', '/').trimEnd('/').lowercase()
 
-internal fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: String): Path {
+fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: String): Path {
     val cacheDir = homePaths.cacheDir(id).toAbsolutePath().normalize()
     listOf("config", "system", "logs", "plugins", "execution-storage").forEach { Files.createDirectories(cacheDir.resolve(it)) }
     Files.createDirectories(homePaths.backendDir(id))
@@ -706,14 +706,14 @@ internal fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirNa
     return path
 }
 
-internal fun descriptorPath(backendDir: Path): Path = backendDir.resolve("backend.json")
+fun descriptorPath(backendDir: Path): Path = backendDir.resolve("backend.json")
 
-internal fun readDescriptorOrNull(path: Path): BackendDescriptor? {
+fun readDescriptorOrNull(path: Path): BackendDescriptor? {
     if (!path.exists()) return null
     return backendJson.decodeFromString<BackendDescriptor>(Files.readString(path))
 }
 
-internal fun writeDescriptor(path: Path, descriptor: BackendDescriptor) {
+fun writeDescriptor(path: Path, descriptor: BackendDescriptor) {
     Files.createDirectories(path.parent)
     Files.writeString(path, backendJson.encodeToString(descriptor) + "\n")
 }
@@ -724,7 +724,7 @@ private val backendJson = Json {
     ignoreUnknownKeys = true
 }
 
-internal fun validateInstalledProductCode(
+fun validateInstalledProductCode(
     product: IdeProduct,
     actualProductCode: String?,
     downloadedUrl: String,

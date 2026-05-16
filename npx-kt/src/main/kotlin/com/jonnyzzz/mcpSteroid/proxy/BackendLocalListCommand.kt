@@ -15,12 +15,12 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-internal enum class LocalBackendState(val cliValue: String) {
+enum class LocalBackendState(val cliValue: String) {
     INSTALLED("installed"),
     RUNNING("running"),
 }
 
-internal data class InstalledBackendListRow(
+data class InstalledBackendListRow(
     val id: String,
     val productKey: String,
     val version: String,
@@ -31,7 +31,7 @@ internal data class InstalledBackendListRow(
     val cachePath: Path,
 )
 
-internal data class RunningBackendListRow(
+data class RunningBackendListRow(
     val id: String,
     val pid: Long,
     val displayName: String,
@@ -46,7 +46,7 @@ private data class ParsedConcreteBackendId(
     val displayName: String get() = "${product.displayName} $version"
 }
 
-internal fun runBackendStartListCommand(
+fun runBackendStartListCommand(
     out: PrintStream,
     homePaths: HomePaths,
     json: Boolean,
@@ -68,7 +68,7 @@ internal fun runBackendStartListCommand(
     }
 }
 
-internal fun runBackendStopListCommand(
+fun runBackendStopListCommand(
     out: PrintStream,
     homePaths: HomePaths,
     json: Boolean,
@@ -78,7 +78,7 @@ internal fun runBackendStopListCommand(
     if (json) renderBackendStopListJson(rows, out) else renderBackendStopListText(rows, out)
 }
 
-internal fun collectInstalledBackendListRows(
+fun collectInstalledBackendListRows(
     homePaths: HomePaths,
     processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
 ): List<InstalledBackendListRow> {
@@ -96,7 +96,7 @@ internal fun collectInstalledBackendListRows(
     }
 }
 
-internal fun collectRunningBackendListRows(
+fun collectRunningBackendListRows(
     homePaths: HomePaths,
     processInspector: ManagedProcessInspector = DefaultManagedProcessInspector,
 ): List<RunningBackendListRow> {
@@ -168,7 +168,7 @@ private fun readBackendPidOrNull(path: Path): Long? {
 private fun backendProductSortIndex(productKey: String): Int =
     IdeProduct.knownProducts.indexOfFirst { it.id == productKey }.takeIf { it >= 0 } ?: Int.MAX_VALUE
 
-internal fun renderBackendStartListText(
+fun renderBackendStartListText(
     rows: List<InstalledBackendListRow>,
     out: PrintStream,
     availableDownloads: List<AvailableBackendDownload>? = null,
@@ -204,7 +204,7 @@ internal fun renderBackendStartListText(
     out.println()
 }
 
-internal fun renderBackendStopListText(rows: List<RunningBackendListRow>, out: PrintStream) {
+fun renderBackendStopListText(rows: List<RunningBackendListRow>, out: PrintStream) {
     if (rows.isEmpty()) {
         out.println("No managed backends are currently running.")
         return
@@ -222,7 +222,7 @@ internal fun renderBackendStopListText(rows: List<RunningBackendListRow>, out: P
     out.println()
 }
 
-internal fun renderBackendStartListJson(
+fun renderBackendStartListJson(
     rows: List<InstalledBackendListRow>,
     out: PrintStream,
     availableDownloads: List<AvailableBackendDownload>? = null,
@@ -251,7 +251,7 @@ internal fun renderBackendStartListJson(
     out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
 }
 
-internal fun renderBackendStopListJson(rows: List<RunningBackendListRow>, out: PrintStream) {
+fun renderBackendStopListJson(rows: List<RunningBackendListRow>, out: PrintStream) {
     val payload = buildJsonObject {
         putToolJson()
         put("running", buildJsonArray {

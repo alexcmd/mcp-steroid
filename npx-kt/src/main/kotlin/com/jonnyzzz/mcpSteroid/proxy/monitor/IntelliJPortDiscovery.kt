@@ -209,7 +209,7 @@ class IntelliJPortDiscovery(
 }
 
 @Serializable
-internal data class AboutResponse(
+data class AboutResponse(
     val name: String? = null,
     val productName: String? = null,
     val edition: String? = null,
@@ -217,7 +217,7 @@ internal data class AboutResponse(
     val buildNumber: String? = null,
 )
 
-internal val aboutJson: Json = Json {
+val aboutJson: Json = Json {
     ignoreUnknownKeys = true
     isLenient = true
 }

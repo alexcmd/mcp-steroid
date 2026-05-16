@@ -8,9 +8,9 @@ package com.jonnyzzz.mcpSteroid.proxy
  * This deliberately does not handle East-Asian wide characters or combining
  * marks; those need a fuller terminal-width implementation.
  */
-internal fun String.codePointWidth(): Int = codePointCount(0, length)
+fun String.codePointWidth(): Int = codePointCount(0, length)
 
-internal fun String.padEndCodePoints(width: Int): String {
+fun String.padEndCodePoints(width: Int): String {
     val current = codePointWidth()
     if (current >= width) return this
     return this + " ".repeat(width - current)

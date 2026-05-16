@@ -15,7 +15,7 @@ import kotlinx.coroutines.runBlocking
  * NpxBeacon + StdioServer). Not wired into the production launcher.
  */
 @Suppress("unused")
-internal fun legacyProxyMain(args: Array<String>) {
+fun legacyProxyMain(args: Array<String>) {
     val cliArgs = parseArgs(args.toList())
 
     if (cliArgs.help) {

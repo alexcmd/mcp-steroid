@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.proxy
 
 import java.nio.file.Files
 
-internal fun backendFixture(
+fun backendFixture(
     homePaths: HomePaths,
     id: String,
     productKey: String,
@@ -27,7 +27,7 @@ internal fun backendFixture(
     )
 }
 
-internal class FakeProcessInspector(
+class FakeProcessInspector(
     private val alivePids: Set<Long> = emptySet(),
 ) : ManagedProcessInspector {
     override fun isAlive(pid: Long): Boolean = pid in alivePids

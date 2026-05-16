@@ -17,7 +17,7 @@ import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
  * catch only `Exception`, so a `NotImplementedError` would tear down the entire
  * stdio server instead of becoming a proper MCP `ToolCallResult(isError=true)`.
  */
-internal class StubMcpSteroidTools : McpSteroidTools() {
+class StubMcpSteroidTools : McpSteroidTools() {
     override fun <T> handler(type: Class<T>): T =
         throw UnsupportedOperationException(
             "not yet ready: handler<${type.name}>() is not wired in npx-kt yet"

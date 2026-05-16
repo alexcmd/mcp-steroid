@@ -15,10 +15,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.isSuccess
 import java.nio.file.Path
 
-internal const val PROVISION_ACTION_ID = "provision"
-internal const val MCP_STEROID_PLUGIN_DIR_NAME = "mcp-steroid"
+const val PROVISION_ACTION_ID = "provision"
+const val MCP_STEROID_PLUGIN_DIR_NAME = "mcp-steroid"
 
-internal data class ProvisionResult(
+data class ProvisionResult(
     val id: String,
     val ide: DiscoveredIdeByPort,
     val about: AboutResponse,
@@ -29,19 +29,19 @@ internal data class ProvisionResult(
     val suggestedDestination: Path,
 )
 
-internal data class ProvisionTarget(
+data class ProvisionTarget(
     val id: String,
     val ide: DiscoveredIdeByPort,
 ) {
     val command: String get() = provisionCommand(id)
 }
 
-internal suspend fun provisionBackend(
+suspend fun provisionBackend(
     id: String,
     httpClient: HttpClient,
 ): ProvisionResult = BackendProvisioner().provision(id, httpClient)
 
-internal class BackendProvisioner(
+class BackendProvisioner(
     private val bundledPluginResolver: BundledPluginResolver = ClasspathBundledPluginResolver(),
     private val os: HostOs = resolveHostOs(),
     private val userHome: Path = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
@@ -78,7 +78,7 @@ internal class BackendProvisioner(
     }
 }
 
-internal suspend fun detectProvisionTargets(
+suspend fun detectProvisionTargets(
     httpClient: HttpClient,
     portRanges: List<IntRange> = IntelliJPortDiscovery.DEFAULT_PORT_RANGES,
 ): List<ProvisionTarget> {
@@ -90,9 +90,9 @@ internal suspend fun detectProvisionTargets(
     }
 }
 
-internal fun provisionTargetId(port: Int): String = "port-$port"
+fun provisionTargetId(port: Int): String = "port-$port"
 
-internal fun provisionCommand(id: String): String = "devrig backend provision $id"
+fun provisionCommand(id: String): String = "devrig backend provision $id"
 
 private fun unknownProvisionTargetMessage(id: String, targets: List<ProvisionTarget>): String = buildString {
     appendLine("Unknown backend provision target '$id'.")
@@ -117,18 +117,18 @@ private suspend fun fetchAbout(httpClient: HttpClient, baseUrl: String): AboutRe
     return aboutJson.decodeFromString(AboutResponse.serializer(), response.bodyAsText())
 }
 
-internal data class IdePathSelector(
+data class IdePathSelector(
     val selector: String,
     val vendor: String,
 )
 
-internal fun deriveIdePathSelector(about: AboutResponse, productCode: String? = productCodeFromBuild(about.buildNumber)): IdePathSelector {
+fun deriveIdePathSelector(about: AboutResponse, productCode: String? = productCodeFromBuild(about.buildNumber)): IdePathSelector {
     val version = deriveSelectorVersion(about)
     val product = resolvePathProduct(about, productCode)
     return IdePathSelector(selector = product.selectorPrefix + version, vendor = product.vendor)
 }
 
-internal fun deriveSelectorVersion(about: AboutResponse): String {
+fun deriveSelectorVersion(about: AboutResponse): String {
     val fromName = about.name?.let { Regex("""\b(20\d{2}\.\d+)\b""").find(it)?.groupValues?.get(1) }
     if (fromName != null) return fromName
 
@@ -140,7 +140,7 @@ internal fun deriveSelectorVersion(about: AboutResponse): String {
     error("Cannot derive IntelliJ config selector version from /api/about: $about")
 }
 
-internal fun defaultIdePluginsDir(
+fun defaultIdePluginsDir(
     selector: String,
     vendor: String = "JetBrains",
     os: HostOs = resolveHostOs(),
@@ -160,7 +160,7 @@ internal fun defaultIdePluginsDir(
     }
 }
 
-internal fun provisionTargetProductName(about: AboutResponse, selector: String): String {
+fun provisionTargetProductName(about: AboutResponse, selector: String): String {
     if (selector.startsWith("IntelliJIdea")) return "IntelliJ IDEA Ultimate"
     if (selector.startsWith("IdeaIC")) return "IntelliJ IDEA Community"
     return about.name?.let { stripVersionSuffix(it) }
@@ -168,7 +168,7 @@ internal fun provisionTargetProductName(about: AboutResponse, selector: String):
         ?: "JetBrains IDE"
 }
 
-internal fun provisionTargetVersion(about: AboutResponse): String {
+fun provisionTargetVersion(about: AboutResponse): String {
     val fromName = about.name?.let { Regex("""\b(20\d{2}\.\d+(?:\.\d+)*)\b""").find(it)?.groupValues?.get(1) }
     return fromName ?: deriveSelectorVersion(about)
 }
@@ -230,7 +230,7 @@ private fun resolvePathProduct(about: AboutResponse, productCode: String?): Path
     error("Cannot map IDE product to a config selector: productCode=${productCode ?: "<none>"}, productName=${about.productName}, name=${about.name}")
 }
 
-internal fun productCodeFromBuild(buildNumber: String?): String? =
+fun productCodeFromBuild(buildNumber: String?): String? =
     buildNumber?.let { Regex("""^([A-Z]+)-""").find(it)?.groupValues?.get(1) }
 
 private fun baselineFromBuild(buildNumber: String?): Int? =

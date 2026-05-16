@@ -28,7 +28,7 @@ import java.io.OutputStream
  * not the JVM globals after [main] has already routed `System.out` to stderr.
  * Suspends until [input] reaches EOF.
  */
-internal suspend fun runStubStdioMcpServer(
+suspend fun runStubStdioMcpServer(
     input: InputStream,
     output: OutputStream,
 ) {

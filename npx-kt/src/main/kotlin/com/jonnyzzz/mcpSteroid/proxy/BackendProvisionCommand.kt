@@ -16,7 +16,7 @@ import kotlinx.serialization.json.put
 private const val SUGGESTED_DESTINATION_NOTE =
     "Suggested destination assumes the default plugins directory; user-customised paths require manual adjustment."
 
-internal fun runBackendProvisionListCommand(
+fun runBackendProvisionListCommand(
     out: PrintStream,
     json: Boolean,
     targets: suspend (HttpClient) -> List<ProvisionTarget> = { httpClient -> detectProvisionTargets(httpClient) },
@@ -36,7 +36,7 @@ internal fun runBackendProvisionListCommand(
     }
 }
 
-internal fun runBackendProvisionCommand(
+fun runBackendProvisionCommand(
     out: PrintStream,
     command: NpxKtCommand.NpxCommandBackendProvision,
     provision: suspend (HttpClient) -> ProvisionResult = { httpClient ->
@@ -80,9 +80,9 @@ internal fun runBackendProvisionCommand(
     return 0
 }
 
-internal fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""").matches(raw)
+fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""").matches(raw)
 
-internal fun renderBackendProvisionListText(
+fun renderBackendProvisionListText(
     rows: List<ProvisionTarget>,
     out: PrintStream,
     markerRows: Set<DiscoveredIde> = emptySet(),
@@ -112,7 +112,7 @@ internal fun renderBackendProvisionListText(
     out.println()
 }
 
-internal fun renderBackendProvisionListJson(
+fun renderBackendProvisionListJson(
     rows: List<ProvisionTarget>,
     out: PrintStream,
     discoveryNote: String? = null,
@@ -129,7 +129,7 @@ internal fun renderBackendProvisionListJson(
     out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
 }
 
-internal fun filterAlreadyProvisionedTargets(
+fun filterAlreadyProvisionedTargets(
     targets: List<ProvisionTarget>,
     markerRows: Set<DiscoveredIde>,
 ): List<ProvisionTarget> {
@@ -154,7 +154,7 @@ private fun provisionDiscoveryNote(
     return null
 }
 
-internal fun provisionTargetJson(target: ProvisionTarget): JsonObject = buildJsonObject {
+fun provisionTargetJson(target: ProvisionTarget): JsonObject = buildJsonObject {
     put("id", target.id)
     put("displayName", portBackendDisplayName(target.ide))
     put("locator", portBackendLocatorLabel(target.ide))
@@ -164,7 +164,7 @@ internal fun provisionTargetJson(target: ProvisionTarget): JsonObject = buildJso
     })
 }
 
-internal fun provisionActionJson(id: String): JsonObject = buildJsonObject {
+fun provisionActionJson(id: String): JsonObject = buildJsonObject {
     put("id", PROVISION_ACTION_ID)
     put("label", "Install MCP Steroid plugin")
     put("command", provisionCommand(id))
