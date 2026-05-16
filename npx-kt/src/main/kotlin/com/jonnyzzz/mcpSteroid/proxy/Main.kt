@@ -64,7 +64,10 @@ fun main(args: Array<String>) {
     // pins the level for the JVM lifetime.
     applyDebugLogging(parseDebugFlag(args))
 
+    val proxyVersion = loadProxyVersion()
     if (mode !is CliMode.Mcp) {
+        NpxBeacon(proxyVersion = proxyVersion).startInteractive(beaconInvocation(mode))
+        NpxUpdateChecker(currentVersion = proxyVersion).startOneShot()
         exitProcess(runCli(mode, homePaths))
     }
 
@@ -72,6 +75,10 @@ fun main(args: Array<String>) {
     val mcpStdout: PrintStream = System.out
 
     System.setOut(System.err)
+    val beacon = NpxBeacon(proxyVersion = proxyVersion)
+    val updateChecker = NpxUpdateChecker(currentVersion = proxyVersion)
+    beacon.startMcp()
+    updateChecker.startPeriodic()
 
     val ignoredMcpTokens = mcpIgnoredTokens(args)
     if (ignoredMcpTokens.isNotEmpty()) {
@@ -90,6 +97,9 @@ fun main(args: Array<String>) {
         System.err.println("Unexpected error ${t.message}")
         t.printStackTrace(System.err)
         exitProcess(64)
+    } finally {
+        updateChecker.close()
+        beacon.close()
     }
 }
 
