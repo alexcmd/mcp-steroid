@@ -1,7 +1,9 @@
+import com.jonnyzzz.mcpSteroid.gradle.GenerateMetadataTask
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.attributes.Usage
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.security.MessageDigest
 import java.util.SortedSet
 
@@ -246,7 +248,7 @@ distributions {
 
 tasks.test {
     useJUnitPlatform()
-    // Hand the build's project.version through to ProxyVersionResourceTest so it can
+    // Hand the build's project.version through to ProxyVersionMetadataTest so it can
     // end-to-end-assert the value `loadProxyVersion()` returns at runtime.
     systemProperty("npx-kt.expected.version", version.toString())
 }
@@ -255,43 +257,34 @@ kotlin {
     jvmToolchain(21)
 }
 
-// `project.version` rendered as a String once so both the version-resource generator
+// `project.version` rendered as a String once so both the metadata generator
 // (just below) and the bundled-libraries verifier (further down) can use it without
 // re-evaluating Gradle's Provider chain.
 val proxyVersion: String = version.toString()
 
-// Bake `project.version` into a classpath resource (`proxy-version.txt`) consumed by
-// `loadProxyVersion()` in src/main/.../Config.kt. Mirrors how :ij-plugin wires
-// `project.version` through `intellijPlatform.version` → `patchPluginXml` → the
-// `<version>` element in plugin.xml — same idea, different consumer surface.
-//
-// The generated file is the single source of truth for runtime version reporting:
-// it shows up in MCP server-info handshakes, posthog events, and CLI banners. Without
-// the generator the fallback in `loadProxyVersion()` ("0.1.0") would mask the actual
-// build version everywhere it's used.
-//
-// `proxyVersion` is declared further down for the verifier and shared here.
-val generateProxyVersionResource by tasks.registering {
+// Generate the same encoded Kotlin metadata shape as :ij-plugin's PluginMetadata,
+// but in npx-kt's proxy package so runtime version reporting needs no classpath
+// resource fallback.
+val generatedSourcesPath = layout.buildDirectory.dir("generated/kotlin")
+val generateProxyVersionMetadata by tasks.registering(GenerateMetadataTask::class) {
     group = "build"
-    description = "Write project.version into proxy-version.txt for loadProxyVersion()"
+    description = "Generate encoded npx-kt proxy version metadata"
 
-    val outputDir = layout.buildDirectory.dir("generated/resources/proxy-version")
-    inputs.property("proxyVersion", proxyVersion)
-    outputs.dir(outputDir)
-
-    doLast {
-        val file = outputDir.get().asFile.resolve("proxy-version.txt")
-        file.parentFile.mkdirs()
-        file.writeText(proxyVersion)
-    }
+    versionString.set(proxyVersion)
+    packageName.set("com.jonnyzzz.mcpSteroid.proxy")
+    fileName.set("ProxyVersionMetadata")
+    objectName.set("ProxyVersionMetadata")
+    functionName.set("getProxyVersion")
+    functionKdoc.set("npx-kt proxy version (encoded)")
+    outputFile.set(generatedSourcesPath.map { it.file("ProxyVersionMetadata.kt") })
 }
 
-sourceSets.named("main") {
-    resources.srcDir(generateProxyVersionResource)
+kotlin.sourceSets.main {
+    kotlin.srcDir(generatedSourcesPath)
 }
 
-tasks.named("processResources") {
-    dependsOn(generateProxyVersionResource)
+tasks.withType<KotlinCompile>().configureEach {
+    dependsOn(generateProxyVersionMetadata)
 }
 
 // Dedicated source set for stdio MCP server integration tests
