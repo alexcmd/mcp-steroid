@@ -18,34 +18,35 @@ class HomePathsTest {
     fun `DEVRIG_HOME resolves to an absolute normalized path and reports override to stderr`(
         @TempDir tempDir: Path,
     ) {
-        val envHome = tempDir.resolve("env").toString()
+        val envHome = tempDir.resolve("env")
+        Files.createDirectories(envHome)
         val errBytes = ByteArrayOutputStream()
 
         val paths = resolveHomePathsFromEnvironment(
-            env = mapOf(DEVRIG_HOME_ENV to envHome),
+            env = mapOf(DEVRIG_HOME_ENV to envHome.toString()),
             err = PrintStream(errBytes, true, Charsets.UTF_8),
         )
 
-        assertEquals(tempDir.resolve("env").toAbsolutePath().normalize(), paths.home)
+        assertEquals(envHome.toRealPath(), paths.home)
         assertTrue(errBytes.toString(Charsets.UTF_8).contains(DEVRIG_HOME_ENV))
     }
 
     @Test
-    fun `DEVRIG_HOME expands bare tilde to user home`() {
-        val expected = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize()
+    fun `DEVRIG_HOME rejects bare tilde`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~"), err = null)
+        }
 
-        val paths = resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~"), err = null)
-
-        assertEquals(expected, paths.home)
+        assertTrue(ex.message.orEmpty().contains("absolute"), "Expected absolute path hint, got: ${ex.message}")
     }
 
     @Test
-    fun `DEVRIG_HOME expands tilde slash prefix to user home child`() {
-        val expected = Path.of(System.getProperty("user.home")).resolve("foo").toAbsolutePath().normalize()
+    fun `DEVRIG_HOME rejects tilde slash prefix`() {
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~/foo"), err = null)
+        }
 
-        val paths = resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~/foo"), err = null)
-
-        assertEquals(expected, paths.home)
+        assertTrue(ex.message.orEmpty().contains("absolute"), "Expected absolute path hint, got: ${ex.message}")
     }
 
     @Test
@@ -54,16 +55,28 @@ class HomePathsTest {
             resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "~root"), err = null)
         }
 
-        assertTrue(ex.message.orEmpty().contains("~user"), "Expected ~user hint, got: ${ex.message}")
+        assertTrue(ex.message.orEmpty().contains("absolute"), "Expected absolute path hint, got: ${ex.message}")
     }
 
     @Test
-    fun `DEVRIG_HOME rejects dot dot path segments`() {
+    fun `DEVRIG_HOME rejects relative path`() {
         val ex = assertFailsWith<IllegalArgumentException> {
-            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "/tmp/../etc"), err = null)
+            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to "relative/path"), err = null)
         }
 
-        assertTrue(ex.message.orEmpty().contains(".."), "Expected '..' hint, got: ${ex.message}")
+        assertTrue(ex.message.orEmpty().contains("absolute"), "Expected absolute path hint, got: ${ex.message}")
+    }
+
+    @Test
+    fun `DEVRIG_HOME rejects missing absolute path`(
+        @TempDir tempDir: Path,
+    ) {
+        val missing = tempDir.resolve("missing")
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveHomePathsFromEnvironment(env = mapOf(DEVRIG_HOME_ENV to missing.toString()), err = null)
+        }
+
+        assertTrue(ex.message.orEmpty().contains("canonical"), "Expected canonical path hint, got: ${ex.message}")
     }
 
     @Test

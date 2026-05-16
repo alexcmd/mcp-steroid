@@ -31,19 +31,17 @@ fun resolveHomePaths(): HomePaths = resolveHomePathsFromEnvironment(
     err = System.err,
 )
 
-internal fun resolveHomePathsFromEnvironment(
+fun resolveHomePathsFromEnvironment(
     env: Map<String, String>,
     err: PrintStream?,
 ): HomePaths {
     val override = env[DEVRIG_HOME_ENV]?.takeIf { it.isNotBlank() }
-    val raw = if (override == null) {
-        Path.of(System.getProperty("user.home"), ".mcp-steroid").toString()
+    val path = if (override == null) {
+        Path.of(System.getProperty("user.home"), ".mcp-steroid")
     } else {
         err?.println("Using $DEVRIG_HOME_ENV as devrig home override.")
-        expandTilde(override)
+        canonicalOverridePath(override)
     }
-    val path = Path.of(raw)
-    rejectDotDot(path)
     return HomePaths(path.toAbsolutePath().normalize())
 }
 
@@ -59,18 +57,14 @@ fun resolveHomePathsOrDie(): HomePaths {
     }
 }
 
-private fun expandTilde(raw: String): String {
-    if (raw == "~") return System.getProperty("user.home")
-    if (raw.startsWith("~/")) return System.getProperty("user.home") + raw.substring(1)
-    if (raw.startsWith("~")) {
-        throw IllegalArgumentException("$DEVRIG_HOME_ENV: unsupported '~user' form. Use \"${'$'}HOME\" or an absolute path.")
+private fun canonicalOverridePath(raw: String): Path {
+    val path = Path.of(raw)
+    if (!path.isAbsolute) {
+        throw IllegalArgumentException("$DEVRIG_HOME_ENV: override must be an existing absolute path.")
     }
-    return raw
-}
-
-private fun rejectDotDot(path: Path) {
-    val hasDotDot = path.iterator().asSequence().any { it.toString() == ".." }
-    if (hasDotDot) {
-        throw IllegalArgumentException("$DEVRIG_HOME_ENV: '..' segments are not allowed; pass an explicit absolute path.")
+    try {
+        return path.toRealPath()
+    } catch (e: Exception) {
+        throw IllegalArgumentException("$DEVRIG_HOME_ENV: cannot resolve canonical path for '$raw'.", e)
     }
 }
