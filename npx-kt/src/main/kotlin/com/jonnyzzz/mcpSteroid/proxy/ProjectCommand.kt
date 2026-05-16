@@ -14,16 +14,8 @@ fun runProjectCommand(
     out: PrintStream,
     command: NpxKtCommand.NpxCommandProject,
 ) : Int {
-    val unknown = command.restArgs.unknownOptions(setOf("--json", "--debug"))
-    if (unknown.isNotEmpty()) {
-        return unknownArguments(listOf(unknown.first()), "Unknown flag: ${unknown.first()}")
-    }
-    val positionals = command.restArgs.positionals()
-    if (positionals.isNotEmpty()) {
-        return unknownArguments(positionals, "Unexpected extra argument: ${positionals.first()}")
-    }
     val listing = projectListingFromRows(collectBackendRows())
-    if (command.restArgs.jsonFlag()) {
+    if (command.json) {
         renderProjectJson(listing, out)
     } else {
         renderProjectOutput(listing, out)

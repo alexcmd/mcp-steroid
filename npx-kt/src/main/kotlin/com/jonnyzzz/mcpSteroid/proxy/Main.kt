@@ -34,8 +34,7 @@ fun main(rawArgs: Array<String>) {
     val mcpStdout = System.out
     System.setOut(System.err)
 
-    val args = NpxKtArgs(rawArgs)
-    val command = args.command()
+    val command = parseNpxKtCommand(rawArgs)
     val headliner = buildHeadliner()
     if (command is NpxKtCommand.MCP) {
         System.err.println(headliner)
@@ -46,14 +45,13 @@ fun main(rawArgs: Array<String>) {
     val homePaths = resolveHomePathsOrDie()
 
     //setup logging. That is essential to avoid logger usages BEFORE this statement
-    configureLoggingAndLogStarted(homePaths, args)
+    configureLoggingAndLogStarted(homePaths, rawArgs.toList(), command.debug)
 
     val lifetime = CloseableStackHost()
     try {
         NpxKtServices(
             lifetime = lifetime,
             homePaths = homePaths,
-            args = args,
             mcpStdin = mcpStdin,
             mcpStdout = mcpStdout,
         ).mainImpl1(command, headliner)
@@ -73,7 +71,7 @@ private fun buildHeadliner(): String = buildString {
 }
 
 fun NpxKtServices.mainImpl1(
-    command: NpxKtCommand?,
+    command: NpxKtCommand,
     headliner: String,
 ) {
     class DevrigCoroutineExceptionHandler
@@ -91,7 +89,7 @@ fun NpxKtServices.mainImpl1(
 }
 
 suspend fun NpxKtServices.mainImpl2(
-    command: NpxKtCommand?,
+    command: NpxKtCommand,
     headliner: String,
 ) : Unit = coroutineScope {
     launch {

@@ -6,261 +6,285 @@ import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
-import com.github.ajalt.clikt.parameters.arguments.multiple
+import com.github.ajalt.clikt.parameters.arguments.optional
+import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.option
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
-class NpxKtArgs(
-    args: Array<String>,
-    private val parent: NpxKtArgs? = null,
-) {
-    val args: List<String> = args.toList()
-
-    fun parseDebugFlag(): Boolean = option("--debug")
-    fun jsonFlag(): Boolean = option("--json")
-    fun helpFlag(): Boolean = option("--help") || option("-h")
-
-    fun command(): NpxKtCommand? {
-        val path = NpxKtCommandSelector().select(args)
-        if (path == null || path.isEmpty()) return rootCommand()
-        return when (path) {
-            listOf("mpc") -> NpxKtCommand.MCP(argsAfterCommandPath(path))
-            listOf("backend") -> NpxKtCommand.NpxCommandBackend(argsAfterCommandPath(path))
-            listOf("backend", "download") -> NpxKtCommand.NpxCommandBackendDownload(argsAfterCommandPath(path))
-            listOf("backend", "start") -> NpxKtCommand.NpxCommandBackendStart(argsAfterCommandPath(path))
-            listOf("backend", "stop") -> NpxKtCommand.NpxCommandBackendStop(argsAfterCommandPath(path))
-            listOf("backend", "provision") -> NpxKtCommand.NpxCommandBackendProvision(argsAfterCommandPath(path))
-            listOf("project") -> NpxKtCommand.NpxCommandProject(argsAfterCommandPath(path))
-            listOf("help") -> NpxKtCommand.NpxCommandHelp
-            listOf("version") -> NpxKtCommand.NpxCommandVersion
-            else -> null
-        }
-    }
-
-    private fun rootCommand(): NpxKtCommand? = when {
-        args.isEmpty() || onlyGlobalFlags() -> NpxKtCommand.NpxCommandHelp
-        option("--version") || option("-v") -> NpxKtCommand.NpxCommandVersion
-        helpFlag() -> NpxKtCommand.NpxCommandHelp
-        else -> null
-    }
-
-    private fun argsAfterCommandPath(path: List<String>): NpxKtArgs {
-        var searchFrom = 0
-        var lastIndex = -1
-        for (command in path) {
-            val index = args.withIndex()
-                .firstOrNull { (index, token) -> index >= searchFrom && token == command }
-                ?.index
-                ?: return NpxKtArgs(emptyArray(), parent = this)
-            lastIndex = index
-            searchFrom = index + 1
-        }
-        return argsAfter(lastIndex)
-    }
-
-    fun argsAfter(index: Int): NpxKtArgs =
-        NpxKtArgs(args.drop(index + 1).toTypedArray(), parent = this)
-
-    fun option(option: String): Boolean {
-        require(option.startsWith("-"))
-        return args.any { it == option } || parent?.option(option) == true
-    }
-
-    fun optionValue(option: String): OptionValue {
-        require(option.startsWith("-"))
-        val local = optionValueLocal(option)
-        if (local != OptionValue.Absent) return local
-        return parent?.optionValue(option) ?: OptionValue.Absent
-    }
-
-    private fun optionValueLocal(option: String): OptionValue {
-        val index = args.indexOf(option)
-        if (index < 0) return OptionValue.Absent
-        val value = args.getOrNull(index + 1)
-        if (value == null || value.startsWith("-")) return OptionValue.Missing(option)
-        return OptionValue.Present(value)
-    }
-
-    fun positionals(): List<String> {
-        val result = mutableListOf<String>()
-        var index = 0
-        while (index < args.size) {
-            val token = args[index]
-            when {
-                token == "--version" -> index += if (args.getOrNull(index + 1)?.startsWith("-") == false) 2 else 1
-                token.startsWith("-") -> index++
-                else -> {
-                    result += token
-                    index++
-                }
-            }
-        }
-        return result
-    }
-
-    fun unknownOptions(allowed: Set<String>): List<String> {
-        val unknown = mutableListOf<String>()
-        collectUnknownOptions(allowed, unknown)
-        return unknown.distinct()
-    }
-
-    private fun collectUnknownOptions(allowed: Set<String>, output: MutableList<String>) {
-        for (token in args) {
-            if (token.startsWith("-") && token !in allowed) output += token
-        }
-        parent?.collectUnknownOptions(allowed, output)
-    }
-
-    private fun onlyGlobalFlags(): Boolean =
-        args.all { it == "--debug" }
-
-    override fun toString(): String {
-        val parentText = parent?.let { ", parent=$it" }.orEmpty()
-        return "NpxKtArgs(${args.joinToString(" ")}$parentText)"
-    }
-}
-
-private class NpxKtCommandSelector {
-    private var selectedPath: List<String>? = null
-
-    fun select(args: List<String>): List<String>? {
-        val command = RootCommand(this)
-        try {
-            command.parse(args.filterNot { it.startsWith("-") })
-        } catch (_: CliktError) {
-            return null
-        }
-        return selectedPath
-    }
-
-    private fun selectPath(path: List<String>) {
-        selectedPath = path
-    }
-
-    private class RootCommand(
-        private val selector: NpxKtCommandSelector,
-    ) : CliktCommand(
-        name = "devrig",
-        invokeWithoutSubcommand = true,
-        treatUnknownOptionsAsArgs = true,
-    ) {
-        init {
-            context {
-                allowInterspersedArgs = false
-                helpOptionNames = emptySet<String>()
-            }
-            subcommands(
-                MpcCommand(selector),
-                BackendCommand(selector),
-                ProjectCommand(selector),
-                HelpCommand(selector),
-                VersionCommand(selector),
-            )
-        }
-
-        override fun run() {
-            selector.selectPath(emptyList())
-        }
-    }
-
-    private open class SelectingCommand(
-        name: String,
-        private val selector: NpxKtCommandSelector,
-        private val path: List<String>,
-    ) : CliktCommand(
-        name = name,
-        invokeWithoutSubcommand = true,
-        treatUnknownOptionsAsArgs = true,
-    ) {
-        @Suppress("unused")
-        private val rest: List<String> by argument().multiple(required = false)
-
-        init {
-            context {
-                allowInterspersedArgs = false
-                helpOptionNames = emptySet<String>()
-            }
-        }
-
-        override fun run() {
-            selector.selectPath(path)
-        }
-    }
-
-    private class MpcCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("mpc", selector, listOf("mpc"))
-
-    private class ProjectCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("project", selector, listOf("project"))
-
-    private class HelpCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("help", selector, listOf("help"))
-
-    private class VersionCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("version", selector, listOf("version"))
-
-    private class BackendCommand(
-        selector: NpxKtCommandSelector,
-    ) : SelectingCommand("backend", selector, listOf("backend")) {
-        init {
-            subcommands(
-                BackendDownloadCommand(selector),
-                BackendStartCommand(selector),
-                BackendStopCommand(selector),
-                BackendProvisionCommand(selector),
-            )
-        }
-    }
-
-    private class BackendDownloadCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("download", selector, listOf("backend", "download"))
-
-    private class BackendStartCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("start", selector, listOf("backend", "start"))
-
-    private class BackendStopCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("stop", selector, listOf("backend", "stop"))
-
-    private class BackendProvisionCommand(selector: NpxKtCommandSelector) :
-        SelectingCommand("provision", selector, listOf("backend", "provision"))
-}
-
-sealed interface OptionValue {
-    data object Absent : OptionValue
-    data class Missing(val option: String) : OptionValue
-    data class Present(val value: String) : OptionValue
-}
-
 sealed interface NpxKtCommand {
-    val restArgs: NpxKtArgs
+    val debug: Boolean
+    val json: Boolean
 
-    data class MCP(override val restArgs: NpxKtArgs) : NpxKtCommand
-    data class NpxCommandBackend(override val restArgs: NpxKtArgs) : NpxKtCommand
-    data class NpxCommandBackendDownload(override val restArgs: NpxKtArgs) : NpxKtCommand
-    data class NpxCommandBackendStart(override val restArgs: NpxKtArgs) : NpxKtCommand
-    data class NpxCommandBackendStop(override val restArgs: NpxKtArgs) : NpxKtCommand
-    data class NpxCommandBackendProvision(override val restArgs: NpxKtArgs) : NpxKtCommand
-    data class NpxCommandProject(override val restArgs: NpxKtArgs) : NpxKtCommand
+    data class MCP(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
 
-    data object NpxCommandHelp : NpxKtCommand {
-        override val restArgs: NpxKtArgs = NpxKtArgs(emptyArray())
-    }
+    data class NpxCommandBackend(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
 
-    data object NpxCommandVersion : NpxKtCommand {
-        override val restArgs: NpxKtArgs = NpxKtArgs(emptyArray())
+    data class NpxCommandBackendDownload(
+        val id: String? = null,
+        val version: String? = null,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandBackendStart(
+        val id: String? = null,
+        val version: String? = null,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandBackendStop(
+        val id: String? = null,
+        val version: String? = null,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandBackendProvision(
+        val id: String? = null,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandProject(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandHelp(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandVersion(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+
+    data class NpxCommandParseError(
+        val text: String,
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : NpxKtCommand
+}
+
+fun parseNpxKtCommand(rawArgs: Array<String>): NpxKtCommand {
+    val selected = SelectedNpxKtCommand()
+    val root = DevrigRootCommand(selected)
+    return try {
+        root.parse(rawArgs)
+        selected.command ?: NpxKtCommand.NpxCommandHelp()
+    } catch (e: CliktError) {
+        NpxKtCommand.NpxCommandParseError(root.getFormattedHelp(e) ?: e.message ?: "Invalid arguments")
     }
 }
 
-suspend fun NpxKtServices.runCli(command: NpxKtCommand?): Int {
-    if (command != null && command !is NpxKtCommand.MCP && command.restArgs.helpFlag()) {
-        return printHelp(mcpStdout)
+private class SelectedNpxKtCommand {
+    var command: NpxKtCommand? = null
+}
+
+private data class GenericOptions(
+    val debug: Boolean,
+    val json: Boolean,
+    val help: Boolean,
+)
+
+private abstract class DevrigCommand(
+    name: String,
+    private val selected: SelectedNpxKtCommand,
+    private val parent: DevrigCommand?,
+    invokeWithoutSubcommand: Boolean = false,
+) : CliktCommand(
+    name = name,
+    invokeWithoutSubcommand = invokeWithoutSubcommand,
+) {
+    private val debugFlag by option("--debug", help = "enable verbose stderr logging").flag()
+    private val jsonFlag by option("--json", help = "emit JSON output where supported").flag()
+    private val helpFlag by option("--help", "-h", help = "print help and exit").flag()
+
+    init {
+        context {
+            helpOptionNames = emptySet()
+        }
     }
+
+    protected fun options(): GenericOptions {
+        val parentOptions = parent?.options()
+        return GenericOptions(
+            debug = debugFlag || parentOptions?.debug == true,
+            json = jsonFlag || parentOptions?.json == true,
+            help = helpFlag || parentOptions?.help == true,
+        )
+    }
+
+    protected fun select(command: NpxKtCommand) {
+        val options = options()
+        selected.command = if (options.help) {
+            NpxKtCommand.NpxCommandHelp(debug = options.debug, json = options.json)
+        } else {
+            command
+        }
+    }
+}
+
+private class DevrigRootCommand(
+    selected: SelectedNpxKtCommand,
+) : DevrigCommand(
+    name = "devrig",
+    selected = selected,
+    parent = null,
+    invokeWithoutSubcommand = true,
+) {
+    private val versionFlag by option("--version", "-v", help = "print the proxy version and exit").flag()
+
+    init {
+        val backend = BackendCommand(selected, this)
+        subcommands(
+            MpcCommand(selected, this),
+            backend,
+            ProjectCommand(selected, this),
+            HelpCommand(selected, this),
+            VersionCommand(selected, this),
+        )
+    }
+
+    override fun run() {
+        val options = options()
+        if (versionFlag) {
+            select(NpxKtCommand.NpxCommandVersion(debug = options.debug, json = options.json))
+        } else {
+            select(NpxKtCommand.NpxCommandHelp(debug = options.debug, json = options.json))
+        }
+    }
+}
+
+private class MpcCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("mpc", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.MCP(debug = options.debug, json = options.json))
+    }
+}
+
+private class ProjectCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("project", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandProject(debug = options.debug, json = options.json))
+    }
+}
+
+private class HelpCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("help", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandHelp(debug = options.debug, json = options.json))
+    }
+}
+
+private class VersionCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("version", selected, parent) {
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandVersion(debug = options.debug, json = options.json))
+    }
+}
+
+private class BackendCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("backend", selected, parent, invokeWithoutSubcommand = true) {
+    init {
+        subcommands(
+            BackendDownloadCommand(selected, this),
+            BackendStartCommand(selected, this),
+            BackendStopCommand(selected, this),
+            BackendProvisionCommand(selected, this),
+        )
+    }
+
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandBackend(debug = options.debug, json = options.json))
+    }
+}
+
+private class BackendDownloadCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("download", selected, parent) {
+    private val id by argument("id").optional()
+    private val version by option("--version", help = "IDE version to download")
+
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandBackendDownload(id = id, version = version, debug = options.debug, json = options.json))
+    }
+}
+
+private class BackendStartCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("start", selected, parent) {
+    private val id by argument("id").optional()
+    private val version by option("--version", help = "IDE version to start")
+
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandBackendStart(id = id, version = version, debug = options.debug, json = options.json))
+    }
+}
+
+private class BackendStopCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("stop", selected, parent) {
+    private val id by argument("id").optional()
+    private val version by option("--version", help = "IDE version to stop")
+
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandBackendStop(id = id, version = version, debug = options.debug, json = options.json))
+    }
+}
+
+private class BackendProvisionCommand(
+    selected: SelectedNpxKtCommand,
+    parent: DevrigCommand,
+) : DevrigCommand("provision", selected, parent) {
+    private val id by argument("id").optional()
+
+    override fun run() {
+        val options = options()
+        select(NpxKtCommand.NpxCommandBackendProvision(id = id, debug = options.debug, json = options.json))
+    }
+}
+
+fun NpxKtServices.runCli(command: NpxKtCommand): Int {
     return try {
         when (command) {
             is NpxKtCommand.MCP -> error("runCli called with NpxKtCommand.MCP")
-            NpxKtCommand.NpxCommandHelp -> printHelp(mcpStdout)
-            NpxKtCommand.NpxCommandVersion -> printVersion(mcpStdout)
-            null -> unknownArguments(args.args)
+            is NpxKtCommand.NpxCommandHelp -> printHelp(mcpStdout)
+            is NpxKtCommand.NpxCommandVersion -> printVersion(mcpStdout)
+            is NpxKtCommand.NpxCommandParseError -> {
+                System.err.println(command.text)
+                64
+            }
             is NpxKtCommand.NpxCommandBackend -> runBackendCommand(mcpStdout, homePaths, command)
             is NpxKtCommand.NpxCommandBackendDownload -> runBackendDownloadCommand(mcpStdout, homePaths, command)
             is NpxKtCommand.NpxCommandBackendStart -> runBackendStartCommand(mcpStdout, homePaths, command)

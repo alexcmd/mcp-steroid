@@ -239,11 +239,10 @@ class SingleInstanceLockTest {
             runBlocking {
                 NpxKtServices(
                     homePaths = homePaths,
-                    args = NpxKtArgs(arrayOf("backend", "start", id)),
                     lifetime = lifetime,
                     mcpStdin = ByteArrayInputStream(ByteArray(0)),
                     mcpStdout = stdout,
-                ).runCli(NpxKtCommand.NpxCommandBackendStart(NpxKtArgs(arrayOf(id))))
+                ).runCli(NpxKtCommand.NpxCommandBackendStart(id = id))
             }
         } finally {
             lifetime.closeAllStacks()

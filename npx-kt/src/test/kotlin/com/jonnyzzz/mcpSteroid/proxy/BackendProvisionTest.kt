@@ -303,7 +303,7 @@ class BackendProvisionTest {
 
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
-            command = NpxKtCommand.NpxCommandBackendProvision(NpxKtArgs(arrayOf("port-63342"))),
+            command = NpxKtCommand.NpxCommandBackendProvision(id = "port-63342"),
             provision = { result },
         )
         val text = buf.toString(Charsets.UTF_8)
@@ -325,7 +325,7 @@ class BackendProvisionTest {
         val buf = ByteArrayOutputStream()
         val exit = runBackendProvisionCommand(
             out = PrintStream(buf, true, Charsets.UTF_8),
-            command = NpxKtCommand.NpxCommandBackendProvision(NpxKtArgs(arrayOf("port-63342", "--json"))),
+            command = NpxKtCommand.NpxCommandBackendProvision(id = "port-63342", json = true),
             provision = { result },
         )
         val root = parser.parseToJsonElement(buf.toString(Charsets.UTF_8)).jsonObject

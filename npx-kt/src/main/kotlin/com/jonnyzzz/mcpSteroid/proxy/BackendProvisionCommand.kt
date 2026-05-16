@@ -40,19 +40,14 @@ fun runBackendProvisionCommand(
     out: PrintStream,
     command: NpxKtCommand.NpxCommandBackendProvision,
     provision: suspend (HttpClient) -> ProvisionResult = { httpClient ->
-        val id = command.restArgs.positionals().firstOrNull()
+        val id = command.id
             ?: error("backend provision id is required")
         provisionBackend(id, httpClient)
     },
 ): Int {
-    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--debug"))?.let { return it }
-    val positionals = command.restArgs.positionals()
-    val id = positionals.firstOrNull() ?: run {
-        runBackendProvisionListCommand(out, json = command.restArgs.jsonFlag())
+    val id = command.id ?: run {
+        runBackendProvisionListCommand(out, json = command.json)
         return 0
-    }
-    if (positionals.size > 1) {
-        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
     }
     if (!isSupportedProvisionTargetId(id)) {
         return unknownArguments(
@@ -60,7 +55,7 @@ fun runBackendProvisionCommand(
             "Run `devrig backend provision` with no id to list valid backend ids.",
         )
     }
-    if (command.restArgs.jsonFlag()) {
+    if (command.json) {
         return runBackendActionJson(out, action = PROVISION_ACTION_ID, id = id) {
             val result = withProvisionHttpClient { httpClient ->
                 runBlocking(Dispatchers.IO) {

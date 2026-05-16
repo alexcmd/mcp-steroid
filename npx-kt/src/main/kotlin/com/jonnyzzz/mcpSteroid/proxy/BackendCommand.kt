@@ -119,14 +119,9 @@ sealed interface BackendRow {
 fun runBackendCommand(
     out: PrintStream,
     homePaths: HomePaths = resolveHomePaths(),
-    command: NpxKtCommand.NpxCommandBackend = NpxKtCommand.NpxCommandBackend(NpxKtArgs(emptyArray())),
+    command: NpxKtCommand.NpxCommandBackend = NpxKtCommand.NpxCommandBackend(),
 ) : Int {
-    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--debug"))?.let { return it }
-    val positionals = command.restArgs.positionals()
-    if (positionals.isNotEmpty()) {
-        return unknownArguments(positionals, "Unexpected extra argument: ${positionals.first()}")
-    }
-    val json = command.restArgs.jsonFlag()
+    val json = command.json
     val rows = collectBackendRows(homePaths)
     if (json) {
         renderBackendJson(rows, out)
@@ -202,19 +197,10 @@ fun runBackendDownloadCommand(
     command: NpxKtCommand.NpxCommandBackendDownload,
     backendService: ManagedBackendService = BackendManager(homePaths),
 ): Int {
-    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--version", "--debug"))?.let { return it }
-    val versionOverride = when (val value = command.restArgs.optionValue("--version")) {
-        OptionValue.Absent -> null
-        is OptionValue.Present -> value.value
-        is OptionValue.Missing -> return unknownArguments(listOf(value.option), "Missing value for ${value.option}")
-    }
-    val positionals = command.restArgs.positionals()
-    val id = positionals.firstOrNull() ?: run {
-        runBackendDownloadListCommand(out, json = command.restArgs.jsonFlag())
+    val versionOverride = command.version
+    val id = command.id ?: run {
+        runBackendDownloadListCommand(out, json = command.json)
         return 0
-    }
-    if (positionals.size > 1) {
-        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
     }
     if (!isSupportedBackendLifecycleId(id)) {
         return unknownArguments(
@@ -222,7 +208,7 @@ fun runBackendDownloadCommand(
             "Run `devrig backend download` with no id to list valid backend ids.",
         )
     }
-    if (command.restArgs.jsonFlag()) {
+    if (command.json) {
         return runBackendActionJson(out, action = "download", id = id) {
             val backendId = parseBackendId(id).withVersionOverride(versionOverride)
             lateinit var result: DownloadResult
@@ -261,19 +247,10 @@ fun runBackendStartCommand(
     command: NpxKtCommand.NpxCommandBackendStart,
     backendService: ManagedBackendService = BackendManager(homePaths),
 ): Int {
-    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--version", "--debug"))?.let { return it }
-    val versionOverride = when (val value = command.restArgs.optionValue("--version")) {
-        OptionValue.Absent -> null
-        is OptionValue.Present -> value.value
-        is OptionValue.Missing -> return unknownArguments(listOf(value.option), "Missing value for ${value.option}")
-    }
-    val positionals = command.restArgs.positionals()
-    val id = positionals.firstOrNull() ?: run {
-        runBackendStartListCommand(out, homePaths, json = command.restArgs.jsonFlag())
+    val versionOverride = command.version
+    val id = command.id ?: run {
+        runBackendStartListCommand(out, homePaths, json = command.json)
         return 0
-    }
-    if (positionals.size > 1) {
-        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
     }
     if (!isSupportedBackendLifecycleId(id)) {
         return unknownArguments(
@@ -281,7 +258,7 @@ fun runBackendStartCommand(
             "Run `devrig backend start` with no id to list valid backend ids.",
         )
     }
-    if (command.restArgs.jsonFlag()) {
+    if (command.json) {
         return runBackendActionJson(out, action = "start", id = id) {
             val backendId = parseBackendId(id).withVersionOverride(versionOverride)
             val result = runBlocking(Dispatchers.IO) {
@@ -317,19 +294,10 @@ fun runBackendStopCommand(
     command: NpxKtCommand.NpxCommandBackendStop,
     backendService: ManagedBackendService = BackendManager(homePaths),
 ): Int {
-    validateBackendOptions(command.restArgs, allowed = setOf("--json", "--version", "--debug"))?.let { return it }
-    val versionOverride = when (val value = command.restArgs.optionValue("--version")) {
-        OptionValue.Absent -> null
-        is OptionValue.Present -> value.value
-        is OptionValue.Missing -> return unknownArguments(listOf(value.option), "Missing value for ${value.option}")
-    }
-    val positionals = command.restArgs.positionals()
-    val id = positionals.firstOrNull() ?: run {
-        runBackendStopListCommand(out, homePaths, json = command.restArgs.jsonFlag())
+    val versionOverride = command.version
+    val id = command.id ?: run {
+        runBackendStopListCommand(out, homePaths, json = command.json)
         return 0
-    }
-    if (positionals.size > 1) {
-        return unknownArguments(positionals.drop(1), "Unexpected extra argument: ${positionals[1]}")
     }
     if (!isSupportedBackendLifecycleId(id)) {
         return unknownArguments(
@@ -337,7 +305,7 @@ fun runBackendStopCommand(
             "Run `devrig backend stop` with no id to list valid backend ids.",
         )
     }
-    if (command.restArgs.jsonFlag()) {
+    if (command.json) {
         return runBackendActionJson(out, action = "stop", id = id) {
             val backendId = parseBackendId(id).withVersionOverride(versionOverride)
             lateinit var result: StopResult
@@ -412,12 +380,6 @@ private fun backendVmOptionsPath(homePaths: HomePaths, id: String): java.nio.fil
     val descriptor = readDescriptorOrNull(descriptorPath(homePaths.backendDir(id)))
         ?: error("Managed backend '$id' is not installed. Run `devrig backend download ${id.substringBeforeLast('-')}` first.")
     return homePaths.backendDir(id).resolve("${descriptor.bundleDirName}.vmoptions")
-}
-
-fun validateBackendOptions(args: NpxKtArgs, allowed: Set<String>): Int? {
-    val unknown = args.unknownOptions(allowed)
-    if (unknown.isEmpty()) return null
-    return unknownArguments(listOf(unknown.first()), "Unknown flag: ${unknown.first()}")
 }
 
 fun isSupportedBackendLifecycleId(raw: String): Boolean {

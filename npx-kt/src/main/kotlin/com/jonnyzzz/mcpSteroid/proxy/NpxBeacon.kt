@@ -67,8 +67,9 @@ class NpxBeacon(
             is NpxKtCommand.NpxCommandBackendStop,
             is NpxKtCommand.NpxCommandBackendProvision -> "backend"
             is NpxKtCommand.NpxCommandProject -> "project"
-            NpxKtCommand.NpxCommandHelp -> null
-            NpxKtCommand.NpxCommandVersion -> null
+            is NpxKtCommand.NpxCommandHelp -> null
+            is NpxKtCommand.NpxCommandVersion -> null
+            is NpxKtCommand.NpxCommandParseError -> null
             null -> null
         } ?: return
 

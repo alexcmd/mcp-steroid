@@ -219,13 +219,13 @@ class BackendCommandActionJsonTest {
     }
 
     private fun downloadCommand(id: String): NpxKtCommand.NpxCommandBackendDownload =
-        NpxKtCommand.NpxCommandBackendDownload(NpxKtArgs(arrayOf(id, "--json")))
+        NpxKtCommand.NpxCommandBackendDownload(id = id, json = true)
 
     private fun startCommand(id: String): NpxKtCommand.NpxCommandBackendStart =
-        NpxKtCommand.NpxCommandBackendStart(NpxKtArgs(arrayOf(id, "--json")))
+        NpxKtCommand.NpxCommandBackendStart(id = id, json = true)
 
     private fun stopCommand(id: String): NpxKtCommand.NpxCommandBackendStop =
-        NpxKtCommand.NpxCommandBackendStop(NpxKtArgs(arrayOf(id, "--json")))
+        NpxKtCommand.NpxCommandBackendStop(id = id, json = true)
 
     private fun downloadResult(homePaths: HomePaths, id: String) = DownloadResult(
         id = id,

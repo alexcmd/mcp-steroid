@@ -8,7 +8,6 @@ class NpxKtServices(
     private val lifetime: CloseableStack,
 
     val homePaths: HomePaths,
-    val args: NpxKtArgs,
     val mcpStdin: InputStream,
     val mcpStdout: PrintStream,
 ) {

@@ -12,7 +12,7 @@ class NpxKtCommandFuzzTest {
     @ParameterizedTest
     @MethodSource("fuzzedInvocations")
     fun `command selection never throws`(args: Array<String>) {
-        assertDoesNotThrow { NpxKtArgs(args).command() }
+        assertDoesNotThrow { parseNpxKtCommand(args) }
     }
 
     companion object {
