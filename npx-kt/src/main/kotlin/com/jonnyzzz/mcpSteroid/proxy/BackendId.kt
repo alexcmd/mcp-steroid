@@ -3,7 +3,7 @@ package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 
-internal data class BackendId(
+data class BackendId(
     val product: IdeProduct,
     val version: String?,
 ) {
@@ -14,14 +14,14 @@ internal data class BackendId(
     }
 }
 
-internal data class ResolvedBackendId(
+data class ResolvedBackendId(
     val product: IdeProduct,
     val version: String,
 ) {
     val id: String get() = "${product.id}-$version"
 }
 
-internal fun parseBackendId(raw: String): BackendId {
+fun parseBackendId(raw: String): BackendId {
     require(raw.isNotBlank()) { "Backend id must not be blank" }
 
     val colonParts = raw.split(':')
@@ -45,7 +45,7 @@ internal fun parseBackendId(raw: String): BackendId {
     return BackendId(product, validateBackendVersion(version))
 }
 
-internal fun validateBackendVersion(raw: String): String {
+fun validateBackendVersion(raw: String): String {
     val version = raw.trim()
     require(version.isNotBlank()) { "Backend version must not be blank" }
     require(isSupportedBackendVersion(version)) {
@@ -55,14 +55,14 @@ internal fun validateBackendVersion(raw: String): String {
     return version
 }
 
-internal fun isSupportedBackendVersion(raw: String): Boolean {
+fun isSupportedBackendVersion(raw: String): Boolean {
     val version = raw.trim()
     return version.isNotBlank() && version.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == '-' }
 }
 
 private val backendVersionTokenRegex = Regex("""\d+|\D+""")
 
-internal fun compareBackendVersions(left: String, right: String): Int {
+fun compareBackendVersions(left: String, right: String): Int {
     if (left == right) return 0
     val leftTokens = backendVersionTokenRegex.findAll(left).map { it.value }.toList()
     val rightTokens = backendVersionTokenRegex.findAll(right).map { it.value }.toList()

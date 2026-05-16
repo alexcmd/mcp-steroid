@@ -9,14 +9,14 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-internal const val BACKEND_TYPE_INTELLIJ = "intellij"
+const val BACKEND_TYPE_INTELLIJ = "intellij"
 
-internal fun markerBackendDisplayName(ide: DiscoveredIde): String =
+fun markerBackendDisplayName(ide: DiscoveredIde): String =
     "${ide.marker.ide.name} ${ide.marker.ide.version}".trim()
 
-internal fun markerBackendLocatorLabel(ide: DiscoveredIde): String = "pid ${ide.pid}"
+fun markerBackendLocatorLabel(ide: DiscoveredIde): String = "pid ${ide.pid}"
 
-internal fun markerBackendIdentityJson(ide: DiscoveredIde): JsonObject = buildJsonObject {
+fun markerBackendIdentityJson(ide: DiscoveredIde): JsonObject = buildJsonObject {
     put("name", ide.marker.ide.name)
     put("version", ide.marker.ide.version)
     put("build", ide.marker.ide.build)
@@ -24,33 +24,33 @@ internal fun markerBackendIdentityJson(ide: DiscoveredIde): JsonObject = buildJs
     put("mcpUrl", ide.mcpUrl)
 }
 
-internal fun portBackendDisplayName(ide: DiscoveredIdeByPort): String =
+fun portBackendDisplayName(ide: DiscoveredIdeByPort): String =
     ide.productFullName ?: ide.productName ?: "(unknown JetBrains IDE)"
 
-internal fun portBackendLocatorLabel(ide: DiscoveredIdeByPort): String = buildString {
+fun portBackendLocatorLabel(ide: DiscoveredIdeByPort): String = buildString {
     ide.buildNumber?.let { append("build ").append(it).append(", ") }
     append("port ").append(ide.port)
 }
 
-internal fun backendDisplayName(row: BackendRow): String = when (row) {
+fun backendDisplayName(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> markerBackendDisplayName(row.ide)
     is BackendRow.FromPort -> portBackendDisplayName(row.ide)
     is BackendRow.FromManaged -> row.displayName
 }
 
-internal fun backendLocatorLabel(row: BackendRow): String = when (row) {
+fun backendLocatorLabel(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> markerBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
     is BackendRow.FromPort -> portBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
     is BackendRow.FromManaged -> row.locatorLabel
 }
 
-internal fun backendStableId(row: BackendRow): String = when (row) {
+fun backendStableId(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> "pid-${row.ide.pid}"
     is BackendRow.FromPort -> "port-${row.ide.port}"
     is BackendRow.FromManaged -> row.info.id
 }
 
-internal fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
+fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
     put("id", id)
     put("type", BACKEND_TYPE_INTELLIJ)
     put("source", backendSource(row))
@@ -102,7 +102,7 @@ private fun backendSource(row: BackendRow): String = when (row) {
     is BackendRow.FromManaged -> "managed"
 }
 
-internal fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = buildJsonObject {
+fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = buildJsonObject {
     put("port", ide.port)
     put("baseUrl", ide.baseUrl)
     ide.productName?.let { put("productName", it) }
@@ -112,7 +112,7 @@ internal fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = bui
     ide.buildNumber?.let { put("buildNumber", it) }
 }
 
-internal fun JsonObjectBuilder.putJsonFields(fields: JsonObject) {
+fun JsonObjectBuilder.putJsonFields(fields: JsonObject) {
     for ((key, value) in fields) {
         put(key, value)
     }
