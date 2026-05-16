@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy.server
 
+import com.jonnyzzz.mcpSteroid.proxy.NpxKtServices
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 
 /**
@@ -17,9 +18,11 @@ import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
  * catch only `Exception`, so a `NotImplementedError` would tear down the entire
  * stdio server instead of becoming a proper MCP `ToolCallResult(isError=true)`.
  */
-class StubMcpSteroidTools : McpSteroidTools() {
+class StubMcpSteroidTools(
+    val services: NpxKtServices,
+) : McpSteroidTools() {
     override fun <T> handler(type: Class<T>): T =
         throw UnsupportedOperationException(
-            "not yet ready: handler<${type.name}>() is not wired in npx-kt yet"
+            "not yet ready: handler<${type.name}>() is not wired in npx-kt yet for ${services.clientInfo.client}"
         )
 }

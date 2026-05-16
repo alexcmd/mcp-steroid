@@ -8,9 +8,8 @@ import com.jonnyzzz.mcpSteroid.mcp.ResourcesCapability
 import com.jonnyzzz.mcpSteroid.mcp.ServerCapabilities
 import com.jonnyzzz.mcpSteroid.mcp.ServerInfo
 import com.jonnyzzz.mcpSteroid.mcp.ToolsCapability
+import com.jonnyzzz.mcpSteroid.proxy.NpxKtServices
 import com.jonnyzzz.mcpSteroid.proxy.ProxyVersionMetadata
-import java.io.InputStream
-import java.io.OutputStream
 
 /**
  * Boot a real MCP stdio server inside the npx-kt CLI process.
@@ -21,17 +20,15 @@ import java.io.OutputStream
  *    the core. The handlers themselves are not yet implemented in npx-kt — see
  *    [StubMcpSteroidTools] — so calling a tool returns an error, but
  *    `tools/list` / `prompts/list` / `resources/list` describe the full surface.
- *  - [McpStdioServer] runs the transport on the supplied [input] / [output]
- *    streams (NDJSON or framed, auto-detected from the first inbound frame).
+ *  - [McpStdioServer] runs the transport on [NpxKtServices.mcpStdin] /
+ *    [NpxKtServices.mcpStdout] (NDJSON or framed, auto-detected from the first
+ *    inbound frame).
  *
- * The caller MUST pass the *original* `System.in` / `System.out` references —
- * not the JVM globals after [main] has already routed `System.out` to stderr.
- * Suspends until [input] reaches EOF.
+ * [NpxKtServices] owns the original `System.in` / `System.out` references —
+ * not the JVM globals after main has already routed `System.out` to stderr.
+ * Suspends until [NpxKtServices.mcpStdin] reaches EOF.
  */
-suspend fun runStubStdioMcpServer(
-    input: InputStream,
-    output: OutputStream,
-) {
+suspend fun runStubStdioMcpServer(services: NpxKtServices) {
     val server = McpServerCore(
         serverInfo = ServerInfo(
             name = "mcp-steroid-proxy",
@@ -44,7 +41,7 @@ suspend fun runStubStdioMcpServer(
         ),
     )
 
-    StubMcpSteroidTools().registerAll(server)
+    StubMcpSteroidTools(services).registerAll(server)
 
-    McpStdioServer(server, input = input, output = output).run()
+    McpStdioServer(server, input = services.mcpStdin, output = services.mcpStdout).run()
 }

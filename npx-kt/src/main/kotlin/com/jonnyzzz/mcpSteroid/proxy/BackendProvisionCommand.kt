@@ -21,8 +21,10 @@ fun runBackendProvisionListCommand(
     json: Boolean,
     targets: suspend (HttpClient) -> List<ProvisionTarget> = { httpClient -> detectProvisionTargets(httpClient) },
     markers: () -> Set<DiscoveredIde> = { scanMarkersOnce() },
+    httpClientFactory: () -> HttpClient = ::createProvisionHttpClient,
+    closeHttpClient: Boolean = true,
 ) {
-    val (rawTargets, markerRows) = withProvisionHttpClient { httpClient ->
+    val (rawTargets, markerRows) = withProvisionHttpClient(httpClientFactory, closeHttpClient) { httpClient ->
         runBlocking(Dispatchers.IO) {
             targets(httpClient) to markers()
         }
@@ -44,9 +46,18 @@ fun runBackendProvisionCommand(
             ?: error("backend provision id is required")
         provisionBackend(id, httpClient)
     },
+    markers: () -> Set<DiscoveredIde> = { scanMarkersOnce() },
+    httpClientFactory: () -> HttpClient = ::createProvisionHttpClient,
+    closeHttpClient: Boolean = true,
 ): Int {
     val id = command.id ?: run {
-        runBackendProvisionListCommand(out, json = command.json)
+        runBackendProvisionListCommand(
+            out = out,
+            json = command.json,
+            markers = markers,
+            httpClientFactory = httpClientFactory,
+            closeHttpClient = closeHttpClient,
+        )
         return 0
     }
     if (!isSupportedProvisionTargetId(id)) {
@@ -57,7 +68,7 @@ fun runBackendProvisionCommand(
     }
     if (command.json) {
         return runBackendActionJson(out, action = PROVISION_ACTION_ID, id = id) {
-            val result = withProvisionHttpClient { httpClient ->
+            val result = withProvisionHttpClient(httpClientFactory, closeHttpClient) { httpClient ->
                 runBlocking(Dispatchers.IO) {
                     provision(httpClient)
                 }
@@ -66,7 +77,7 @@ fun runBackendProvisionCommand(
         }
     }
 
-    val result = withProvisionHttpClient { httpClient ->
+    val result = withProvisionHttpClient(httpClientFactory, closeHttpClient) { httpClient ->
         runBlocking(Dispatchers.IO) {
             provision(httpClient)
         }
@@ -74,6 +85,22 @@ fun runBackendProvisionCommand(
     renderProvisionInstructionsText(result, out)
     return 0
 }
+
+fun NpxKtServices.runBackendProvisionCommand(command: NpxKtCommand.NpxCommandBackendProvision): Int =
+    runBackendProvisionCommand(
+        out = mcpStdout,
+        command = command,
+        provision = { httpClient ->
+            val id = command.id
+                ?: error("backend provision id is required")
+            backendProvisioner.provision(id, httpClient) {
+                detectProvisionTargets(portDiscovery)
+            }
+        },
+        markers = { scanMarkersOnce() },
+        httpClientFactory = { commandHttpClient },
+        closeHttpClient = false,
+    )
 
 fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""").matches(raw)
 
@@ -212,7 +239,22 @@ private fun provisionResultJson(result: ProvisionResult): JsonObject = buildJson
     put("note", SUGGESTED_DESTINATION_NOTE)
 }
 
-private fun <T> withProvisionHttpClient(block: (HttpClient) -> T): T {
+private fun <T> withProvisionHttpClient(
+    httpClientFactory: () -> HttpClient,
+    closeHttpClient: Boolean,
+    block: (HttpClient) -> T,
+): T {
+    val httpClient = httpClientFactory()
+    return try {
+        block(httpClient)
+    } finally {
+        if (closeHttpClient) {
+            httpClient.close()
+        }
+    }
+}
+
+private fun createProvisionHttpClient(): HttpClient {
     return HttpClient(CIO) {
         install(HttpTimeout) {
             connectTimeoutMillis = 3_000
@@ -220,5 +262,5 @@ private fun <T> withProvisionHttpClient(block: (HttpClient) -> T): T {
             socketTimeoutMillis = 10_000
         }
         expectSuccess = false
-    }.use(block)
+    }
 }

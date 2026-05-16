@@ -2,21 +2,10 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.logger
-import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
-import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
-import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.proxy.server.runStubStdioMcpServer
-import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.HttpTimeoutConfig
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
-import java.io.InputStream
-import java.io.PrintStream
-import java.util.UUID
 import kotlin.random.Random
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.milliseconds
@@ -48,7 +37,7 @@ fun main(rawArgs: Array<String>) {
     configureLoggingAndLogStarted(homePaths, rawArgs.toList(), command.debug)
 
     val lifetime = CloseableStackHost()
-    try {
+    val exitCode = try {
         NpxKtServices(
             lifetime = lifetime,
             homePaths = homePaths,
@@ -58,10 +47,11 @@ fun main(rawArgs: Array<String>) {
     } catch (t: Throwable) {
         System.err.println("Unexpected error ${t.message}")
         t.printStackTrace(System.err)
-        exitProcess(64)
+        64
     } finally {
         lifetime.closeAllStacks()
     }
+    exitProcess(exitCode)
 }
 
 private fun buildHeadliner(): String = buildString {
@@ -73,7 +63,7 @@ private fun buildHeadliner(): String = buildString {
 fun NpxKtServices.mainImpl1(
     command: NpxKtCommand,
     headliner: String,
-) {
+): Int {
     class DevrigCoroutineExceptionHandler
 
     val log = logger<DevrigCoroutineExceptionHandler>()
@@ -81,7 +71,7 @@ fun NpxKtServices.mainImpl1(
         log.warn("devrig coroutine exception: ${throwable.message} in $context", throwable)
     }
 
-    runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler + SupervisorJob()) {
+    return runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler + SupervisorJob()) {
         coroutineScope {
             mainImpl2(command, headliner)
         }
@@ -91,80 +81,39 @@ fun NpxKtServices.mainImpl1(
 suspend fun NpxKtServices.mainImpl2(
     command: NpxKtCommand,
     headliner: String,
-) : Unit = coroutineScope {
-    launch {
+): Int = coroutineScope {
+    backgroundScope.launch {
         delay(Random.nextInt(200, 1300).milliseconds)
         checkForUpdates()
     }
 
-    launch {
+    backgroundScope.launch {
         beacon.captureStarted(command)
     }
 
     if (command is NpxKtCommand.MCP) {
         beacon.runHeartbeat()
         try {
-            mainImplMcp(mcpStdin, mcpStdout)
+            mainImplMcp()
+            return@coroutineScope 0
         } catch (t: Throwable) {
             System.err.println("Unexpected error ${t.message}")
             t.printStackTrace(System.err)
-            exitProcess(64)
+            return@coroutineScope 64
         }
-        return@coroutineScope
     }
 
     mcpStdout.println(headliner)
     try {
-        val cliResult = runCli(command)
-        exitProcess(cliResult)
+        runCli(command)
     } catch (t: Throwable) {
         System.err.println("Unexpected error calling $command. ${t.message}")
         t.printStackTrace(System.err)
-        exitProcess(64)
+        64
     }
 }
 
-suspend fun NpxKtServices.mainImplMcp(mcpStdin: InputStream, mcpStdout: PrintStream) = coroutineScope {
-    // Construct every dependent service explicitly here — the npx-kt module
-    // does not use any DI framework, so main.kt is the wiring root.
-    val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
-    val clientInfo = NpxStreamClientInfo(
-        client = "devrig",
-        clientPid = ProcessHandle.current().pid(),
-        clientVersion = ProxyVersionMetadata.getProxyVersion(),
-        clientInstanceId = "npx-kt-${UUID.randomUUID()}",
-        platform = System.getProperty("os.name"),
-        arch = System.getProperty("os.arch"),
-    )
-
-    // ktor-client used by the IDE-monitoring service. Long-lived NDJSON
-    // streams need request/socket timeouts disabled; the connect timeout
-    // stays bounded so an unreachable IDE doesn't hang the worker.
-    val httpClient = HttpClient(CIO) {
-        install(HttpTimeout) {
-            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-            socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-            connectTimeoutMillis = 10_000
-        }
-        expectSuccess = false
-    }
-
-    val discovery = IdeDiscoveryService(
-        markersDir = homePaths.markersDir.toFile(),
-        allowHosts = allowHosts,
-    )
-    val monitor = IdeMonitorService(
-        httpClient = httpClient,
-        discovery = discovery,
-        clientInfo = clientInfo,
-    )
-
-    // Active port-scan discovery, independent of (and parallel to) the
-    // marker-based path. Probes common IntelliJ HTTP-server ports on the
-    // dedicated `mcp-steroid-port-scan-*` thread pool so a slow TCP
-    // connect never stalls the stdio MCP server.
-    val portDiscovery = IntelliJPortDiscovery(httpClient = httpClient)
-
+suspend fun NpxKtServices.mainImplMcp() = coroutineScope {
     // npx-kt boots a real MCP stdio server backed by McpStdioServer +
     // McpSteroidTools (with stub handlers — see StubMcpSteroidTools). The legacy
     // proxy path that aggregates discovered IDE MCP servers lives in
@@ -177,16 +126,14 @@ suspend fun NpxKtServices.mainImplMcp(mcpStdin: InputStream, mcpStdout: PrintStr
     //   monitor   → opens one POST /npx/v1/projects/stream per IDE,
     //               receives push notifications on project open/close
 
-    val discoveryJob = discovery.start(this)
-    val monitorJob = monitor.start(this)
+    val discoveryJob = ideDiscovery.start(this)
+    val monitorJob = ideMonitor.start(this)
     val portDiscoveryJob = portDiscovery.start(this)
     try {
-        runStubStdioMcpServer(input = mcpStdin, output = mcpStdout)
+        runStubStdioMcpServer(this@mainImplMcp)
     } finally {
         portDiscoveryJob.cancel()
         monitorJob.cancel()
         discoveryJob.cancel()
-        portDiscovery.close()
-        httpClient.close()
     }
 }

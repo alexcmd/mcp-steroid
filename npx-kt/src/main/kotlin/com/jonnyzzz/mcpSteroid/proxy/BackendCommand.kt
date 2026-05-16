@@ -131,6 +131,16 @@ fun runBackendCommand(
     return 0
 }
 
+fun NpxKtServices.runBackendCommand(command: NpxKtCommand.NpxCommandBackend): Int {
+    val rows = collectBackendRows()
+    if (command.json) {
+        renderBackendJson(rows, mcpStdout)
+    } else {
+        renderBackendOutput(rows, mcpStdout)
+    }
+    return 0
+}
+
 fun collectBackendRows(
     homePaths: HomePaths = resolveHomePaths(),
 ): List<BackendRow> {
@@ -148,28 +158,53 @@ fun collectBackendRows(
     }
     val portDiscovery = IntelliJPortDiscovery(httpClient = httpClient)
 
-    try {
-        discovery.scanOnce()
-        val ides = discovery.ides.value
-            .sortedWith(compareBy({ it.marker.ide.name }, { it.pid }))
-
-        return runBlocking(Dispatchers.IO) {
-            // Run marker-fetch and port-scan concurrently — both hit localhost
-            // and they're independent, so there's no reason to serialise.
-            val markerRowsAsync = async {
-                collectMarkerSnapshots(httpClient, ides, perIdeTimeout = 8.seconds)
-            }
-            val portIdesAsync = async {
-                collectPortDiscoveredIdes(portDiscovery)
-            }
-            val markerRows = markerRowsAsync.await()
-            val portIdes = portIdesAsync.await()
-            val managedBackends = BackendManager(homePaths).list()
-            mergeRows(markerRows, portIdes, managedBackends)
-        }
+    return try {
+        collectBackendRows(
+            discovery = discovery,
+            httpClient = httpClient,
+            portDiscovery = portDiscovery,
+            clientInfo = backendCommandClientInfo(),
+            managedBackends = { BackendManager(homePaths).list() },
+        )
     } finally {
         portDiscovery.close()
         httpClient.close()
+    }
+}
+
+fun NpxKtServices.collectBackendRows(): List<BackendRow> {
+    return collectBackendRows(
+        discovery = ideDiscovery,
+        httpClient = commandHttpClient,
+        portDiscovery = portDiscovery,
+        clientInfo = backendClientInfo,
+        managedBackends = { backendManager.list() },
+    )
+}
+
+private fun collectBackendRows(
+    discovery: IdeDiscoveryService,
+    httpClient: HttpClient,
+    portDiscovery: IntelliJPortDiscovery,
+    clientInfo: NpxStreamClientInfo,
+    managedBackends: () -> List<ManagedBackendInfo>,
+): List<BackendRow> {
+    discovery.scanOnce()
+    val ides = discovery.ides.value
+        .sortedWith(compareBy({ it.marker.ide.name }, { it.pid }))
+
+    return runBlocking(Dispatchers.IO) {
+        // Run marker-fetch and port-scan concurrently — both hit localhost
+        // and they're independent, so there's no reason to serialise.
+        val markerRowsAsync = async {
+            collectMarkerSnapshots(httpClient, ides, perIdeTimeout = 8.seconds, clientInfo = clientInfo)
+        }
+        val portIdesAsync = async {
+            collectPortDiscoveredIdes(portDiscovery)
+        }
+        val markerRows = markerRowsAsync.await()
+        val portIdes = portIdesAsync.await()
+        mergeRows(markerRows, portIdes, managedBackends())
     }
 }
 
@@ -181,6 +216,11 @@ fun scanMarkersOnce(
     return discovery.ides.value
 }
 
+fun NpxKtServices.scanMarkersOnce(): Set<DiscoveredIde> {
+    ideDiscovery.scanOnce()
+    return ideDiscovery.ides.value
+}
+
 fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
     val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
@@ -190,6 +230,9 @@ fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
         allowHosts = allowHosts,
     )
 }
+
+fun NpxKtServices.runBackendDownloadCommand(command: NpxKtCommand.NpxCommandBackendDownload): Int =
+    runBackendDownloadCommand(mcpStdout, homePaths, command, backendService = backendManager)
 
 fun runBackendDownloadCommand(
     out: PrintStream,
@@ -241,6 +284,9 @@ fun runBackendDownloadCommand(
     return 0
 }
 
+fun NpxKtServices.runBackendStartCommand(command: NpxKtCommand.NpxCommandBackendStart): Int =
+    runBackendStartCommand(mcpStdout, homePaths, command, backendService = backendManager)
+
 fun runBackendStartCommand(
     out: PrintStream,
     homePaths: HomePaths,
@@ -287,6 +333,9 @@ fun runBackendStartCommand(
     out.println("config: ${result.configPath}")
     return 0
 }
+
+fun NpxKtServices.runBackendStopCommand(command: NpxKtCommand.NpxCommandBackendStop): Int =
+    runBackendStopCommand(mcpStdout, homePaths, command, backendService = backendManager)
 
 fun runBackendStopCommand(
     out: PrintStream,
@@ -512,9 +561,10 @@ suspend fun collectMarkerSnapshots(
     httpClient: HttpClient,
     ides: List<DiscoveredIde>,
     perIdeTimeout: Duration,
+    clientInfo: NpxStreamClientInfo = backendCommandClientInfo(),
 ): List<BackendRow.FromMarker> = coroutineScope {
     ides.map { ide ->
-        async { fetchSnapshotForIde(httpClient, ide, perIdeTimeout) }
+        async { fetchSnapshotForIde(httpClient, ide, perIdeTimeout, clientInfo) }
     }.awaitAll()
 }
 
@@ -522,9 +572,10 @@ private suspend fun fetchSnapshotForIde(
     httpClient: HttpClient,
     ide: DiscoveredIde,
     timeout: Duration,
+    clientInfo: NpxStreamClientInfo,
 ): BackendRow.FromMarker {
     val snapshot = try {
-        withTimeoutOrNull(timeout) { fetchFirstSnapshot(httpClient, ide) }
+        withTimeoutOrNull(timeout) { fetchFirstSnapshot(httpClient, ide, clientInfo) }
     } catch (e: Exception) {
         return BackendRow.FromMarker(ide, projects = null, errorMessage = e.message ?: e::class.simpleName)
     }
@@ -542,21 +593,12 @@ private suspend fun fetchSnapshotForIde(
 private suspend fun fetchFirstSnapshot(
     httpClient: HttpClient,
     ide: DiscoveredIde,
+    clientInfo: NpxStreamClientInfo,
 ): List<ProjectInfo> {
     val base = ide.mcpUrl.trimEnd('/').removeSuffix("/mcp")
     val url = base + NPX_PROJECTS_STREAM_PATH
     val token = ide.marker.token
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    val body = NpxStreamJson.encodeClientInfo(
-        NpxStreamClientInfo(
-            client = "mcp-steroid-proxy (backend)",
-            clientPid = ProcessHandle.current().pid(),
-            clientVersion = proxyVersion,
-            clientInstanceId = "backend-${UUID.randomUUID()}",
-            platform = System.getProperty("os.name"),
-            arch = System.getProperty("os.arch"),
-        )
-    )
+    val body = NpxStreamJson.encodeClientInfo(clientInfo)
 
     return httpClient.preparePost(url) {
         headers {
@@ -587,6 +629,16 @@ private suspend fun fetchFirstSnapshot(
         error("stream closed before a snapshot envelope arrived")
     }
 }
+
+private fun backendCommandClientInfo(): NpxStreamClientInfo =
+    NpxStreamClientInfo(
+        client = "devrig (backend)",
+        clientPid = ProcessHandle.current().pid(),
+        clientVersion = ProxyVersionMetadata.getProxyVersion(),
+        clientInstanceId = "backend-${UUID.randomUUID()}",
+        platform = System.getProperty("os.name"),
+        arch = System.getProperty("os.arch"),
+    )
 
 /**
  * Pure renderer — separated from [runBackendCommand] so a unit test can

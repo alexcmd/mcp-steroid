@@ -49,7 +49,17 @@ class BackendProvisioner(
     private val portRanges: List<IntRange> = IntelliJPortDiscovery.DEFAULT_PORT_RANGES,
 ) {
     suspend fun provision(id: String, httpClient: HttpClient): ProvisionResult {
-        val targets = detectProvisionTargets(httpClient, portRanges)
+        return provision(id, httpClient) {
+            detectProvisionTargets(httpClient, portRanges)
+        }
+    }
+
+    suspend fun provision(
+        id: String,
+        httpClient: HttpClient,
+        targets: suspend () -> List<ProvisionTarget>,
+    ): ProvisionResult {
+        val targets = targets()
         val target = targets.singleOrNull { it.id == id }
             ?: throw ManagedBackendValidationException(unknownProvisionTargetMessage(id, targets))
 
@@ -83,11 +93,15 @@ suspend fun detectProvisionTargets(
     portRanges: List<IntRange> = IntelliJPortDiscovery.DEFAULT_PORT_RANGES,
 ): List<ProvisionTarget> {
     return IntelliJPortDiscovery(httpClient = httpClient, portRanges = portRanges).use { discovery ->
-        discovery.scanOnce()
-        discovery.detected.value
-            .sortedBy { it.port }
-            .map { ProvisionTarget(id = provisionTargetId(it.port), ide = it) }
+        detectProvisionTargets(discovery)
     }
+}
+
+suspend fun detectProvisionTargets(portDiscovery: IntelliJPortDiscovery): List<ProvisionTarget> {
+    portDiscovery.scanOnce()
+    return portDiscovery.detected.value
+        .sortedBy { it.port }
+        .map { ProvisionTarget(id = provisionTargetId(it.port), ide = it) }
 }
 
 fun provisionTargetId(port: Int): String = "port-$port"

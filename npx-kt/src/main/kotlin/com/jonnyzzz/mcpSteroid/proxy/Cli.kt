@@ -285,12 +285,12 @@ fun NpxKtServices.runCli(command: NpxKtCommand): Int {
                 System.err.println(command.text)
                 64
             }
-            is NpxKtCommand.NpxCommandBackend -> runBackendCommand(mcpStdout, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendDownload -> runBackendDownloadCommand(mcpStdout, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendStart -> runBackendStartCommand(mcpStdout, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendStop -> runBackendStopCommand(mcpStdout, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendProvision -> runBackendProvisionCommand(mcpStdout, command)
-            is NpxKtCommand.NpxCommandProject -> runProjectCommand(mcpStdout, command)
+            is NpxKtCommand.NpxCommandBackend -> runBackendCommand(command)
+            is NpxKtCommand.NpxCommandBackendDownload -> runBackendDownloadCommand(command)
+            is NpxKtCommand.NpxCommandBackendStart -> runBackendStartCommand(command)
+            is NpxKtCommand.NpxCommandBackendStop -> runBackendStopCommand(command)
+            is NpxKtCommand.NpxCommandBackendProvision -> runBackendProvisionCommand(command)
+            is NpxKtCommand.NpxCommandProject -> runProjectCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

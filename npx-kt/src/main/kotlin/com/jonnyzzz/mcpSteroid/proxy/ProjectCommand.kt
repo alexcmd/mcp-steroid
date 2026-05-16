@@ -10,15 +10,12 @@ data class ProjectListing(
     val managedRows: List<BackendRow.FromManaged> = emptyList(),
 )
 
-fun runProjectCommand(
-    out: PrintStream,
-    command: NpxKtCommand.NpxCommandProject,
-) : Int {
+fun NpxKtServices.runProjectCommand(command: NpxKtCommand.NpxCommandProject): Int {
     val listing = projectListingFromRows(collectBackendRows())
     if (command.json) {
-        renderProjectJson(listing, out)
+        renderProjectJson(listing, mcpStdout)
     } else {
-        renderProjectOutput(listing, out)
+        renderProjectOutput(listing, mcpStdout)
     }
     return 0
 }
