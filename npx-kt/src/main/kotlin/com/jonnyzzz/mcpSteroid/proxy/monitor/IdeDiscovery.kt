@@ -38,8 +38,8 @@ data class DiscoveredIde(
 /**
  * Polling discovery layer for `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON markers.
  *
- * The legacy proxy ([com.jonnyzzz.mcpSteroid.proxy.scanMarkers]) does the
- * same thing but is locked into [com.jonnyzzz.mcpSteroid.proxy.MarkerEntry];
+ * The legacy proxy ([com.jonnyzzz.mcpSteroid.proxy.attic.scanMarkers]) does the
+ * same thing but is locked into [com.jonnyzzz.mcpSteroid.proxy.attic.MarkerEntry];
  * this service exposes a typed [DiscoveredIde] flow and is the single
  * source of truth for the new monitor stack.
  *
