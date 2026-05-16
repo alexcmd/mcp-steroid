@@ -30,8 +30,8 @@ import kotlinx.coroutines.launch
 fun main(rawArgs: Array<String>) {
     // Replace stdout immediately. MCP stdio reserves the original stdout for
     // frames, and command detection / service setup must not leak there.
-    val mcpStdin: InputStream = System.`in`
-    val mcpStdout: PrintStream = System.out
+    val mcpStdin = System.`in`
+    val mcpStdout = System.out
     System.setOut(System.err)
 
     val args = NpxKtArgs(rawArgs)
