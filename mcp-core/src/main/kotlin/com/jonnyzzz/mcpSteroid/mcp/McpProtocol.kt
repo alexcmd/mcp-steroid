@@ -46,6 +46,22 @@ data class JsonRpcError(
     val data: JsonElement? = null,
 )
 
+/**
+ * Encode a JSON-RPC error response to a String — used by the transport
+ * boundary to convert internal exceptions into well-formed JSON-RPC
+ * error envelopes (HTTP 200 with `error.code/message` in the body)
+ * instead of bare HTTP 500s. Mirrors the per-call shape `McpServerCore`
+ * uses internally; lives here so layers above `McpServerCore` (transports,
+ * health checks) can construct the same shape without exposing private API.
+ */
+fun encodeJsonRpcError(id: JsonElement, code: Int, message: String): String {
+    val response = JsonRpcResponse(
+        id = id,
+        error = JsonRpcError(code = code, message = message),
+    )
+    return McpJson.encodeToString(JsonRpcResponse.serializer(), response)
+}
+
 // Standard JSON-RPC error codes
 object JsonRpcErrorCodes {
     const val PARSE_ERROR = -32700
