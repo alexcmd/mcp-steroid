@@ -164,7 +164,7 @@ dependencies {
     // surface. The bundled `logback.xml` (in src/main/resources) routes
     // everything to stderr only — never stdout, which is reserved for MCP
     // NDJSON frames.
-    runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
+    implementation("ch.qos.logback:logback-classic:1.5.32")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
@@ -173,11 +173,6 @@ dependencies {
     // the production `mcp-steroid-proxy` binary stays a pure ktor-client.
     testImplementation("io.ktor:ktor-server-core:$ktorVersion")
     testImplementation("io.ktor:ktor-server-cio:$ktorVersion")
-    // Compile-time access to logback's ListAppender / Logger so tests can pin
-    // log-level routing (e.g. legacy markers must NOT log at WARN). Logback is
-    // already on the runtime classpath via the `runtimeOnly` line above; this
-    // additional declaration just makes the API visible to test source.
-    testImplementation("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -533,6 +528,7 @@ val verifyBundledLibraries by tasks.registering {
 
             // Internal jars (this project + sibling subprojects).
             "lib/npx-kt-$proxyVersion.jar",
+            "lib/closeable-stack-$proxyVersion.jar",
             "lib/execution-storage-$proxyVersion.jar",
             "lib/intellij-downloader-$proxyVersion.jar",
             "lib/mcp-core-$proxyVersion.jar",
@@ -575,8 +571,8 @@ val verifyBundledLibraries by tasks.registering {
             "lib/gson-2.10.1.jar",
 
             // SLF4J + Logback (production logging binding).
-            "lib/logback-classic-1.5.18.jar",
-            "lib/logback-core-1.5.18.jar",
+            "lib/logback-classic-1.5.32.jar",
+            "lib/logback-core-1.5.32.jar",
             "lib/slf4j-api-2.0.17.jar",
 
             // Other transitives.
