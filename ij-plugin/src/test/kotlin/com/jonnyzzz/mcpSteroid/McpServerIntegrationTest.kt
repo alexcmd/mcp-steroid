@@ -824,6 +824,141 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     }
 
     /**
+     * Regression test for issue #46: a stuck `steroid_execute_code` script that
+     * exceeds its own `timeout` parameter must come back as a JSON-RPC result
+     * envelope with `isError=true` and a clear "timed out" message — never as
+     * an HTTP 500 or a top-level JSON-RPC `error` object. A 500 looks like a
+     * transport failure and stalls the agent session; a clean tool-error lets
+     * the agent decide to retry or change strategy.
+     *
+     * The synthetic script blocks via `kotlinx.coroutines.delay` (cancellation-
+     * cooperative) for far longer than the requested timeout, so `withTimeout`
+     * inside `ScriptExecutor` fires its `TimeoutCancellationException` path
+     * and `resultBuilder.reportFailed("Execution timed out after $timeout seconds")`
+     * is the user-visible signal.
+     */
+    fun testExecuteCodeTimeoutReturnsCleanErrorNotHttp500(): Unit = timeoutRunBlocking(60.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+        val sessionId = startSession(server)
+
+        // Smallest practical script timeout (2 seconds). Script body delays for
+        // 5 minutes — well beyond the timeout — and would otherwise pin the
+        // executor coroutine until the test's own 60 s budget expired.
+        val execRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", "exec-timeout")
+            put("method", "tools/call")
+            putJsonObject("params") {
+                put("name", "steroid_execute_code")
+                putJsonObject("arguments") {
+                    put("project_name", project.name)
+                    put("timeout", 2)
+                    put("reason", "Timeout regression test (#46)")
+                    put("task_id", "timeout-test")
+                    put(
+                        "code",
+                        """
+                            import kotlinx.coroutines.delay
+                            import kotlin.time.Duration.Companion.minutes
+                            println("ABOUT_TO_BLOCK")
+                            // delay() is cancellation-cooperative — when ScriptExecutor's
+                            // withTimeout(timeout.seconds) fires, this throws
+                            // TimeoutCancellationException and the executor catches it.
+                            delay(5.minutes)
+                            println("UNREACHABLE")
+                        """.trimIndent()
+                    )
+                }
+            }
+        }.toString()
+
+        val execResponse = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(execRequest)
+        }
+
+        assertEquals(
+            "Timeout must come back as HTTP 200 — agents treat 500 as a transport failure",
+            HttpStatusCode.OK,
+            execResponse.status,
+        )
+
+        val rpc = McpJson.decodeFromString<JsonRpcResponse>(execResponse.bodyAsText())
+        assertNull(
+            "Timeout must NOT be surfaced as a top-level JSON-RPC `error` — it's a tool error, not a protocol error",
+            rpc.error,
+        )
+        assertNotNull("Tool result envelope must be present even on timeout", rpc.result)
+
+        val toolResult = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
+        assertTrue("Timeout must mark the tool result as isError=true", toolResult.isError)
+
+        val output = toolResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+        assertTrue(
+            "Error content must name the failure mode (got: $output)",
+            output.contains("timed out", ignoreCase = true) || output.contains("timeout", ignoreCase = true),
+        )
+        // Pin the exact substring `reportFailed` writes — `output.contains("2")`
+        // alone would match any incidental digit (execution id, stack-trace
+        // frame, timestamp), so a future change that drops the configured
+        // timeout from the message ("timed out after 600 seconds" as a stale
+        // fallback) would still pass that loose assertion.
+        assertTrue(
+            "Error content must name the configured timeout (got: $output)",
+            output.contains("after 2 second"),
+        )
+        // Defensive: prove the script body actually ran up to the suspension
+        // point before being cancelled, and that the line *after* the
+        // cancellation point did NOT run. If the timeout fired during
+        // waitForSmartMode() instead of during the user delay() — possible
+        // on a cold sandbox — these markers also catch that regression.
+        assertTrue(
+            "Script must have reached the user delay before cancellation (got: $output)",
+            output.contains("ABOUT_TO_BLOCK"),
+        )
+        assertFalse(
+            "Script must NOT have executed past the cancellation point (got: $output)",
+            output.contains("UNREACHABLE"),
+        )
+
+        // Sanity check: the server stays alive after a timeout. The next
+        // request on the same session must succeed end-to-end — decode the
+        // result and prove `!isError`, otherwise a server stuck in a
+        // degraded `isError=true on every call` state would pass an
+        // HTTP-200-only check.
+        val nextRequest = buildExecuteCodeRequest(project.name)
+        val nextResponse = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody(nextRequest)
+        }
+        assertEquals(
+            "MCP server must keep accepting requests after a timeout",
+            HttpStatusCode.OK,
+            nextResponse.status,
+        )
+        val nextRpc = McpJson.decodeFromString<JsonRpcResponse>(nextResponse.bodyAsText())
+        assertNull("Follow-up call must succeed cleanly", nextRpc.error)
+        assertNotNull("Follow-up must return a result envelope", nextRpc.result)
+        val nextResult = McpJson.decodeFromJsonElement<ToolCallResult>(nextRpc.result!!)
+        assertFalse(
+            "Server must process the follow-up cleanly, not in a degraded isError state",
+            nextResult.isError,
+        )
+        val nextOutput = nextResult.content
+            .filterIsInstance<ContentItem.Text>()
+            .joinToString("\n") { it.text }
+        assertTrue(
+            "Follow-up output must contain the echoed script marker (got: $nextOutput)",
+            nextOutput.contains("Integration test execution from MCP"),
+        )
+    }
+
+    /**
      * Tests that progress reporting works correctly over the MCP protocol.
      * When code calls progress(), the messages should be included in the response.
      *
