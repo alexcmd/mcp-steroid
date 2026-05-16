@@ -32,7 +32,7 @@ const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
  * function pure and dependency-free.
  */
 sealed interface CliMode {
-    /** `--mcp` was passed. Run as the stdio MCP server. */
+    /** `mpc` was passed. Run as the stdio MCP server. */
     object Mcp : CliMode
 
     /** `--help`, `-h`, or no args — print usage on stdout and exit 0. */
@@ -128,10 +128,10 @@ private val globalBooleanFlags = setOf("--debug")
 private val helpFlags = setOf("--help", "-h")
 private val versionSelectorFlags = setOf("--version", "-v")
 private val informationOverrideFlags = helpFlags + versionSelectorFlags
-private val knownModeKeywords = setOf("backend", "project")
+private val knownModeKeywords = setOf("mpc", "backend", "project")
 private val backendLifecycleSubcommands = setOf("download", "start", "stop")
 private val backendSubcommands = backendLifecycleSubcommands + "provision"
-private val knownFlags = globalBooleanFlags + helpFlags + versionSelectorFlags + setOf("--mcp", "--json", "--allow-paid")
+private val knownFlags = globalBooleanFlags + helpFlags + versionSelectorFlags + setOf("--json", "--allow-paid")
 
 private val cliModeRules: List<ModeRule> = listOf(
     ModeRule(
@@ -146,6 +146,12 @@ private val cliModeRules: List<ModeRule> = listOf(
         expectedPositionals = 0..0,
         allowedFlags = versionSelectorFlags,
     ) { CliMode.Version },
+    ModeRule(
+        mode = "mpc",
+        subcommand = null,
+        expectedPositionals = 0..0,
+        allowedFlags = emptySet(),
+    ) { CliMode.Mcp },
     ModeRule(
         mode = "backend",
         subcommand = "download",
@@ -251,20 +257,17 @@ private val cliModeRules: List<ModeRule> = listOf(
  * Pure arg parser. Touches nothing but its input — safe to call before
  * stdout redirection or any class init.
  *
- * Precedence (highest first): `--mcp` → `--help` / `-h` / empty →
- * `--version` / `-v` → `backend` → `project` → Unknown. The MCP selector
- * intentionally wins over everything so a wrapper that accidentally combines
- * flags still keeps MCP framing intact. The info selectors intentionally win
- * over data subcommands so `backend --help` prints usage instead of opening
- * connections; non-info modes are strict and reject unknown flags, missing
- * value-flag values, and extra positional arguments.
+ * Precedence (highest first): `--help` / `-h` / empty → `--version` / `-v` →
+ * `mpc` → `backend` → `project` → Unknown. The info selectors intentionally
+ * win over data subcommands so `backend --help` prints usage instead of
+ * opening connections; non-info modes are strict and reject unknown flags,
+ * missing value-flag values, and extra positional arguments.
  *
  * `--debug` is **orthogonal** to the mode (it toggles log verbosity, see
  * [parseDebugFlag]) and is accepted in every mode.
  */
 fun parseCliMode(args: Array<String>): CliMode {
     val rawArgs = args.toList()
-    if (rawArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (rawArgs.any { it in helpFlags }) return CliMode.Help
     if (rawArgs.hasVersionSelector()) return CliMode.Version
 
@@ -290,29 +293,9 @@ fun parseCliMode(args: Array<String>): CliMode {
 }
 
 /**
- * Tokens that are deliberately ignored once `--mcp` is present. Used only for a
- * DEBUG stderr log after stdout has been reserved for MCP framing.
- */
-fun mcpIgnoredTokens(args: Array<String>): List<String> {
-    val ignored = mutableListOf<String>()
-    var index = 0
-    while (index < args.size) {
-        val arg = args[index]
-        when (arg) {
-            "--mcp", "--debug" -> index++
-            else -> {
-                ignored += arg
-                index++
-            }
-        }
-    }
-    return ignored
-}
-
-/**
  * `--debug` toggles verbose stderr logging (DEBUG instead of INFO). Pure and
  * orthogonal to [parseCliMode] — `--debug` is valid in EVERY mode, including
- * `--mcp` where it still goes to stderr (stdout stays reserved for NDJSON).
+ * `mpc` where it still goes to stderr (stdout stays reserved for NDJSON).
  */
 fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
 
@@ -325,7 +308,7 @@ private fun List<String>.hasVersionSelector(): Boolean {
             "-v" -> return true
             "--version" -> {
                 val value = getOrNull(index + 1)
-                if (value == null || value.startsWith("-")) return true
+                if (value == null || value.startsWith("-") || value in knownModeKeywords) return true
                 index += 2
             }
             else -> index++
@@ -525,7 +508,7 @@ private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\
  * Returns the process exit code the caller should propagate.
  *
  * `System.out` here is the real stdout because the MCP redirect only fires
- * on the `--mcp` branch — that's the whole point of the early split in
+ * on the `mpc` branch — that's the whole point of the early split in
  * [main]. Help and version go to stdout (standard CLI convention); the
  * error variant goes to stderr.
  */
@@ -601,48 +584,43 @@ private fun printHelp(out: PrintStream) {
         $BRAND_NAME v$version — $BRAND_TAGLINE
 
         Usage:
-          mcp-steroid-proxy --mcp                    run as an MCP stdio server
-                                                     (stdin / stdout reserved for the MCP transport)
-          mcp-steroid-proxy backend [--json]         list discovered backends (with versions) and the
-                                                     projects each one has open. `--json` emits a
-                                                     single machine-readable object on stdout
-                                                     (pipe through `jq`); default is human text.
-          mcp-steroid-proxy project [--json]         list open projects across discovered backends.
-                                                     `--json` emits a single machine-readable
-                                                     object on stdout; default is human text.
-          mcp-steroid-proxy backend download [<id>] [--version <v>] [--json]
-                                                     no id → list IDEs available for download.
-                                                     With id, download and install a managed
-                                                     backend under the devrig home. Accepts
-                                                     <product>, <product>:<version>, or
-                                                     <product>-<version>.
-          mcp-steroid-proxy backend start    [<id>] [--version <v>] [--json]
-                                                     no id → list installed backends. With id,
-                                                     start an installed managed backend in
-                                                     detached mode and print its pid/log/config
-                                                     paths. Product-only id prefers the
-                                                     highest locally installed backend.
-          mcp-steroid-proxy backend stop     [<id>] [--version <v>] [--json]
-                                                     no id → list currently running backends.
-                                                     With id, stop a managed backend by pid file.
-                                                     Product-only id prefers the highest
-                                                     locally installed backend.
-          mcp-steroid-proxy backend provision [<id>] [--json]
-                                                     no id → list port-discovered IDEs that can be
-                                                     provisioned. With id (for example port-63342),
-                                                     print manual MCP Steroid plugin install
-                                                     instructions for that IDE.
-          mcp-steroid-proxy --version | -v           print the proxy version and exit
-          mcp-steroid-proxy --help    | -h           print this help and exit
+          devrig mpc                           run as an MCP stdio server
+                                               (stdin / stdout reserved for the MCP transport)
+          devrig backend [--json]              list discovered backends (with versions) and the
+                                               projects each one has open. `--json` emits a
+                                               single machine-readable object on stdout
+                                               (pipe through `jq`); default is human text.
+          devrig project [--json]              list open projects across discovered backends.
+                                               `--json` emits a single machine-readable
+                                               object on stdout; default is human text.
+          devrig backend download [<id>] [--version <v>] [--json]
+                                               no id → list IDEs available for download.
+                                               With id, download and install a managed
+                                               backend under the devrig home. Accepts
+                                               <product>, <product>:<version>, or
+                                               <product>-<version>.
+          devrig backend start    [<id>] [--version <v>] [--json]
+                                               no id → list installed backends. With id,
+                                               start an installed managed backend in
+                                               detached mode and print its pid/log/config
+                                               paths. Product-only id prefers the
+                                               highest locally installed backend.
+          devrig backend stop     [<id>] [--version <v>] [--json]
+                                               no id → list currently running backends.
+                                               With id, stop a managed backend by pid file.
+                                               Product-only id prefers the highest
+                                               locally installed backend.
+          devrig backend provision [<id>] [--json]
+                                               no id → list port-discovered IDEs that can be
+                                               provisioned. With id (for example port-63342),
+                                               print manual MCP Steroid plugin install
+                                               instructions for that IDE.
+          devrig --version | -v                print the proxy version and exit
+          devrig --help    | -h                print this help and exit
 
         Options applicable to every mode:
-          --debug                                    enable verbose stderr logging (DEBUG)
-                                                     — without it, INFO+ are shown.
-
-        Environment:
-          $DEVRIG_HOME_ENV=<path>                    store devrig logs, managed backends, caches,
-                                                     and state under <path> instead of
-                                                     ~/.mcp-steroid
+          --debug                              enable verbose stderr logging (DEBUG)
+                                               — without it, INFO+ are shown.
 
         Unknown flags or extra arguments are rejected with exit code 64.
         Run with --debug for verbose logging.

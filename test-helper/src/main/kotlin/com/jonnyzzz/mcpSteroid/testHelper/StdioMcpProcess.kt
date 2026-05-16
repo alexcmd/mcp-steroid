@@ -165,8 +165,8 @@ class StdioMcpProcess internal constructor(
  * collectors-first → stdin-EOF → process-shutdown so the server gets a
  * graceful exit when possible and a forced kill otherwise.
  *
- * [args] are forwarded to the launcher unchanged. The default `["--mcp"]`
- * matches the npx-kt launcher's opt-in MCP-mode flag — see
+ * [args] are forwarded to the launcher unchanged. The default `["mpc"]`
+ * matches the npx-kt launcher's opt-in MCP-mode subcommand — see
  * `com.jonnyzzz.mcpSteroid.proxy.parseCliMode`. Pass an explicit list when
  * driving a different launcher or exercising the CLI surface (`--help`,
  * `--version`).
@@ -174,7 +174,7 @@ class StdioMcpProcess internal constructor(
 fun startStdioMcpProcess(
     launcher: File,
     lifetime: CloseableStack,
-    args: List<String> = listOf("--mcp"),
+    args: List<String> = listOf("mpc"),
 ): StdioMcpProcess {
     require(launcher.canExecute()) {
         "Launcher script is not executable: ${launcher.absolutePath}"

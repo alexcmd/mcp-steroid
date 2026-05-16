@@ -1,4 +1,11 @@
 
+# Active notes — npx-kt CLI home override (2026-05-16)
+
+- Runtime help intentionally documents only user-facing commands/options. The
+  npx home override remains available for tests and automation via
+  `DEVRIG_HOME=<path>`; it prints a stderr notice when used. Do not re-add the
+  old `--home` flag.
+
 # Active focus — TC quality validation triage (2026-05-11)
 
 Post-philosophy-iteration TC run against `jb/main 2f21517a` (the merge

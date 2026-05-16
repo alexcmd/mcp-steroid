@@ -73,8 +73,8 @@ class CliModeTest {
     }
 
     @Test
-    fun `--mcp routes to mcp mode`() {
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp")))
+    fun `mpc subcommand routes to mcp mode`() {
+        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("mpc")))
     }
 
     @Test
@@ -199,7 +199,7 @@ class CliModeTest {
     @Test
     fun `--json without data mode is rejected unless an info selector is present`() {
         assertTrue(parseCliMode(arrayOf("--json")) is CliMode.Unknown)
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--json")))
+        assertTrue(parseCliMode(arrayOf("mpc", "--json")) is CliMode.Unknown)
         assertEquals(CliMode.Version, parseCliMode(arrayOf("--version", "--json")))
         assertEquals(CliMode.Help, parseCliMode(arrayOf("--help", "--json")))
     }
@@ -226,8 +226,12 @@ class CliModeTest {
     }
 
     @Test
-    fun `--mcp still wins over removed home flag`() {
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--home", "/tmp/devrig-home", "--mcp")))
+    fun `mpc rejects removed home flag`() {
+        val mode = parseCliMode(arrayOf("mpc", "--home", "/tmp/devrig-home"))
+        assertTrue(mode is CliMode.Unknown)
+        mode as CliMode.Unknown
+        assertEquals(listOf("--home"), mode.args)
+        assertEquals("Unknown flag: --home", mode.hint)
     }
 
     @Test
@@ -238,48 +242,32 @@ class CliModeTest {
     // ----------------------------- precedence ------------------------------
 
     @Test
-    fun `--mcp wins over --help when both are present`() {
-        // Defensive: a wrapper script that accidentally passes both flags should
-        // still run the MCP server, not print help and exit. Closing the pipe on
-        // an MCP client mid-handshake is the strictly worse failure mode.
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--help", "--mcp")))
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--help")))
+    fun `--help wins over mpc when both are present`() {
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("--help", "mpc")))
+        assertEquals(CliMode.Help, parseCliMode(arrayOf("mpc", "--help")))
     }
 
     @Test
-    fun `--mcp wins over --version`() {
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--version", "--mcp")))
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "-v")))
+    fun `--version wins over mpc when both are present`() {
+        assertEquals(CliMode.Version, parseCliMode(arrayOf("--version", "mpc")))
+        assertEquals(CliMode.Version, parseCliMode(arrayOf("mpc", "-v")))
     }
 
     @Test
-    fun `--mcp wins over unknown args`() {
-        // Forward-compatibility: a future `--config foo` flag should not strand
-        // older binaries in CLI mode; presence of `--mcp` is enough.
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--config", "foo.json")))
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--config", "foo.json", "--mcp")))
+    fun `mpc rejects unknown args`() {
+        assertTrue(parseCliMode(arrayOf("mpc", "--config", "foo.json")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("--config", "foo.json", "mpc")) is CliMode.Unknown)
     }
 
     @Test
-    fun `--mcp wins over backend subcommand`() {
-        // Defensive: a misconfigured wrapper that combines them should not start
-        // the backend listing inside an MCP-framed transport — MCP mode comes first.
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("backend", "--mcp")))
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "backend")))
+    fun `mpc rejects backend subcommand`() {
+        assertTrue(parseCliMode(arrayOf("backend", "mpc")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("mpc", "backend")) is CliMode.Unknown)
     }
 
     @Test
-    fun `--mcp wins over project subcommand`() {
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "project", "--json")))
-    }
-
-    @Test
-    fun `mcp ignored token list excludes global flags that still apply`() {
-        assertEquals(listOf("backend"), mcpIgnoredTokens(arrayOf("--mcp", "--debug", "backend")))
-        assertEquals(
-            listOf("--home", "/tmp/devrig-home", "backend", "--json"),
-            mcpIgnoredTokens(arrayOf("--home", "/tmp/devrig-home", "--mcp", "backend", "--json")),
-        )
+    fun `mpc rejects project subcommand`() {
+        assertTrue(parseCliMode(arrayOf("mpc", "project", "--json")) is CliMode.Unknown)
     }
 
     @Test
@@ -340,9 +328,10 @@ class CliModeTest {
     // -------------------------- exact-match semantics ----------------------
 
     @Test
-    fun `--MCP is NOT matched (case-sensitive)`() {
-        assertTrue(parseCliMode(arrayOf("--MCP")) is CliMode.Unknown)
-        assertTrue(parseCliMode(arrayOf("--Mcp")) is CliMode.Unknown)
+    fun `mpc is case-sensitive`() {
+        assertTrue(parseCliMode(arrayOf("MPC")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("Mpc")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("mcp")) is CliMode.Unknown)
     }
 
     @Test
@@ -352,20 +341,20 @@ class CliModeTest {
     }
 
     @Test
-    fun `--mcp=true is NOT matched (exact-match only)`() {
+    fun `mpc equals form is NOT matched`() {
         // We don't accept `--flag=value` syntax — that's a deliberate constraint
         // so future args can be parsed positionally without a surprising
         // first-class handling of `=`.
-        assertTrue(parseCliMode(arrayOf("--mcp=true")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("mpc=true")) is CliMode.Unknown)
         assertTrue(parseCliMode(arrayOf("--help=")) is CliMode.Unknown)
     }
 
     @Test
     fun `partial-match flags are NOT accepted`() {
-        // `--mc` could be a typo for `--mcp`, but accepting prefixes silently is
+        // `mp` could be a typo for `mpc`, but accepting prefixes silently is
         // the kind of thing that hides bugs. Be strict.
-        assertTrue(parseCliMode(arrayOf("--mc")) is CliMode.Unknown)
-        assertTrue(parseCliMode(arrayOf("--mcps")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("mp")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("mpcs")) is CliMode.Unknown)
         assertTrue(parseCliMode(arrayOf("-help")) is CliMode.Unknown)
     }
 
@@ -399,9 +388,9 @@ class CliModeTest {
     // ------------------------- duplicates / weird shapes -------------------
 
     @Test
-    fun `repeated --mcp still routes to mcp`() {
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--mcp")))
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("--mcp", "--mcp", "--mcp")))
+    fun `repeated mpc is rejected`() {
+        assertTrue(parseCliMode(arrayOf("mpc", "mpc")) is CliMode.Unknown)
+        assertTrue(parseCliMode(arrayOf("mpc", "mpc", "mpc")) is CliMode.Unknown)
     }
 
     @Test
@@ -425,10 +414,10 @@ class CliModeTest {
     }
 
     @Test
-    fun `--mcp surrounded by whitespace tokens is still mcp`() {
-        // The parser doesn't trim — but `--mcp` exact-matches independently of
-        // adjacent whitespace tokens, which themselves are just unknown.
-        assertEquals(CliMode.Mcp, parseCliMode(arrayOf("", "--mcp", "  ")))
+    fun `mpc surrounded by whitespace tokens is unknown`() {
+        // The parser doesn't trim. Whitespace tokens are real extra args, so
+        // they keep the invocation out of MCP mode.
+        assertTrue(parseCliMode(arrayOf("", "mpc", "  ")) is CliMode.Unknown)
     }
 
     // ------------------------------ object identity ------------------------
@@ -438,7 +427,7 @@ class CliModeTest {
         // `Mcp`, `Help`, `Version`, `Backend` are sealed-interface `object`
         // instances — pinning identity avoids accidental data-class conversions
         // that would break `===` and `when` exhaustiveness.
-        assertSame(CliMode.Mcp, parseCliMode(arrayOf("--mcp")))
+        assertSame(CliMode.Mcp, parseCliMode(arrayOf("mpc")))
         assertSame(CliMode.Help, parseCliMode(emptyArray()))
         assertSame(CliMode.Help, parseCliMode(arrayOf("--help")))
         assertSame(CliMode.Version, parseCliMode(arrayOf("--version")))
@@ -467,12 +456,12 @@ class CliModeTest {
     @Test
     fun `parseDebugFlag detects --debug and ignores everything else`() {
         assertTrue(parseDebugFlag(arrayOf("--debug")))
-        assertTrue(parseDebugFlag(arrayOf("--mcp", "--debug")))
+        assertTrue(parseDebugFlag(arrayOf("mpc", "--debug")))
         assertTrue(parseDebugFlag(arrayOf("--debug", "backend")))
         assertTrue(parseDebugFlag(arrayOf("backend", "--debug", "--json")))
         // Off cases.
         assertTrue(!parseDebugFlag(emptyArray()))
-        assertTrue(!parseDebugFlag(arrayOf("--mcp")))
+        assertTrue(!parseDebugFlag(arrayOf("mpc")))
         assertTrue(!parseDebugFlag(arrayOf("--Debug")), "case-sensitive like the rest of the parser")
         assertTrue(!parseDebugFlag(arrayOf("--debug-foo")), "exact-match only, no prefix")
     }

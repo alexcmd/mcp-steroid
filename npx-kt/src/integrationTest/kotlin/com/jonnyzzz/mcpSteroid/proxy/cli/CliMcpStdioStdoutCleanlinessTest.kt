@@ -61,17 +61,17 @@ class CliMcpStdioStdoutCleanlinessTest {
         val launcher = File(installDir, "bin/$launcherName")
         check(launcher.isFile) { "launcher missing at ${launcher.absolutePath}" }
 
-        // `--mcp` is the launcher's opt-in flag for stdio MCP mode (see
+        // `mpc` is the launcher's opt-in subcommand for stdio MCP mode (see
         // `com.jonnyzzz.mcpSteroid.proxy.parseCliMode`). Without it the launcher behaves
         // like a normal CLI (`--help`) and prints help text to stdout — which would make
         // this very test fail for the wrong reason.
         val command = if (isWindows) {
             // .bat must be invoked through cmd.exe; the application plugin's
             // generated script handles arg quoting on its own.
-            listOf("cmd.exe", "/c", launcher.absolutePath, "--mcp")
+            listOf("cmd.exe", "/c", launcher.absolutePath, "mpc")
         } else {
             check(launcher.canExecute()) { "launcher not executable: ${launcher.absolutePath}" }
-            listOf(launcher.absolutePath, "--mcp")
+            listOf(launcher.absolutePath, "mpc")
         }
         val variantLabel = "host:${if (isWindows) "windows" else osName}"
 
@@ -124,7 +124,7 @@ class CliMcpStdioStdoutCleanlinessTest {
 
         val result = container.startProcessInContainer {
             this
-                .args(containerLauncher, "--mcp")
+                .args(containerLauncher, "mpc")
                 .interactive()
                 .stdin(flowOf(StdoutCleanlinessHarness.handshakeBytes))
                 .description("npx-kt stdout cleanliness check")

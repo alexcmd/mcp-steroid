@@ -69,6 +69,8 @@ class CliModeFuzzTest {
             Arguments.of(arrayOf("project", "foo", "bar", "baz"), "Unexpected extra argument"),
             Arguments.of(arrayOf("backend", "--weasel"), "Unknown flag"),
             Arguments.of(arrayOf("--home", "/tmp/x", "backend"), "Unknown flag"),
+            Arguments.of(arrayOf("--mcp"), "Unknown flag"),
+            Arguments.of(arrayOf("mpc", "backend"), "Unexpected extra argument"),
         )
 
         @JvmStatic
@@ -77,9 +79,8 @@ class CliModeFuzzTest {
             Arguments.of(arrayOf("--help"), CliMode.Help),
             Arguments.of(arrayOf("-h"), CliMode.Help),
             Arguments.of(arrayOf("--debug"), CliMode.Help),
-            Arguments.of(arrayOf("--mcp"), CliMode.Mcp),
-            Arguments.of(arrayOf("--mcp", "backend"), CliMode.Mcp),
-            Arguments.of(arrayOf("--mcp", "--debug", "backend"), CliMode.Mcp),
+            Arguments.of(arrayOf("mpc"), CliMode.Mcp),
+            Arguments.of(arrayOf("mpc", "--debug"), CliMode.Mcp),
             Arguments.of(arrayOf("--version"), CliMode.Version),
             Arguments.of(arrayOf("-v"), CliMode.Version),
             Arguments.of(arrayOf("backend", "--help"), CliMode.Help),
@@ -127,6 +128,7 @@ class CliModeFuzzTest {
                 "-h",
                 "-v",
                 "--frobnicate",
+                "mpc",
                 "backend",
                 "project",
                 "download",

@@ -65,7 +65,7 @@ class CliModeOutputTest {
         val out = stdout()
         assertTrue(out.contains("Usage:"), "help output should mention 'Usage:'; got:\n$out")
         assertTrue(out.contains("This environment empowers your AI with the best deterministic coding tools."), "help output should include tagline; got:\n$out")
-        assertTrue(out.contains("--mcp"), "help should advertise --mcp; got:\n$out")
+        assertTrue(out.contains("devrig mpc"), "help should advertise mpc subcommand; got:\n$out")
         assertTrue(out.contains("--version"), "help should advertise --version; got:\n$out")
         assertTrue(out.contains("--help"), "help should advertise --help itself; got:\n$out")
         assertTrue(out.contains("backend download [<id>] [--version <v>] [--json]"), "help should advertise download version override; got:\n$out")
