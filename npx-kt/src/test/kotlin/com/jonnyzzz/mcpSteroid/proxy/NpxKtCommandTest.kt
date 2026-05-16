@@ -30,6 +30,10 @@ class NpxKtCommandTest {
         assertEquals(OptionValue.Present("2025.3"), download.restArgs.optionValue("--version"))
         assertTrue(download.restArgs.jsonFlag())
 
+        val interspersed = assertIs<NpxKtCommand.NpxCommandBackendDownload>(command("backend", "--json", "download", "idea-community"))
+        assertEquals(listOf("idea-community"), interspersed.restArgs.positionals())
+        assertTrue(interspersed.restArgs.jsonFlag())
+
         val project = assertIs<NpxKtCommand.NpxCommandProject>(command("project", "--json"))
         assertTrue(project.restArgs.jsonFlag())
     }

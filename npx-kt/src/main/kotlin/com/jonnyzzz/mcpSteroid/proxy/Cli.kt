@@ -1,6 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.context
+import com.github.ajalt.clikt.core.subcommands
+import com.github.ajalt.clikt.parameters.arguments.argument
+import com.github.ajalt.clikt.parameters.arguments.multiple
+
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
 class NpxKtArgs(
@@ -14,37 +21,42 @@ class NpxKtArgs(
     fun helpFlag(): Boolean = option("--help") || option("-h")
 
     fun command(): NpxKtCommand? {
-        val command = firstCommandToken()
-        if (command == null) {
-            if (args.isEmpty() || onlyGlobalFlags()) return NpxKtCommand.NpxCommandHelp
-            if (option("--version") || option("-v")) return NpxKtCommand.NpxCommandVersion
-            if (helpFlag()) return NpxKtCommand.NpxCommandHelp
-            return null
-        }
-
-        return when (command.value) {
-            "mpc" -> NpxKtCommand.MCP(argsAfter(command.index))
-            "backend" -> backendCommand(argsAfter(command.index))
-            "project" -> NpxKtCommand.NpxCommandProject(argsAfter(command.index))
-            "help" -> NpxKtCommand.NpxCommandHelp
-            "version" -> NpxKtCommand.NpxCommandVersion
+        val path = NpxKtCommandSelector().select(args)
+        if (path == null || path.isEmpty()) return rootCommand()
+        return when (path) {
+            listOf("mpc") -> NpxKtCommand.MCP(argsAfterCommandPath(path))
+            listOf("backend") -> NpxKtCommand.NpxCommandBackend(argsAfterCommandPath(path))
+            listOf("backend", "download") -> NpxKtCommand.NpxCommandBackendDownload(argsAfterCommandPath(path))
+            listOf("backend", "start") -> NpxKtCommand.NpxCommandBackendStart(argsAfterCommandPath(path))
+            listOf("backend", "stop") -> NpxKtCommand.NpxCommandBackendStop(argsAfterCommandPath(path))
+            listOf("backend", "provision") -> NpxKtCommand.NpxCommandBackendProvision(argsAfterCommandPath(path))
+            listOf("project") -> NpxKtCommand.NpxCommandProject(argsAfterCommandPath(path))
+            listOf("help") -> NpxKtCommand.NpxCommandHelp
+            listOf("version") -> NpxKtCommand.NpxCommandVersion
             else -> null
         }
     }
 
-    private fun backendCommand(restArgs: NpxKtArgs): NpxKtCommand {
-        val subcommand = restArgs.firstCommandToken()
-        return when (subcommand?.value) {
-            "download" -> NpxKtCommand.NpxCommandBackendDownload(restArgs.argsAfter(subcommand.index))
-            "start" -> NpxKtCommand.NpxCommandBackendStart(restArgs.argsAfter(subcommand.index))
-            "stop" -> NpxKtCommand.NpxCommandBackendStop(restArgs.argsAfter(subcommand.index))
-            "provision" -> NpxKtCommand.NpxCommandBackendProvision(restArgs.argsAfter(subcommand.index))
-            else -> NpxKtCommand.NpxCommandBackend(restArgs)
-        }
+    private fun rootCommand(): NpxKtCommand? = when {
+        args.isEmpty() || onlyGlobalFlags() -> NpxKtCommand.NpxCommandHelp
+        option("--version") || option("-v") -> NpxKtCommand.NpxCommandVersion
+        helpFlag() -> NpxKtCommand.NpxCommandHelp
+        else -> null
     }
 
-    private fun firstCommandToken(): IndexedValue<String>? =
-        args.withIndex().firstOrNull { (_, token) -> !token.startsWith("-") }
+    private fun argsAfterCommandPath(path: List<String>): NpxKtArgs {
+        var searchFrom = 0
+        var lastIndex = -1
+        for (command in path) {
+            val index = args.withIndex()
+                .firstOrNull { (index, token) -> index >= searchFrom && token == command }
+                ?.index
+                ?: return NpxKtArgs(emptyArray(), parent = this)
+            lastIndex = index
+            searchFrom = index + 1
+        }
+        return argsAfter(lastIndex)
+    }
 
     fun argsAfter(index: Int): NpxKtArgs =
         NpxKtArgs(args.drop(index + 1).toTypedArray(), parent = this)
@@ -108,6 +120,111 @@ class NpxKtArgs(
     }
 }
 
+private class NpxKtCommandSelector {
+    private var selectedPath: List<String>? = null
+
+    fun select(args: List<String>): List<String>? {
+        val command = RootCommand(this)
+        try {
+            command.parse(args.filterNot { it.startsWith("-") })
+        } catch (_: CliktError) {
+            return null
+        }
+        return selectedPath
+    }
+
+    private fun selectPath(path: List<String>) {
+        selectedPath = path
+    }
+
+    private class RootCommand(
+        private val selector: NpxKtCommandSelector,
+    ) : CliktCommand(
+        name = "devrig",
+        invokeWithoutSubcommand = true,
+        treatUnknownOptionsAsArgs = true,
+    ) {
+        init {
+            context {
+                allowInterspersedArgs = false
+                helpOptionNames = emptySet<String>()
+            }
+            subcommands(
+                MpcCommand(selector),
+                BackendCommand(selector),
+                ProjectCommand(selector),
+                HelpCommand(selector),
+                VersionCommand(selector),
+            )
+        }
+
+        override fun run() {
+            selector.selectPath(emptyList())
+        }
+    }
+
+    private open class SelectingCommand(
+        name: String,
+        private val selector: NpxKtCommandSelector,
+        private val path: List<String>,
+    ) : CliktCommand(
+        name = name,
+        invokeWithoutSubcommand = true,
+        treatUnknownOptionsAsArgs = true,
+    ) {
+        @Suppress("unused")
+        private val rest: List<String> by argument().multiple(required = false)
+
+        init {
+            context {
+                allowInterspersedArgs = false
+                helpOptionNames = emptySet<String>()
+            }
+        }
+
+        override fun run() {
+            selector.selectPath(path)
+        }
+    }
+
+    private class MpcCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("mpc", selector, listOf("mpc"))
+
+    private class ProjectCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("project", selector, listOf("project"))
+
+    private class HelpCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("help", selector, listOf("help"))
+
+    private class VersionCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("version", selector, listOf("version"))
+
+    private class BackendCommand(
+        selector: NpxKtCommandSelector,
+    ) : SelectingCommand("backend", selector, listOf("backend")) {
+        init {
+            subcommands(
+                BackendDownloadCommand(selector),
+                BackendStartCommand(selector),
+                BackendStopCommand(selector),
+                BackendProvisionCommand(selector),
+            )
+        }
+    }
+
+    private class BackendDownloadCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("download", selector, listOf("backend", "download"))
+
+    private class BackendStartCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("start", selector, listOf("backend", "start"))
+
+    private class BackendStopCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("stop", selector, listOf("backend", "stop"))
+
+    private class BackendProvisionCommand(selector: NpxKtCommandSelector) :
+        SelectingCommand("provision", selector, listOf("backend", "provision"))
+}
+
 sealed interface OptionValue {
     data object Absent : OptionValue
     data class Missing(val option: String) : OptionValue
@@ -136,20 +253,20 @@ sealed interface NpxKtCommand {
 
 suspend fun NpxKtServices.runCli(command: NpxKtCommand?): Int {
     if (command != null && command !is NpxKtCommand.MCP && command.restArgs.helpFlag()) {
-        return printHelp(System.out)
+        return printHelp(mcpStdout)
     }
     return try {
         when (command) {
             is NpxKtCommand.MCP -> error("runCli called with NpxKtCommand.MCP")
-            NpxKtCommand.NpxCommandHelp -> printHelp(System.out)
-            NpxKtCommand.NpxCommandVersion -> printVersion(System.out)
+            NpxKtCommand.NpxCommandHelp -> printHelp(mcpStdout)
+            NpxKtCommand.NpxCommandVersion -> printVersion(mcpStdout)
             null -> unknownArguments(args.args)
-            is NpxKtCommand.NpxCommandBackend -> runBackendCommand(System.out, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendDownload -> runBackendDownloadCommand(System.out, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendStart -> runBackendStartCommand(System.out, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendStop -> runBackendStopCommand(System.out, homePaths, command)
-            is NpxKtCommand.NpxCommandBackendProvision -> runBackendProvisionCommand(System.out, command)
-            is NpxKtCommand.NpxCommandProject -> runProjectCommand(System.out, command)
+            is NpxKtCommand.NpxCommandBackend -> runBackendCommand(mcpStdout, homePaths, command)
+            is NpxKtCommand.NpxCommandBackendDownload -> runBackendDownloadCommand(mcpStdout, homePaths, command)
+            is NpxKtCommand.NpxCommandBackendStart -> runBackendStartCommand(mcpStdout, homePaths, command)
+            is NpxKtCommand.NpxCommandBackendStop -> runBackendStopCommand(mcpStdout, homePaths, command)
+            is NpxKtCommand.NpxCommandBackendProvision -> runBackendProvisionCommand(mcpStdout, command)
+            is NpxKtCommand.NpxCommandProject -> runProjectCommand(mcpStdout, command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

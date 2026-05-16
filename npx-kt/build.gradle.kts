@@ -123,6 +123,7 @@ val jdkConfigs: Map<String, Configuration> = jdkPlatforms.associate { platform -
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("com.github.ajalt.clikt:clikt:4.4.0")
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("com.posthog:posthog-server:2.3.0")
@@ -547,6 +548,14 @@ val verifyBundledLibraries by tasks.registering {
             "lib/kotlinx-io-core-jvm-0.6.0.jar",
             "lib/kotlinx-serialization-core-jvm-1.9.0.jar",
             "lib/kotlinx-serialization-json-jvm-1.9.0.jar",
+
+            // CLI parsing (Clikt) and its terminal/help rendering transitives.
+            "lib/clikt-jvm.jar",
+            "lib/colormath-jvm.jar",
+            "lib/fastutil-core-8.5.12.jar",
+            "lib/jna-5.14.0.jar",
+            "lib/markdown-jvm-0.7.0.jar",
+            "lib/mordant-jvm.jar",
 
             // Ktor client transitives (CIO engine).
             "lib/ktor-client-cio-jvm-3.1.0.jar",

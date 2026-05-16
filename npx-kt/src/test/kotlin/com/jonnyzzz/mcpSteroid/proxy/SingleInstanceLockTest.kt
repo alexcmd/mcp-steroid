@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -37,8 +38,8 @@ class SingleInstanceLockTest {
             Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "${requestedProcess.pid()}\n")
             Files.writeString(homePaths.pidFile("idea-community-2025.3.2"), "${otherProcess.pid()}\n")
 
-            val (exit, stdout, stderr) = captureCli {
-                runStartCli(homePaths, "idea-community-2025.3.3")
+            val (exit, stdout, stderr) = captureCli { stdoutStream ->
+                runStartCli(homePaths, "idea-community-2025.3.3", stdoutStream)
             }
 
             assertEquals(64, exit)
@@ -68,8 +69,8 @@ class SingleInstanceLockTest {
         Files.createDirectories(homePaths.stateDir)
         Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "$pid\n")
 
-        val (exit, stdout, stderr) = captureCli {
-            runStartCli(homePaths, "idea-community-2025.3.3")
+        val (exit, stdout, stderr) = captureCli { stdoutStream ->
+            runStartCli(homePaths, "idea-community-2025.3.3", stdoutStream)
         }
 
         assertEquals(0, exit)
@@ -184,16 +185,17 @@ class SingleInstanceLockTest {
         }
     }
 
-    private fun captureCli(block: () -> Int): CliCapture {
+    private fun captureCli(block: (PrintStream) -> Int): CliCapture {
         val originalOut = System.out
         val originalErr = System.err
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
         return try {
-            System.setOut(PrintStream(out, true, Charsets.UTF_8))
+            val stdout = PrintStream(out, true, Charsets.UTF_8)
+            System.setOut(stdout)
             System.setErr(PrintStream(err, true, Charsets.UTF_8))
             CliCapture(
-                exit = block(),
+                exit = block(stdout),
                 stdout = out.toString(Charsets.UTF_8),
                 stderr = err.toString(Charsets.UTF_8),
             )
@@ -231,7 +233,7 @@ class SingleInstanceLockTest {
         )
     }
 
-    private fun runStartCli(homePaths: HomePaths, id: String): Int {
+    private fun runStartCli(homePaths: HomePaths, id: String, stdout: PrintStream): Int {
         val lifetime = CloseableStackHost()
         return try {
             runBlocking {
@@ -239,6 +241,8 @@ class SingleInstanceLockTest {
                     homePaths = homePaths,
                     args = NpxKtArgs(arrayOf("backend", "start", id)),
                     lifetime = lifetime,
+                    mcpStdin = ByteArrayInputStream(ByteArray(0)),
+                    mcpStdout = stdout,
                 ).runCli(NpxKtCommand.NpxCommandBackendStart(NpxKtArgs(arrayOf(id))))
             }
         } finally {

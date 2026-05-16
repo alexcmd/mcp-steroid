@@ -27,8 +27,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-fun main(args: Array<String>) {
-    val args = NpxKtArgs(args)
+fun main(rawArgs: Array<String>) {
+    // Replace stdout immediately. MCP stdio reserves the original stdout for
+    // frames, and command detection / service setup must not leak there.
+    val mcpStdin: InputStream = System.`in`
+    val mcpStdout: PrintStream = System.out
+    System.setOut(System.err)
+
+    val args = NpxKtArgs(rawArgs)
+    val command = args.command()
+    val headliner = buildHeadliner()
+    if (command is NpxKtCommand.MCP) {
+        System.err.println(headliner)
+    } else {
+        System.setOut(mcpStdout)
+    }
 
     val homePaths = resolveHomePathsOrDie()
 
@@ -37,7 +50,13 @@ fun main(args: Array<String>) {
 
     val lifetime = CloseableStackHost()
     try {
-        NpxKtServices(homePaths, args, lifetime).mainImpl1()
+        NpxKtServices(
+            lifetime = lifetime,
+            homePaths = homePaths,
+            args = args,
+            mcpStdin = mcpStdin,
+            mcpStdout = mcpStdout,
+        ).mainImpl1(command, headliner)
     } catch (t: Throwable) {
         System.err.println("Unexpected error ${t.message}")
         t.printStackTrace(System.err)
@@ -47,7 +66,16 @@ fun main(args: Array<String>) {
     }
 }
 
-fun NpxKtServices.mainImpl1() {
+private fun buildHeadliner(): String = buildString {
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    appendLine("devrig v$proxyVersion — This environment empowers your AI with the best deterministic coding tools.")
+    appendLine()
+}
+
+fun NpxKtServices.mainImpl1(
+    command: NpxKtCommand?,
+    headliner: String,
+) {
     class DevrigCoroutineExceptionHandler
 
     val log = logger<DevrigCoroutineExceptionHandler>()
@@ -57,36 +85,26 @@ fun NpxKtServices.mainImpl1() {
 
     runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler + SupervisorJob()) {
         coroutineScope {
-            mainImpl2()
+            mainImpl2(command, headliner)
         }
     }
 }
 
-suspend fun NpxKtServices.mainImpl2() : Unit = coroutineScope {
+suspend fun NpxKtServices.mainImpl2(
+    command: NpxKtCommand?,
+    headliner: String,
+) : Unit = coroutineScope {
     launch {
         delay(Random.nextInt(200, 1300).milliseconds)
         checkForUpdates()
     }
 
-    val command = args.command()
     launch {
         beacon.captureStarted(command)
     }
 
-    val headliner = buildString {
-        val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-        appendLine("devrig v$proxyVersion — This environment empowers your AI with the best deterministic coding tools.")
-        appendLine()
-    }
-
     if (command is NpxKtCommand.MCP) {
         beacon.runHeartbeat()
-
-        val mcpStdin: InputStream = System.`in`
-        val mcpStdout: PrintStream = System.out
-        System.setOut(System.err)
-        System.err.println(headliner)
-
         try {
             mainImplMcp(mcpStdin, mcpStdout)
         } catch (t: Throwable) {
@@ -97,7 +115,7 @@ suspend fun NpxKtServices.mainImpl2() : Unit = coroutineScope {
         return@coroutineScope
     }
 
-    println(headliner)
+    mcpStdout.println(headliner)
     try {
         val cliResult = runCli(command)
         exitProcess(cliResult)

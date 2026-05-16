@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Path
@@ -59,7 +60,13 @@ class NpxKtCommandOutputTest {
         val lifetime = CloseableStackHost()
         return try {
             runBlocking {
-                NpxKtServices(homePaths, NpxKtArgs(rawArgs.toList().toTypedArray()), lifetime).runCli(command)
+                NpxKtServices(
+                    lifetime = lifetime,
+                    homePaths = homePaths,
+                    args = NpxKtArgs(rawArgs.toList().toTypedArray()),
+                    mcpStdin = ByteArrayInputStream(ByteArray(0)),
+                    mcpStdout = PrintStream(outBuf, true, Charsets.UTF_8),
+                ).runCli(command)
             }
         } finally {
             lifetime.closeAllStacks()
