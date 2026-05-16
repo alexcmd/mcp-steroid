@@ -86,8 +86,17 @@ suspend fun NpxKtServices.mainImpl2() = coroutineScope{
     }
 
     val mode = args.parseCliMode()
+
+    launch {
+        beacon.captureStarted(mode)
+    }
+
+    if (mode is CliMode.Mcp) {
+        beacon.runHeartbeat()
+    }
+
+
     if (mode !is CliMode.Mcp) {
-        beacon.startInteractive(beaconInvocation(mode))
         try {
             val cliResult = runCli(mode, homePaths)
             exitProcess(cliResult)
@@ -101,8 +110,6 @@ suspend fun NpxKtServices.mainImpl2() = coroutineScope{
     val mcpStdin: InputStream = System.`in`
     val mcpStdout: PrintStream = System.out
     System.setOut(System.err)
-
-    beacon.startMcp()
 
     try {
         MainContext(

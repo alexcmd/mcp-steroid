@@ -2,29 +2,35 @@
 package com.jonnyzzz.mcpSteroid.proxy
 
 import com.jonnyzzz.mcpSteroid.logger
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.posthog.server.PostHog
 import com.posthog.server.PostHogCaptureOptions
 import com.posthog.server.PostHogConfig
-import com.posthog.server.PostHogInterface
 import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
-import java.util.concurrent.ThreadLocalRandom
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.io.path.readText
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 class NpxBeacon(
     private val homePaths: HomePaths,
-    private val eventSender: ((String, String, Map<String, Any>) -> Unit)? = null,
-    private val startupDelayMillis: () -> Long = { ThreadLocalRandom.current().nextLong(1_000L, 5_001L) },
-) : AutoCloseable {
+    lifetime: CloseableStack,
+) {
     private val log = logger<NpxBeacon>()
-    private val started = AtomicBoolean(false)
-    private val closed = AtomicBoolean(false)
-    private val startedAtMillis = System.currentTimeMillis()
 
-    private val posthogDelegate = lazy {
+    private val job = SupervisorJob().also { lifetime.registerCleanupAction { it.cancel() } }
+    private val scope = CoroutineScope(CoroutineName("NpxBeacon") + Dispatchers.IO + job)
+
+    private val posthog by lazy {
         try {
             val config = PostHogConfig
                 .builder("phc_IPtbjwwy9YIGg0YNHNxYBePijvTvHEcKAjohah6obYW")
@@ -38,112 +44,93 @@ class NpxBeacon(
                 .sendFeatureFlagEvent(false)
                 .build()
 
-            PostHog.with(config)
+            val hog = PostHog.with(config)
+
+            lifetime.registerCleanupAction {
+                runCatching { hog.flush() }
+                runCatching { hog.close() }
+            }
+
+            hog
         } catch (e: Exception) {
             log.debug("PostHog init failed", e)
             null
         }
     }
-    private val posthog: PostHogInterface? by posthogDelegate
 
-    fun startInteractive(invocation: String) {
-        start(
-            event = "devrig-interactive",
-            properties = mapOf(
-                "mode" to "interactive",
-                "invocation" to invocation,
-            ),
-        )
-    }
+    fun captureStarted(cliMode: CliMode) {
+        val mode = when (cliMode) {
+            is CliMode.Mcp -> "mcp"
+            is CliMode.Backend.Start -> "start"
+            is CliMode.Backend -> "backend"
+            is CliMode.Project -> "project"
 
-    fun startMcp() {
-        start(
-            event = "devrig-mcp",
-            properties = mapOf(
-                "mode" to "mcp",
-                "invocation" to "mcp",
-            ),
-        )
+            is CliMode.Help -> null
+            is CliMode.Version -> null
+            is CliMode.Unknown -> null
+        } ?: return
+
+        capture("devrig_started", mapOf("mode" to mode))
     }
 
     fun capture(event: String, properties: Map<String, Any> = emptyMap()) {
-        Thread.ofVirtual().name("devrig-beacon").start {
-            sendEventInternal(event, properties)
-        }
-    }
-
-    internal fun sendEventInternal(event: String, properties: Map<String, Any>) {
-        if (closed.get()) return
-
         try {
-            val enrichedProperties = LinkedHashMap<String, Any>()
-            enrichedProperties.putAll(properties)
-            enrichedProperties["tool"] = BRAND_NAME
-            enrichedProperties["timer"] = properties["timer"] ?: "manual"
-            enrichedProperties["uptime_ms"] = (System.currentTimeMillis() - startedAtMillis).coerceAtLeast(0)
-            enrichedProperties["proxy_version"] = ProxyVersionMetadata.getProxyVersion()
+            val ph = posthog ?: return
 
             val distinctId = distinctId()
-            val sender = eventSender
-            if (sender != null) {
-                sender(distinctId, event, enrichedProperties)
-                return
-            }
 
-            val ph = posthog ?: return
+            val enrichedProperties = LinkedHashMap<String, Any>()
+            enrichedProperties.putAll(properties)
+
+            enrichedProperties["devrig_version"] = ProxyVersionMetadata.getProxyVersion()
+            enrichedProperties["devrig_host"] = distinctId
+
             val opts = PostHogCaptureOptions.builder()
             enrichedProperties.forEach { (key, value) -> opts.property(key, value) }
             opts.appendFeatureFlags(false)
             opts.timestamp(LocalDateTime.now().toInstant(ZoneOffset.UTC))
-            ph.capture(distinctId, event, opts.build())
-            ph.flush()
-        } catch (e: Exception) {
-            log.debug("Beacon capture failed", e)
+
+            scope.launch {
+                ph.capture(distinctId, event, opts.build())
+                ph.flush()
+            }
+        } catch (e: Throwable) {
+            log.debug("Beacon capture failed. ${e.message}", e)
         }
     }
 
-    private fun start(event: String, properties: Map<String, Any>) {
-        if (!started.compareAndSet(false, true)) return
-
-        Thread.ofVirtual().name("devrig-beacon-startup").start {
-            try {
-                Thread.sleep(startupDelayMillis())
-                sendEventInternal(event, properties + ("timer" to "startup"))
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-            } catch (e: Exception) {
-                log.debug("Beacon startup failed", e)
+    fun runHeartbeat() {
+        scope.launch {
+            while (isActive) {
+                yield()
+                delay(30.minutes)
+                capture("heartbeat")
             }
         }
     }
 
     private fun distinctId(): String {
-        val userIdFile = homePaths.home.resolve("devrig-user-id")
-        Files.createDirectories(userIdFile.parent)
+        val userIdFile = homePaths.home.resolve(".devrig-user-id")
+        runCatching {
+            Files.createDirectories(userIdFile.parent)
+        }
 
         val existing = try {
-            Files.readString(userIdFile).trim()
-        } catch (_: NoSuchFileException) {
-            ""
-        } catch (e: Exception) {
-            log.debug("Could not read beacon user id from {}", userIdFile, e)
+            userIdFile.readText().trim()
+        } catch (_: Throwable) {
             ""
         }
-        if (existing.isNotEmpty()) return existing
 
+        if (existing.isNotEmpty()) return existing
         val generated = UUID.randomUUID().toString()
-        Files.writeString(userIdFile, "$generated\n")
+        runCatching {
+            Files.writeString(userIdFile, "$generated\n")
+        }
+
         return generated
     }
-
-    override fun close() {
-        closed.set(true)
-        if (posthogDelegate.isInitialized()) {
-            posthog?.flush()
-            posthog?.close()
-        }
-    }
 }
+
 
 fun beaconInvocation(mode: CliMode): String = when (mode) {
     CliMode.Mcp -> "mcp"

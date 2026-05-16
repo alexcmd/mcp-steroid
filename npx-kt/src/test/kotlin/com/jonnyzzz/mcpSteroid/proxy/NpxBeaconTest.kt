@@ -1,72 +1,77 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackDriver
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class NpxBeaconTest {
     @Test
-    fun `interactive beacon uses dedicated event and anonymous properties`(@TempDir tempDir: Path) {
-        val events = mutableListOf<RecordedEvent>()
-        val homePaths = HomePaths(tempDir.resolve(".mcp-steroid"))
-        val beacon = NpxBeacon(
-            homePaths = homePaths,
-            eventSender = { distinctId, event, properties ->
-                events += RecordedEvent(distinctId, event, properties)
-            },
-        )
+    fun `constructor registers coroutine cleanup with lifetime`(@TempDir tempDir: Path) {
+        val lifetime = CountingCloseableStack()
 
-        beacon.sendEventInternal(
-            event = "devrig-interactive",
-            properties = mapOf("mode" to "interactive", "invocation" to "backend", "timer" to "startup"),
-        )
+        NpxBeacon(HomePaths(tempDir.resolve("home")), lifetime)
 
-        val event = events.single()
-        assertEquals("devrig-interactive", event.event)
-        assertEquals(Files.readString(homePaths.home.resolve("devrig-user-id")).trim(), event.distinctId)
-        assertEquals(
-            setOf("mode", "invocation", "timer", "tool", "uptime_ms", "proxy_version"),
-            event.properties.keys,
-        )
-        assertEquals("devrig", event.properties["tool"])
-        assertEquals("interactive", event.properties["mode"])
-        assertEquals("backend", event.properties["invocation"])
-        assertEquals("startup", event.properties["timer"])
-        assertEquals(ProxyVersionMetadata.getProxyVersion(), event.properties["proxy_version"])
+        assertEquals(1, lifetime.cleanupActionCount)
     }
 
     @Test
-    fun `mcp beacon uses dedicated event and stable generated user id`(@TempDir tempDir: Path) {
-        val events = mutableListOf<RecordedEvent>()
-        val homePaths = HomePaths(tempDir.resolve(".mcp-steroid"))
-        val beacon = NpxBeacon(
-            homePaths = homePaths,
-            eventSender = { distinctId, event, properties ->
-                events += RecordedEvent(distinctId, event, properties)
-            },
-        )
+    fun `captureStarted ignores informational and invalid cli modes`(@TempDir tempDir: Path) {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val beacon = NpxBeacon(homePaths, CloseableStackHost())
 
-        beacon.sendEventInternal(
-            event = "devrig-mcp",
-            properties = mapOf("mode" to "mcp", "invocation" to "mcp", "timer" to "startup"),
-        )
-        beacon.sendEventInternal(
-            event = "devrig-mcp",
-            properties = mapOf("mode" to "mcp", "invocation" to "mcp", "timer" to "manual"),
-        )
+        beacon.captureStarted(CliMode.Help)
+        beacon.captureStarted(CliMode.Version)
+        beacon.captureStarted(CliMode.Unknown(listOf("--bad")))
 
-        assertEquals(listOf("devrig-mcp", "devrig-mcp"), events.map { it.event })
-        assertEquals(events.first().distinctId, events.last().distinctId)
-        assertEquals(Files.readString(homePaths.home.resolve("devrig-user-id")).trim(), events.first().distinctId)
-        assertEquals("manual", events.last().properties["timer"])
+        assertFalse(Files.exists(homePaths.home.resolve(".devrig-user-id")))
     }
 
-    private data class RecordedEvent(
-        val distinctId: String,
-        val event: String,
-        val properties: Map<String, Any>,
-    )
+    @Test
+    fun `distinct id is stored under home paths and reused`(@TempDir tempDir: Path) {
+        val homePaths = HomePaths(tempDir.resolve("home"))
+        val beacon = NpxBeacon(homePaths, CloseableStackHost())
+
+        val first = beacon.distinctIdForTest()
+        val second = beacon.distinctIdForTest()
+
+        assertEquals(first, second)
+        assertEquals(first, Files.readString(homePaths.home.resolve(".devrig-user-id")).trim())
+        assertTrue(first.isNotBlank())
+    }
+
+    @Test
+    fun `distinct ids are scoped by home paths`(@TempDir tempDir: Path) {
+        val firstBeacon = NpxBeacon(HomePaths(tempDir.resolve("first")), CloseableStackHost())
+        val secondBeacon = NpxBeacon(HomePaths(tempDir.resolve("second")), CloseableStackHost())
+
+        assertNotEquals(firstBeacon.distinctIdForTest(), secondBeacon.distinctIdForTest())
+    }
+
+    private fun NpxBeacon.distinctIdForTest(): String {
+        val method = NpxBeacon::class.java.getDeclaredMethod("distinctId")
+        method.isAccessible = true
+        return method.invoke(this) as String
+    }
+
+    private class CountingCloseableStack : CloseableStack {
+        var cleanupActionCount = 0
+            private set
+
+        override fun registerCleanupAction(cleanupAction: () -> Unit) {
+            cleanupActionCount++
+        }
+
+        override fun nestedStack(name: String): CloseableStackDriver {
+            error("nestedStack is not expected in NpxBeacon tests")
+        }
+    }
 }

@@ -10,6 +10,6 @@ class NpxKtServices(
     fun lifetime(name: String): CloseableStack = lifetime.nestedStack(name)
 
     val beacon by lazy {
-        NpxBeacon(homePaths).also { lifetime.registerCleanupAction { it.close() } }
+        NpxBeacon(homePaths, lifetime)
     }
 }
