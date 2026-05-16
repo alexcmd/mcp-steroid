@@ -14,7 +14,6 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
-import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
 import java.util.UUID
@@ -27,22 +26,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-/**
- * Resolved CLI input + the captured stdio streams reserved for the MCP transport.
- *
- * Constructed exclusively by [main] on the `--mcp` branch — the [args] field carries
- * the original argv so [mainImpl] (and any future MCP-side feature flag) can read it
- * without re-parsing.
- */
-data class MainContext(
-    val args: NpxKtArgs,
-    val mcpStdin: InputStream,
-    val mcpStdout: PrintStream,
-    val homePaths: HomePaths,
-)
-
-private class NpxKtMain
 
 fun main(args: Array<String>) {
     val args = NpxKtArgs(args)
@@ -112,12 +95,7 @@ suspend fun NpxKtServices.mainImpl2() = coroutineScope{
     System.setOut(System.err)
 
     try {
-        MainContext(
-            args = args,
-            mcpStdin = mcpStdin,
-            mcpStdout = mcpStdout,
-            homePaths = homePaths,
-        ).mainImpl()
+        mainImplMcp(mcpStdin, mcpStdout)
     } catch (t: Throwable) {
         System.err.println("Unexpected error ${t.message}")
         t.printStackTrace(System.err)
@@ -125,16 +103,14 @@ suspend fun NpxKtServices.mainImpl2() = coroutineScope{
     }
 }
 
-internal fun MainContext.mainImpl() {
+suspend fun NpxKtServices.mainImplMcp(mcpStdin: InputStream, mcpStdout: PrintStream) = coroutineScope {
     // Construct every dependent service explicitly here — the npx-kt module
     // does not use any DI framework, so main.kt is the wiring root.
-    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
-    val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     val clientInfo = NpxStreamClientInfo(
         client = "devrig",
         clientPid = ProcessHandle.current().pid(),
-        clientVersion = proxyVersion,
+        clientVersion = ProxyVersionMetadata.getProxyVersion(),
         clientInstanceId = "npx-kt-${UUID.randomUUID()}",
         platform = System.getProperty("os.name"),
         arch = System.getProperty("os.arch"),
@@ -154,7 +130,6 @@ internal fun MainContext.mainImpl() {
 
     val discovery = IdeDiscoveryService(
         markersDir = homePaths.markersDir.toFile(),
-        legacyHomeDir = legacyHomeDir,
         allowHosts = allowHosts,
     )
     val monitor = IdeMonitorService(
@@ -181,26 +156,16 @@ internal fun MainContext.mainImpl() {
     //   monitor   → opens one POST /npx/v1/projects/stream per IDE,
     //               receives push notifications on project open/close
 
-    class DevrigCoroutineExceptionHandler
-    val log = logger<DevrigCoroutineExceptionHandler>()
-    val exceptionHandler = CoroutineExceptionHandler { context, throwable ->
-        log.warn("devrig coroutine exception: ${throwable.message} in $context", throwable)
-    }
-
-    runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler) {
-        coroutineScope {
-            val discoveryJob = discovery.start(this)
-            val monitorJob = monitor.start(this)
-            val portDiscoveryJob = portDiscovery.start(this)
-            try {
-                runStubStdioMcpServer(input = mcpStdin, output = mcpStdout)
-            } finally {
-                portDiscoveryJob.cancel()
-                monitorJob.cancel()
-                discoveryJob.cancel()
-                portDiscovery.close()
-                httpClient.close()
-            }
-        }
+    val discoveryJob = discovery.start(this)
+    val monitorJob = monitor.start(this)
+    val portDiscoveryJob = portDiscovery.start(this)
+    try {
+        runStubStdioMcpServer(input = mcpStdin, output = mcpStdout)
+    } finally {
+        portDiscoveryJob.cancel()
+        monitorJob.cancel()
+        discoveryJob.cancel()
+        portDiscovery.close()
+        httpClient.close()
     }
 }

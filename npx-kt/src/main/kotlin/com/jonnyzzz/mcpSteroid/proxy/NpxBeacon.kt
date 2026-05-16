@@ -130,17 +130,3 @@ class NpxBeacon(
         return generated
     }
 }
-
-
-fun beaconInvocation(mode: CliMode): String = when (mode) {
-    CliMode.Mcp -> "mcp"
-    CliMode.Help -> "help"
-    CliMode.Version -> "version"
-    is CliMode.Unknown -> "unknown"
-    CliMode.Backend.Text, CliMode.Backend.Json -> "backend"
-    is CliMode.Backend.DownloadList, is CliMode.Backend.Download -> "backend-download"
-    is CliMode.Backend.StartList, is CliMode.Backend.Start -> "backend-start"
-    is CliMode.Backend.StopList, is CliMode.Backend.Stop -> "backend-stop"
-    is CliMode.Backend.ProvisionList, is CliMode.Backend.Provision -> "backend-provision"
-    CliMode.Project.Text, CliMode.Project.Json -> "project"
-}
