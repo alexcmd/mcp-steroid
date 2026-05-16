@@ -1,50 +1,33 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.logger
 import com.posthog.server.PostHog
 import com.posthog.server.PostHogCaptureOptions
 import com.posthog.server.PostHogConfig
 import com.posthog.server.PostHogInterface
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
-import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.milliseconds
 
-enum class NpxBeaconMode(
-    val eventName: String,
-    val wireValue: String,
-) {
-    INTERACTIVE("devrig-interactive", "interactive"),
-    MCP("devrig-mcp", "mcp"),
-}
+class NpxBeacon(
+    private val homePaths: HomePaths,
+    private val eventSender: ((String, String, Map<String, Any>) -> Unit)? = null,
+    private val startupDelayMillis: () -> Long = { ThreadLocalRandom.current().nextLong(1_000L, 5_001L) },
+) : AutoCloseable {
+    private val log = logger<NpxBeacon>()
+    private val started = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
+    private val startedAtMillis = System.currentTimeMillis()
 
-interface NpxBeaconSink {
-    fun capture(distinctId: String, event: String, properties: Map<String, Any>)
-    fun close()
-}
-
-class PostHogNpxBeaconSink : NpxBeaconSink {
-    private val log = LoggerFactory.getLogger(PostHogNpxBeaconSink::class.java)
-
-    private val posthog: PostHogInterface? by lazy {
+    private val posthogDelegate = lazy {
         try {
             val config = PostHogConfig
-                .builder("phc_IP" + "tbj" + "wwy" + 9 + "YIGg0YNHNxYBePijvTvHEcKAjohah" + 6 + "obYW")
+                .builder("phc_IPtbjwwy9YIGg0YNHNxYBePijvTvHEcKAjohah6obYW")
                 .host("https://us.i.posthog.com")
                 .flushIntervalSeconds(15)
                 .flushAt(10)
@@ -54,87 +37,90 @@ class PostHogNpxBeaconSink : NpxBeaconSink {
                 .remoteConfig(false)
                 .sendFeatureFlagEvent(false)
                 .build()
+
             PostHog.with(config)
         } catch (e: Exception) {
             log.debug("PostHog init failed", e)
             null
         }
     }
-
-    override fun capture(distinctId: String, event: String, properties: Map<String, Any>) {
-        val ph = posthog ?: return
-        val opts = PostHogCaptureOptions.builder()
-        properties.forEach { (key, value) -> opts.property(key, value) }
-        opts.appendFeatureFlags(false)
-        opts.timestamp(LocalDateTime.now().toInstant(ZoneOffset.UTC))
-        ph.capture(distinctId, event, opts.build())
-        ph.flush()
-    }
-
-    override fun close() {
-        posthog?.flush()
-        posthog?.close()
-    }
-}
-
-class NpxBeacon(
-    private val proxyVersion: String,
-    private val userIdFile: Path = defaultUserIdFile(),
-    private val sink: NpxBeaconSink = PostHogNpxBeaconSink(),
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
-    private val delayProvider: () -> Duration = { startupBeaconDelay() },
-    private val periodicInterval: Duration = 30.minutes,
-) : AutoCloseable {
-    private val log = LoggerFactory.getLogger(NpxBeacon::class.java)
-    private val started = AtomicBoolean(false)
-    private val startedAtMillis = System.currentTimeMillis()
+    private val posthog: PostHogInterface? by posthogDelegate
 
     fun startInteractive(invocation: String) {
-        start(mode = NpxBeaconMode.INTERACTIVE, invocation = invocation, periodic = false)
+        start(
+            event = "devrig-interactive",
+            properties = mapOf(
+                "mode" to "interactive",
+                "invocation" to invocation,
+            ),
+        )
     }
 
     fun startMcp() {
-        start(mode = NpxBeaconMode.MCP, invocation = "mcp", periodic = true)
+        start(
+            event = "devrig-mcp",
+            properties = mapOf(
+                "mode" to "mcp",
+                "invocation" to "mcp",
+            ),
+        )
     }
 
-    private fun start(mode: NpxBeaconMode, invocation: String, periodic: Boolean) {
-        if (!started.compareAndSet(false, true)) return
-
-        scope.launch {
-            delay(delayProvider())
-            sendEvent(mode = mode, invocation = invocation, timer = "startup")
-
-            if (periodic) {
-                while (isActive) {
-                    delay(periodicInterval)
-                    sendEvent(mode = mode, invocation = invocation, timer = "heartbeat")
-                }
-            }
+    fun capture(event: String, properties: Map<String, Any> = emptyMap()) {
+        Thread.ofVirtual().name("devrig-beacon").start {
+            sendEventInternal(event, properties)
         }
     }
 
-    fun sendEvent(mode: NpxBeaconMode, invocation: String, timer: String) {
+    internal fun sendEventInternal(event: String, properties: Map<String, Any>) {
+        if (closed.get()) return
+
         try {
-            sink.capture(
-                distinctId = distinctId(),
-                event = mode.eventName,
-                properties = mapOf(
-                    "schema" to 1,
-                    "tool" to BRAND_NAME,
-                    "mode" to mode.wireValue,
-                    "invocation" to invocation,
-                    "timer" to timer,
-                    "uptime_ms" to (System.currentTimeMillis() - startedAtMillis).coerceAtLeast(0),
-                    "proxy_version" to proxyVersion,
-                ),
-            )
+            val enrichedProperties = LinkedHashMap<String, Any>()
+            enrichedProperties.putAll(properties)
+            enrichedProperties["tool"] = BRAND_NAME
+            enrichedProperties["timer"] = properties["timer"] ?: "manual"
+            enrichedProperties["uptime_ms"] = (System.currentTimeMillis() - startedAtMillis).coerceAtLeast(0)
+            enrichedProperties["proxy_version"] = ProxyVersionMetadata.getProxyVersion()
+
+            val distinctId = distinctId()
+            val sender = eventSender
+            if (sender != null) {
+                sender(distinctId, event, enrichedProperties)
+                return
+            }
+
+            val ph = posthog ?: return
+            val opts = PostHogCaptureOptions.builder()
+            enrichedProperties.forEach { (key, value) -> opts.property(key, value) }
+            opts.appendFeatureFlags(false)
+            opts.timestamp(LocalDateTime.now().toInstant(ZoneOffset.UTC))
+            ph.capture(distinctId, event, opts.build())
+            ph.flush()
         } catch (e: Exception) {
             log.debug("Beacon capture failed", e)
         }
     }
 
+    private fun start(event: String, properties: Map<String, Any>) {
+        if (!started.compareAndSet(false, true)) return
+
+        Thread.ofVirtual().name("devrig-beacon-startup").start {
+            try {
+                Thread.sleep(startupDelayMillis())
+                sendEventInternal(event, properties + ("timer" to "startup"))
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (e: Exception) {
+                log.debug("Beacon startup failed", e)
+            }
+        }
+    }
+
     private fun distinctId(): String {
+        val userIdFile = homePaths.home.resolve("devrig-user-id")
         Files.createDirectories(userIdFile.parent)
+
         val existing = try {
             Files.readString(userIdFile).trim()
         } catch (_: NoSuchFileException) {
@@ -151,18 +137,13 @@ class NpxBeacon(
     }
 
     override fun close() {
-        scope.cancel()
-        sink.close()
-    }
-
-    companion object {
-        fun defaultUserIdFile(): Path =
-            Path.of(System.getProperty("user.home")).resolve(".mcp-steroid").resolve("devrig-user-id")
+        closed.set(true)
+        if (posthogDelegate.isInitialized()) {
+            posthog?.flush()
+            posthog?.close()
+        }
     }
 }
-
-fun startupBeaconDelay(): Duration =
-    ThreadLocalRandom.current().nextLong(1_000L, 5_001L).milliseconds
 
 fun beaconInvocation(mode: CliMode): String = when (mode) {
     CliMode.Mcp -> "mcp"

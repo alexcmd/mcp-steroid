@@ -9,9 +9,7 @@ class NpxKtServices(
 ) {
     fun lifetime(name: String): CloseableStack = lifetime.nestedStack(name)
 
-    val version by lazy { ProxyVersionMetadata.getProxyVersion() }
-
     val beacon by lazy {
-        NpxBeacon(proxyVersion = version).also { lifetime.registerCleanupAction { it.close() } }
+        NpxBeacon(homePaths).also { lifetime.registerCleanupAction { it.close() } }
     }
 }
