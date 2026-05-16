@@ -1,7 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy.attic
 
-import com.jonnyzzz.mcpSteroid.proxy.loadProxyVersion
+import com.jonnyzzz.mcpSteroid.proxy.ProxyVersionMetadata
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +37,9 @@ internal fun legacyProxyMain(args: Array<String>) {
         return
     }
 
-    val config = loadConfig(cliArgs).also { it.version = loadProxyVersion() }
+    val config = loadConfig(cliArgs).also {
+        it.version = ProxyVersionMetadata.getProxyVersion()
+    }
     val traffic = TrafficLogger(config)
     val registry = ServerRegistry(config, traffic)
     val beacon = NpxBeacon(config)

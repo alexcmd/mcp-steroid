@@ -68,7 +68,8 @@ internal fun renderBackendProvisionListText(
     out: PrintStream,
     markerRows: Set<DiscoveredIde> = emptySet(),
 ) {
-    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
     out.println()
     if (rows.isEmpty()) {
         if (markerRows.isNotEmpty()) {
@@ -156,7 +157,8 @@ internal fun provisionActionJson(id: String): JsonObject = buildJsonObject {
 private fun renderProvisionInstructionsText(result: ProvisionResult, out: PrintStream) {
     val productName = provisionTargetProductName(result.about, result.selector)
     val version = provisionTargetVersion(result.about)
-    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
     out.println()
     out.println("Target: $productName $version (port ${result.ide.port})")
     out.println()

@@ -13,7 +13,7 @@ class ProxyVersionMetadataTest {
 
     @Test
     fun `loadProxyVersion returns the generated metadata value`() {
-        val version = loadProxyVersion()
+        val version = ProxyVersionMetadata.getProxyVersion()
         assertTrue(version.isNotBlank(), "version must be non-blank, got: '$version'")
         assertEquals(ProxyVersionMetadata.getProxyVersion(), version)
     }
@@ -21,6 +21,6 @@ class ProxyVersionMetadataTest {
     @Test
     fun `version matches project_version system property when provided by the build`() {
         val expected = System.getProperty("npx-kt.expected.version") ?: return
-        assertEquals(expected, loadProxyVersion())
+        assertEquals(expected, ProxyVersionMetadata.getProxyVersion())
     }
 }

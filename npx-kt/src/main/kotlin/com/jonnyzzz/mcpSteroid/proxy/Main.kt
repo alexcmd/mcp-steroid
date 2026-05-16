@@ -7,6 +7,8 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.proxy.server.runStubStdioMcpServer
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -16,14 +18,11 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.system.exitProcess
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
-import org.slf4j.LoggerFactory
 
 /**
  * Resolved CLI input + the captured stdio streams reserved for the MCP transport.
@@ -32,68 +31,79 @@ import org.slf4j.LoggerFactory
  * the original argv so [mainImpl] (and any future MCP-side feature flag) can read it
  * without re-parsing.
  */
-internal data class MainContext(
-    val args: List<String>,
+data class MainContext(
+    val args: NpxKtArgs,
     val mcpStdin: InputStream,
     val mcpStdout: PrintStream,
     val homePaths: HomePaths,
 )
 
-private val LOG_SESSION_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss")
+private class NpxKtMain
 
 fun main(args: Array<String>) {
-    // FIRST ACTION OF THE PROCESS — no logger, no class init that prints, nothing.
-    //
-    // The MCP-stdio convention reserves stdout for NDJSON JSON-RPC frames. Once the
-    // process commits to that mode it cannot un-commit, and any earlier println from
-    // a logger fallback, kotlinx-coroutines warning, or posthog noise would corrupt
-    // the very first frame. So we branch on `--mcp` BEFORE anything else: the MCP
-    // path captures stdin/stdout and redirects the global System.out → stderr; every
-    // other path (help / version / unknown) runs like a normal CLI tool with stdout
-    // intact.
-    //
-    // `parseCliMode` is intentionally pure and does not touch System.out.
-    val mode = parseCliMode(args)
-    val homePaths = try {
-        resolveHomePaths(parseHomeOverride(args))
-    } catch (e: IllegalArgumentException) {
-        System.err.println(e.message)
-        exitProcess(64)
-    }
-    homePaths.mkdirsAll()
-    System.setProperty("proxy.log.dir", homePaths.logsDir.toString())
-    System.setProperty("proxy.log.session", LocalDateTime.now().format(LOG_SESSION_FORMAT))
-    // `--debug` is orthogonal to the mode and must be honoured even in MCP
-    // mode. Apply BEFORE any class load that might trigger logback init —
-    // logback reads the `proxy.log.level` system property on first use and
-    // pins the level for the JVM lifetime.
-    applyDebugLogging(parseDebugFlag(args))
+    val args = NpxKtArgs(args)
 
-    val proxyVersion = loadProxyVersion()
+    val homePaths = resolveHomePathsOrDie(args)
+
+    //setup logging. That is essential to avoid logger usages BEFORE this statement
+    configureLoggingAndLogStarted(homePaths, args)
+
+    val lifetime = CloseableStackHost()
+    try {
+        NpxKtServices(homePaths, args, lifetime).mainImpl1()
+    } catch (t: Throwable) {
+        System.err.println("Unexpected error ${t.message}")
+        t.printStackTrace(System.err)
+        exitProcess(64)
+    } finally {
+        lifetime.closeAllStacks()
+    }
+}
+
+class NpxKtServices(
+    val homePaths: HomePaths,
+    val args: NpxKtArgs,
+    private val lifetime: CloseableStack
+) {
+    fun lifetime(name: String): CloseableStack = lifetime.nestedStack(name)
+
+    val version by lazy { ProxyVersionMetadata.getProxyVersion() }
+
+    val beacon by lazy {
+        NpxBeacon(proxyVersion = version).also { lifetime.registerCleanupAction { it.close() } }
+    }
+
+    val updates by lazy {
+        NpxUpdateChecker(currentVersion = version).also { lifetime.registerCleanupAction { it.close() } }
+    }
+}
+
+
+fun NpxKtServices.mainImpl1() {
+    val mode = args.parseCliMode()
     if (mode !is CliMode.Mcp) {
-        NpxBeacon(proxyVersion = proxyVersion).startInteractive(beaconInvocation(mode))
-        NpxUpdateChecker(currentVersion = proxyVersion).startOneShot()
-        exitProcess(runCli(mode, homePaths))
+        beacon.startInteractive(beaconInvocation(mode))
+        updates.startOneShot()
+        try {
+            val cliResult = runCli(mode, homePaths)
+            exitProcess(cliResult)
+        } catch (t: Throwable) {
+            System.err.println("Unexpected error calling $mode. ${t.message}")
+            t.printStackTrace(System.err)
+            exitProcess(64)
+        }
     }
 
     val mcpStdin: InputStream = System.`in`
     val mcpStdout: PrintStream = System.out
-
     System.setOut(System.err)
-    val beacon = NpxBeacon(proxyVersion = proxyVersion)
-    val updateChecker = NpxUpdateChecker(currentVersion = proxyVersion)
-    beacon.startMcp()
-    updateChecker.startPeriodic()
 
-    val ignoredMcpTokens = mcpIgnoredTokens(args)
-    if (ignoredMcpTokens.isNotEmpty()) {
-        LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.proxy.Main")
-            .debug("--mcp selected; ignored CLI argument(s): {}", ignoredMcpTokens.joinToString(" "))
-    }
+    beacon.startMcp()
+    updates.startPeriodic()
 
     try {
         MainContext(
-            args = args.toList(),
+            args = args,
             mcpStdin = mcpStdin,
             mcpStdout = mcpStdout,
             homePaths = homePaths,
@@ -102,20 +112,17 @@ fun main(args: Array<String>) {
         System.err.println("Unexpected error ${t.message}")
         t.printStackTrace(System.err)
         exitProcess(64)
-    } finally {
-        updateChecker.close()
-        beacon.close()
     }
 }
 
 internal fun MainContext.mainImpl() {
     // Construct every dependent service explicitly here — the npx-kt module
     // does not use any DI framework, so main.kt is the wiring root.
-    val proxyVersion = loadProxyVersion()
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
     val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     val clientInfo = NpxStreamClientInfo(
-        client = "mcp-steroid-proxy (npx-kt)",
+        client = "devrig",
         clientPid = ProcessHandle.current().pid(),
         clientVersion = proxyVersion,
         clientInstanceId = "npx-kt-${UUID.randomUUID()}",

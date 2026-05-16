@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 
 /**
  * Pins the contract of [parseCliMode]. The launcher's `main()` calls this as its
@@ -16,6 +18,12 @@ import org.junit.jupiter.api.TestFactory
  * wanted `--help` (false-negative). Cover edges, not just happy paths.
  */
 class CliModeTest {
+    @TempDir
+    lateinit var testHome: Path
+
+    private fun testHomePaths(): HomePaths = HomePaths(testHome).also { it.mkdirsAll() }
+
+    private fun runCliForTest(mode: CliMode): Int = runCli(mode, testHomePaths())
 
     // ----------------------------- happy paths -----------------------------
 
@@ -430,18 +438,18 @@ class CliModeTest {
 
     @Test
     fun `runCli Help returns exit 0`() {
-        assertEquals(0, runCli(CliMode.Help))
+        assertEquals(0, runCliForTest(CliMode.Help))
     }
 
     @Test
     fun `runCli Version returns exit 0`() {
-        assertEquals(0, runCli(CliMode.Version))
+        assertEquals(0, runCliForTest(CliMode.Version))
     }
 
     @Test
     fun `runCli Unknown returns exit 64`() {
         // 64 is sysexits.h's EX_USAGE — the canonical "bad CLI invocation" code.
-        assertEquals(64, runCli(CliMode.Unknown(listOf("--no-such"))))
+        assertEquals(64, runCliForTest(CliMode.Unknown(listOf("--no-such"))))
     }
 
     @Test
@@ -483,7 +491,7 @@ class CliModeTest {
         // want to surface that as a hard error rather than silently produce
         // help output on stdout (which would corrupt the MCP transport).
         try {
-            runCli(CliMode.Mcp)
+            runCliForTest(CliMode.Mcp)
             error("runCli(CliMode.Mcp) was expected to throw")
         } catch (e: IllegalStateException) {
             assertTrue(e.message!!.contains("CliMode.Mcp"), "got: ${e.message}")

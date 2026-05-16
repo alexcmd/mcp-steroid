@@ -132,7 +132,8 @@ internal fun renderBackendDownloadListText(rows: List<AvailableBackendDownload>,
 }
 
 internal fun renderBackendDownloadListBanner(out: PrintStream) {
-    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
     out.println()
 }
 
@@ -241,6 +242,6 @@ internal val backendPrettyJson: Json = Json {
 internal fun kotlinx.serialization.json.JsonObjectBuilder.putToolJson() {
     put("tool", buildJsonObject {
         put("name", BRAND_NAME)
-        put("version", loadProxyVersion())
+        put("version", ProxyVersionMetadata.getProxyVersion())
     })
 }

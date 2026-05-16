@@ -3,14 +3,28 @@ package com.jonnyzzz.mcpSteroid.proxy
 
 import java.io.PrintStream
 
+class NpxKtArgs(args: Array<String>) {
+    val args = args.toList()
+
+    fun parseHomeOverride() = parseHomeOverride(args.toTypedArray())
+    fun parseDebugFlag() = parseDebugFlag(args.toTypedArray())
+
+    fun parseCliMode() = parseCliMode(args.toTypedArray())
+
+    override fun toString(): String {
+        return "NpxKtArgs(${args.joinToString(" ")})"
+    }
+}
+
+
 /** Brand presented in CLI banners — see [BRAND_TAGLINE] for the full slogan. */
-internal const val BRAND_NAME: String = "devrig"
+const val BRAND_NAME: String = "devrig"
 
 /** Tagline used by the help banner and the `backend` subcommand's header. */
-internal const val BRAND_TAGLINE: String =
+const val BRAND_TAGLINE: String =
     "This environment empowers your AI with the best deterministic coding tools."
 
-internal const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
+const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
 /**
  * What the user asked the launcher to do. Resolved by [parseCliMode] BEFORE any
@@ -18,7 +32,7 @@ internal const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected.
  * any logger / class loader has a chance to print to it, so we keep this
  * function pure and dependency-free.
  */
-internal sealed interface CliMode {
+sealed interface CliMode {
     /** `--mcp` was passed. Run as the stdio MCP server. */
     object Mcp : CliMode
 
@@ -88,7 +102,7 @@ internal sealed interface CliMode {
  * boolean flags have a `null` value, value flags store the parsed value.
  * [positionals] are the non-flag tokens after [mode], excluding [subcommand].
  */
-internal data class ParsedArgs(
+data class ParsedArgs(
     val mode: String?,
     val subcommand: String?,
     val positionals: List<String>,
@@ -252,7 +266,7 @@ private val cliModeRules: List<ModeRule> = listOf(
  * global, but it must still have a value that does not look like another long
  * flag.
  */
-internal fun parseCliMode(args: Array<String>): CliMode {
+fun parseCliMode(args: Array<String>): CliMode {
     val rawArgs = args.toList()
     if (rawArgs.any { it == "--mcp" }) return CliMode.Mcp
     if (rawArgs.any { it in helpFlags }) return CliMode.Help
@@ -287,7 +301,7 @@ internal fun parseCliMode(args: Array<String>): CliMode {
  * Tokens that are deliberately ignored once `--mcp` is present. Used only for a
  * DEBUG stderr log after stdout has been reserved for MCP framing.
  */
-internal fun mcpIgnoredTokens(args: Array<String>): List<String> {
+fun mcpIgnoredTokens(args: Array<String>): List<String> {
     val ignored = mutableListOf<String>()
     var index = 0
     while (index < args.size) {
@@ -311,9 +325,9 @@ internal fun mcpIgnoredTokens(args: Array<String>): List<String> {
  * orthogonal to [parseCliMode] — `--debug` is valid in EVERY mode, including
  * `--mcp` where it still goes to stderr (stdout stays reserved for NDJSON).
  */
-internal fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
+fun parseDebugFlag(args: Array<String>): Boolean = args.any { it == "--debug" }
 
-internal fun parseHomeOverride(args: Array<String>): String? {
+fun parseHomeOverride(args: Array<String>): String? {
     val idx = args.indexOf("--home")
     if (idx < 0 || idx == args.lastIndex) return null
     val value = args[idx + 1]
@@ -532,25 +546,6 @@ private fun isKnownProductKey(raw: String): Boolean =
 
 private fun isSupportedProvisionTargetId(raw: String): Boolean = Regex("""port-\d{1,5}""").matches(raw)
 
-/**
- * Wire the `--debug` flag into the bundled logback configuration. Reads the
- * `proxy.log.level` system property at logback-init time (see `logback.xml`):
- *  - default: INFO
- *  - `--debug`: DEBUG
- *
- * MUST run before the first SLF4J call — logback initialises lazily on first
- * use and pins the level. [main] calls this right after [parseDebugFlag] for
- * exactly that reason.
- */
-internal fun applyDebugLogging(debug: Boolean) {
-    // Only set the property when --debug is requested — leaving it unset lets
-    // operators override the INFO default from the outside with
-    // `-Dproxy.log.level=WARN` etc. The hard-coded default in logback.xml
-    // (`${proxy.log.level:-INFO}`) handles the no-flag case.
-    if (debug) {
-        System.setProperty("proxy.log.level", "DEBUG")
-    }
-}
 
 /**
  * Runs the non-MCP CLI surface (help / version / backend / project / unknown).
@@ -561,9 +556,9 @@ internal fun applyDebugLogging(debug: Boolean) {
  * [main]. Help and version go to stdout (standard CLI convention); the
  * error variant goes to stderr.
  */
-internal fun runCli(
+fun runCli(
     mode: CliMode,
-    homePaths: HomePaths = resolveHomePaths(override = null),
+    homePaths: HomePaths,
 ): Int = when (mode) {
     CliMode.Mcp -> error("runCli called with CliMode.Mcp — caller should branch to mainImpl instead")
     CliMode.Help -> {
@@ -571,7 +566,7 @@ internal fun runCli(
         0
     }
     CliMode.Version -> {
-        println(loadProxyVersion())
+        println(ProxyVersionMetadata.getProxyVersion())
         0
     }
     is CliMode.Backend -> {
@@ -627,9 +622,10 @@ internal fun runCli(
 }
 
 private fun printHelp(out: PrintStream) {
+    val version = ProxyVersionMetadata.getProxyVersion()
     out.print(
         """
-        $BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE
+        $BRAND_NAME v$version — $BRAND_TAGLINE
 
         Usage:
           mcp-steroid-proxy --mcp                    run as an MCP stdio server

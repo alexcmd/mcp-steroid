@@ -493,11 +493,12 @@ private suspend fun fetchFirstSnapshot(
     val base = ide.mcpUrl.trimEnd('/').removeSuffix("/mcp")
     val url = base + NPX_PROJECTS_STREAM_PATH
     val token = ide.marker.token
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
     val body = NpxStreamJson.encodeClientInfo(
         NpxStreamClientInfo(
             client = "mcp-steroid-proxy (backend)",
             clientPid = ProcessHandle.current().pid(),
-            clientVersion = loadProxyVersion(),
+            clientVersion = proxyVersion,
             clientInstanceId = "backend-${UUID.randomUUID()}",
             platform = System.getProperty("os.name"),
             arch = System.getProperty("os.arch"),
@@ -557,7 +558,8 @@ private suspend fun fetchFirstSnapshot(
  * and the trailing blank line gives shells a clean separator.
  */
 internal fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
-    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
     out.println()
     if (rows.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
@@ -607,7 +609,7 @@ internal fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
     val payload = buildJsonObject {
         put("tool", buildJsonObject {
             put("name", BRAND_NAME)
-            put("version", loadProxyVersion())
+            put("version", ProxyVersionMetadata.getProxyVersion())
         })
         put("backends", buildJsonArray {
             for ((backendId, row) in rowsWithIds) {

@@ -23,11 +23,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
-internal interface NpxVersionSource {
+interface NpxVersionSource {
     suspend fun fetchVersionBase(currentVersion: String): String?
 }
 
-internal class HttpNpxVersionSource : NpxVersionSource {
+class HttpNpxVersionSource : NpxVersionSource {
     private val log = LoggerFactory.getLogger(HttpNpxVersionSource::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -58,7 +58,7 @@ internal class HttpNpxVersionSource : NpxVersionSource {
     }
 }
 
-internal class NpxUpdateChecker(
+class NpxUpdateChecker(
     private val currentVersion: String,
     private val versionSource: NpxVersionSource = HttpNpxVersionSource(),
     private val err: PrintStream = System.err,
@@ -108,11 +108,11 @@ internal class NpxUpdateChecker(
     }
 }
 
-internal fun updateNotice(currentVersion: String, newVersion: String): String =
+fun updateNotice(currentVersion: String, newVersion: String): String =
     "A new version of $BRAND_NAME is available: $newVersion (current: ${extractBaseVersion(currentVersion)}). " +
         "Download: https://mcp-steroid.jonnyzzz.com/releases/"
 
-internal fun extractBaseVersion(fullVersion: String): String =
+fun extractBaseVersion(fullVersion: String): String =
     fullVersion.substringBefore("-SNAPSHOT").substringBefore('-')
 
 @Serializable

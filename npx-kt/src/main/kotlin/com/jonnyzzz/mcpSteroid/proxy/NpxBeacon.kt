@@ -14,6 +14,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -24,7 +25,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.milliseconds
 
-internal enum class NpxBeaconMode(
+enum class NpxBeaconMode(
     val eventName: String,
     val wireValue: String,
 ) {
@@ -32,12 +33,12 @@ internal enum class NpxBeaconMode(
     MCP("devrig-mcp", "mcp"),
 }
 
-internal interface NpxBeaconSink {
+interface NpxBeaconSink {
     fun capture(distinctId: String, event: String, properties: Map<String, Any>)
     fun close()
 }
 
-internal class PostHogNpxBeaconSink : NpxBeaconSink {
+class PostHogNpxBeaconSink : NpxBeaconSink {
     private val log = LoggerFactory.getLogger(PostHogNpxBeaconSink::class.java)
 
     private val posthog: PostHogInterface? by lazy {
@@ -76,7 +77,7 @@ internal class PostHogNpxBeaconSink : NpxBeaconSink {
     }
 }
 
-internal class NpxBeacon(
+class NpxBeacon(
     private val proxyVersion: String,
     private val userIdFile: Path = defaultUserIdFile(),
     private val sink: NpxBeaconSink = PostHogNpxBeaconSink(),
@@ -112,7 +113,7 @@ internal class NpxBeacon(
         }
     }
 
-    internal fun sendEvent(mode: NpxBeaconMode, invocation: String, timer: String) {
+    fun sendEvent(mode: NpxBeaconMode, invocation: String, timer: String) {
         try {
             sink.capture(
                 distinctId = distinctId(),
@@ -136,7 +137,7 @@ internal class NpxBeacon(
         Files.createDirectories(userIdFile.parent)
         val existing = try {
             Files.readString(userIdFile).trim()
-        } catch (e: java.nio.file.NoSuchFileException) {
+        } catch (_: NoSuchFileException) {
             ""
         } catch (e: Exception) {
             log.debug("Could not read beacon user id from {}", userIdFile, e)
@@ -160,10 +161,10 @@ internal class NpxBeacon(
     }
 }
 
-internal fun startupBeaconDelay(): Duration =
+fun startupBeaconDelay(): Duration =
     ThreadLocalRandom.current().nextLong(1_000L, 5_001L).milliseconds
 
-internal fun beaconInvocation(mode: CliMode): String = when (mode) {
+fun beaconInvocation(mode: CliMode): String = when (mode) {
     CliMode.Mcp -> "mcp"
     CliMode.Help -> "help"
     CliMode.Version -> "version"

@@ -8,7 +8,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ResourcesCapability
 import com.jonnyzzz.mcpSteroid.mcp.ServerCapabilities
 import com.jonnyzzz.mcpSteroid.mcp.ServerInfo
 import com.jonnyzzz.mcpSteroid.mcp.ToolsCapability
-import com.jonnyzzz.mcpSteroid.proxy.loadProxyVersion
+import com.jonnyzzz.mcpSteroid.proxy.ProxyVersionMetadata
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -35,7 +35,7 @@ internal suspend fun runStubStdioMcpServer(
     val server = McpServerCore(
         serverInfo = ServerInfo(
             name = "mcp-steroid-proxy",
-            version = loadProxyVersion(),
+            version = ProxyVersionMetadata.getProxyVersion(),
         ),
         capabilities = ServerCapabilities(
             tools = ToolsCapability(listChanged = true),

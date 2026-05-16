@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.proxy
 import com.jonnyzzz.mcpSteroid.PidMarker
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.system.exitProcess
 
 class HomePaths(val home: Path) {
     val logsDir: Path get() = home.resolve("logs")
@@ -32,6 +33,18 @@ fun resolveHomePaths(
     val path = Path.of(raw)
     rejectDotDot(path)
     return HomePaths(path.toAbsolutePath().normalize())
+}
+
+fun resolveHomePathsOrDie(args: NpxKtArgs): HomePaths {
+    try {
+        val homePaths = resolveHomePaths(args.parseHomeOverride())
+        homePaths.mkdirsAll()
+        return homePaths
+    } catch (e: Throwable) {
+        System.err.println(e.message)
+        e.printStackTrace(System.err)
+        exitProcess(64)
+    }
 }
 
 private fun expandTilde(raw: String): String {

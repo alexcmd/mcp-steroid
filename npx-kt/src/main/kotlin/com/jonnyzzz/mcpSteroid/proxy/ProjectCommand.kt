@@ -50,7 +50,8 @@ internal fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = Pr
  * fetch failed are excluded from the project list and reported in a footer.
  */
 internal fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
-    out.println("$BRAND_NAME v${loadProxyVersion()} — $BRAND_TAGLINE")
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    out.println("$BRAND_NAME v$proxyVersion — $BRAND_TAGLINE")
     out.println()
 
     if (listing.markerRows.isEmpty() && listing.portRows.isEmpty() && listing.managedRows.isEmpty()) {

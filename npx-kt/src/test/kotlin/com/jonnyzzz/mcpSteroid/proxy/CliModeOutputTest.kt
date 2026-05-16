@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.nio.file.Path
 
 /**
  * Pins how [runCli] routes its output. CLI convention:
@@ -27,9 +29,14 @@ class CliModeOutputTest {
     private lateinit var originalErr: PrintStream
     private lateinit var outBuf: ByteArrayOutputStream
     private lateinit var errBuf: ByteArrayOutputStream
+    private lateinit var homePaths: HomePaths
+
+    @TempDir
+    lateinit var testHome: Path
 
     @BeforeEach
     fun captureStreams() {
+        homePaths = HomePaths(testHome).also { it.mkdirsAll() }
         originalOut = System.out
         originalErr = System.err
         outBuf = ByteArrayOutputStream()
@@ -46,12 +53,13 @@ class CliModeOutputTest {
 
     private fun stdout(): String = outBuf.toString(Charsets.UTF_8)
     private fun stderr(): String = errBuf.toString(Charsets.UTF_8)
+    private fun runCliForTest(mode: CliMode): Int = runCli(mode, homePaths)
 
     // ------------------------------- Help ----------------------------------
 
     @Test
     fun `Help writes the usage banner to stdout, nothing to stderr`() {
-        val exit = runCli(CliMode.Help)
+        val exit = runCliForTest(CliMode.Help)
         assertEquals(0, exit)
         assertEquals("", stderr(), "stderr must stay clean for --help; got: ${stderr()}")
         val out = stdout()
@@ -73,7 +81,7 @@ class CliModeOutputTest {
         // `command --help | tail -n1` should not see a partial line; the launcher
         // must finish its banner with a newline so shells / piped consumers
         // behave predictably.
-        runCli(CliMode.Help)
+        runCliForTest(CliMode.Help)
         assertTrue(stdout().endsWith("\n"), "help output must end with a newline; got: '${stdout().takeLast(20)}'")
     }
 
@@ -81,10 +89,10 @@ class CliModeOutputTest {
 
     @Test
     fun `Version writes loadProxyVersion()'s value to stdout`() {
-        val exit = runCli(CliMode.Version)
+        val exit = runCliForTest(CliMode.Version)
         assertEquals(0, exit)
         assertEquals("", stderr(), "stderr must stay clean for --version; got: ${stderr()}")
-        val expectedVersion = loadProxyVersion()
+        val expectedVersion = ProxyVersionMetadata.getProxyVersion()
         assertEquals("$expectedVersion\n", stdout(),
             "stdout must be exactly the version + newline for `--version`")
     }
@@ -93,7 +101,7 @@ class CliModeOutputTest {
     fun `Version output is a single line`() {
         // Some monitoring scripts grep `--version | head -1`. Pinning single-line
         // output prevents an accidental multi-line banner sneaking in.
-        runCli(CliMode.Version)
+        runCliForTest(CliMode.Version)
         val lines = stdout().trimEnd().lines()
         assertEquals(1, lines.size, "version must be a single line; got: ${stdout()}")
     }
@@ -102,7 +110,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Unknown writes an error and the usage banner, both to stderr`() {
-        val exit = runCli(CliMode.Unknown(listOf("--no-such", "thing")))
+        val exit = runCliForTest(CliMode.Unknown(listOf("--no-such", "thing")))
         assertEquals(64, exit)
         assertEquals("", stdout(), "stdout must stay clean for unknown-arg errors; got: ${stdout()}")
         val err = stderr()
@@ -114,7 +122,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Unknown with multiple tokens joins them with a single space`() {
-        runCli(CliMode.Unknown(listOf("a", "b", "c")))
+        runCliForTest(CliMode.Unknown(listOf("a", "b", "c")))
         val err = stderr()
         assertTrue(err.contains("Unknown argument(s): a b c"),
             "stderr should join multiple unknown tokens with single spaces; got:\n$err")
@@ -122,7 +130,7 @@ class CliModeOutputTest {
 
     @Test
     fun `Unknown with a single token still produces a coherent error`() {
-        runCli(CliMode.Unknown(listOf("--what")))
+        runCliForTest(CliMode.Unknown(listOf("--what")))
         val err = stderr()
         assertTrue(err.contains("Unknown argument(s): --what"), "got: $err")
     }
