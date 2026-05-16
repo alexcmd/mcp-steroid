@@ -744,21 +744,55 @@ one slice of that timeline.
   Justification: forcibly killing the JDK21 worker is flaky on macOS and the
   saved cycles are small relative to the rest of cleanup.
 
-## A0 — Boundary catch-all in `McpHttpTransport.handlePost` (foundation, easiest)
+## A0 — Boundary catch-all in `McpHttpTransport.handlePost` (LANDED — commit pending)
 
-Single `try { … } catch (Throwable) { … }` wrapping the entire handler body in
-`mcp-http/.../McpHttpTransport.kt:99–182`. Inside the catch:
-- Match `CancellationException` first — build a structured `cancelled` tool
-  result, do **not** log, do **not** rethrow.
-- Match every other `Throwable` — build a structured `internal_error` tool
-  result with the executionId, log once at `Logger.error`.
-- The boundary itself must never throw; ktor sees only a normal 200 response
-  with `isError: true` in the body. Server-side state stays clean.
+Single `try { … } catch (CancellationException) { rethrow } catch (Throwable)
+{ JSON-RPC error envelope } ` around the response phase of `handlePost`.
+Implementation deviates from the original plan in one detail: the boundary
+emits a JSON-RPC `error` envelope (HTTP 200, `error.code = INTERNAL_ERROR`,
+`id` echoed from the request body), not a `cancelled`-kind tool result. The
+`kind`-style structured tool result belongs to A2a, which builds on this
+foundation. The current A0 scope is "no exception escapes ktor, exactly one
+response per call, no `Logger.error(CancellationException)` noise".
 
-Acceptance: a script that throws OOM, a script that calls `error("boom")`,
-and a client that disconnects mid-request all produce a single 200 response
-with the appropriate `kind`, and the next request on the same server
-succeeds.
+Key implementation points:
+
+- `mcp-core/.../McpProtocol.kt` exposes `encodeJsonRpcError(id, code, message)`
+  so the transport layer can build error envelopes without depending on
+  `McpServerCore` internals. `McpServerCore.encodeError` now delegates to it
+  (single source of truth).
+- `mcp-http/.../McpHttpTransport.kt` sets the `Mcp-Session-Id` /
+  `Mcp-Session-Notice` headers BEFORE the boundary so a newly created
+  session is communicated even when the handler throws (otherwise the
+  client reconnects with its stale id, leaking sessions).
+- The fallback `respondText` inside the catch is itself wrapped in a
+  nested try/catch — a secondary throw (e.g. response stream half-committed
+  because the client disconnected mid-write) is logged at warn and
+  swallowed, so it cannot escape into ktor and reintroduce #46's dual log.
+- `CancellationException` is rethrown without logging. All three JVM
+  variants (`kotlinx.coroutines.*`, `kotlin.coroutines.cancellation.*`,
+  `java.util.concurrent.*`) are runtime type-aliases of the same class, so
+  one catch covers all.
+- `extractRequestId(body)` is `Throwable`-safe: malformed body / missing id
+  / non-object root → `JsonNull`. Diagnostic must never itself throw.
+
+Test surface (66/66 green) — keep passing on future edits:
+
+- `:mcp-http:test --tests '*McpHttpTransportTest*'` — 36 cases, ~0.6 s.
+  Four new boundary tests use `AssertionError` (an `Error`, not `Exception`)
+  to bypass `McpToolRegistry.kt:90`'s `catch (Exception)` and actually
+  reach the transport boundary; an `IllegalStateException` would have been
+  intercepted by the registry and surfaced as `result.isError=true` without
+  ever firing the boundary path.
+- `:ij-plugin:test --tests '*McpServerIntegrationTest*'` — 30 cases, ~43 s.
+  Unchanged behavior verified.
+
+Codex + Claude review quorum on the diff: both `Ship with fixes`. Convergent
+fixes folded in: nested-try around the fallback respondText (both),
+`AssertionError` in the boundary tests (Codex), session-header before the
+try (Claude), `encodeError` delegation (Claude), softened the "client has
+already closed" block comment to acknowledge server-side timeout
+cancellations (Claude).
 
 ## A2c — Single terminal HTTP log per request
 
