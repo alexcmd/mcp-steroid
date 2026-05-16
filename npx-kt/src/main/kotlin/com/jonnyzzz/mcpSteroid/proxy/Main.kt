@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.logger
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
@@ -12,7 +13,6 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
@@ -20,6 +20,10 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.system.exitProcess
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.Dispatchers
+import org.slf4j.LoggerFactory
 
 /**
  * Resolved CLI input + the captured stdio streams reserved for the MCP transport.
@@ -159,7 +163,14 @@ internal fun MainContext.mainImpl() {
     //               plus legacy .<pid>.mcp-steroid markers from $HOME during the transition
     //   monitor   → opens one POST /npx/v1/projects/stream per IDE,
     //               receives push notifications on project open/close
-    runBlocking {
+
+    class DevrigCoroutineExceptionHandler
+    val log = logger<DevrigCoroutineExceptionHandler>()
+    val exceptionHandler = CoroutineExceptionHandler { context, throwable ->
+        log.warn("devrig coroutine exception: ${throwable.message} in $context", throwable)
+    }
+
+    runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler) {
         coroutineScope {
             val discoveryJob = discovery.start(this)
             val monitorJob = monitor.start(this)
