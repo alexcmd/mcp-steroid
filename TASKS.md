@@ -1,4 +1,77 @@
 
+# Active focus — npx-kt as stable MCP Steroid stdio replacement (2026-05-17)
+
+Goal: make npx-kt/devrig `mpc` mode a real replacement for the IDE HTTP MCP
+server by routing tool calls through discovered IDE bridge endpoints while
+keeping prompt/resource rendering local to npx-kt.
+
+Plan-review status:
+- [x] Draft plan reviewed by `run-agent.sh claude`
+  (`run_20260517-191744-64301`, `REVIEW_OK_WITH_CHANGES`).
+- [ ] Implementation reviewed by three `run-agent.sh` reviewers.
+- [ ] MCP Steroid inspections clean except non-actionable prose checks.
+
+Implementation tasks:
+- [ ] Add a project routing service under `npx-kt` that consumes discovered IDE
+  metadata, project snapshots, and windows.
+- [ ] Generate exposed `project_name` values as
+  `<ideProjectName>-<hash8>`, where `hash8` is base64-url-no-pad of the first
+  6 bytes of `SHA-256(realProjectHome.toRealPath UTF-8 + 0x00 + idePid UTF-8)`.
+  Project names are session-scoped; agents must refresh after an IDE restart.
+- [ ] Apply the same suffix logic to window `projectName` values and preserve
+  `windowId` routing so input/screenshot calls reach the owning IDE.
+- [ ] Store a reverse mapping from exposed `project_name` to the IDE pid,
+  bridge URL, and original IDE project name. Tool calls must rewrite
+  `project_name` back to the original name before crossing the bridge. Never
+  parse the suffix at routing time; use exact map lookup.
+- [ ] Record screenshot `execution_id -> idePid` so follow-up
+  `steroid_input` calls route to the same IDE even when multiple IDE windows
+  are present.
+- [ ] Treat stale exposed names as typed, actionable errors:
+  "project_name <...> is no longer present; call steroid_list_projects to
+  refresh".
+- [ ] Implement network-backed npx-kt handlers for every `McpSteroidTools`
+  handler interface that needs IDE routing:
+  `ListProjectsToolHandler`, `ListWindowsToolHandler`,
+  `ExecuteCodeToolHandler`, `ApplyPatchToolHandler`,
+  `ExecuteFeedbackToolHandler`, `ActionDiscoveryToolHandler`,
+  `VisionScreenshotToolHandler`, `VisionInputToolHandler`, and
+  `OpenProjectToolHandler`.
+- [ ] Use `/npx/v1/tools/call/stream` for routed calls that can produce
+  progress and forward progress events as MCP progress notifications.
+- [ ] Define and test `OpenProjectToolHandler` routing policy: require exactly
+  one discovered/routable IDE; otherwise return an actionable error.
+- [ ] Implement local npx-kt `PromptsContextHandler`. Given exposed
+  `project_name`, resolve the IDE metadata and render prompts/resources with
+  that IDE's product code and baseline version. Do not route prompt/resource
+  rendering to an IDE.
+- [ ] Register generated resources/prompts in the npx-kt stdio server using
+  the same `ResourceRegistrar` path as the IJ plugin.
+- [ ] Move `ResourceRegistrar` from `ij-plugin` into `mcp-steroid-server`
+  because it uses no IntelliJ Platform APIs.
+- [ ] Keep no-IDE and stale-project errors explicit and actionable.
+- [ ] Add unit tests for hash suffix stability, reverse project mapping,
+  project/window rewriting, prompt context selection, and bridge routing
+  request bodies.
+- [ ] Add bridge-routing unit tests with a fake HTTP client/engine verifying
+  the request body rewrites `project_name` to the original IDE project name and
+  sets the bearer token header.
+- [ ] Add npx-kt stdio integration tests with one fake IDE bridge discovered
+  through marker/discovery, covering `steroid_list_projects`,
+  `steroid_list_windows`, prompt/resource reads, and a routed tool call.
+- [ ] Add/extend agent integration tests for `AiMode.AI_NPX` with one running
+  IDE so an AI agent uses devrig stdio MCP end-to-end, not the HTTP MCP server.
+- [ ] Validate with scoped Gradle tests, MCP Steroid inspections, and a debug
+  IDE/runtime check where practical.
+- [ ] Commit in small logical batches:
+  1. planning/TASKS update;
+  2. ResourceRegistrar move;
+  3. routing/name-mapping service + unit tests;
+  4. local list/prompts handlers;
+  5. network bridge handlers + stdio integration tests;
+  6. agent-level integration tests;
+  7. cleanup/inspection fixes.
+
 # Active notes — npx-kt CLI home override (2026-05-16)
 
 - Runtime help intentionally documents only user-facing commands/options. The
