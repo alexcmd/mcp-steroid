@@ -107,7 +107,7 @@ class NpxBeacon(
             while (isActive) {
                 yield()
                 delay(30.minutes)
-                capture("heartbeat")
+                capture("cmd_heartbeat")
             }
         }
     }
