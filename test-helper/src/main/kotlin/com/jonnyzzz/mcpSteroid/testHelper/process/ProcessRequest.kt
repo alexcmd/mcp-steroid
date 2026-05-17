@@ -1,11 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.testHelper.process
 
+import java.io.File
+import java.time.Duration
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
-import java.io.File
-import java.time.Duration
 
 data class RunProcessRequest(
     val workingDir: File? = null,
@@ -33,9 +33,7 @@ data class RunProcessRequest(
     fun withStdin(stdin: Flow<ByteArray>) = copy(stdin = stdin)
     fun withEnvironment(environment: Map<String, String>) = copy(environment = environment)
 
-    fun withSecretPatterns(secretPatterns: List<String>) = copy(secretPatterns = secretPatterns)
     fun addSecretPatterns(secretPatterns: List<String>) = copy(secretPatterns = (this.secretPatterns + secretPatterns).distinct())
-
 
     fun logPrefix(logPrefix: String) = withLogPrefix(logPrefix)
     fun workingDir(workingDir: File) = withWorkingDir(workingDir)
@@ -43,7 +41,6 @@ data class RunProcessRequest(
     fun command(builder: MutableList<String>.() -> Unit) = command(buildList(builder))
     fun command(vararg command: String) = command(command.toList())
     fun description(description: String) = withDescription(description)
-    fun updateDescription(newDescriptionOrSkip: String?) = copy(description = newDescriptionOrSkip?.takeIf { it.isNotEmpty() } ?: description)
     fun timeoutSeconds(timeoutSeconds: Long) = withTimeout(Duration.ofSeconds(timeoutSeconds))
     fun quietly(quietly: Boolean) = withQuietly(quietly)
     fun quietly() = quietly(true)

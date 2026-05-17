@@ -5,6 +5,12 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
 import com.jonnyzzz.mcpSteroid.testHelper.process.RunProcessRequest
 import com.jonnyzzz.mcpSteroid.testHelper.process.StartedProcess
 import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
+import java.io.File
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,12 +28,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import java.io.File
-import java.nio.charset.StandardCharsets
-import java.time.Duration
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Subprocess-driven MCP stdio client harness for integration tests.
@@ -55,8 +55,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * lifetime, with each underlying resource registered as a separate cleanup
  * action so failures during one teardown don't take the others down.
  */
-class StdioMcpProcess internal constructor(
-    private val started: StartedProcess,
+class StdioMcpProcess(
     private val stdinChannel: SendChannel<ByteArray>,
     private val responseQueue: LinkedBlockingQueue<JsonObject>,
 ) {
@@ -64,7 +63,7 @@ class StdioMcpProcess internal constructor(
 
     /**
      * Send an MCP `initialize` request and wait for the response. Also sends the
-     * `notifications/initialized` notification afterwards as required by the spec.
+     * `notifications/initialized` notification afterward as required by the spec.
      *
      * The protocol version is inlined as a literal — depending on `:mcp-core`
      * for one constant would couple the test infrastructure to the
@@ -127,7 +126,7 @@ class StdioMcpProcess internal constructor(
      * everything that arrived during the wait. Used by the
      * "notifications-without-id receive no response" test to assert that
      * sending a notification yields zero stdout frames — without this helper
-     * the test relied on [request]'s "discard non-matching id" behaviour,
+     * the test relied on [request]'s "discard non-matching id" behavior,
      * which silently masked an illegal response.
      *
      * Returns an empty list on quiet stdout (the success case).
@@ -157,19 +156,8 @@ class StdioMcpProcess internal constructor(
 }
 
 /**
- * Spawn the [launcher] as a subprocess via [RunProcessRequest]/[ProcessRunner]
- * and wire it up as a stdio MCP client harness. Teardown is owned by
- * [lifetime] — the factory creates a nested stack and registers each
- * underlying resource (stdin channel, collector scope, the [StartedProcess]
- * itself) as a separate cleanup action on it, in the order
- * collectors-first → stdin-EOF → process-shutdown so the server gets a
- * graceful exit when possible and a forced kill otherwise.
- *
- * [args] are forwarded to the launcher unchanged. The default `["mpc"]`
- * matches the npx-kt launcher's opt-in MCP-mode subcommand — see
- * `com.jonnyzzz.mcpSteroid.proxy.parseCliMode`. Pass an explicit list when
- * driving a different launcher or exercising the CLI surface (`--help`,
- * `--version`).
+ * Start [launcher] as a subprocess and connect it to the stdio MCP test harness.
+ * The returned process is owned by [lifetime].
  */
 fun startStdioMcpProcess(
     launcher: File,
@@ -181,17 +169,10 @@ fun startStdioMcpProcess(
         "Launcher script is not executable: ${launcher.absolutePath}"
     }
 
-    val stack = lifetime.nestedStack("stdio-mcp:${launcher.name}")
+    val stack = lifetime.nestedStack("stdioMcp:${launcher.name}")
 
-    // Channel-backed stdin: every writeFrame() pushes here, ProcessRunner's
-    // own collector copies bytes to the subprocess's stdin and flushes.
-    // UNLIMITED so writers never block if the subprocess is briefly slow to
-    // drain stdin.
     val stdinChannel = Channel<ByteArray>(Channel.UNLIMITED)
 
-    // Long-running collector pulls stdout NDJSON lines off
-    // StartedProcess.messagesFlow into responseQueue. Lives in a dedicated
-    // SupervisorJob so a parse error on one line doesn't kill the harness.
     val collectorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val responseQueue = LinkedBlockingQueue<JsonObject>()
 
@@ -199,31 +180,17 @@ fun startStdioMcpProcess(
         .command(listOf(launcher.absolutePath) + args)
         .withStdin(stdinChannel.consumeAsFlow())
         .withEnvironment(environment)
-        .logPrefix("stdio-mcp:${launcher.name}")
-        .description("MCP stdio client harness for ${launcher.name}")
-        // ProcessRunner's timeout is a safety net only — the harness's per-
-        // request timeouts in [request] drive correctness. Set high enough
-        // that no realistic interactive flow trips it.
+        .logPrefix("mcpStdio:${launcher.name}")
+        .description("MCP client harness for ${launcher.name}")
         .withTimeout(Duration.ofMinutes(5))
         .quietly()
 
     val started: StartedProcess = request.startProcess()
 
-    // Register cleanups in the order they should run (LIFO):
-    //  1. (registered first → runs last) Forcibly destroy the subprocess if
-    //     the graceful path didn't complete; awaitForProcessFinish() also
-    //     reaps the runner's reader threads.
     stack.registerCleanupAction { destroyAndAwait(started) }
 
-    //  2. (registered second → runs second-from-last) Close stdin so the
-    //     server sees EOF and exits cleanly. ProcessRunner's stdin pump uses
-    //     `process.outputStream.use { … }` — collection completes when the
-    //     channel closes, the use-block closes the OutputStream, the server
-    //     gets EOF.
     stack.registerCleanupAction { stdinChannel.close() }
 
-    //  3. (registered last → runs first) Cancel the stdout collector so it
-    //     doesn't keep polling messagesFlow after we've decided we're done.
     stack.registerCleanupAction { collectorScope.cancel() }
 
     started.messagesFlow
@@ -241,7 +208,6 @@ fun startStdioMcpProcess(
         .launchIn(collectorScope)
 
     return StdioMcpProcess(
-        started = started,
         stdinChannel = stdinChannel,
         responseQueue = responseQueue,
     )
@@ -250,7 +216,7 @@ fun startStdioMcpProcess(
 private val stdoutJson = Json { ignoreUnknownKeys = true }
 
 private fun destroyAndAwait(started: StartedProcess) {
-    // awaitForProcessFinish honours the request's timeout (5 min above) and
+    // awaitForProcessFinish honors the request's timeout (5 min above) and
     // also drains the runner's reader threads. If the process is already
     // dead — typical happy path because closeStdin → EOF → exit — this
     // returns near-instantly.
