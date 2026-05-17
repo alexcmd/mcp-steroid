@@ -57,9 +57,11 @@ Implementation tasks:
 - [x] Add bridge-routing unit tests with a fake HTTP client/engine verifying
   the request body rewrites `project_name` to the original IDE project name and
   sets the bearer token header.
-- [ ] Add npx-kt stdio integration tests with one fake IDE bridge discovered
-  through marker/discovery, covering `steroid_list_projects`,
-  `steroid_list_windows`, prompt/resource reads, and a routed tool call.
+- [x] Add npx-kt stdio integration tests with one fake IDE bridge discovered
+  through marker/discovery, covering `steroid_list_projects` and a routed tool
+  call.
+- [ ] Extend npx-kt fake-IDE stdio integration coverage to
+  `steroid_list_windows` and prompt/resource reads.
 - [ ] Add/extend agent integration tests for `AiMode.AI_NPX` with one running
   IDE so an AI agent uses devrig stdio MCP end-to-end, not the HTTP MCP server.
 - [ ] Validate with scoped Gradle tests, MCP Steroid inspections, and a debug
