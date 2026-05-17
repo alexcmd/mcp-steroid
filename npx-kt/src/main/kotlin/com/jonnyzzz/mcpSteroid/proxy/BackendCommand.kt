@@ -177,7 +177,7 @@ fun NpxKtServices.collectBackendRows(): List<BackendRow> {
         discovery = ideDiscovery,
         httpClient = commandHttpClient,
         portDiscovery = portDiscovery,
-        clientInfo = backendClientInfo,
+        clientInfo = clientInfo,
         managedBackends = { backendManager.list() },
     )
 }

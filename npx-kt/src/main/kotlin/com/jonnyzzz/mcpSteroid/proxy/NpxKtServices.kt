@@ -34,8 +34,6 @@ class NpxKtServices(
     val backgroundScope: CoroutineScope =
         CoroutineScope(CoroutineName("devrig-background") + Dispatchers.IO + backgroundJob)
 
-    val allowHosts: List<String> = listOf("localhost", "127.0.0.1", "host.docker.internal")
-
     val backendManager: BackendManager by lazy {
         BackendManager(homePaths)
     }
@@ -45,29 +43,51 @@ class NpxKtServices(
     }
 
     val commandHttpClient: HttpClient by lazy {
-        createCommandHttpClient().also { httpClient ->
-            lifetime.registerCleanupAction { httpClient.close() }
+        val httpClient = HttpClient(CIO) {
+            install(HttpTimeout) {
+                connectTimeoutMillis = 3_000
+                requestTimeoutMillis = 10_000
+                socketTimeoutMillis = 10_000
+            }
+            expectSuccess = false
         }
+        lifetime.registerCleanupAction { httpClient.close() }
+        httpClient
     }
 
     val mcpHttpClient: HttpClient by lazy {
-        createMcpHttpClient().also { httpClient ->
-            lifetime.registerCleanupAction { httpClient.close() }
+        val httpClient = HttpClient(CIO) {
+            install(HttpTimeout) {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                connectTimeoutMillis = 10_000
+            }
+            expectSuccess = false
         }
+        lifetime.registerCleanupAction { httpClient.close() }
+        httpClient
     }
 
     val ideDiscovery: IdeDiscoveryService by lazy {
-        createIdeDiscoveryService()
+        IdeDiscoveryService(
+            markersDir = homePaths.markersDir.toFile(),
+            legacyHomeDir = File(System.getProperty("user.home")),
+            allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal"),
+        )
     }
 
     val ideMonitor: IdeMonitorService by lazy {
-        createIdeMonitorService(mcpHttpClient, ideDiscovery)
+        IdeMonitorService(
+            httpClient = mcpHttpClient,
+            discovery = ideDiscovery,
+            clientInfo = clientInfo,
+        )
     }
 
     val portDiscovery: IntelliJPortDiscovery by lazy {
-        createPortDiscovery(commandHttpClient).also { discovery ->
-            lifetime.registerCleanupAction { discovery.close() }
-        }
+        val discovery = IntelliJPortDiscovery(httpClient = commandHttpClient)
+        lifetime.registerCleanupAction { discovery.close() }
+        discovery
     }
 
     val clientInfo: NpxStreamClientInfo by lazy {
@@ -81,52 +101,8 @@ class NpxKtServices(
         )
     }
 
-    val backendClientInfo: NpxStreamClientInfo by lazy {
-        clientInfo.copy(
-            client = "devrig (backend)",
-            clientInstanceId = "backend-${UUID.randomUUID()}",
-        )
-    }
-
     val beacon by lazy {
         NpxBeacon(homePaths, lifetime)
     }
 
-    fun createCommandHttpClient(): HttpClient = HttpClient(CIO) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 3_000
-            requestTimeoutMillis = 10_000
-            socketTimeoutMillis = 10_000
-        }
-        expectSuccess = false
-    }
-
-    fun createMcpHttpClient(): HttpClient = HttpClient(CIO) {
-        install(HttpTimeout) {
-            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-            socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-            connectTimeoutMillis = 10_000
-        }
-        expectSuccess = false
-    }
-
-    fun createIdeDiscoveryService(): IdeDiscoveryService =
-        IdeDiscoveryService(
-            markersDir = homePaths.markersDir.toFile(),
-            legacyHomeDir = File(System.getProperty("user.home")),
-            allowHosts = allowHosts,
-        )
-
-    fun createIdeMonitorService(
-        httpClient: HttpClient,
-        discovery: IdeDiscoveryService,
-    ): IdeMonitorService =
-        IdeMonitorService(
-            httpClient = httpClient,
-            discovery = discovery,
-            clientInfo = clientInfo,
-        )
-
-    fun createPortDiscovery(httpClient: HttpClient): IntelliJPortDiscovery =
-        IntelliJPortDiscovery(httpClient = httpClient)
 }
