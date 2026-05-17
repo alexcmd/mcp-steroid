@@ -60,7 +60,7 @@ Implementation tasks:
 - [x] Add npx-kt stdio integration tests with one fake IDE bridge discovered
   through marker/discovery, covering `steroid_list_projects` and a routed tool
   call.
-- [ ] Extend npx-kt fake-IDE stdio integration coverage to
+- [x] Extend npx-kt fake-IDE stdio integration coverage to
   `steroid_list_windows` and prompt/resource reads.
 - [ ] Add/extend agent integration tests for `AiMode.AI_NPX` with one running
   IDE so an AI agent uses devrig stdio MCP end-to-end, not the HTTP MCP server.

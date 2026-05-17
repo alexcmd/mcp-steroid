@@ -16,6 +16,7 @@ import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.NpxStreamEnvelope
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.StdioMcpProcess
 import com.jonnyzzz.mcpSteroid.testHelper.startStdioMcpProcess
@@ -64,12 +65,13 @@ class CliMcpStdioFakeIdeIntegrationTest {
     private var receivedToolCall: NpxBridgeToolCallRequest? = null
     private var receivedProjectsStreamAuth: String? = null
     private var receivedToolAuth: String? = null
+    private lateinit var projectHome: Path
 
     @BeforeEach
     fun setUp(@TempDir tempDir: Path) {
         port = freePort()
         val devrigHome = Files.createDirectories(tempDir.resolve("devrig-home"))
-        val projectHome = Files.createDirectories(tempDir.resolve("sample-project"))
+        projectHome = Files.createDirectories(tempDir.resolve("sample-project"))
         startFakeIdeBridge(projectHome)
         writeMarker(devrigHome)
 
@@ -112,6 +114,34 @@ class CliMcpStdioFakeIdeIntegrationTest {
             "sample",
             receivedToolCall?.arguments?.get("project_name")?.jsonPrimitive?.content,
         )
+
+        val windowsResult = toolCall("steroid_list_windows", buildJsonObject {})
+        val windowsText = windowsResult["content"]?.jsonArray?.single()?.jsonObject?.get("text")?.jsonPrimitive?.content
+            ?: error("list_windows result missing text content: $windowsResult")
+        val windows = McpJson.parseToJsonElement(windowsText).jsonObject["windows"]?.jsonArray
+            ?: error("list_windows result missing windows: $windowsText")
+        val window = windows.single().jsonObject
+        assertEquals(projectName, window["projectName"]?.jsonPrimitive?.content)
+        assertTrue(
+            window["windowId"]?.jsonPrimitive?.content?.startsWith("fake-window-") == true,
+            "window id should include routing suffix: $window",
+        )
+
+        val resources = process.request("resources/list", buildJsonObject {})
+        assertEquals(null, resources["error"], "resources/list returned error: $resources")
+        val resource = resources["result"]?.jsonObject?.get("resources")?.jsonArray?.firstOrNull()?.jsonObject
+            ?: error("resources/list returned no resources: $resources")
+        val uri = resource["uri"]?.jsonPrimitive?.content ?: error("resource missing uri: $resource")
+
+        val resourceRead = process.request("resources/read", buildJsonObject { put("uri", uri) })
+        assertEquals(null, resourceRead["error"], "resources/read returned error: $resourceRead")
+        assertNotEquals(null, resourceRead["result"], "resources/read must return a result")
+
+        val fetchResource = toolCall("steroid_fetch_resource", buildJsonObject {
+            put("project_name", projectName)
+            put("uri", uri)
+        })
+        assertEquals(false, fetchResource["isError"]?.jsonPrimitive?.content?.toBooleanStrictOrNull())
     }
 
     private fun waitForProjectName(): String {
@@ -163,7 +193,17 @@ class CliMcpStdioFakeIdeIntegrationTest {
                         text = McpJson.encodeToString(
                             NpxBridgeWindowsResponse.serializer(),
                             NpxBridgeWindowsResponse(
-                                windows = emptyList(),
+                                windows = listOf(
+                                    WindowInfo(
+                                        projectName = "sample",
+                                        projectPath = projectHome.toString(),
+                                        title = "Fake IDE",
+                                        isActive = true,
+                                        isVisible = true,
+                                        bounds = null,
+                                        windowId = "fake-window",
+                                    )
+                                ),
                                 backgroundTasks = emptyList(),
                                 pid = pid,
                                 mcpUrl = "http://127.0.0.1:$port/mcp",
