@@ -12,22 +12,22 @@ Plan-review status:
 - [ ] MCP Steroid inspections clean except non-actionable prose checks.
 
 Implementation tasks:
-- [ ] Add a project routing service under `npx-kt` that consumes discovered IDE
+- [x] Add a project routing service under `npx-kt` that consumes discovered IDE
   metadata, project snapshots, and windows.
-- [ ] Generate exposed `project_name` values as
+- [x] Generate exposed `project_name` values as
   `<ideProjectName>-<hash8>`, where `hash8` is base64-url-no-pad of the first
   6 bytes of `SHA-256(realProjectHome.toRealPath UTF-8 + 0x00 + idePid UTF-8)`.
   Project names are session-scoped; agents must refresh after an IDE restart.
-- [ ] Apply the same suffix logic to window `projectName` values and preserve
+- [x] Apply the same suffix logic to window `projectName` values and preserve
   `windowId` routing so input/screenshot calls reach the owning IDE.
-- [ ] Store a reverse mapping from exposed `project_name` to the IDE pid,
+- [x] Store a reverse mapping from exposed `project_name` to the IDE pid,
   bridge URL, and original IDE project name. Tool calls must rewrite
   `project_name` back to the original name before crossing the bridge. Never
   parse the suffix at routing time; use exact map lookup.
-- [ ] Record screenshot `execution_id -> idePid` so follow-up
+- [x] Record screenshot `execution_id -> idePid` so follow-up
   `steroid_input` calls route to the same IDE even when multiple IDE windows
   are present.
-- [ ] Treat stale exposed names as typed, actionable errors:
+- [x] Treat stale exposed names as typed, actionable errors:
   "project_name <...> is no longer present; call steroid_list_projects to
   refresh".
 - [ ] Implement network-backed npx-kt handlers for every `McpSteroidTools`
@@ -50,9 +50,10 @@ Implementation tasks:
 - [ ] Move `ResourceRegistrar` from `ij-plugin` into `mcp-steroid-server`
   because it uses no IntelliJ Platform APIs.
 - [ ] Keep no-IDE and stale-project errors explicit and actionable.
-- [ ] Add unit tests for hash suffix stability, reverse project mapping,
-  project/window rewriting, prompt context selection, and bridge routing
-  request bodies.
+- [x] Add unit tests for hash suffix stability, reverse project mapping, and
+  project/window rewriting.
+- [ ] Add unit tests for prompt context selection and bridge routing request
+  bodies.
 - [ ] Add bridge-routing unit tests with a fake HTTP client/engine verifying
   the request body rewrites `project_name` to the original IDE project name and
   sets the bearer token header.

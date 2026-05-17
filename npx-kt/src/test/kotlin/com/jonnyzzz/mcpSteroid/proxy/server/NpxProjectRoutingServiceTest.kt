@@ -1,0 +1,214 @@
+/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
+package com.jonnyzzz.mcpSteroid.proxy.server
+
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorState
+import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorStatus
+import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
+import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.server.WindowInfo
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
+
+class NpxProjectRoutingServiceTest {
+
+    @TempDir
+    lateinit var tempDir: Path
+
+    @Test
+    fun `hash is stable and exactly eight base64url chars`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project")).toRealPath()
+
+        val first = NpxProjectRoutingService.hash8(projectHome, 1234)
+        val second = NpxProjectRoutingService.hash8(projectHome, 1234)
+
+        assertEquals(first, second)
+        assertEquals(8, first.length)
+        assertEquals(first, first.filter { it.isLetterOrDigit() || it == '-' || it == '_' })
+    }
+
+    @Test
+    fun `hash changes for different ide pids on the same project home`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project")).toRealPath()
+
+        assertNotEquals(
+            NpxProjectRoutingService.hash8(projectHome, 1234),
+            NpxProjectRoutingService.hash8(projectHome, 5678),
+        )
+    }
+
+    @Test
+    fun `canonical path collapses symbolic link variants`() {
+        val realProject = Files.createDirectories(tempDir.resolve("real").resolve("project"))
+        val symlink = tempDir.resolve("link-project")
+        Files.createSymbolicLink(symlink, realProject)
+
+        assertEquals(
+            realProject.toRealPath(),
+            NpxProjectRoutingService.canonicalProjectHome(symlink.toString()),
+        )
+    }
+
+    @Test
+    fun `project route exposes unique name and maps back to original project name`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+            )
+        )
+
+        val route = service.routes().values.single()
+
+        assertEquals("mcp-steroid-${route.hash8}", route.exposedProjectName)
+        assertEquals("mcp-steroid", route.originalProjectName)
+        assertEquals("http://127.0.0.1:4343", route.bridgeBaseUrl)
+        assertEquals("secret-42", route.token)
+        assertEquals(route, service.requireProject(route.exposedProjectName))
+    }
+
+    @Test
+    fun `stale exposed project name returns actionable error`() {
+        val service = routingService()
+
+        val error = assertFailsWith<ProjectRouteNotFoundException> {
+            service.requireProject("missing-project-abcdefgh")
+        }
+
+        assertEquals(
+            "project_name 'missing-project-abcdefgh' is no longer present; call steroid_list_projects to refresh",
+            error.message,
+        )
+    }
+
+    @Test
+    fun `window project name and window id use the same project hash suffix`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+            )
+        )
+
+        val window = WindowInfo(
+            projectName = "mcp-steroid",
+            projectPath = projectHome.toString(),
+            title = "MCP Steroid",
+            isActive = true,
+            isVisible = true,
+            bounds = null,
+            windowId = "frame-1",
+        )
+
+        val rewritten = service.rewriteWindow(42, window)
+        val route = service.routes().values.single()
+
+        assertEquals(route.exposedProjectName, rewritten.projectName)
+        assertEquals("frame-1-${route.hash8}", rewritten.windowId)
+        assertEquals("frame-1", service.routeWindow(rewritten.windowId)?.originalWindowId)
+    }
+
+    @Test
+    fun `background task project name is rewritten to exposed project name`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+            )
+        )
+
+        val rewritten = service.rewriteBackgroundTask(
+            42,
+            ProgressTaskInfo(
+                title = "Indexing",
+                text = "",
+                text2 = "",
+                fraction = null,
+                isIndeterminate = true,
+                isCancellable = false,
+                projectName = "mcp-steroid",
+            )
+        )
+
+        assertEquals(service.routes().values.single().exposedProjectName, rewritten.projectName)
+    }
+
+    @Test
+    fun `screenshot execution id remembers owning ide pid`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+            )
+        )
+        val route = service.routes().values.single()
+
+        service.rememberScreenshotExecution("eid_1", route)
+
+        assertEquals(42, service.routeScreenshotExecution("eid_1"))
+    }
+
+    @Test
+    fun `single ide policy returns null when multiple ides are routable`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val service = routingService(
+            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString()))),
+            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString()))),
+        )
+
+        assertEquals(null, service.singleIdeOrNull())
+    }
+
+    @Test
+    fun `single ide policy returns the discovered ide when only one ide is routable`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val service = routingService(
+            state(pid = 42, projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString()))),
+        )
+
+        assertNotNull(service.singleIdeOrNull())
+        assertEquals(42, service.singleIdeOrNull()?.pid)
+    }
+
+    private fun routingService(vararg states: IdeMonitorState): NpxProjectRoutingService =
+        NpxProjectRoutingService { states.associateBy { it.ide.pid } }
+
+    private fun state(pid: Long, projects: List<ProjectInfo>): IdeMonitorState {
+        val ide = discoveredIde(pid)
+        return IdeMonitorState(
+            ide = ide,
+            status = IdeMonitorStatus.CONNECTED,
+            lastSnapshot = projects,
+        )
+    }
+
+    private fun discoveredIde(pid: Long): DiscoveredIde =
+        DiscoveredIde(
+            pid = pid,
+            mcpUrl = "http://127.0.0.1:4343/mcp",
+            markerPath = "/tmp/$pid.mcp-steroid",
+            marker = PidMarker(
+                pid = pid,
+                mcpUrl = "http://127.0.0.1:4343/mcp",
+                port = 4343,
+                token = "secret-$pid",
+                ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+                plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+                createdAt = "2026-05-17T00:00:00Z",
+            ),
+        )
+}
