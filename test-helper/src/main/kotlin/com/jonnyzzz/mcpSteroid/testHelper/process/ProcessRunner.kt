@@ -79,6 +79,7 @@ private fun startProcessImpl(request: RunProcessRequest): StartedProcessImpl {
 
     val processBuilder = ProcessBuilder(request.args)
     processBuilder.directory(request.workingDir)
+    processBuilder.environment().putAll(request.environment)
     processBuilder.redirectInput(ProcessBuilder.Redirect.PIPE)
     processBuilder.redirectOutput(ProcessBuilder.Redirect.PIPE)
     processBuilder.redirectError(ProcessBuilder.Redirect.PIPE)

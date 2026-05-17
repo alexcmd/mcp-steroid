@@ -19,6 +19,8 @@ data class RunProcessRequest(
 
     val stdin: Flow<ByteArray> = emptyFlow(),
 
+    val environment: Map<String, String> = emptyMap(),
+
     val secretPatterns: List<String> = listOf(),
 ) {
     fun withWorkingDir(workingDir: File) = copy(workingDir = workingDir)
@@ -29,6 +31,7 @@ data class RunProcessRequest(
     fun withTimeout(timeout: Duration) = copy(timeout = timeout)
     fun withQuietly(quietly: Boolean) = copy(quietly = quietly)
     fun withStdin(stdin: Flow<ByteArray>) = copy(stdin = stdin)
+    fun withEnvironment(environment: Map<String, String>) = copy(environment = environment)
 
     fun withSecretPatterns(secretPatterns: List<String>) = copy(secretPatterns = secretPatterns)
     fun addSecretPatterns(secretPatterns: List<String>) = copy(secretPatterns = (this.secretPatterns + secretPatterns).distinct())
@@ -46,4 +49,5 @@ data class RunProcessRequest(
     fun quietly() = quietly(true)
     fun stdin(stdin: ByteArray) = withStdin(flowOf(stdin))
     fun stdin(stdin: String) = stdin(stdin.toByteArray())
+    fun environment(environment: Map<String, String>) = withEnvironment(environment)
 }

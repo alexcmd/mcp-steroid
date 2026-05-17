@@ -175,6 +175,7 @@ fun startStdioMcpProcess(
     launcher: File,
     lifetime: CloseableStack,
     args: List<String> = listOf("mpc"),
+    environment: Map<String, String> = emptyMap(),
 ): StdioMcpProcess {
     require(launcher.canExecute()) {
         "Launcher script is not executable: ${launcher.absolutePath}"
@@ -197,6 +198,7 @@ fun startStdioMcpProcess(
     val request = RunProcessRequest()
         .command(listOf(launcher.absolutePath) + args)
         .withStdin(stdinChannel.consumeAsFlow())
+        .withEnvironment(environment)
         .logPrefix("stdio-mcp:${launcher.name}")
         .description("MCP stdio client harness for ${launcher.name}")
         // ProcessRunner's timeout is a safety net only — the harness's per-
