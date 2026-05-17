@@ -184,11 +184,60 @@ class NpxProjectRoutingServiceTest {
         assertEquals(42, service.singleIdeOrNull()?.pid)
     }
 
+    @Test
+    fun `prompt context is parsed from routed IDE build number`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+                build = "IU-261.24374.151",
+            ),
+        )
+        val route = routing.routes().values.single()
+
+        val context = NpxPromptsContextHandler(routing).buildPromptsContext(route.exposedProjectName)
+
+        assertEquals("IU", context.productCode)
+        assertEquals(261, context.baselineVersion)
+    }
+
+    @Test
+    fun `prompt context falls back to generic when no project name is given`() {
+        val context = NpxPromptsContextHandler(routingService()).buildPromptsContext(null)
+
+        assertEquals("Generic", context.productCode)
+        assertEquals(253, context.baselineVersion)
+    }
+
+    @Test
+    fun `prompt context parser supports common product build prefixes`() {
+        val builds = mapOf(
+            "IU-261.24374.151" to "IU",
+            "IC-253.1" to "IC",
+            "CL-253.2" to "CL",
+            "RD-253.3" to "RD",
+            "GO-253.4" to "GO",
+            "PY-253.5" to "PY",
+            "WS-253.6" to "WS",
+        )
+
+        for ((build, productCode) in builds) {
+            val context = NpxPromptsContextHandler.promptsContextFromBuild(build)
+            assertEquals(productCode, context.productCode)
+            assertEquals(build.substringAfter('-').substringBefore('.').toInt(), context.baselineVersion)
+        }
+    }
+
     private fun routingService(vararg states: IdeMonitorState): NpxProjectRoutingService =
         NpxProjectRoutingService { states.associateBy { it.ide.pid } }
 
-    private fun state(pid: Long, projects: List<ProjectInfo>): IdeMonitorState {
-        val ide = discoveredIde(pid)
+    private fun state(
+        pid: Long,
+        projects: List<ProjectInfo>,
+        build: String = "IU-261.1",
+    ): IdeMonitorState {
+        val ide = discoveredIde(pid, build)
         return IdeMonitorState(
             ide = ide,
             status = IdeMonitorStatus.CONNECTED,
@@ -196,7 +245,7 @@ class NpxProjectRoutingServiceTest {
         )
     }
 
-    private fun discoveredIde(pid: Long): DiscoveredIde =
+    private fun discoveredIde(pid: Long, build: String): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
             mcpUrl = "http://127.0.0.1:4343/mcp",
@@ -206,7 +255,7 @@ class NpxProjectRoutingServiceTest {
                 mcpUrl = "http://127.0.0.1:4343/mcp",
                 port = 4343,
                 token = "secret-$pid",
-                ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+                ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
                 createdAt = "2026-05-17T00:00:00Z",
             ),

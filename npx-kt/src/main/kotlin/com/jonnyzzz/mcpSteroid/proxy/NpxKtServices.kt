@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.proxy
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
+import com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingService
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import io.ktor.client.HttpClient
@@ -82,6 +83,10 @@ class NpxKtServices(
             discovery = ideDiscovery,
             clientInfo = clientInfo,
         )
+    }
+
+    val projectRouting: NpxProjectRoutingService by lazy {
+        NpxProjectRoutingService(ideMonitor)
     }
 
     val portDiscovery: IntelliJPortDiscovery by lazy {

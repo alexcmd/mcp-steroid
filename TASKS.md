@@ -41,19 +41,19 @@ Implementation tasks:
   progress and forward progress events as MCP progress notifications.
 - [ ] Define and test `OpenProjectToolHandler` routing policy: require exactly
   one discovered/routable IDE; otherwise return an actionable error.
-- [ ] Implement local npx-kt `PromptsContextHandler`. Given exposed
+- [x] Implement local npx-kt `PromptsContextHandler`. Given exposed
   `project_name`, resolve the IDE metadata and render prompts/resources with
   that IDE's product code and baseline version. Do not route prompt/resource
   rendering to an IDE.
-- [ ] Register generated resources/prompts in the npx-kt stdio server using
+- [x] Register generated resources/prompts in the npx-kt stdio server using
   the same `ResourceRegistrar` path as the IJ plugin.
-- [ ] Move `ResourceRegistrar` from `ij-plugin` into `mcp-steroid-server`
+- [x] Move `ResourceRegistrar` from `ij-plugin` into `mcp-steroid-server`
   because it uses no IntelliJ Platform APIs.
 - [ ] Keep no-IDE and stale-project errors explicit and actionable.
 - [x] Add unit tests for hash suffix stability, reverse project mapping, and
   project/window rewriting.
-- [ ] Add unit tests for prompt context selection and bridge routing request
-  bodies.
+- [x] Add unit tests for prompt context selection.
+- [ ] Add unit tests for bridge routing request bodies.
 - [ ] Add bridge-routing unit tests with a fake HTTP client/engine verifying
   the request body rewrites `project_name` to the original IDE project name and
   sets the bearer token header.
