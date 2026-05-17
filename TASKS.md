@@ -8,8 +8,15 @@ keeping prompt/resource rendering local to npx-kt.
 Plan-review status:
 - [x] Draft plan reviewed by `run-agent.sh claude`
   (`run_20260517-191744-64301`, `REVIEW_OK_WITH_CHANGES`).
-- [ ] Implementation reviewed by three `run-agent.sh` reviewers.
-- [ ] MCP Steroid inspections clean except non-actionable prose checks.
+- [x] Implementation reviewed by `run-agent.sh` reviewers:
+  Claude `run_20260517-194637-73425` (`REVIEW_OK`), Codex
+  `run_20260517-194637-73427` (`REVIEW_DONE_WITH_FINDINGS`), replacement
+  Claude `run_20260517-200233-80021` (`REVIEW_OK`). Gemini
+  `run_20260517-194637-73426` could not run because `GEMINI_API_KEY` is not set.
+- [x] Final devrig MCP stdio diff review from Claude
+  `run_20260517-201918-86348` returned `REVIEW_OK`.
+- [x] MCP Steroid inspections are clean for all touched Kotlin files
+  (`INSPECTION_PROBLEMS: 0`, `eid_20260517T223723-npx-kt-devrig-mpc-routing`).
 
 Implementation tasks:
 - [x] Add a project routing service under `npx-kt` that consumes discovered IDE
@@ -49,7 +56,7 @@ Implementation tasks:
   the same `ResourceRegistrar` path as the IJ plugin.
 - [x] Move `ResourceRegistrar` from `ij-plugin` into `mcp-steroid-server`
   because it uses no IntelliJ Platform APIs.
-- [ ] Keep no-IDE and stale-project errors explicit and actionable.
+- [x] Keep no-IDE and stale-project errors explicit and actionable.
 - [x] Add unit tests for hash suffix stability, reverse project mapping, and
   project/window rewriting.
 - [x] Add unit tests for prompt context selection.
@@ -62,10 +69,12 @@ Implementation tasks:
   call.
 - [x] Extend npx-kt fake-IDE stdio integration coverage to
   `steroid_list_windows` and prompt/resource reads.
-- [ ] Add/extend agent integration tests for `AiMode.AI_NPX` with one running
+- [x] Add/extend agent integration tests for `AiMode.AI_NPX` with one running
   IDE so an AI agent uses devrig stdio MCP end-to-end, not the HTTP MCP server.
-- [ ] Validate with scoped Gradle tests, MCP Steroid inspections, and a debug
-  IDE/runtime check where practical.
+- [x] Validate with scoped Gradle tests, MCP Steroid inspections, and a debug
+  IDE/runtime check where practical. The Docker+Claude agent scenario was
+  compiled but not run in this batch because it requires external agent
+  credentials and a long Docker IDE run; the fake-IDE stdio route is executed.
 - [ ] Commit in small logical batches:
   1. planning/TASKS update;
   2. ResourceRegistrar move;
@@ -73,7 +82,7 @@ Implementation tasks:
   4. local list/prompts handlers;
   5. network bridge handlers + stdio integration tests;
   6. agent-level integration tests;
-  7. cleanup/inspection fixes.
+  7. cleanup/inspection fixes. Earlier items 1-5 are already committed.
 
 # Active notes — npx-kt CLI home override (2026-05-16)
 
