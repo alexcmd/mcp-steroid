@@ -10,37 +10,40 @@ import com.jonnyzzz.mcpSteroid.execution.ApplyPatchException
 import com.jonnyzzz.mcpSteroid.execution.McpEditingGuardException
 import com.jonnyzzz.mcpSteroid.execution.executeApplyPatch
 import com.jonnyzzz.mcpSteroid.execution.mcpEditingGuard
-import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.successTextResult
+import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 
 class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
     private val log = thisLogger()
 
-    override suspend fun applyPatch(
-        projectName: String,
-        applyPatchRequest: ApplyPatchRequest
-    ): ToolCallResult {
-        val (project, availableNames) = readAction {
-            val openProjects = getInstance().openProjects
-            openProjects.find { it.name == projectName } to openProjects.map { it.name }
-        }
+    override suspend fun applyPatch(projectName: String, applyPatchRequest: ApplyPatchRequest): ToolCallResult {
+        val openProjects = readAction { getInstance().openProjects.toList() }
+        val project = openProjects.find { it.name == projectName }
 
         if (project == null) {
+            val availableNames = openProjects.map { it.name }
             return ToolCallResult.errorResult("Project not found: \"$projectName\". Available projects: $availableNames")
         }
 
         val hunks = applyPatchRequest.hunks
         val dryRun = applyPatchRequest.dryRun
 
-        val executionId = ExecutionId("apply-patch-${System.currentTimeMillis()}")
+        val executionId = project.executionStorage.writeToolCall(
+            toolName = "steroid_apply_patch",
+            arguments = McpJson.encodeToJsonElement(applyPatchRequest).jsonObject,
+            taskId = applyPatchRequest.taskId,
+        )
 
         // Run the whole patch under McpEditingGuard:
         //   1. dialog killer + modality fail-fast
         //   2. commit + saveAllDocuments + awaitRefresh BEFORE the patch
-        //   3. memory-vs-disk conflict resolver disabled for the body
+        //   3. memory/disk conflict resolver disabled for the body
         //   4. executeApplyPatch (write phase skipped when dryRun=true)
         //   5. awaitRefresh AFTER the patch
         // See McpEditingGuard KDoc for the full flow + threading rationale.
@@ -76,11 +79,7 @@ class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
             // Cancellation must propagate intact — never wrap or swallow.
             throw e
         } catch (e: RuntimeException) {
-            // Unexpected runtime exceptions (VFS guards in test mode, indexing
-            // races, write-action conflicts, etc.) must come back to the agent
-            // as a tool-error with a useful message, NOT as a JSON-RPC 500. The
-            // agent can re-issue or change strategy on a tool-error; a 500
-            // looks like a transport failure and stalls the session.
+            // Return unexpected runtime failures as tool errors, not JSON-RPC 500.
             log.warn("[apply_patch] unexpected runtime failure: ${e.message}", e)
             analyticsBeacon.capture(
                 event = "apply_patch",

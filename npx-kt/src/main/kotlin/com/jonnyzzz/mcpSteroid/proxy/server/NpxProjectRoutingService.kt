@@ -40,9 +40,6 @@ class NpxProjectRoutingService(
         routeProject(exposedProjectName)
             ?: throw ProjectRouteNotFoundException(exposedProjectName)
 
-    fun exposedProjects(): List<ProjectInfo> =
-        routes().values.map { ProjectInfo(name = it.exposedProjectName, path = it.projectPath) }
-
     fun rewriteWindow(idePid: Long, window: WindowInfo): WindowInfo {
         val route = routeForWindow(idePid, window) ?: return window
         val exposedWindowId = "${window.windowId}-${route.hash8}"
@@ -76,8 +73,10 @@ class NpxProjectRoutingService(
     fun routeScreenshotExecution(executionId: String): Long? =
         screenshotExecutionRoutes[executionId]
 
-    fun firstRouteOrNull(): ProjectRoute? =
-        routes().values.firstOrNull()
+    fun singleRouteOrNull(): ProjectRoute? {
+        val routes = routes().values.toList()
+        return if (routes.size == 1) routes.single() else null
+    }
 
     fun singleIdeOrNull(): DiscoveredIde? {
         val ides = stateProvider().values.map { it.ide }.distinctBy { it.pid }

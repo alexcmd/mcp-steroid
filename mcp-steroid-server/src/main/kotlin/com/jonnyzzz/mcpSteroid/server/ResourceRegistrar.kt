@@ -11,20 +11,19 @@ import com.jonnyzzz.mcpSteroid.prompts.PromptIndexBase
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
 
-
 /**
  * Registers all generated prompt articles as MCP resources and prompts.
  *
  * Uses the generated [ResourcesIndex] to iterate over all folders and articles,
  * eliminating the need for generated registration code.
  *
- * Articles are filtered by their root [IdeFilter] — articles that don't match
- * the current IDE are skipped entirely.
+ * Articles are filtered by their root [IdeFilter] unless context rendering is deferred.
  *
  * Content is rendered via [ArticleBase.readPayload] which handles per-part
  * filtering and see-also filtering internally.
  */
 class ResourceRegistrar(
+    private val deferContext: Boolean = false,
     private val handler: () -> PromptsContextHandler,
 ) {
 
@@ -46,7 +45,7 @@ class ResourceRegistrar(
         context: PromptsContext,
     ) {
         for ((_, article) in index.articles) {
-            if (!article.filter.matches(context)) continue
+            if (!deferContext && !article.filter.matches(context)) continue
 
             resources.registerResource(
                 uri = article.uri,
@@ -54,7 +53,7 @@ class ResourceRegistrar(
                 description = article.description.readPrompt(),
                 mimeType = "text/markdown",
             ) {
-                article.readPayload(context)
+                article.readPayload(renderContext(context))
             }
         }
     }
@@ -65,7 +64,7 @@ class ResourceRegistrar(
         context: PromptsContext,
     ) {
         for ((_, article) in index.articles) {
-            if (!article.filter.matches(context)) continue
+            if (!deferContext && !article.filter.matches(context)) continue
 
             prompts.registerPrompt(
                 Prompt(
@@ -79,11 +78,14 @@ class ResourceRegistrar(
                     messages = listOf(
                         PromptMessage(
                             role = "user",
-                            content = PromptContent.Text(article.readPayload(context))
+                            content = PromptContent.Text(article.readPayload(renderContext(context)))
                         )
                     )
                 )
             }
         }
     }
+
+    private fun renderContext(registrationContext: PromptsContext): PromptsContext =
+        if (deferContext) handler().buildPromptsContext() else registrationContext
 }

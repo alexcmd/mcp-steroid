@@ -2,10 +2,17 @@
 package com.jonnyzzz.mcpSteroid.proxy.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorState
+import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorStatus
+import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
+import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
+import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -20,6 +27,7 @@ import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import java.net.ServerSocket
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,6 +127,64 @@ class NpxToolBridgeClientTest {
             json["arguments"]?.jsonObject?.get("project_name")?.jsonPrimitive?.content,
         )
     }
+
+    @Test
+    fun `apply patch bridge handler forwards required task id`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
+            )
+        )
+        val route = routing.routes().values.single()
+        val handler = NpxApplyPatchToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.applyPatch(
+            projectName = route.exposedProjectName,
+            applyPatchRequest = ApplyPatchRequest(
+                taskId = "patch-task",
+                dryRun = true,
+                hunks = listOf(
+                    ApplyPatchHunk(
+                        filePath = projectHome.resolve("A.kt").toString(),
+                        oldString = "old",
+                        newString = "new",
+                    )
+                ),
+            ),
+        )
+
+        assertEquals(false, result.isError)
+        assertEquals("Bearer secret-token", receivedAuth)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_apply_patch", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("patch-task", arguments["task_id"]?.jsonPrimitive?.content)
+    }
+
+    private fun routingService(vararg states: IdeMonitorState): NpxProjectRoutingService =
+        NpxProjectRoutingService { states.associateBy { it.ide.pid } }
+
+    private fun discoveredIde(pid: Long, projectHome: Path): DiscoveredIde =
+        DiscoveredIde(
+            pid = pid,
+            mcpUrl = "http://127.0.0.1:$port/mcp",
+            markerPath = projectHome.resolve("$pid.mcp-steroid").toString(),
+            marker = PidMarker(
+                pid = pid,
+                mcpUrl = "http://127.0.0.1:$port/mcp",
+                port = port,
+                token = "secret-token",
+                ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+                plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+                createdAt = "2026-05-17T00:00:00Z",
+            ),
+        )
 }
 
 private fun freePort(): Int = ServerSocket(0).use { it.localPort }

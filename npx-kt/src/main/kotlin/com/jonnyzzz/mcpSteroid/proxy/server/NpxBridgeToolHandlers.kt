@@ -40,17 +40,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 
 class NpxListWindowsToolHandler(
     private val services: NpxKtServices,
@@ -116,6 +113,7 @@ class NpxApplyPatchToolHandler(
         val route = bridge.routing.requireProject(projectName)
         return bridge.callTool(route, "steroid_apply_patch") {
             put("project_name", route.originalProjectName)
+            put("task_id", applyPatchRequest.taskId)
             put("dry_run", applyPatchRequest.dryRun)
             putJsonArray("hunks") {
                 for (hunk in applyPatchRequest.hunks) {
@@ -307,8 +305,6 @@ class JsonObjectBuilder(private val target: kotlinx.serialization.json.JsonObjec
     fun put(key: String, value: JsonElement) = target.put(key, value)
     fun putJsonArray(key: String, builder: kotlinx.serialization.json.JsonArrayBuilder.() -> Unit) =
         target.putJsonArray(key, builder)
-    fun putJsonObject(key: String, builder: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) =
-        target.putJsonObject(key, builder)
 }
 
 suspend fun readSse(

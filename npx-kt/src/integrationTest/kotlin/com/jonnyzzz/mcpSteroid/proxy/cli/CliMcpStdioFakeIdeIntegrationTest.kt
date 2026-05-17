@@ -39,13 +39,13 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -64,6 +64,7 @@ class CliMcpStdioFakeIdeIntegrationTest {
     private var port: Int = 0
     private var receivedToolCall: NpxBridgeToolCallRequest? = null
     private var receivedProjectsStreamAuth: String? = null
+    private var receivedWindowsAuth: String? = null
     private var receivedToolAuth: String? = null
     private lateinit var projectHome: Path
 
@@ -93,11 +94,11 @@ class CliMcpStdioFakeIdeIntegrationTest {
     }
 
     @Test
-    fun `stdio mpc discovers one IDE and routes tool call through npx bridge`() {
+    fun stdioMpcDiscoversOneIdeAndRoutesToolCallThroughNpxBridge() {
         process.initialize()
 
         val projectName = waitForProjectName()
-        assertTrue(projectName.startsWith("sample-"), "project name should include hash suffix: $projectName")
+        assertEquals(true, projectName.startsWith("sample-"), "project name should include hash suffix: $projectName")
         assertNotEquals("sample", projectName)
 
         val result = toolCall("steroid_execute_code", buildJsonObject {
@@ -116,14 +117,16 @@ class CliMcpStdioFakeIdeIntegrationTest {
         )
 
         val windowsResult = toolCall("steroid_list_windows", buildJsonObject {})
+        assertEquals("Bearer fake-token", receivedWindowsAuth)
         val windowsText = windowsResult["content"]?.jsonArray?.single()?.jsonObject?.get("text")?.jsonPrimitive?.content
             ?: error("list_windows result missing text content: $windowsResult")
         val windows = McpJson.parseToJsonElement(windowsText).jsonObject["windows"]?.jsonArray
             ?: error("list_windows result missing windows: $windowsText")
         val window = windows.single().jsonObject
         assertEquals(projectName, window["projectName"]?.jsonPrimitive?.content)
-        assertTrue(
-            window["windowId"]?.jsonPrimitive?.content?.startsWith("fake-window-") == true,
+        assertEquals(
+            true,
+            window["windowId"]?.jsonPrimitive?.content?.startsWith("fake-window-"),
             "window id should include routing suffix: $window",
         )
 
@@ -183,12 +186,13 @@ class CliMcpStdioFakeIdeIntegrationTest {
                         write(NpxStreamJson.encodeEnvelope(snapshot(projectHome)))
                         write("\n")
                         flush()
-                        while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
-                            delay(50)
+                        while (currentCoroutineContext().isActive) {
+                            delay(50.milliseconds)
                         }
                     }
                 }
                 get("/npx/v1/windows") {
+                    receivedWindowsAuth = call.request.headers["Authorization"]
                     call.respondText(
                         text = McpJson.encodeToString(
                             NpxBridgeWindowsResponse.serializer(),

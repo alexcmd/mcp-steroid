@@ -3,9 +3,9 @@ package com.jonnyzzz.mcpSteroid.proxy.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import com.jonnyzzz.mcpSteroid.proxy.NpxKtServices
 import com.jonnyzzz.mcpSteroid.proxy.ProxyVersionMetadata
 import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryToolHandler
@@ -56,7 +56,7 @@ class StubMcpSteroidTools(
     }
 
     override fun registerExtra(server: McpServerCore) {
-        ResourceRegistrar { promptsContext }.register(server.resourceRegistry, server.promptRegistry)
+        ResourceRegistrar(deferContext = true) { promptsContext }.register(server.resourceRegistry, server.promptRegistry)
     }
 
     private fun unsupportedHandler(type: Class<*>): Nothing =
@@ -93,8 +93,11 @@ class NpxPromptsContextHandler(
     private val routing: NpxProjectRoutingService,
 ) : PromptsContextHandler {
     override fun buildPromptsContext(projectName: String?): PromptsContext {
-        if (projectName.isNullOrBlank()) return PromptsContext.Generic
-        val route = routing.requireProject(projectName)
+        val route = if (projectName.isNullOrBlank()) {
+            routing.singleRouteOrNull() ?: return PromptsContext.Generic
+        } else {
+            routing.requireProject(projectName)
+        }
         return promptsContextFromBuild(route.ide.build)
     }
 

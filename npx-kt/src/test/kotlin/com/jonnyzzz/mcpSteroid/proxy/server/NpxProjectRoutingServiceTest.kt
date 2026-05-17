@@ -10,14 +10,14 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Files
-import java.nio.file.Path
 
 class NpxProjectRoutingServiceTest {
 
@@ -203,8 +203,40 @@ class NpxProjectRoutingServiceTest {
     }
 
     @Test
-    fun `prompt context falls back to generic when no project name is given`() {
+    fun `prompt context falls back to generic when no projects are routed`() {
         val context = NpxPromptsContextHandler(routingService()).buildPromptsContext(null)
+
+        assertEquals("Generic", context.productCode)
+        assertEquals(253, context.baselineVersion)
+    }
+
+    @Test
+    fun `prompt context uses the only routed project when no project name is given`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+                build = "IU-261.24374.151",
+            ),
+        )
+
+        val context = NpxPromptsContextHandler(routing).buildPromptsContext(null)
+
+        assertEquals("IU", context.productCode)
+        assertEquals(261, context.baselineVersion)
+    }
+
+    @Test
+    fun `prompt context falls back to generic when project name is omitted and multiple projects are routed`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val routing = routingService(
+            state(pid = 42, projects = listOf(ProjectInfo("a", projectA.toString()))),
+            state(pid = 43, projects = listOf(ProjectInfo("b", projectB.toString()))),
+        )
+
+        val context = NpxPromptsContextHandler(routing).buildPromptsContext(null)
 
         assertEquals("Generic", context.productCode)
         assertEquals(253, context.baselineVersion)
