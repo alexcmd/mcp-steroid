@@ -30,16 +30,16 @@ Implementation tasks:
 - [x] Treat stale exposed names as typed, actionable errors:
   "project_name <...> is no longer present; call steroid_list_projects to
   refresh".
-- [ ] Implement network-backed npx-kt handlers for every `McpSteroidTools`
+- [x] Implement network-backed npx-kt handlers for every `McpSteroidTools`
   handler interface that needs IDE routing:
   `ListProjectsToolHandler`, `ListWindowsToolHandler`,
   `ExecuteCodeToolHandler`, `ApplyPatchToolHandler`,
   `ExecuteFeedbackToolHandler`, `ActionDiscoveryToolHandler`,
   `VisionScreenshotToolHandler`, `VisionInputToolHandler`, and
   `OpenProjectToolHandler`.
-- [ ] Use `/npx/v1/tools/call/stream` for routed calls that can produce
+- [x] Use `/npx/v1/tools/call/stream` for routed calls that can produce
   progress and forward progress events as MCP progress notifications.
-- [ ] Define and test `OpenProjectToolHandler` routing policy: require exactly
+- [x] Define and test `OpenProjectToolHandler` routing policy: require exactly
   one discovered/routable IDE; otherwise return an actionable error.
 - [x] Implement local npx-kt `PromptsContextHandler`. Given exposed
   `project_name`, resolve the IDE metadata and render prompts/resources with
@@ -53,8 +53,8 @@ Implementation tasks:
 - [x] Add unit tests for hash suffix stability, reverse project mapping, and
   project/window rewriting.
 - [x] Add unit tests for prompt context selection.
-- [ ] Add unit tests for bridge routing request bodies.
-- [ ] Add bridge-routing unit tests with a fake HTTP client/engine verifying
+- [x] Add unit tests for bridge routing request bodies.
+- [x] Add bridge-routing unit tests with a fake HTTP client/engine verifying
   the request body rewrites `project_name` to the original IDE project name and
   sets the bearer token header.
 - [ ] Add npx-kt stdio integration tests with one fake IDE bridge discovered

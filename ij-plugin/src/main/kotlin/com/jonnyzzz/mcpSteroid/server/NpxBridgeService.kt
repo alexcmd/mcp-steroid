@@ -282,18 +282,6 @@ data class NpxBridgeProjectsResponse(
 )
 
 @Serializable
-data class NpxBridgeWindowsResponse(
-    val windows: List<WindowInfo>,
-    val backgroundTasks: List<ProgressTaskInfo>,
-    val pid: Long,
-    val mcpUrl: String,
-    val instanceId: String,
-    val seq: Long,
-    val schemaVersion: String,
-    val updatedAt: String
-)
-
-@Serializable
 data class NpxBridgeSummaryResponse(
     val metadata: NpxBridgeMetadataResponse,
     val projects: List<ProjectInfo>,
@@ -312,10 +300,4 @@ data class NpxBridgeResourcesResponse(
     val seq: Long,
     val schemaVersion: String,
     val updatedAt: String
-)
-
-@Serializable
-data class NpxBridgeToolCallRequest(
-    val name: String,
-    val arguments: JsonObject? = null
 )

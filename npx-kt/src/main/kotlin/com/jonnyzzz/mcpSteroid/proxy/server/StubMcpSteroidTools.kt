@@ -26,22 +26,30 @@ import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 class StubMcpSteroidTools(
     val services: NpxKtServices,
 ) : McpSteroidTools() {
+    private val bridge = NpxToolBridgeClient(services.projectRouting, services.mcpHttpClient)
     private val listProjects = NpxListProjectsToolHandler(services)
+    private val listWindows = NpxListWindowsToolHandler(services)
     private val promptsContext = NpxPromptsContextHandler(services.projectRouting)
+    private val executeCode = NpxExecuteCodeToolHandler(bridge)
+    private val applyPatch = NpxApplyPatchToolHandler(bridge)
+    private val executeFeedback = NpxExecuteFeedbackToolHandler(bridge)
+    private val actionDiscovery = NpxActionDiscoveryToolHandler(bridge)
+    private val visionScreenshot = NpxVisionScreenshotToolHandler(bridge)
+    private val visionInput = NpxVisionInputToolHandler(bridge)
+    private val openProject = NpxOpenProjectToolHandler(services, bridge)
 
     override fun <T> handler(type: Class<T>): T {
         val handler = when (type) {
             ListProjectsToolHandler::class.java -> listProjects
+            ListWindowsToolHandler::class.java -> listWindows
             PromptsContextHandler::class.java -> promptsContext
-            ListWindowsToolHandler::class.java,
-            ExecuteCodeToolHandler::class.java,
-            ApplyPatchToolHandler::class.java,
-            ExecuteFeedbackToolHandler::class.java,
-            ActionDiscoveryToolHandler::class.java,
-            VisionScreenshotToolHandler::class.java,
-            VisionInputToolHandler::class.java,
-            OpenProjectToolHandler::class.java,
-            -> unsupportedHandler(type)
+            ExecuteCodeToolHandler::class.java -> executeCode
+            ApplyPatchToolHandler::class.java -> applyPatch
+            ExecuteFeedbackToolHandler::class.java -> executeFeedback
+            ActionDiscoveryToolHandler::class.java -> actionDiscovery
+            VisionScreenshotToolHandler::class.java -> visionScreenshot
+            VisionInputToolHandler::class.java -> visionInput
+            OpenProjectToolHandler::class.java -> openProject
             else -> unsupportedHandler(type)
         }
         return type.cast(handler)
