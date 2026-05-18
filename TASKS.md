@@ -212,7 +212,20 @@ Bridge client and handler behavior:
   Final review quorum passed:
   Claude `run_20260518-110307-91830`, Codex
   `run_20260518-110307-91829`, Gemini `run_20260518-110307-91831`.
-- [ ] `steroid_open_project` covers zero/one/multiple IDE routing policy.
+- [x] `steroid_open_project` covers zero/one/multiple IDE routing policy.
+  Simplified the handler to use the bridge routing service directly and added
+  focused coverage for zero IDEs, multiple IDEs, and the singleton IDE forward
+  path. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed on rerun; the first attempt failed before assertions on a transient
+  embedded-server `BindException`. MCP Steroid inspections on touched Kotlin
+  files returned `{}` in `eid_20260518T130940-npx-kt-open-project-policy`.
+  Plan review quorum passed:
+  Claude `run_20260518-110618-94077`, Codex
+  `run_20260518-110618-94078`, Gemini `run_20260518-110618-94079`.
+  Final review quorum passed:
+  Claude `run_20260518-111023-95891`, Codex
+  `run_20260518-111023-95890`, Gemini `run_20260518-111023-95892`.
 - [x] SSE `error` event returns a `ToolCallResult` error.
 - [x] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream
   context.

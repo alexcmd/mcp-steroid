@@ -221,11 +221,10 @@ class NpxVisionInputToolHandler(
 }
 
 class NpxOpenProjectToolHandler(
-    private val services: NpxKtServices,
     private val bridge: NpxToolBridgeClient,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
-        val ide = services.projectRouting.singleIdeOrNull()
+        val ide = bridge.routing.singleIdeOrNull()
             ?: return ToolCallResult.errorResult(
                 "steroid_open_project requires exactly one discovered IDE; call steroid_list_projects and close extra IDEs or start one IDE"
             )

@@ -36,7 +36,7 @@ class StubMcpSteroidTools(
     private val actionDiscovery = NpxActionDiscoveryToolHandler(bridge)
     private val visionScreenshot = NpxVisionScreenshotToolHandler(bridge)
     private val visionInput = NpxVisionInputToolHandler(bridge)
-    private val openProject = NpxOpenProjectToolHandler(services, bridge)
+    private val openProject = NpxOpenProjectToolHandler(bridge)
 
     override fun <T> handler(type: Class<T>): T {
         val handler = when (type) {

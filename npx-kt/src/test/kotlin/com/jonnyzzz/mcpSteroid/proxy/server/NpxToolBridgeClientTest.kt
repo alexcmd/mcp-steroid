@@ -16,6 +16,7 @@ import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import io.ktor.client.HttpClient
@@ -330,6 +331,89 @@ class NpxToolBridgeClientTest {
         assertEquals("capture state", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(null, arguments["window_id"])
         assertEquals(42L, routing.routeScreenshotExecution(screenshotExecutionId))
+    }
+
+    @Test
+    fun `open project bridge handler rejects zero discovered ides`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val routing = routingService()
+        val handler = NpxOpenProjectToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = tempDir.resolve("target").toString(),
+                trustProject = true,
+            )
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("requires exactly one discovered IDE"))
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
+    @Test
+    fun `open project bridge handler rejects multiple discovered ides`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val firstHome = Files.createDirectories(tempDir.resolve("first"))
+        val secondHome = Files.createDirectories(tempDir.resolve("second"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = firstHome),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = secondHome),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+        )
+        val handler = NpxOpenProjectToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = tempDir.resolve("target").toString(),
+                trustProject = true,
+            )
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("requires exactly one discovered IDE"))
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
+    @Test
+    fun `open project bridge handler forwards request when exactly one ide is discovered`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+            )
+        )
+        val handler = NpxOpenProjectToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = false,
+            )
+        )
+
+        assertEquals(false, result.isError)
+        assertEquals("Bearer secret-token", receivedAuth)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals(targetProject.toString(), arguments["project_path"]?.jsonPrimitive?.content)
+        assertEquals("false", arguments["trust_project"]?.jsonPrimitive?.content)
+        assertEquals("open-project", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("Open project through devrig", arguments["reason"]?.jsonPrimitive?.content)
     }
 
     @Test
