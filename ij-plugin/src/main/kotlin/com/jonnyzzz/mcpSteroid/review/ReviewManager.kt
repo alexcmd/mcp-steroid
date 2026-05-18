@@ -90,14 +90,28 @@ class ReviewManager(private val project: Project) {
             bringIdeToForeground()
         }
 
-        try {
-            // Get timeout
-            val timeoutSeconds = try {
-                Registry.intValue("mcp.steroid.review.timeout")
-            } catch (_: Exception) {
-                300
-            }
+        // Get timeout up-front so the progress message can name the budget
+        val timeoutSeconds = try {
+            Registry.intValue("mcp.steroid.review.timeout")
+        } catch (_: Exception) {
+            300
+        }
 
+        // Emit a progress notification *immediately* — before the suspend —
+        // so the agent learns the cause via MCP `notifications/progress`
+        // while the review prompt is open. Without this, an agent whose
+        // per-tool MCP timeout fires before the user approves or rejects
+        // sees only a generic "operation timed out" with no way to tell
+        // human review from a stuck tool. The matching `reportFailed`
+        // below uses the same wording so the agent can correlate the
+        // progress and the failure.
+        resultBuilder.logProgress(
+            "Awaiting human code review in IntelliJ — review prompt is open " +
+                "for execution $executionId; approve or reject in the IDE to " +
+                "continue (review timeout: ${timeoutSeconds}s)."
+        )
+
+        try {
             // Wait for approval/rejection with timeout
             try {
                 withTimeout(timeoutSeconds.seconds) {
@@ -137,7 +151,16 @@ class ReviewManager(private val project: Project) {
                 }
             } catch (_: TimeoutCancellationException) {
                 log.info("Review timeout for $executionId")
-                resultBuilder.reportFailed("Review failed by timeout")
+                // The agent must be able to distinguish a stuck human-review
+                // dialog from a generic execution timeout — the difference is
+                // actionable: the user has to focus the IDE and respond.
+                resultBuilder.reportFailed(
+                    "Human code review timed out after ${timeoutSeconds}s for " +
+                        "execution $executionId. The review prompt is open in " +
+                        "IntelliJ and was never approved or rejected — bring the " +
+                        "IDE to the foreground and respond, or set the registry " +
+                        "key `mcp.steroid.review.mode=NEVER` to auto-approve."
+                )
                 false
             }
         } finally {
