@@ -350,8 +350,22 @@ Prompt/resource behavior:
   Final review quorum passed:
   Claude `run_20260518-133910-51964`, Codex
   `run_20260518-133910-51965`, Gemini `run_20260518-133910-51970`.
-- [ ] devrig stdio tool/resource/prompt descriptors match the direct IDE MCP
+- [x] devrig stdio tool/resource/prompt descriptors match the direct IDE MCP
   server for the supported surface.
+  Added `NpxDescriptorParityTest`, which builds the devrig side through real
+  `StubMcpSteroidTools` and compares it to a direct-IDE-style in-process MCP
+  server. Tool descriptors match exactly; direct IDE prompt/resource
+  descriptors are asserted as an identical-descriptor subset of the npx
+  deferred multi-IDE surface. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxDescriptorParityTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T154928-npx-descriptor-parity`.
+  Plan review quorum passed:
+  Claude `run_20260518-134239-53914`, Codex
+  `run_20260518-134239-53913`, Gemini `run_20260518-134239-53915`.
+  Final review quorum passed:
+  Claude `run_20260518-135010-58122`, Codex
+  `run_20260518-135010-58149`, Gemini `run_20260518-135010-58166`.
 
 CLI/runtime behavior:
 - [ ] `devrig mpc` starts a clean stdio MCP server and exits cleanly on stdin
