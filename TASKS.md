@@ -184,8 +184,20 @@ Bridge client and handler behavior:
   Review quorum passed:
   Claude `run_20260518-104859-84310`, Codex
   `run_20260518-104859-84311`, Gemini `run_20260518-104859-84312`.
-- [ ] `steroid_action_discovery` forwards action groups, caret offset, and
+- [x] `steroid_action_discovery` forwards action groups, caret offset, and
   max actions.
+  Added focused action-discovery handler coverage asserting the original
+  project name, file path, caret offset, action groups, max actions per group,
+  and task id are forwarded to the IDE bridge. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T125551-npx-kt-action-discovery`.
+  Plan review quorum passed:
+  Claude `run_20260518-105230-86075`, Codex
+  `run_20260518-105230-86076`, Gemini `run_20260518-105230-86077`.
+  Final review quorum passed:
+  Claude `run_20260518-105621-87871`, Codex
+  `run_20260518-105621-87870`, Gemini `run_20260518-105621-87872`.
 - [ ] `steroid_take_screenshot` remembers execution ids.
 - [ ] `steroid_open_project` covers zero/one/multiple IDE routing policy.
 - [x] SSE `error` event returns a `ToolCallResult` error.

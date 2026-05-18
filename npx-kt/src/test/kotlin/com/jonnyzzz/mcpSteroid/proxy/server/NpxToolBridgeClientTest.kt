@@ -10,6 +10,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.proxy.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorStatus
+import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryParams
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
@@ -239,6 +240,48 @@ class NpxToolBridgeClientTest {
         assertEquals("0.75", arguments["success_rating"]?.jsonPrimitive?.content)
         assertEquals("worked", arguments["explanation"]?.jsonPrimitive?.content)
         assertEquals("println(1)", arguments["code"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `action discovery bridge handler forwards groups caret offset and max actions`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
+            )
+        )
+        val route = routing.routes().values.single()
+        val handler = NpxActionDiscoveryToolHandler(NpxToolBridgeClient(routing, httpClient))
+        val filePath = projectHome.resolve("Editor.kt").toString()
+
+        val result = handler.discoverActions(
+            projectName = route.exposedProjectName,
+            actionDiscoveryParams = ActionDiscoveryParams(
+                filePath = filePath,
+                caretOffset = 12,
+                actionGroups = listOf("EditorPopupMenu", "EditorGutterPopupMenu"),
+                maxActions = 7,
+                taskId = "action-task",
+            ),
+        )
+
+        assertEquals(false, result.isError)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_action_discovery", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals(filePath, arguments["file_path"]?.jsonPrimitive?.content)
+        assertEquals("12", arguments["caret_offset"]?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("EditorPopupMenu", "EditorGutterPopupMenu"),
+            arguments["action_groups"]?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+        assertEquals("7", arguments["max_actions_per_group"]?.jsonPrimitive?.content)
+        assertEquals("action-task", arguments["task_id"]?.jsonPrimitive?.content)
     }
 
     @Test
