@@ -114,15 +114,28 @@ final report.
 ## Phase 2 — npx-kt unit coverage
 
 Routing and naming:
-- [ ] Same real project path + IDE pid produces a stable hash suffix.
-- [ ] Different IDE pid produces a different hash suffix.
-- [ ] Different canonical project path produces a different hash suffix.
-- [ ] Duplicate original IDE project names in two IDEs produce distinct
+- [x] Same real project path + IDE pid produces a stable hash suffix.
+- [x] Different IDE pid produces a different hash suffix.
+- [x] Different canonical project path produces a different hash suffix.
+- [x] Duplicate original IDE project names in two IDEs produce distinct
   exposed names.
-- [ ] Exposed project names map back to original IDE project names without
+- [x] Exposed project names map back to original IDE project names without
   suffix parsing.
-- [ ] Stale exposed project name returns an actionable "call
+- [x] Stale exposed project name returns an actionable "call
   steroid_list_projects to refresh" error.
+  Completed routing-name coverage with existing tests for stable hash,
+  different PID hash, reverse mapping, and stale-name errors, plus new tests
+  for different canonical project homes and duplicate original project names
+  across IDEs. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T143416-npx-routing-naming`.
+  Plan review quorum passed:
+  Claude `run_20260518-123118-18695`, Codex
+  `run_20260518-123118-18696`, Gemini `run_20260518-123118-18697`.
+  Final review quorum passed:
+  Claude `run_20260518-123518-20509`, Codex
+  `run_20260518-123518-20510`, Gemini `run_20260518-123518-20511`.
 - [x] `singleIdeOrNull()` covers zero, one, and multiple IDE states.
   Added zero-state coverage and tied it to the existing one-IDE and
   multiple-IDE tests. Verification:

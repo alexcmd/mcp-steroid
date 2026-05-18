@@ -47,6 +47,17 @@ class NpxProjectRoutingServiceTest {
     }
 
     @Test
+    fun `hash changes for different canonical project homes`() {
+        val projectA = Files.createDirectories(tempDir.resolve("project-a")).toRealPath()
+        val projectB = Files.createDirectories(tempDir.resolve("project-b")).toRealPath()
+
+        assertNotEquals(
+            NpxProjectRoutingService.hash8(projectA, 1234),
+            NpxProjectRoutingService.hash8(projectB, 1234),
+        )
+    }
+
+    @Test
     fun `canonical path collapses symbolic link variants`() {
         val realProject = Files.createDirectories(tempDir.resolve("real").resolve("project"))
         val symlink = tempDir.resolve("link-project")
@@ -75,6 +86,32 @@ class NpxProjectRoutingServiceTest {
         assertEquals("http://127.0.0.1:4343", route.bridgeBaseUrl)
         assertEquals("secret-42", route.token)
         assertEquals(route, service.requireProject(route.exposedProjectName))
+    }
+
+    @Test
+    fun `duplicate original project names in different ides expose distinct names`() {
+        val projectA = Files.createDirectories(tempDir.resolve("project-a"))
+        val projectB = Files.createDirectories(tempDir.resolve("project-b"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectA.toString())),
+            ),
+            state(
+                pid = 43,
+                projects = listOf(ProjectInfo("mcp-steroid", projectB.toString())),
+            ),
+        )
+
+        val routes = service.routes().values.toList()
+
+        assertEquals(2, routes.size)
+        assertEquals(2, routes.map { it.exposedProjectName }.distinct().size)
+        assertEquals(setOf("mcp-steroid"), routes.map { it.originalProjectName }.toSet())
+        assertEquals(setOf(42L, 43L), routes.map { it.idePid }.toSet())
+        for (route in routes) {
+            assertEquals(route, service.requireProject(route.exposedProjectName))
+        }
     }
 
     @Test
