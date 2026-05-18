@@ -33,6 +33,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -49,6 +50,7 @@ class NpxToolBridgeClientTest {
     private var receivedAuth: String? = null
     private var receivedBody: String? = null
     private val beforeResultEvents = mutableListOf<String>()
+    private var sseResponse: String? = null
 
     @BeforeEach
     fun setUp() {
@@ -59,6 +61,12 @@ class NpxToolBridgeClientTest {
                     receivedAuth = call.request.headers["Authorization"]
                     receivedBody = call.receiveText()
                     call.respondTextWriter(ContentType.Text.EventStream) {
+                        val custom = sseResponse
+                        if (custom != null) {
+                            write(custom)
+                            flush()
+                            return@respondTextWriter
+                        }
                         beforeResultEvents.forEach { write(it) }
                         val result = ToolCallResult(
                             content = listOf(ContentItem.Text("ok")),
@@ -91,6 +99,7 @@ class NpxToolBridgeClientTest {
     @AfterEach
     fun tearDown() {
         beforeResultEvents.clear()
+        sseResponse = null
         httpClient.close()
         server.stop(0L, 0L)
     }
@@ -218,6 +227,121 @@ class NpxToolBridgeClientTest {
         assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `bridge client returns error result for malformed SSE data`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        sseResponse = """
+            event: result
+            data: {not json}
+
+        """.trimIndent() + "\n"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("Malformed SSE data"))
+    }
+
+    @Test
+    fun `bridge client returns error result for SSE error event`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        sseResponse = """
+            event: error
+            data: {"type":"error","message":"upstream failed"}
+
+        """.trimIndent() + "\n"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("upstream failed"))
+    }
+
+    @Test
+    fun `bridge client returns error result when result event has no result field`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        sseResponse = """
+            event: result
+            data: {"type":"result"}
+
+        """.trimIndent() + "\n"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("result event did not include result"))
+    }
+
+    @Test
+    fun `bridge client returns error result when SSE stream closes without result`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        sseResponse = """
+            event: progress
+            data: {"type":"progress","message":"still running"}
+
+        """.trimIndent() + "\n"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("No result received"))
+    }
+
+    @Test
+    fun `bridge client decodes multiline SSE data frame`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val resultBody = ToolCallResult(
+            content = listOf(ContentItem.Text("multiline ok")),
+            isError = false,
+        )
+        sseResponse = """
+            event: result
+            data: {"type":"result",
+            data: "result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}
+
+        """.trimIndent() + "\n"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(false, result.isError)
+        assertEquals("multiline ok", (result.content.single() as ContentItem.Text).text)
+    }
+
     private fun routingService(vararg states: IdeMonitorState): NpxProjectRoutingService =
         NpxProjectRoutingService { states.associateBy { it.ide.pid } }
 
@@ -236,6 +360,23 @@ class NpxToolBridgeClientTest {
                 createdAt = "2026-05-17T00:00:00Z",
             ),
         )
+
+    private fun route(tempDir: Path): ProjectRoute =
+        ProjectRoute(
+            idePid = 42,
+            bridgeBaseUrl = "http://127.0.0.1:$port",
+            token = "secret-token",
+            originalProjectName = "original-project",
+            exposedProjectName = "original-project-abcdefgh",
+            projectPath = tempDir.toString(),
+            realProjectHome = tempDir.toRealPath(),
+            hash8 = "abcdefgh",
+            ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+        )
 }
 
 private fun freePort(): Int = ServerSocket(0).use { it.localPort }
+
+private fun ToolCallResult.errorText(): String =
+    (content.single() as ContentItem.Text).text

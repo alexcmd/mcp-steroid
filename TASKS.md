@@ -147,15 +147,25 @@ Bridge client and handler behavior:
   max actions.
 - [ ] `steroid_take_screenshot` remembers execution ids.
 - [ ] `steroid_open_project` covers zero/one/multiple IDE routing policy.
-- [ ] SSE `error` event returns a `ToolCallResult` error.
+- [x] SSE `error` event returns a `ToolCallResult` error.
 - [ ] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream
   context.
-- [ ] Channel closes with no `result` returns a no-result error.
-- [ ] Malformed SSE `data:` returns an actionable tool error instead of
+- [x] Channel closes with no `result` returns a no-result error.
+- [x] Malformed SSE `data:` returns an actionable tool error instead of
   throwing out of the MCP call.
-- [ ] `event: result` without `result` field returns an actionable tool
+- [x] `event: result` without `result` field returns an actionable tool
   error.
-- [ ] Multi-line `data:` SSE frames are concatenated and decoded correctly.
+- [x] Multi-line `data:` SSE frames are concatenated and decoded correctly.
+  Added focused `NpxToolBridgeClientTest` coverage for malformed SSE JSON,
+  SSE error events, missing result fields, no-result stream closure, and
+  multi-line SSE data frames. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on touched Kotlin files passed with
+  `INSPECTION_TOTAL: 0` in
+  `eid_20260518T101622-npx-kt-bridge-sse-hardening`.
+  Review quorum passed:
+  Claude `run_20260518-081642-38276`, Codex
+  `run_20260518-081647-38362`, Gemini `run_20260518-081653-38569`.
 - [ ] Progress tokens are isolated across concurrent routed calls.
 - [ ] Cancellation/timeout behavior is covered at the bridge boundary.
 

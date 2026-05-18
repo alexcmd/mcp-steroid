@@ -283,10 +283,28 @@ class NpxToolBridgeClient(
                 return@execute
             }
             readSse(response.bodyAsChannel()) { event, data ->
-                val json = McpJson.parseToJsonElement(data).jsonObject
+                if (errorMessage != null) return@readSse
+                val json = try {
+                    McpJson.parseToJsonElement(data).jsonObject
+                } catch (e: Exception) {
+                    errorMessage = "Malformed SSE data from $url: ${e.javaClass.simpleName}: ${e.message}; data=${data.take(200)}"
+                    return@readSse
+                }
                 when (event ?: json["type"]?.jsonPrimitive?.contentOrNull) {
                     "progress" -> json["message"]?.jsonPrimitive?.contentOrNull?.let { progress?.report(it) }
-                    "result" -> result = McpJson.decodeFromJsonElement(ToolCallResult.serializer(), json.getValue("result"))
+                    "result" -> {
+                        val resultElement = json["result"]
+                        if (resultElement == null) {
+                            errorMessage = "SSE result event did not include result from $url"
+                            return@readSse
+                        }
+                        result = try {
+                            McpJson.decodeFromJsonElement(ToolCallResult.serializer(), resultElement)
+                        } catch (e: Exception) {
+                            errorMessage = "Malformed SSE result from $url: ${e.javaClass.simpleName}: ${e.message}; data=${data.take(200)}"
+                            return@readSse
+                        }
+                    }
                     "error" -> errorMessage = json["message"]?.jsonPrimitive?.contentOrNull ?: "Tool call failed"
                 }
             }
