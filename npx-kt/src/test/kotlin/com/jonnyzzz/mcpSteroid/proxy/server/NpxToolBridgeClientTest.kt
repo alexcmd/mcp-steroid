@@ -38,10 +38,16 @@ import io.ktor.server.routing.routing
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -59,6 +65,8 @@ class NpxToolBridgeClientTest {
     private var receivedBody: String? = null
     private val beforeResultEvents = mutableListOf<String>()
     private var sseResponse: String? = null
+    private var holdSseEntered: CompletableDeferred<Unit>? = null
+    private var holdSseRelease: CompletableDeferred<Unit>? = null
     private var httpStatus = HttpStatusCode.OK
     private var httpBody = ""
 
@@ -79,6 +87,15 @@ class NpxToolBridgeClientTest {
                         if (custom != null) {
                             write(custom)
                             flush()
+                            return@respondTextWriter
+                        }
+                        val hold = holdSseRelease
+                        if (hold != null) {
+                            write("event: progress\n")
+                            write("""data: {"type":"progress","message":"started"}""" + "\n\n")
+                            flush()
+                            holdSseEntered?.complete(Unit)
+                            hold.await()
                             return@respondTextWriter
                         }
                         beforeResultEvents.forEach { write(it) }
@@ -114,6 +131,8 @@ class NpxToolBridgeClientTest {
     fun tearDown() {
         beforeResultEvents.clear()
         sseResponse = null
+        holdSseEntered = null
+        holdSseRelease = null
         httpStatus = HttpStatusCode.OK
         httpBody = ""
         httpClient.close()
@@ -548,6 +567,43 @@ class NpxToolBridgeClientTest {
         assertEquals("exec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
         assertEquals("true", arguments["dialog_killer"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `bridge client propagates cancellation while waiting for SSE result`(
+        @TempDir tempDir: Path,
+    ) {
+        runBlocking {
+            holdSseEntered = CompletableDeferred()
+            holdSseRelease = CompletableDeferred()
+            val bridge = NpxToolBridgeClient(
+                routing = NpxProjectRoutingService { emptyMap() },
+                httpClient = httpClient,
+            )
+            val result = async {
+                bridge.callTool(
+                    route(tempDir),
+                    "steroid_execute_code",
+                    object : McpProgressReporter {
+                        override fun report(message: String) = Unit
+                    },
+                ) {
+                    put("project_name", "original-project")
+                }
+            }
+
+            withTimeout(5.seconds) {
+                holdSseEntered?.await()
+            }
+            result.cancel()
+            try {
+                assertFailsWith<CancellationException> {
+                    result.await()
+                }
+            } finally {
+                holdSseRelease?.complete(Unit)
+            }
+        }
     }
 
     @Test

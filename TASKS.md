@@ -292,8 +292,27 @@ Bridge client and handler behavior:
   Review quorum passed:
   Claude `run_20260518-081642-38276`, Codex
   `run_20260518-081647-38362`, Gemini `run_20260518-081653-38569`.
-- [ ] Progress tokens are isolated across concurrent routed calls.
-- [ ] Cancellation/timeout behavior is covered at the bridge boundary.
+- [x] Progress tokens are isolated across concurrent routed calls.
+- [x] Cancellation/timeout behavior is covered at the bridge boundary.
+  Added `McpToolRegistryTest` coverage for two concurrent tool calls with
+  distinct `_meta.progressToken` values and separate progress notifications.
+  Added `NpxToolBridgeClientTest` coverage that coroutine cancellation while
+  waiting for an SSE result propagates as `CancellationException` instead of a
+  tool error. Timeout behavior is covered at the bridge boundary by the
+  existing execute-code handler test that forwards the tool-level `timeout` to
+  the IDE; the npx bridge intentionally uses an infinite HTTP timeout and does
+  not enforce a second client-side tool timeout. Verification:
+  `./gradlew :mcp-core:test --tests 'com.jonnyzzz.mcpSteroid.mcp.McpToolRegistryTest' --rerun-tasks --console=plain`
+  passed on sequential rerun. The first attempt overlapped with another
+  Gradle invocation and failed in `:prompts:jar` on a generated class
+  `NoSuchFileException`; no test assertions had run.
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on touched Kotlin test files passed with
+  `INSPECTION_TOTAL: 0` in
+  `eid_20260518T150204-npx-progress-cancellation`.
+  Plan review quorum passed:
+  Claude `run_20260518-125210-29927`, Codex
+  `run_20260518-125210-29928`, Gemini `run_20260518-125210-29929`.
 
 Prompt/resource behavior:
 - [ ] Prompt context maps IDE build to product code and baseline.
