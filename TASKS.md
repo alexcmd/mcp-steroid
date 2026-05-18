@@ -47,16 +47,32 @@ Do not start with the AI agent. The order is:
 
 ## Phase 0 — harness and infrastructure health
 
-- [ ] Diagnose the IDE downloader `.tmp -> final` failure with a concrete
+- [x] Diagnose the IDE downloader `.tmp -> final` failure with a concrete
   stack/log entry and failing path. Current observed stack:
   `IdeDownloader.moveDownloadedFile` from
   `test-integration/build/ide-download/idea-2026.1.2-aarch64.tar.gz.tmp` to
   `idea-2026.1.2-aarch64.tar.gz`.
-- [ ] Add a focused downloader regression for the root cause if it is
+  Root cause: concurrent in-process callers shared the same deterministic
+  `<archive>.tmp`; the first caller moved it to the final path while another
+  caller still expected the temp path to exist.
+- [x] Add a focused downloader regression for the root cause if it is
   downloader concurrency, stream lifecycle, or temp-file reuse.
-- [ ] Decide whether the integration harness should use a per-test archive
+  Added `IdeDownloaderTest.resolveAndDownload serializes concurrent downloads
+  for the same archive`.
+- [x] Decide whether the integration harness should use a per-test archive
   download directory or a downloader-level file lock to prevent concurrent
   archive downloads from sharing the same `.tmp` path.
+  Decision: use a minimal per-destination in-process lock in
+  `resolveAndDownload`. Do not add per-test archive directories or sidecar
+  file locks unless a future failure proves cross-JVM contention.
+  Verification:
+  `./gradlew :intellij-downloader:test --tests 'com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloaderTest'`
+  passed. MCP Steroid inspections on touched files passed with
+  `INSPECTION_TOTAL: 0` in
+  `eid_20260518T094303-npx-kt-stabilization-downloader-lock`.
+  Review quorum passed:
+  Claude `run_20260518-074341-21893`, Codex
+  `run_20260518-074352-22060`, Gemini `run_20260518-074358-22279`.
 - [ ] Make long-test run directories easy to find from failure output:
   run dir, screenshot dir, video dir, agent raw/decoded logs, and IDE log.
 - [ ] Keep credential checks out of fast phases. AI-only phases may require

@@ -22,7 +22,9 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class IdeDownloaderTest {
@@ -190,6 +192,50 @@ class IdeDownloaderTest {
             }
         }
         assertEquals("inline checksum path must not use the checksum text reader", 0, attempts.get())
+    }
+
+    @Test
+    fun `resolveAndDownload serializes concurrent downloads for the same archive`() {
+        val payload = "shared archive".toByteArray()
+        val goodSha256 = sha256(payload)
+        val archiveRequests = AtomicInteger()
+        val executor = Executors.newFixedThreadPool(4)
+
+        withServer({ server ->
+            server.createContext("/archive.tar.gz") { exchange ->
+                archiveRequests.incrementAndGet()
+                Thread.sleep(100)
+                sendBytes(exchange, payload)
+            }
+            server.createContext("/archive.tar.gz.sha256") { exchange ->
+                sendText(exchange, "$goodSha256  archive.tar.gz\n")
+            }
+        }) { baseUrl ->
+            val distribution = IdeDistribution.FromUrl(
+                product = IdeProduct.IntelliJIdeaCommunity,
+                url = "$baseUrl/archive.tar.gz",
+                checksumUrl = "$baseUrl/archive.tar.gz.sha256",
+            )
+            val barrier = CyclicBarrier(4)
+            val futures = List(4) {
+                executor.submit<File> {
+                    barrier.await()
+                    distribution.resolveAndDownload(tmp.root, os = HostOs.LINUX)
+                }
+            }
+
+            try {
+                futures.forEach { future ->
+                    assertEquals(File(tmp.root, "archive.tar.gz"), future.get(10, TimeUnit.SECONDS))
+                }
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+
+        assertEquals("only one caller should download the shared archive", 1, archiveRequests.get())
+        assertFalse(File(tmp.root, "archive.tar.gz.tmp").exists())
+        assertArrayEquals(payload, File(tmp.root, "archive.tar.gz").readBytes())
     }
 
     @Test

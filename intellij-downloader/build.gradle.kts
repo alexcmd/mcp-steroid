@@ -1,3 +1,11 @@
+@file:Suppress(
+    "GrazieInspection",
+    "GrazieInspectionRunner",
+    "HasPlatformType",
+    "SpellCheckingInspection",
+    "UnusedReceiverParameter",
+)
+
 import de.undercouch.gradle.tasks.download.Download
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.gradle.api.attributes.Usage
@@ -42,7 +50,7 @@ dependencies {
     implementation("org.tukaani:xz:1.10")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.slf4j:slf4j-simple:2.0.17")
+    testImplementation("ch.qos.logback:logback-classic:1.5.32")
 }
 
 tasks.test {
@@ -63,10 +71,10 @@ tasks.register<Test>("liveNetworkTest") {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Bundled 7-Zip 23.01 Windows payload — LGPL v2.1+, https://www.7-zip.org/license.txt
+// Bundled 7-Zip Windows payload — LGPL v2.1+, https://www.7-zip.org/license.txt
 //
 // We ship the official Windows x64 `7z.exe` + `7z.dll` + `License.txt` tuple.
-// 7-Zip 23.01 keeps NSIS and LZMA2 support inside `7z.dll`; there are no
+// The pinned 7-Zip release keeps NSIS and LZMA2 support inside `7z.dll`; there are no
 // `Formats/Nsis.dll` or `Codecs/Lzma2.dll` plugin files in this pinned payload.
 //
 // The upstream Windows installer is itself unpacked at build time with a Unix
@@ -88,6 +96,7 @@ val sevenZipResourceDir = layout.buildDirectory.dir("7z-extracted")
 
 data class BootstrapPlatform(val id: String, val archiveSuffix: String)
 
+@Suppress("SpellCheckingInspection")
 fun resolveSevenZipBootstrapPlatform(): BootstrapPlatform {
     val os = OperatingSystem.current()
     val arch = System.getProperty("os.arch").lowercase()
@@ -117,16 +126,20 @@ fun Download.configureReliableDownload() {
 }
 
 val downloadSevenZipBootstrap by tasks.registering(Download::class) {
+    description = "Downloads the host 7-Zip bootstrap archive used to unpack Windows payloads."
+    group = "build setup"
     val destFile = sevenZipBootstrapDir.get().asFile
         .resolve("7z${sevenZipVersion}-${sevenZipBootstrapPlatform.archiveSuffix}")
     src("$sevenZipBaseUrl/7z${sevenZipVersion}-${sevenZipBootstrapPlatform.archiveSuffix}")
     dest(destFile)
     configureReliableDownload()
-    // 7-zip.org artefacts are immutable for a given version; skip if already on disk.
+    // 7-zip.org artifacts are immutable for a given version; skip if already on disk.
     onlyIf { !destFile.exists() }
 }
 
 val extractSevenZipBootstrap by tasks.registering {
+    description = "Extracts the host 7-Zip bootstrap executable."
+    group = "build setup"
     dependsOn(downloadSevenZipBootstrap)
     val archiveFile = sevenZipBootstrapDir.map { it.asFile.resolve("7z${sevenZipVersion}-${sevenZipBootstrapPlatform.archiveSuffix}") }
     inputs.file(archiveFile)
@@ -166,15 +179,19 @@ val extractSevenZipBootstrap by tasks.registering {
 }
 
 val downloadSevenZipWindowsInstaller by tasks.registering(Download::class) {
+    description = "Downloads the pinned 7-Zip Windows installer."
+    group = "build setup"
     val destFile = sevenZipDownloadDir.get().asFile.resolve("7z${sevenZipVersion}-x64.exe")
     src("$sevenZipBaseUrl/7z${sevenZipVersion}-x64.exe")
     dest(destFile)
     configureReliableDownload()
-    // 7-zip.org artefacts are immutable for a given version; skip if already on disk.
+    // 7-zip.org artifacts are immutable for a given version; skip if already on disk.
     onlyIf { !destFile.exists() }
 }
 
 val extractSevenZipResources by tasks.registering {
+    description = "Extracts the bundled 7-Zip Windows resources for consumers."
+    group = "build setup"
     dependsOn(extractSevenZipBootstrap, downloadSevenZipWindowsInstaller)
     val bootstrapExecutable = sevenZipBootstrapExtractedDir.map { it.asFile.resolve("7zz") }
     val windowsInstaller = sevenZipDownloadDir.map { it.asFile.resolve("7z${sevenZipVersion}-x64.exe") }

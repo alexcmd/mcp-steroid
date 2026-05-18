@@ -12,18 +12,21 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 private val ideDownloaderLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloader")
 private const val FSYNC_EVERY_BYTES = 8L * 1024L * 1024L
 private const val HTTP_RANGE_NOT_SATISFIABLE = 416
+private val archiveDownloadLocks = ConcurrentHashMap<String, Any>()
 
 internal var checksumTextReader: (String, String) -> String = ::readUrlText
 
+@Suppress("GrazieInspection", "GrazieInspectionRunner", "SpellCheckingInspection")
 private data class ResolvedArchiveDownload(
     val url: String,
     val fileName: String,
     val checksumUrl: String?,
-    val expectedSha256: String?,
+    val expectedChecksum: String?,
 )
 
 /**
@@ -47,8 +50,17 @@ fun IdeDistribution.resolveAndDownload(
         resolved.url,
         destFile,
     )
-    val expectedSha256 = resolveExpectedSha256(resolved)
-    if (expectedSha256 == null) {
+    return synchronized(archiveDownloadLock(destFile)) {
+        resolveAndDownloadLocked(resolved, destFile)
+    }
+}
+
+private fun resolveAndDownloadLocked(
+    resolved: ResolvedArchiveDownload,
+    destFile: File,
+): File {
+    val expectedChecksum = resolveExpectedChecksum(resolved)
+    if (expectedChecksum == null) {
         ideDownloaderLog.warn(
             "[IDE-DOWNLOAD] No SHA-256 checksum available for {}; archive will not be verified",
             resolved.url,
@@ -56,13 +68,13 @@ fun IdeDistribution.resolveAndDownload(
     }
 
     if (destFile.exists()) {
-        if (expectedSha256 == null) {
+        if (expectedChecksum == null) {
             ideDownloaderLog.debug("[IDE-DOWNLOAD] Using cached archive: {}", destFile)
             return destFile
         }
 
         val actualSha256 = sha256(destFile)
-        if (actualSha256 == expectedSha256) {
+        if (actualSha256 == expectedChecksum) {
             ideDownloaderLog.debug("[IDE-DOWNLOAD] Using verified cached archive: {}", destFile)
             return destFile
         }
@@ -71,7 +83,7 @@ fun IdeDistribution.resolveAndDownload(
         ideDownloaderLog.warn(
             "[IDE-DOWNLOAD] Cached archive checksum mismatch for {}; expected {}, actual {}; re-downloading",
             destFile,
-            expectedSha256,
+            expectedChecksum,
             actualSha256,
         )
     }
@@ -79,21 +91,27 @@ fun IdeDistribution.resolveAndDownload(
     ideDownloaderLog.debug("[IDE-DOWNLOAD] Downloading {} -> {}", resolved.url, destFile)
     downloadFile(resolved.url, destFile)
 
-    if (expectedSha256 != null) {
+    if (expectedChecksum != null) {
         val actualSha256 = sha256(destFile)
-        if (actualSha256 != expectedSha256) {
+        if (actualSha256 != expectedChecksum) {
             Files.deleteIfExists(destFile.toPath())
             error(
-                "SHA-256 mismatch for ${resolved.url}: expected $expectedSha256, actual $actualSha256. " +
+                "SHA-256 mismatch for ${resolved.url}: expected $expectedChecksum, actual $actualSha256. " +
                     "Deleted corrupted archive $destFile"
             )
         }
-        ideDownloaderLog.debug("[IDE-DOWNLOAD] Verified SHA-256 {} for {}", expectedSha256, destFile)
+        ideDownloaderLog.debug("[IDE-DOWNLOAD] Verified SHA-256 {} for {}", expectedChecksum, destFile)
     }
 
     return destFile
 }
 
+private fun archiveDownloadLock(destFile: File): Any {
+    val key = destFile.toPath().toAbsolutePath().normalize().toString()
+    return archiveDownloadLocks.computeIfAbsent(key) { Any() }
+}
+
+@Suppress("GrazieInspection", "GrazieInspectionRunner", "SpellCheckingInspection")
 private fun IdeDistribution.resolveArchiveDownload(
     os: HostOs,
 ): ResolvedArchiveDownload {
@@ -116,8 +134,8 @@ private fun IdeDistribution.resolveArchiveDownload(
     }
 }
 
-private fun resolveExpectedSha256(resolved: ResolvedArchiveDownload): String? {
-    resolved.expectedSha256?.let { return normalizeSha256(it, "inline checksum for ${resolved.url}") }
+private fun resolveExpectedChecksum(resolved: ResolvedArchiveDownload): String? {
+    resolved.expectedChecksum?.let { return normalizeSha256(it, "inline checksum for ${resolved.url}") }
     resolved.checksumUrl?.let { checksumUrl ->
         val checksumText = fetchChecksumWithRetry(checksumUrl)
         return parseSha256Checksum(checksumText, checksumUrl)
