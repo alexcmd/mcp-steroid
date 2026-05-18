@@ -12,6 +12,8 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
+import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -46,6 +48,7 @@ class NpxToolBridgeClientTest {
     private var port: Int = 0
     private var receivedAuth: String? = null
     private var receivedBody: String? = null
+    private val beforeResultEvents = mutableListOf<String>()
 
     @BeforeEach
     fun setUp() {
@@ -56,6 +59,7 @@ class NpxToolBridgeClientTest {
                     receivedAuth = call.request.headers["Authorization"]
                     receivedBody = call.receiveText()
                     call.respondTextWriter(ContentType.Text.EventStream) {
+                        beforeResultEvents.forEach { write(it) }
                         val result = ToolCallResult(
                             content = listOf(ContentItem.Text("ok")),
                             isError = false,
@@ -86,6 +90,7 @@ class NpxToolBridgeClientTest {
 
     @AfterEach
     fun tearDown() {
+        beforeResultEvents.clear()
         httpClient.close()
         server.stop(0L, 0L)
     }
@@ -165,6 +170,52 @@ class NpxToolBridgeClientTest {
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
         assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("patch-task", arguments["task_id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `execute code bridge handler forwards timeout and progress events`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        beforeResultEvents += """
+            event: progress
+            data: {"type":"progress","message":"compile started"}
+
+        """.trimIndent() + "\n"
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
+            )
+        )
+        val route = routing.routes().values.single()
+        val progressMessages = mutableListOf<String>()
+        val handler = NpxExecuteCodeToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.executeCode(
+            projectName = route.exposedProjectName,
+            execCodeParams = ExecCodeParams(
+                taskId = "exec-task",
+                code = "println(1)",
+                reason = "verify timeout and progress forwarding",
+                timeout = 17,
+            ),
+            callProgress = object : McpProgressReporter {
+                override fun report(message: String) {
+                    progressMessages += message
+                }
+            },
+        )
+
+        assertEquals(false, result.isError)
+        assertEquals(listOf("compile started"), progressMessages)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_execute_code", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("exec-task", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
     }
 
     private fun routingService(vararg states: IdeMonitorState): NpxProjectRoutingService =
