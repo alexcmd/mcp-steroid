@@ -315,8 +315,24 @@ Bridge client and handler behavior:
   `run_20260518-125210-29928`, Gemini `run_20260518-125210-29929`.
 
 Prompt/resource behavior:
-- [ ] Prompt context maps IDE build to product code and baseline.
-- [ ] Malformed/unknown IDE build falls back to `PromptsContext.Generic`.
+- [x] Prompt context maps IDE build to product code and baseline.
+- [x] Malformed/unknown IDE build falls back to `PromptsContext.Generic`.
+  Existing prompt-context tests cover routed IDE build parsing, singleton
+  route selection, and known product-code baseline parsing. Added fallback
+  coverage for malformed builds and unknown product prefixes, and hardened
+  `NpxPromptsContextHandler` to return `PromptsContext.Generic` for product
+  codes outside the supported set. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on touched Kotlin files passed with
+  `INSPECTION_TOTAL: 0` in `eid_20260518T152848-npx-prompt-context`.
+  Plan review quorum passed:
+  Codex `run_20260518-131055-37520`, Gemini
+  `run_20260518-131055-37521`, replacement Codex
+  `run_20260518-131234-38415`. Claude plan review hit an external rate limit
+  in `run_20260518-131055-37519`.
+  Final review quorum passed on the corrected diff:
+  Claude `run_20260518-132950-46268`, Codex
+  `run_20260518-132950-46267`, Gemini `run_20260518-132950-46269`.
 - [ ] Prompt and resource rendering stays local to npx-kt and is not routed
   to the IDE.
 - [ ] devrig stdio tool/resource/prompt descriptors match the direct IDE MCP

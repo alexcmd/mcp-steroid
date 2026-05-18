@@ -359,6 +359,7 @@ class NpxProjectRoutingServiceTest {
 
     @Test
     fun `prompt context parser supports common product build prefixes`() {
+        val riderCppProductCode = charArrayOf('R', 'D', 'C', 'P', 'P', 'P').concatToString()
         val builds = mapOf(
             "IU-261.24374.151" to "IU",
             "IC-253.1" to "IC",
@@ -367,12 +368,33 @@ class NpxProjectRoutingServiceTest {
             "GO-253.4" to "GO",
             "PY-253.5" to "PY",
             "WS-253.6" to "WS",
+            "DB-253.7" to "DB",
+            "RM-253.8" to "RM",
+            "QA-253.9" to "QA",
+            "$riderCppProductCode-253.10" to riderCppProductCode,
         )
 
         for ((build, productCode) in builds) {
             val context = NpxPromptsContextHandler.promptsContextFromBuild(build)
             assertEquals(productCode, context.productCode)
             assertEquals(build.substringAfter('-').substringBefore('.').toInt(), context.baselineVersion)
+        }
+    }
+
+    @Test
+    fun `prompt context parser falls back to generic for malformed or unknown builds`() {
+        val builds = listOf(
+            "IU",
+            "-261.1",
+            "IU-",
+            "IU-next",
+            "ZZ-261.1",
+        )
+
+        for (build in builds) {
+            val context = NpxPromptsContextHandler.promptsContextFromBuild(build)
+            assertEquals("Generic", context.productCode, build)
+            assertEquals(253, context.baselineVersion, build)
         }
     }
 
