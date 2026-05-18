@@ -198,7 +198,20 @@ Bridge client and handler behavior:
   Final review quorum passed:
   Claude `run_20260518-105621-87871`, Codex
   `run_20260518-105621-87870`, Gemini `run_20260518-105621-87872`.
-- [ ] `steroid_take_screenshot` remembers execution ids.
+- [x] `steroid_take_screenshot` remembers execution ids.
+  Added focused screenshot handler coverage asserting a returned `eid_...`
+  from the IDE bridge is remembered for later input routing, while the
+  original project name, task id, and reason are forwarded to
+  `steroid_take_screenshot`. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T130238-npx-kt-screenshot-memory`.
+  Plan review quorum passed:
+  Claude `run_20260518-110003-89798`, Codex
+  `run_20260518-110003-89799`, Gemini `run_20260518-110003-89800`.
+  Final review quorum passed:
+  Claude `run_20260518-110307-91830`, Codex
+  `run_20260518-110307-91829`, Gemini `run_20260518-110307-91831`.
 - [ ] `steroid_open_project` covers zero/one/multiple IDE routing policy.
 - [x] SSE `error` event returns a `ToolCallResult` error.
 - [x] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream

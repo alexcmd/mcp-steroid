@@ -17,6 +17,7 @@ import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -282,6 +283,53 @@ class NpxToolBridgeClientTest {
         )
         assertEquals("7", arguments["max_actions_per_group"]?.jsonPrimitive?.content)
         assertEquals("action-task", arguments["task_id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `screenshot bridge handler remembers returned execution id`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val screenshotExecutionId = "eid_20260518T125900-npx-screenshot"
+        val resultBody = ToolCallResult(
+            content = listOf(ContentItem.Text("screenshot saved in $screenshotExecutionId")),
+            isError = false,
+        )
+        sseResponse = """
+            event: result
+            data: {"type":"result","result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}
+
+        """.trimIndent() + "\n"
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
+            )
+        )
+        val route = routing.routes().values.single()
+        val handler = NpxVisionScreenshotToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.screenshotWindow(
+            projectName = route.exposedProjectName,
+            screenshotParams = ScreenshotParams(
+                taskId = "screenshot-task",
+                reason = "capture state",
+            ),
+            mcpProgressReporter = object : McpProgressReporter {
+                override fun report(message: String) = Unit
+            },
+        )
+
+        assertEquals(false, result.isError)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_take_screenshot", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("screenshot-task", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("capture state", arguments["reason"]?.jsonPrimitive?.content)
+        assertEquals(null, arguments["window_id"])
+        assertEquals(42L, routing.routeScreenshotExecution(screenshotExecutionId))
     }
 
     @Test
