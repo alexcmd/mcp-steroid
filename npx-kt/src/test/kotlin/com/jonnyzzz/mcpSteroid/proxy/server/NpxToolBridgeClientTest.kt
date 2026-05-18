@@ -15,6 +15,7 @@ import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
+import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
@@ -331,6 +332,91 @@ class NpxToolBridgeClientTest {
         assertEquals("capture state", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(null, arguments["window_id"])
         assertEquals(42L, routing.routeScreenshotExecution(screenshotExecutionId))
+    }
+
+    @Test
+    fun `input bridge handler forwards when screenshot id belongs to the same ide`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectA = Files.createDirectories(tempDir.resolve("project-a"))
+        val projectB = Files.createDirectories(tempDir.resolve("project-b"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectA),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("project-a", projectA.toString())),
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = projectB),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("project-b", projectB.toString())),
+            ),
+        )
+        val route = routing.routes().values.single { it.idePid == 43L }
+        routing.rememberScreenshotExecution("eid_same_ide", route)
+        val handler = NpxVisionInputToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleInputSequence(
+            projectName = route.exposedProjectName,
+            inputParams = InputParams(
+                taskId = "input-task",
+                reason = "press key",
+                screenshotExecutionId = "eid_same_ide",
+                sequence = emptyList(),
+                rawSequence = "press:ENTER",
+            ),
+        )
+
+        assertEquals(false, result.isError)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_input", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals("project-b", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("input-task", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("press key", arguments["reason"]?.jsonPrimitive?.content)
+        assertEquals("eid_same_ide", arguments["screenshot_execution_id"]?.jsonPrimitive?.content)
+        assertEquals("press:ENTER", arguments["sequence"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `input bridge handler rejects screenshot id from another ide`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectA = Files.createDirectories(tempDir.resolve("project-a"))
+        val projectB = Files.createDirectories(tempDir.resolve("project-b"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectA),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("project-a", projectA.toString())),
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = projectB),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("project-b", projectB.toString())),
+            ),
+        )
+        val screenshotRoute = routing.routes().values.single { it.idePid == 42L }
+        val inputRoute = routing.routes().values.single { it.idePid == 43L }
+        routing.rememberScreenshotExecution("eid_other_ide", screenshotRoute)
+        val handler = NpxVisionInputToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleInputSequence(
+            projectName = inputRoute.exposedProjectName,
+            inputParams = InputParams(
+                taskId = "input-task",
+                reason = "press key",
+                screenshotExecutionId = "eid_other_ide",
+                sequence = emptyList(),
+                rawSequence = "press:ENTER",
+            ),
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("belongs to another IDE"))
+        assertTrue(result.errorText().contains("call steroid_take_screenshot again"))
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
     }
 
     @Test

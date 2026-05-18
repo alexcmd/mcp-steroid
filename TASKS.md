@@ -150,13 +150,27 @@ Routing and naming:
   `run_20260518-111734-203`, Gemini `run_20260518-111734-204`.
 
 Window, screenshot, and input routing:
-- [ ] Window `projectName` is rewritten with the same project suffix.
-- [ ] Window routing disambiguates same-name projects by project home/pid.
-- [ ] `rewriteWindow` handles null `projectName` and null `projectPath`.
-- [ ] Screenshot `execution_id` is remembered and follow-up `steroid_input`
+- [x] Window `projectName` is rewritten with the same project suffix.
+- [x] Window routing disambiguates same-name projects by project home/pid.
+- [x] `rewriteWindow` handles null `projectName` and null `projectPath`.
+- [x] Screenshot `execution_id` is remembered and follow-up `steroid_input`
   routes to the same IDE.
-- [ ] `steroid_input` rejects screenshot ids from another IDE with an
+- [x] `steroid_input` rejects screenshot ids from another IDE with an
   actionable error.
+  Completed window/input routing coverage with existing tests for basic
+  window suffixing and screenshot execution-id memory, plus new tests for
+  same-name project window disambiguation, null window metadata, same-IDE
+  `steroid_input` forwarding, and cross-IDE screenshot rejection.
+  Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test files returned
+  `{}` in `eid_20260518T144639-npx-window-input-routing`.
+  Plan review quorum passed:
+  Claude `run_20260518-123809-22691`, Codex
+  `run_20260518-123809-22690`, Gemini `run_20260518-123809-22715`.
+  Final review quorum passed:
+  Claude `run_20260518-124746-28200`, Codex
+  `run_20260518-124746-28199`, Gemini `run_20260518-124746-28201`.
 
 Bridge client and handler behavior:
 - [x] Bearer token is sent when marker token is present.

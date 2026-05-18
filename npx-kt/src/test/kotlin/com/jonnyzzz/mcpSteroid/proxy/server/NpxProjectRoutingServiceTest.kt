@@ -157,6 +157,77 @@ class NpxProjectRoutingServiceTest {
     }
 
     @Test
+    fun `window routing uses project path to disambiguate duplicate original project names`() {
+        val sharedProject = Files.createDirectories(tempDir.resolve("shared-project"))
+        val otherProject = Files.createDirectories(tempDir.resolve("other-project"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", sharedProject.toString())),
+            ),
+            state(
+                pid = 43,
+                projects = listOf(
+                    ProjectInfo("mcp-steroid", otherProject.toString()),
+                    ProjectInfo("mcp-steroid", sharedProject.toString()),
+                ),
+            ),
+        )
+
+        val rewritten = service.rewriteWindow(
+            43,
+            WindowInfo(
+                projectName = "mcp-steroid",
+                projectPath = sharedProject.toString(),
+                title = "MCP Steroid",
+                isActive = true,
+                isVisible = true,
+                bounds = null,
+                windowId = "frame-1",
+            ),
+        )
+        val sharedRealProject = sharedProject.toRealPath()
+        val otherRealProject = otherProject.toRealPath()
+        val otherPidRoute = service.routes().values.single { it.idePid == 42L && it.realProjectHome == sharedRealProject }
+        val samePidOtherRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == otherRealProject }
+        val samePidPathRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == sharedRealProject }
+        val windowRoute = service.routeWindow(rewritten.windowId) ?: error("missing window route")
+
+        assertEquals(samePidPathRoute.exposedProjectName, rewritten.projectName)
+        assertEquals("frame-1-${samePidPathRoute.hash8}", rewritten.windowId)
+        assertNotEquals("frame-1-${samePidOtherRoute.hash8}", rewritten.windowId)
+        assertNotEquals("frame-1-${otherPidRoute.hash8}", rewritten.windowId)
+        assertEquals(43L, windowRoute.idePid)
+        assertEquals("frame-1", windowRoute.originalWindowId)
+        assertEquals(samePidPathRoute, windowRoute.projectRoute)
+    }
+
+    @Test
+    fun `window without project name or path is left unchanged`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val service = routingService(
+            state(
+                pid = 42,
+                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+            )
+        )
+        val window = WindowInfo(
+            projectName = null,
+            projectPath = null,
+            title = "Welcome",
+            isActive = true,
+            isVisible = true,
+            bounds = null,
+            windowId = "welcome-frame",
+        )
+
+        val rewritten = service.rewriteWindow(42, window)
+
+        assertEquals(window, rewritten)
+        assertEquals(null, service.routeWindow("welcome-frame"))
+    }
+
+    @Test
     fun `background task project name is rewritten to exposed project name`() {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val service = routingService(
