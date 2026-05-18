@@ -231,13 +231,42 @@ Built-in helpers available in every script (no imports needed):
 | Category | APIs |
 |----------|------|
 | **Properties** | `project`, `disposable`, `isDisposed` |
-| **Output** | `println()`, `printJson()`, `progress()`, `printException()` |
+| **Output (prose / JSON)** | `println()`, `printJson()`, `progress()`, `printException()` |
+| **Output (token-efficient tabular)** | `printCsv(headers, rows, dictColumns)` — CSV with optional path-dictionary preamble; `printToon(records)` — TOON (array-of-records) form |
 | **Read/Write** | `readAction { }`, `writeAction { }`, `smartReadAction { }` |
 | **Scopes** | `projectScope()`, `allScope()` |
-| **File access** | `findFile()`, `findPsiFile()`, `findProjectFile()`, `findProjectPsiFile()` |
+| **File access** | `findFile()`, `findPsiFile()`, `findProjectFile()`, `findProjectFiles("src/main/**/*.kt")`, `findProjectPsiFile()` |
 | **Analysis** | `runInspectionsDirectly()` |
 
-Full API reference: `mcp-steroid://skill/coding-with-intellij-context-api`
+**Tabular output cheat sheet** — for find-references, call-hierarchy, project-search, document-symbols, or any flat array-of-records result. Signatures are different on purpose; `printCsv` takes parallel lists (positional), `printToon` takes a list of maps (keyed). Mixing them up is the #1 first-try compile error.
+
+```text
+// CSV — printCsv(headers: List<String>, rows: Iterable<List<Any?>>, dictColumns: Set<String> = emptySet())
+// Best when one column has repeated long values (absolute paths, FQNs).
+// `dictColumns` emits a per-column @col: preamble and replaces each cell with a short ID (`p1`, `p2`, …).
+printCsv(headers = listOf("idx", "path", "line"), rows = …, dictColumns = setOf("path"))
+
+// TOON — Token-Oriented Object Notation; https://github.com/toon-format/toon.
+// printToon(value: Any?) — drop-in for printJson on uniform-shape lists.
+// Pass List<Map<String, Any?>>; column order comes from the FIRST map's keys, and every
+// subsequent map must have the same key set. Do NOT pass headers / rows / dictColumns — that's printCsv.
+printToon(listOf(mapOf("path" to "/abs/A.kt", "line" to 17), mapOf("path" to "/abs/B.kt", "line" to 42)))
+```
+
+**Same records, both formats** — most recipes finish by emitting one list of records twice:
+
+```text
+val records = …  // List<Triple<path, line, snippet>> built once
+printCsv(
+    headers = listOf("idx", "path", "line", "snippet"),
+    rows = records.mapIndexed { i, (p, l, s) -> listOf(i + 1, p, l, s) },
+    dictColumns = setOf("path"),
+)
+printToon(records.map { (p, l, s) -> mapOf("path" to p, "line" to l, "snippet" to s) })
+```
+
+Full API reference with literal sample outputs and an end-to-end example:
+`mcp-steroid://skill/coding-with-intellij-context-api` → "Tabular Output".
 
 ### 5. Running Inspections
 
