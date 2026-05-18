@@ -119,6 +119,26 @@ class McpScriptContextImpl(
         }
     }
 
+    override fun printCsv(headers: List<String>, rows: Iterable<List<Any?>>, dictColumns: Set<String>) {
+        checkDisposed()
+        try {
+            val csv = formatCsv(headers, rows, dictColumns).trimEnd('\n')
+            resultBuilder.logMessage(csv)
+            resultBuilder.noteUserOutput()
+        } catch (e: IllegalArgumentException) {
+            // formatCsv validates row width and non-empty headers — surface
+            // the contract violation as a normal log line so the script
+            // doesn't crash mid-output.
+            resultBuilder.logMessage("printCsv: ${e.message}")
+        }
+    }
+
+    override fun printToon(value: Any?) {
+        checkDisposed()
+        resultBuilder.logMessage(formatToon(value))
+        resultBuilder.noteUserOutput()
+    }
+
     override fun progress(message: String) {
         checkDisposed()
         log.info("[$executionId] progress: $message")
