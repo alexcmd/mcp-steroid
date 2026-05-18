@@ -150,9 +150,19 @@ Bridge client and handler behavior:
   `run_20260518-083523-50945`. Codex
   `run_20260518-083302-49405` was not counted because it blocked before
   reading the patch on a missing marinade `/tmp` path.
-- [ ] `project_name` is rewritten to the original IDE project name.
-- [ ] `steroid_execute_code` forwards `timeout` and `dialog_killer`.
-- [ ] `steroid_execute_code` forwards progress SSE events.
+- [x] `project_name` is rewritten to the original IDE project name.
+- [x] `steroid_execute_code` forwards `timeout` and `dialog_killer`.
+- [x] `steroid_execute_code` forwards progress SSE events.
+  Existing handler tests already asserted original project-name rewriting for
+  execute-code and apply-patch routes and progress SSE forwarding. Extended the
+  execute-code handler test to assert `dialog_killer` forwarding alongside the
+  existing timeout assertion. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T123439-npx-kt-bridge-forwarding`.
+  Review quorum passed:
+  Claude `run_20260518-103628-71075`, Codex
+  `run_20260518-103628-71076`, Gemini `run_20260518-103628-71077`.
 - [ ] `steroid_apply_patch` forwards task id, dry-run, hunks, and original
   project name.
 - [ ] `steroid_execute_feedback` forwards rating, explanation, and code.

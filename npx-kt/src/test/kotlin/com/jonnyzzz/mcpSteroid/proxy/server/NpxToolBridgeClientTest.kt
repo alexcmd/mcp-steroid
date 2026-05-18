@@ -198,7 +198,7 @@ class NpxToolBridgeClientTest {
     }
 
     @Test
-    fun `execute code bridge handler forwards timeout and progress events`(
+    fun `execute code bridge handler forwards timeout dialog killer and progress events`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         beforeResultEvents += """
@@ -223,8 +223,9 @@ class NpxToolBridgeClientTest {
             execCodeParams = ExecCodeParams(
                 taskId = "exec-task",
                 code = "println(1)",
-                reason = "verify timeout and progress forwarding",
+                reason = "verify execute-code argument and progress forwarding",
                 timeout = 17,
+                dialogKiller = true,
             ),
             callProgress = object : McpProgressReporter {
                 override fun report(message: String) {
@@ -241,6 +242,7 @@ class NpxToolBridgeClientTest {
         assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("exec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
+        assertEquals("true", arguments["dialog_killer"]?.jsonPrimitive?.content)
     }
 
     @Test
