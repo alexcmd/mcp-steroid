@@ -49,7 +49,7 @@ fun ContainerDriver.writeFileInContainer(
 
     startProcessInContainer {
         this
-            .args("bash", "-c", "cat > $containerPath << 'FILE_EOF'\n$content\nFILE_EOF")
+            .args("bash", "-c", "cat > ${shellQuote(containerPath)} << 'FILE_EOF'\n$content\nFILE_EOF")
             .description("Write content to $containerPath")
             .timeoutSeconds(5)
             .quietly()
@@ -65,3 +65,6 @@ fun ContainerDriver.writeFileInContainer(
         }.assertExitCode(0) { "Failed to chmod the created file in container to $containerPath: $stderr" }
     }
 }
+
+private fun shellQuote(value: String): String =
+    "'" + value.replace("'", "'\"'\"'") + "'"
