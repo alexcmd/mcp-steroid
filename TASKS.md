@@ -333,8 +333,23 @@ Prompt/resource behavior:
   Final review quorum passed on the corrected diff:
   Claude `run_20260518-132950-46268`, Codex
   `run_20260518-132950-46267`, Gemini `run_20260518-132950-46269`.
-- [ ] Prompt and resource rendering stays local to npx-kt and is not routed
+- [x] Prompt and resource rendering stays local to npx-kt and is not routed
   to the IDE.
+  Extended `CliMcpStdioFakeIdeIntegrationTest` so `resources/list`,
+  `resources/read`, `prompts/list`, `prompts/get`, and local
+  `steroid_fetch_resource` run before any routed IDE tool call, with the fake
+  `/npx/v1/tools/call/stream` counter still at zero. The same test then calls
+  `steroid_execute_code` and asserts the counter increments, proving the
+  counter observes real routed tool calls. Verification:
+  `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioFakeIdeIntegrationTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T153835-npx-local-prompts`.
+  Plan review quorum passed:
+  Claude `run_20260518-133436-48895`, Codex
+  `run_20260518-133436-48894`, Gemini `run_20260518-133436-48896`.
+  Final review quorum passed:
+  Claude `run_20260518-133910-51964`, Codex
+  `run_20260518-133910-51965`, Gemini `run_20260518-133910-51970`.
 - [ ] devrig stdio tool/resource/prompt descriptors match the direct IDE MCP
   server for the supported surface.
 

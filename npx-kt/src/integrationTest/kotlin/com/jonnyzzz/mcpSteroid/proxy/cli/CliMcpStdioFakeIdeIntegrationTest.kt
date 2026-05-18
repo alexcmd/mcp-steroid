@@ -62,6 +62,7 @@ class CliMcpStdioFakeIdeIntegrationTest {
     private val pid = ProcessHandle.current().pid()
     private val seq = AtomicLong(0)
     private var port: Int = 0
+    private val bridgeToolCallCount = AtomicLong(0)
     private var receivedToolCall: NpxBridgeToolCallRequest? = null
     private var receivedProjectsStreamAuth: String? = null
     private var receivedWindowsAuth: String? = null
@@ -101,6 +102,34 @@ class CliMcpStdioFakeIdeIntegrationTest {
         assertEquals(true, projectName.startsWith("sample-"), "project name should include hash suffix: $projectName")
         assertNotEquals("sample", projectName)
 
+        val resources = process.request("resources/list", buildJsonObject {})
+        assertEquals(null, resources["error"], "resources/list returned error: $resources")
+        val resource = resources["result"]?.jsonObject?.get("resources")?.jsonArray?.firstOrNull()?.jsonObject
+            ?: error("resources/list returned no resources: $resources")
+        val uri = resource["uri"]?.jsonPrimitive?.content ?: error("resource missing uri: $resource")
+
+        val resourceRead = process.request("resources/read", buildJsonObject { put("uri", uri) })
+        assertEquals(null, resourceRead["error"], "resources/read returned error: $resourceRead")
+        assertNotEquals(null, resourceRead["result"], "resources/read must return a result")
+
+        val prompts = process.request("prompts/list", buildJsonObject {})
+        assertEquals(null, prompts["error"], "prompts/list returned error: $prompts")
+        val prompt = prompts["result"]?.jsonObject?.get("prompts")?.jsonArray?.firstOrNull()?.jsonObject
+            ?: error("prompts/list returned no prompts: $prompts")
+        val promptName = prompt["name"]?.jsonPrimitive?.content ?: error("prompt missing name: $prompt")
+
+        val promptGet = process.request("prompts/get", buildJsonObject { put("name", promptName) })
+        assertEquals(null, promptGet["error"], "prompts/get returned error: $promptGet")
+        assertNotEquals(null, promptGet["result"], "prompts/get must return a result")
+
+        val fetchResource = toolCall("steroid_fetch_resource", buildJsonObject {
+            put("project_name", projectName)
+            put("uri", uri)
+        })
+        assertEquals(false, fetchResource["isError"]?.jsonPrimitive?.content?.toBooleanStrictOrNull())
+
+        assertEquals(0L, bridgeToolCallCount.get(), "Local MCP methods should not route tool calls to the bridge")
+
         val result = toolCall("steroid_execute_code", buildJsonObject {
             put("project_name", projectName)
             put("task_id", "fake-ide")
@@ -115,6 +144,7 @@ class CliMcpStdioFakeIdeIntegrationTest {
             "sample",
             receivedToolCall?.arguments?.get("project_name")?.jsonPrimitive?.content,
         )
+        assertEquals(1L, bridgeToolCallCount.get(), "steroid_execute_code should have routed to the bridge")
 
         val windowsResult = toolCall("steroid_list_windows", buildJsonObject {})
         assertEquals("Bearer fake-token", receivedWindowsAuth)
@@ -129,22 +159,6 @@ class CliMcpStdioFakeIdeIntegrationTest {
             window["windowId"]?.jsonPrimitive?.content?.startsWith("fake-window-"),
             "window id should include routing suffix: $window",
         )
-
-        val resources = process.request("resources/list", buildJsonObject {})
-        assertEquals(null, resources["error"], "resources/list returned error: $resources")
-        val resource = resources["result"]?.jsonObject?.get("resources")?.jsonArray?.firstOrNull()?.jsonObject
-            ?: error("resources/list returned no resources: $resources")
-        val uri = resource["uri"]?.jsonPrimitive?.content ?: error("resource missing uri: $resource")
-
-        val resourceRead = process.request("resources/read", buildJsonObject { put("uri", uri) })
-        assertEquals(null, resourceRead["error"], "resources/read returned error: $resourceRead")
-        assertNotEquals(null, resourceRead["result"], "resources/read must return a result")
-
-        val fetchResource = toolCall("steroid_fetch_resource", buildJsonObject {
-            put("project_name", projectName)
-            put("uri", uri)
-        })
-        assertEquals(false, fetchResource["isError"]?.jsonPrimitive?.content?.toBooleanStrictOrNull())
     }
 
     private fun waitForProjectName(): String {
@@ -221,6 +235,7 @@ class CliMcpStdioFakeIdeIntegrationTest {
                     )
                 }
                 post("/npx/v1/tools/call/stream") {
+                    bridgeToolCallCount.incrementAndGet()
                     receivedToolAuth = call.request.headers["Authorization"]
                     receivedToolCall = McpJson.decodeFromString(NpxBridgeToolCallRequest.serializer(), call.receiveText())
                     call.respondTextWriter(ContentType.Text.EventStream) {
