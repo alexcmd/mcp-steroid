@@ -399,8 +399,24 @@ CLI/runtime behavior:
   Covered by `HomePathsTest` for env-var canonicalization/rejection and
   `NpxKtCommandTest.removed home flag is not a command` for the deleted CLI
   flag. Verification included in the `:npx-kt:test` command above.
-- [ ] Startup failure before MCP handshake is visible on stderr and test
+- [x] Startup failure before MCP handshake is visible on stderr and test
   logs.
+  Covered by
+  `CliMcpStdioStdoutCleanlinessTest.host startup failure before handshake is visible on stderr`,
+  which runs the real `mpc` launcher with an invalid absolute `DEVRIG_HOME`,
+  feeds a normal MCP handshake, and asserts exit 64, blank stdout, and stderr
+  containing `Startup failure:`, `DEVRIG_HOME`, and the canonical-path failure.
+  Verification:
+  `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioStdoutCleanlinessTest.host startup failure before handshake is visible on stderr' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on touched files passed in
+  `eid_20260518T164958-npx-startup-failure`. Plan review quorum passed:
+  Claude `run_20260518-144349-93818`, Codex
+  `run_20260518-144349-93819`, Gemini `run_20260518-144349-93845`.
+  Final review quorum passed:
+  Claude `run_20260518-145115-97139`, replacement Claude
+  `run_20260518-145416-98573`, Gemini `run_20260518-145115-97141`.
+  Codex final review `run_20260518-145115-97140` hit a missing marinade
+  bootstrap path before reviewing the diff.
 
 ## Phase 3 — fake-IDE stdio integration
 

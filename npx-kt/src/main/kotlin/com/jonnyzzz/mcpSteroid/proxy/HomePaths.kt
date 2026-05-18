@@ -6,6 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
+@Suppress("GrazieInspection", "GrazieInspectionRunner", "SpellCheckingInspection")
 const val DEVRIG_HOME_ENV: String = "DEVRIG_HOME"
 
 class HomePaths(val home: Path) {
@@ -50,8 +51,11 @@ fun resolveHomePathsOrDie(): HomePaths {
         val homePaths = resolveHomePaths()
         homePaths.mkdirsAll()
         return homePaths
+    } catch (e: IllegalArgumentException) {
+        System.err.println("Startup failure: ${e.message}")
+        exitProcess(64)
     } catch (e: Throwable) {
-        System.err.println(e.message)
+        System.err.println("Startup failure: ${e.message}")
         e.printStackTrace(System.err)
         exitProcess(64)
     }
