@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoMessageInOutput
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import java.util.concurrent.TimeUnit
 import org.junit.jupiter.api.AfterAll
@@ -21,6 +20,7 @@ class NpxKtAgentRoutingIntegrationTest {
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun claudeUsesDevrigStdioToDiscoverProjectAndExecuteCode() {
         val agent = session.aiAgents.claude
+        val diagnostics = session.diagnosticsSummary()
         val result = agent.runPrompt(
             prompt = """
                 You are validating the MCP server named "mcp-steroid".
@@ -40,19 +40,30 @@ class NpxKtAgentRoutingIntegrationTest {
             """.trimIndent(),
             timeoutSeconds = 600,
         ).awaitForProcessFinish()
-            .assertExitCode(0) { "[${agent.displayName}] devrig stdio MCP prompt failed with exit $exitCode: $stderr" }
-            .assertNoErrorsInOutput("devrig stdio MCP prompt must have no errors")
-            .assertNoMessageInOutput("DEVRIG_NPX_FAILED")
-
-        result.assertOutputContains("PROJECT_NAME:", message = "agent must report the routed project_name")
-        result.assertOutputContains("EXEC_RESULT: DEVRIG_NPX_EXEC_OK")
+            .assertExitCode(0) {
+                "[${agent.displayName}] devrig stdio MCP prompt failed with exit $exitCode: $stderr\n$diagnostics"
+            }
 
         val combined = result.stdout + "\n" + result.stderr
+        check(!combined.contains("DEVRIG_NPX_FAILED", ignoreCase = true)) {
+            "agent reported DEVRIG_NPX_FAILED.\n$diagnostics\n$combined"
+        }
+        result.assertNoErrorsInOutput("devrig stdio MCP prompt must have no errors\n$diagnostics")
+
+        result.assertOutputContains(
+            "PROJECT_NAME:",
+            message = "agent must report the routed project_name\n$diagnostics",
+        )
+        result.assertOutputContains(
+            "EXEC_RESULT: DEVRIG_NPX_EXEC_OK",
+            message = "agent must report execute_code marker\n$diagnostics",
+        )
+
         check(combined.contains("steroid_list_projects") || combined.contains("list_projects")) {
-            "agent output/logs should show project discovery through MCP.\n$combined"
+            "agent output/logs should show project discovery through MCP.\n$diagnostics\n$combined"
         }
         check(combined.contains("steroid_execute_code") || combined.contains("execute_code")) {
-            "agent output/logs should show execution through MCP.\n$combined"
+            "agent output/logs should show execution through MCP.\n$diagnostics\n$combined"
         }
     }
 

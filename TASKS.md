@@ -73,8 +73,19 @@ Do not start with the AI agent. The order is:
   Review quorum passed:
   Claude `run_20260518-074341-21893`, Codex
   `run_20260518-074352-22060`, Gemini `run_20260518-074358-22279`.
-- [ ] Make long-test run directories easy to find from failure output:
+- [x] Make long-test run directories easy to find from failure output:
   run dir, screenshot dir, video dir, agent raw/decoded logs, and IDE log.
+  Added `IntelliJContainer.diagnosticsSummary()` and threaded it into
+  readiness/modal/snapshot failures plus `NpxKtAgentRoutingIntegrationTest`
+  assertion failures. Verification:
+  `./gradlew :test-integration:compileKotlin :test-integration:compileTestKotlin`
+  passed. MCP Steroid inspections: `NpxKtAgentRoutingIntegrationTest.kt`
+  clean; `intelliJ-container.kt` still has pre-existing whole-file shell
+  string/Grazie warnings and no broad suppressions were added
+  (`eid_20260518T095948-npx-kt-stabilization-run-dir-diagnostics`).
+  Review quorum passed:
+  Claude `run_20260518-080354-33015`, Codex
+  `run_20260518-080402-33156`, Gemini `run_20260518-080407-33338`.
 - [ ] Keep credential checks out of fast phases. AI-only phases may require
   `~/.anthropic`, `~/.openai`, and `~/.vertex`; export both
   `GEMINI_API_KEY` and `GOOGLE_API_KEY` from `~/.vertex` for Gemini.

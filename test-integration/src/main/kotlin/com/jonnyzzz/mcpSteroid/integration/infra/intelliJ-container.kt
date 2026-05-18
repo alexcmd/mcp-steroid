@@ -158,9 +158,19 @@ class IntelliJContainer(
             ?.maxByOrNull { it.lastModified() }
             ?.absolutePath
 
+    fun diagnosticsSummary(): String = buildString {
+        appendLine("RUN_DIR=${runDirInContainer.absolutePath}")
+        appendLine("SESSION_INFO=${File(runDirInContainer, "session-info.txt").absolutePath}")
+        appendLine("SCREENSHOT_DIR=${File(runDirInContainer, "screenshot").absolutePath}")
+        appendLine("VIDEO_DIR=${File(runDirInContainer, "video").absolutePath}")
+        appendLine("IDE_LOG=${File(runDirInContainer, "intellij/ide-log/idea.log").absolutePath}")
+        appendLine("AGENT_LOG_DIR=${runDirInContainer.absolutePath}")
+        appendLine("AGENT_LOG_PATTERN=agent-<name>-<N>-raw.ndjson / agent-<name>-<N>-decoded.txt")
+    }.trimEnd()
+
     private fun problemDetailsWithScreenshot(baseDetails: String): String {
         val screenshot = latestScreenshotPath() ?: "<none>"
-        return "$baseDetails; latestScreenshot=$screenshot"
+        return "$baseDetails; latestScreenshot=$screenshot\n${diagnosticsSummary()}"
     }
 
     /**
