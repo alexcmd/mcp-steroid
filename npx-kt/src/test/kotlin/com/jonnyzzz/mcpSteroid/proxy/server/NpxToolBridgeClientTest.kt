@@ -38,6 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -172,6 +173,7 @@ class NpxToolBridgeClientTest {
         )
         val route = routing.routes().values.single()
         val handler = NpxApplyPatchToolHandler(NpxToolBridgeClient(routing, httpClient))
+        val filePath = projectHome.resolve("A.kt").toString()
 
         val result = handler.applyPatch(
             projectName = route.exposedProjectName,
@@ -180,7 +182,7 @@ class NpxToolBridgeClientTest {
                 dryRun = true,
                 hunks = listOf(
                     ApplyPatchHunk(
-                        filePath = projectHome.resolve("A.kt").toString(),
+                        filePath = filePath,
                         oldString = "old",
                         newString = "new",
                     )
@@ -195,6 +197,11 @@ class NpxToolBridgeClientTest {
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
         assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("patch-task", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("true", arguments["dry_run"]?.jsonPrimitive?.content)
+        val hunk = arguments["hunks"]?.jsonArray?.single()?.jsonObject ?: error("missing hunk: $json")
+        assertEquals(filePath, hunk["file_path"]?.jsonPrimitive?.content)
+        assertEquals("old", hunk["old_string"]?.jsonPrimitive?.content)
+        assertEquals("new", hunk["new_string"]?.jsonPrimitive?.content)
     }
 
     @Test

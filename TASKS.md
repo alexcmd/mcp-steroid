@@ -163,8 +163,17 @@ Bridge client and handler behavior:
   Review quorum passed:
   Claude `run_20260518-103628-71075`, Codex
   `run_20260518-103628-71076`, Gemini `run_20260518-103628-71077`.
-- [ ] `steroid_apply_patch` forwards task id, dry-run, hunks, and original
+- [x] `steroid_apply_patch` forwards task id, dry-run, hunks, and original
   project name.
+  Extended the existing apply-patch handler test to assert `dry_run` plus the
+  forwarded hunk `file_path`, `old_string`, and `new_string` fields alongside
+  the existing task id and original project-name assertions. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T124014-npx-kt-bridge-apply-patch`.
+  Review quorum passed:
+  Claude `run_20260518-104137-73671`, Codex
+  `run_20260518-104137-73672`, Gemini `run_20260518-104137-73673`.
 - [ ] `steroid_execute_feedback` forwards rating, explanation, and code.
 - [ ] `steroid_action_discovery` forwards action groups, caret offset, and
   max actions.
