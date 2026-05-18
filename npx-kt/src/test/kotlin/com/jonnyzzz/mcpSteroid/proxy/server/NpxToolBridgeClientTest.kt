@@ -20,11 +20,13 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveText
+import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
@@ -51,6 +53,8 @@ class NpxToolBridgeClientTest {
     private var receivedBody: String? = null
     private val beforeResultEvents = mutableListOf<String>()
     private var sseResponse: String? = null
+    private var httpStatus = HttpStatusCode.OK
+    private var httpBody = ""
 
     @BeforeEach
     fun setUp() {
@@ -60,6 +64,10 @@ class NpxToolBridgeClientTest {
                 post("/npx/v1/tools/call/stream") {
                     receivedAuth = call.request.headers["Authorization"]
                     receivedBody = call.receiveText()
+                    if (httpStatus != HttpStatusCode.OK) {
+                        call.respondText(httpBody, ContentType.Text.Plain, httpStatus)
+                        return@post
+                    }
                     call.respondTextWriter(ContentType.Text.EventStream) {
                         val custom = sseResponse
                         if (custom != null) {
@@ -100,6 +108,8 @@ class NpxToolBridgeClientTest {
     fun tearDown() {
         beforeResultEvents.clear()
         sseResponse = null
+        httpStatus = HttpStatusCode.OK
+        httpBody = ""
         httpClient.close()
         server.stop(0L, 0L)
     }
@@ -269,6 +279,47 @@ class NpxToolBridgeClientTest {
 
         assertEquals(true, result.isError)
         assertTrue(result.errorText().contains("upstream failed"))
+    }
+
+    @Test
+    fun `bridge client returns error result for upstream 401`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        httpStatus = HttpStatusCode.Unauthorized
+        httpBody = "bad token"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("HTTP 401"))
+        assertTrue(result.errorText().contains("/npx/v1/tools/call/stream"))
+        assertTrue(result.errorText().contains("bad token"))
+    }
+
+    @Test
+    fun `bridge client returns error result for upstream 500`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        httpStatus = HttpStatusCode.InternalServerError
+        httpBody = "bridge exploded"
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("HTTP 500"))
+        assertTrue(result.errorText().contains("bridge exploded"))
     }
 
     @Test

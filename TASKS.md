@@ -148,8 +148,17 @@ Bridge client and handler behavior:
 - [ ] `steroid_take_screenshot` remembers execution ids.
 - [ ] `steroid_open_project` covers zero/one/multiple IDE routing policy.
 - [x] SSE `error` event returns a `ToolCallResult` error.
-- [ ] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream
+- [x] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream
   context.
+  Added focused `NpxToolBridgeClientTest` coverage for upstream 401 and 500
+  responses, asserting the returned tool error includes HTTP status and
+  upstream body context. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T102517-npx-kt-bridge-http-hardening`.
+  Review quorum passed:
+  Claude `run_20260518-082728-46323`, Codex
+  `run_20260518-082728-46324`, Gemini `run_20260518-082728-46325`.
 - [x] Channel closes with no `result` returns a no-result error.
 - [x] Malformed SSE `data:` returns an actionable tool error instead of
   throwing out of the MCP call.
