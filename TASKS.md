@@ -1,4 +1,237 @@
 
+# Active focus — npx-kt testing and stabilization plan (2026-05-18)
+
+Goal: turn npx-kt/devrig `mpc` mode from "implemented" into a stable,
+diagnosable replacement for the direct IDE HTTP MCP server.
+
+Why this exists: the first full `AI_NPX` batch proved the fast/fake-IDE path
+is useful, but the long real-IDE/agent path is still fragile. We hit two
+separate infrastructure failures before a clean agent result:
+
+- fixed: container file writes used `cat > $containerPath` and broke on Java
+  prefs paths containing shell metacharacters;
+- open blocker: IDE archive download repeatedly failed moving
+  `idea-2026.1.2-aarch64.tar.gz.tmp` to the final archive path with
+  `NoSuchFileException`, leaving the download directory empty.
+
+Related GitHub issue:
+- [#54 Improve IDE-first Gradle verification workflow for agents](https://github.com/jonnyzzz/mcp-steroid/issues/54)
+  tracks why this batch fell back to command-line Gradle and what needs to
+  improve so agents can use IntelliJ/Gradle runner first.
+
+Plan-review quorum:
+- [x] Gemini review via `run-agent.sh gemini`
+  `run_20260518-071443-9948`: `NO-GO` for stability because downloader,
+  lifecycle, cancellation, and apply-patch/screenshot coverage are missing.
+- [x] Codex review via `run-agent.sh codex`
+  `run_20260518-071443-9949`: `NO-GO` until downloader and deterministic
+  bridge/fake-IDE gaps are closed.
+- [x] Claude review via `run-agent.sh claude`
+  `run_20260518-071443-9947`: `REVIEW_NO_GO_WITH_CHANGES`; specifically
+  requires real tool-calling AI_NPX smoke, downloader diagnosis, SSE error
+  tests, and two-IDE duplicate-name routing tests.
+- [ ] Re-review with 3x quorum after the Phase 0/2/3 blockers below are
+  implemented.
+
+## Stabilization order
+
+Do not start with the AI agent. The order is:
+
+1. Phase 0: harness and infrastructure health.
+2. Phase 1: fast compile/static gates.
+3. Phase 2: pure npx-kt unit tests.
+4. Phase 3: fake-IDE stdio integration tests.
+5. Phase 4: real IDE bridge tests without AI.
+6. Phase 5: one AI_NPX agent smoke at a time.
+7. Phase 6: release-readiness gates and final quorum review.
+
+## Phase 0 — harness and infrastructure health
+
+- [ ] Diagnose the IDE downloader `.tmp -> final` failure with a concrete
+  stack/log entry and failing path. Current observed stack:
+  `IdeDownloader.moveDownloadedFile` from
+  `test-integration/build/ide-download/idea-2026.1.2-aarch64.tar.gz.tmp` to
+  `idea-2026.1.2-aarch64.tar.gz`.
+- [ ] Add a focused downloader regression for the root cause if it is
+  downloader concurrency, stream lifecycle, or temp-file reuse.
+- [ ] Decide whether the integration harness should use a per-test archive
+  download directory or a downloader-level file lock to prevent concurrent
+  archive downloads from sharing the same `.tmp` path.
+- [ ] Make long-test run directories easy to find from failure output:
+  run dir, screenshot dir, video dir, agent raw/decoded logs, and IDE log.
+- [ ] Keep credential checks out of fast phases. AI-only phases may require
+  `~/.anthropic`, `~/.openai`, and `~/.vertex`; export both
+  `GEMINI_API_KEY` and `GOOGLE_API_KEY` from `~/.vertex` for Gemini.
+- [ ] Keep the Gemini missing-key skip exception limited to Gemini on CI.
+  Anthropic/OpenAI keys must continue to fail hard when missing.
+
+## Phase 1 — fast compile/static gates
+
+Preferred execution path is IntelliJ/Gradle runner via MCP Steroid once issue
+#54 is addressed. Until then, if shell Gradle is used, record that in the
+final report.
+
+- [ ] MCP Steroid inspections on all touched Kotlin files.
+- [ ] `:mcp-core:compileKotlin`
+- [ ] `:mcp-stdio:compileKotlin`
+- [ ] `:mcp-stdio:test`
+- [ ] `:mcp-steroid-server:compileKotlin`
+- [ ] `:npx-kt:compileKotlin`
+- [ ] `:npx-kt:compileTestKotlin`
+- [ ] `:npx-kt:compileIntegrationTestKotlin`
+- [ ] `:test-helper:compileKotlin`
+- [ ] `:test-integration:compileKotlin`
+- [ ] `:test-integration:compileTestKotlin`
+- [ ] Never run root `./gradlew test` for this work.
+
+## Phase 2 — npx-kt unit coverage
+
+Routing and naming:
+- [ ] Same real project path + IDE pid produces a stable hash suffix.
+- [ ] Different IDE pid produces a different hash suffix.
+- [ ] Different canonical project path produces a different hash suffix.
+- [ ] Duplicate original IDE project names in two IDEs produce distinct
+  exposed names.
+- [ ] Exposed project names map back to original IDE project names without
+  suffix parsing.
+- [ ] Stale exposed project name returns an actionable "call
+  steroid_list_projects to refresh" error.
+- [ ] `singleIdeOrNull()` covers zero, one, and multiple IDE states.
+
+Window, screenshot, and input routing:
+- [ ] Window `projectName` is rewritten with the same project suffix.
+- [ ] Window routing disambiguates same-name projects by project home/pid.
+- [ ] `rewriteWindow` handles null `projectName` and null `projectPath`.
+- [ ] Screenshot `execution_id` is remembered and follow-up `steroid_input`
+  routes to the same IDE.
+- [ ] `steroid_input` rejects screenshot ids from another IDE with an
+  actionable error.
+
+Bridge client and handler behavior:
+- [ ] Bearer token is sent when marker token is present.
+- [ ] Authorization header is absent when marker token is empty.
+- [ ] `project_name` is rewritten to the original IDE project name.
+- [ ] `steroid_execute_code` forwards `timeout` and `dialog_killer`.
+- [ ] `steroid_execute_code` forwards progress SSE events.
+- [ ] `steroid_apply_patch` forwards task id, dry-run, hunks, and original
+  project name.
+- [ ] `steroid_execute_feedback` forwards rating, explanation, and code.
+- [ ] `steroid_action_discovery` forwards action groups, caret offset, and
+  max actions.
+- [ ] `steroid_take_screenshot` remembers execution ids.
+- [ ] `steroid_open_project` covers zero/one/multiple IDE routing policy.
+- [ ] SSE `error` event returns a `ToolCallResult` error.
+- [ ] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream
+  context.
+- [ ] Channel closes with no `result` returns a no-result error.
+- [ ] Malformed SSE `data:` returns an actionable tool error instead of
+  throwing out of the MCP call.
+- [ ] `event: result` without `result` field returns an actionable tool
+  error.
+- [ ] Multi-line `data:` SSE frames are concatenated and decoded correctly.
+- [ ] Progress tokens are isolated across concurrent routed calls.
+- [ ] Cancellation/timeout behavior is covered at the bridge boundary.
+
+Prompt/resource behavior:
+- [ ] Prompt context maps IDE build to product code and baseline.
+- [ ] Malformed/unknown IDE build falls back to `PromptsContext.Generic`.
+- [ ] Prompt and resource rendering stays local to npx-kt and is not routed
+  to the IDE.
+- [ ] devrig stdio tool/resource/prompt descriptors match the direct IDE MCP
+  server for the supported surface.
+
+CLI/runtime behavior:
+- [ ] `devrig mpc` starts a clean stdio MCP server and exits cleanly on stdin
+  close.
+- [ ] No stdout leaks before MCP frames in `mpc` mode.
+- [ ] Non-MCP commands restore stdout before printing user output.
+- [ ] `DEVRIG_HOME` override accepts only existing absolute canonical paths;
+  no `--home` flag.
+- [ ] Startup failure before MCP handshake is visible on stderr and test
+  logs.
+
+## Phase 3 — fake-IDE stdio integration
+
+- [ ] `CliMcpStdioIntegrationTest`: initialize, ping, tools/list,
+  prompts/list, resources/list.
+- [ ] `CliMcpStdioStdoutCleanlinessTest`: no stdout pollution before MCP
+  frames.
+- [ ] `CliMcpStdioFakeIdeIntegrationTest`: one fake IDE marker, list projects
+  returns exposed project name.
+- [ ] Fake IDE execute-code route receives original project name and returns
+  known marker.
+- [ ] Fake IDE windows route rewrites project names and window ids.
+- [ ] Fake IDE prompt/resource read works locally in devrig.
+- [ ] Fake IDE progress event becomes MCP progress notification.
+- [ ] Add two-IDE fake coverage where both IDEs expose the same original
+  project name.
+- [ ] Add stale-marker fake coverage: marker disappears, old project name
+  fails with refresh instruction, new marker is rediscovered.
+- [ ] Add unreachable-port and 401/500 bridge failure cases.
+- [ ] Add dropped project stream / reconnect behavior coverage.
+
+## Phase 4 — real IDE bridge, no AI
+
+Run these before any AI agent smoke. They separate devrig/IDE bridge bugs from
+agent prompt/tool-selection bugs.
+
+- [ ] Selected ij-plugin npx endpoint tests:
+  `/npx/v1/products`, metadata auth, project stream, windows, and
+  `/npx/v1/tools/call/stream` result/progress/error.
+- [ ] One real running IDE, no AI: devrig stdio initializes.
+- [ ] One real running IDE, no AI: `steroid_list_projects` discovers the IDE
+  marker and returns exposed project name.
+- [ ] One real running IDE, no AI: `steroid_execute_code` prints a unique
+  marker and returns it through devrig.
+- [ ] One real running IDE, no AI: progress notification is observable for an
+  execute-code call.
+- [ ] One real running IDE, no AI: `steroid_apply_patch` works on a disposable
+  fixture file.
+- [ ] One real running IDE, no AI: screenshot/input route to the same IDE.
+- [ ] Optional but preferred before stable: two real IDEs with duplicate
+  project names route independently.
+
+## Phase 5 — AI_NPX long integration tests
+
+Run one Docker IDE / one agent test at a time. Never parallelize
+`:test-integration` or `:test-experiments`.
+
+Definition of "AI_NPX smoke passed":
+- the agent sees the devrig-provided `mcp-steroid` server as connected;
+- the agent calls `steroid_list_projects`;
+- the agent uses the exact exposed `project_name`;
+- the agent calls `steroid_execute_code`;
+- the result contains a unique test-generated marker;
+- no `DEVRIG_NPX_FAILED` marker appears;
+- run dir and agent raw/decoded logs are recorded in this file.
+
+Tasks:
+- [ ] Rewrite stale AI_NPX prompts that only enumerate tools and say "do not
+  call tools"; they must call `steroid_list_projects` and
+  `steroid_execute_code`.
+- [ ] Claude AI_NPX smoke against one real IDE.
+- [ ] Gemini AI_NPX smoke against one real IDE using `~/.vertex` for both
+  Gemini env var names.
+- [ ] Codex AI_NPX smoke against one real IDE using `~/.openai` when supported
+  by the harness.
+- [ ] Prompt/resource skill smoke through devrig stdio.
+- [ ] On any >60s stall, collect screenshot, run dir, container process list,
+  and IDE thread dump before killing.
+
+## Phase 6 — release-readiness gates
+
+- [ ] MCP Steroid inspections are clean on every touched Kotlin file.
+- [ ] No new IDE inspection warnings.
+- [ ] Fast, unit, fake-IDE, and real-IDE no-AI phases pass in order.
+- [ ] Full AI_NPX smoke passes. If blocked by infrastructure, this file must
+  link the tracked issue, the exact failure, the run directory, and the
+  fallback no-AI bridge verification for the same commit.
+- [ ] Add structured bridge diagnostics if AI_NPX failures remain opaque:
+  tool name, exposed project name, original project name, IDE pid, elapsed
+  time, SSE event counts, and upstream error body.
+- [ ] 3x `run-agent.sh` quorum review after the above gates.
+- [ ] Commit in small logical batches by phase.
+
 # Active focus — npx-kt as stable MCP Steroid stdio replacement (2026-05-17)
 
 Goal: make npx-kt/devrig `mpc` mode a real replacement for the IDE HTTP MCP
