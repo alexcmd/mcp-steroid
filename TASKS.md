@@ -174,7 +174,16 @@ Bridge client and handler behavior:
   Review quorum passed:
   Claude `run_20260518-104137-73671`, Codex
   `run_20260518-104137-73672`, Gemini `run_20260518-104137-73673`.
-- [ ] `steroid_execute_feedback` forwards rating, explanation, and code.
+- [x] `steroid_execute_feedback` forwards rating, explanation, and code.
+  Added focused execute-feedback handler coverage asserting the original
+  project name, task id, success rating, explanation, and code are forwarded to
+  the IDE bridge. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T124518-npx-kt-bridge-feedback`.
+  Review quorum passed:
+  Claude `run_20260518-104859-84310`, Codex
+  `run_20260518-104859-84311`, Gemini `run_20260518-104859-84312`.
 - [ ] `steroid_action_discovery` forwards action groups, caret offset, and
   max actions.
 - [ ] `steroid_take_screenshot` remembers execution ids.

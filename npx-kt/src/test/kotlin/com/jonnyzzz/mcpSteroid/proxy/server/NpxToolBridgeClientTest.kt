@@ -13,6 +13,7 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import io.ktor.client.HttpClient
@@ -202,6 +203,42 @@ class NpxToolBridgeClientTest {
         assertEquals(filePath, hunk["file_path"]?.jsonPrimitive?.content)
         assertEquals("old", hunk["old_string"]?.jsonPrimitive?.content)
         assertEquals("new", hunk["new_string"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `execute feedback bridge handler forwards rating explanation and code`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
+            )
+        )
+        val route = routing.routes().values.single()
+        val handler = NpxExecuteFeedbackToolHandler(NpxToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleFeedback(
+            projectName = route.exposedProjectName,
+            params = FeedbackParams(
+                taskId = "feedback-task",
+                successRating = 0.75,
+                explanation = "worked",
+                code = "println(1)",
+            ),
+        )
+
+        assertEquals(false, result.isError)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_execute_feedback", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("feedback-task", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("0.75", arguments["success_rating"]?.jsonPrimitive?.content)
+        assertEquals("worked", arguments["explanation"]?.jsonPrimitive?.content)
+        assertEquals("println(1)", arguments["code"]?.jsonPrimitive?.content)
     }
 
     @Test
