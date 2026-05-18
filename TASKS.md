@@ -446,11 +446,24 @@ agent prompt/tool-selection bugs.
 - [ ] Selected ij-plugin npx endpoint tests:
   `/npx/v1/products`, metadata auth, project stream, windows, and
   `/npx/v1/tools/call/stream` result/progress/error.
-- [ ] One real running IDE, no AI: devrig stdio initializes.
-- [ ] One real running IDE, no AI: `steroid_list_projects` discovers the IDE
+- [x] One real running IDE, no AI: devrig stdio initializes.
+- [x] One real running IDE, no AI: `steroid_list_projects` discovers the IDE
   marker and returns exposed project name.
-- [ ] One real running IDE, no AI: `steroid_execute_code` prints a unique
+- [x] One real running IDE, no AI: `steroid_execute_code` prints a unique
   marker and returns it through devrig.
+  Added `NpxKtRealIdeBridgeIntegrationTest`, which starts one Docker IDE with
+  the plugin, uses HTTP MCP only for setup, registers only `/home/agent/devrig
+  mpc` as the test MCP server, and verifies initialize -> list projects ->
+  execute-code through devrig stdio. Also fixed `NpxSteroidDriver.deploy` so
+  the immutable container request builder actually runs the install script, and
+  refreshed `/npx/v1/projects/stream` on subscription so devrig routes the
+  exposed project name back to the current IDE project name after Gradle import.
+  Verification:
+  `./gradlew :test-integration:test --tests 'com.jonnyzzz.mcpSteroid.integration.tests.NpxKtRealIdeBridgeIntegrationTest' --rerun-tasks --console=plain`
+  passed; run dir
+  `test-integration/build/test-logs/test/run-20260518-175606-devrig-stdio-mcp-real-ide-bridge`.
+  Final review quorum passed: Claude `run_20260518-160215-19238`, Gemini
+  `run_20260518-160215-19239`, Codex `run_20260518-160215-19240`.
 - [ ] One real running IDE, no AI: progress notification is observable for an
   execute-code call.
 - [ ] One real running IDE, no AI: `steroid_apply_patch` works on a disposable
@@ -458,6 +471,13 @@ agent prompt/tool-selection bugs.
 - [ ] One real running IDE, no AI: screenshot/input route to the same IDE.
 - [ ] Optional but preferred before stable: two real IDEs with duplicate
   project names route independently.
+- [ ] Follow-up from real-IDE bridge review: unify
+  `IntelliJContainer.deployDevrigLauncher` with the wrapper used by
+  `NpxSteroidDriver.deploy`.
+- [ ] Follow-up from real-IDE bridge review: refresh or invalidate project
+  stream snapshots if a project rename happens after an active subscription.
+- [ ] Follow-up from real-IDE bridge review: add AI_NPX config assertions for
+  Codex and Gemini, not only Claude.
 
 ## Phase 5 — AI_NPX long integration tests
 

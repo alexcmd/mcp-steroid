@@ -48,13 +48,19 @@ class NpxSteroidDriver(
                     test -n "$app_dir"
                     mv "$app_dir" /home/agent/devrig-cli/app
                     chmod +x /home/agent/devrig-cli/app/bin/mcp-steroid-proxy
-                    ln -sfn mcp-steroid-proxy /home/agent/devrig-cli/app/bin/devrig
-                    ln -sfn /home/agent/devrig-cli/app/bin/devrig "$$launcherPath"
+                    cat > "$$launcherPath" <<'EOF'
+                    #!/usr/bin/env bash
+                    set -eu
+                    export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-default}"
+                    export PATH="$JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+                    exec /home/agent/devrig-cli/app/bin/mcp-steroid-proxy "$@"
+                    EOF
+                    chmod +x "$$launcherPath"
                     "$$launcherPath" --version
                     """.trimIndent()
                 )
-                timeoutSeconds(120)
-                description("install devrig MCP stdio launcher")
+                    .timeoutSeconds(120)
+                    .description("install devrig MCP stdio launcher")
             }.awaitForProcessFinish()
                 .assertExitCode(0) { "install devrig MCP stdio launcher" }
 

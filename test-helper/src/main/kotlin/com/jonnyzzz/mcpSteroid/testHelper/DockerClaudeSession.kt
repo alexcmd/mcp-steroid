@@ -32,11 +32,21 @@ class DockerClaudeSession(
 ) : AiAgentSession {
     override val displayName: String = Companion.displayName
     private var mcpConfigJson: String? = null
+    private val mcpRegistrationLog = mutableListOf<McpRegistration>()
+    override val mcpRegistrations: List<McpRegistration>
+        get() = mcpRegistrationLog.toList()
+    override val strictMcpConfigJson: String?
+        get() = mcpConfigJson
 
     override fun registerHttpMcp(mcpUrl: String, mcpName: String) {
         runInContainer(args = claudeMcpAddArgs(mcpUrl, mcpName))
             .assertExitCode(0) { "MCP server registration" }
             .assertNoErrorsInOutput("MCP server registration")
+        mcpRegistrationLog += McpRegistration(
+            name = mcpName,
+            transport = McpRegistrationTransport.HTTP,
+            url = mcpUrl,
+        )
         mcpConfigJson = claudeHttpMcpConfig(mcpUrl, mcpName)
     }
 
@@ -44,6 +54,11 @@ class DockerClaudeSession(
         runInContainer(args = claudeMcpAddStdioArgs(npxCommand, mcpName))
             .assertExitCode(0) { "NPX MCP server registration" }
             .assertNoErrorsInOutput("NPX MCP server registration")
+        mcpRegistrationLog += McpRegistration(
+            name = mcpName,
+            transport = McpRegistrationTransport.STDIO,
+            command = npxCommand,
+        )
         mcpConfigJson = claudeStdioMcpConfig(npxCommand, mcpName)
     }
 

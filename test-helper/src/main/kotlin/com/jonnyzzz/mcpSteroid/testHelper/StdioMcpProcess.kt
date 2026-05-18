@@ -17,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
@@ -169,23 +170,37 @@ fun startStdioMcpProcess(
         "Launcher script is not executable: ${launcher.absolutePath}"
     }
 
-    val stack = lifetime.nestedStack("stdioMcp:${launcher.name}")
-
-    val stdinChannel = Channel<ByteArray>(Channel.UNLIMITED)
-
-    val collectorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val responseQueue = LinkedBlockingQueue<JsonObject>()
-
     val request = RunProcessRequest()
         .command(listOf(launcher.absolutePath) + args)
-        .withStdin(stdinChannel.consumeAsFlow())
         .withEnvironment(environment)
         .logPrefix("mcpStdio:${launcher.name}")
         .description("MCP client harness for ${launcher.name}")
         .withTimeout(Duration.ofMinutes(5))
         .quietly()
 
-    val started: StartedProcess = request.startProcess()
+    return startStdioMcpProcess(
+        lifetime = lifetime,
+        resourceName = launcher.name,
+    ) { stdin ->
+        request
+            .withStdin(stdin)
+            .startProcess()
+    }
+}
+
+fun startStdioMcpProcess(
+    lifetime: CloseableStack,
+    resourceName: String,
+    start: (stdin: Flow<ByteArray>) -> StartedProcess,
+): StdioMcpProcess {
+    val stack = lifetime.nestedStack("stdioMcp:$resourceName")
+
+    val stdinChannel = Channel<ByteArray>(Channel.UNLIMITED)
+
+    val collectorScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val responseQueue = LinkedBlockingQueue<JsonObject>()
+
+    val started: StartedProcess = start(stdinChannel.consumeAsFlow())
 
     stack.registerCleanupAction { destroyAndAwait(started) }
 

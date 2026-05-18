@@ -58,6 +58,7 @@ fun Route.installNpxBridgeRoutes(
         post("/projects/stream") {
             if (!call.requireNpxBridgeAuthorization()) return@post
             val service = ProjectsStreamService.getInstance()
+            service.refresh()
             call.streamProjectsNdjson(
                 projectsFlow = service.projects,
                 instanceId = service.ideInstanceId,

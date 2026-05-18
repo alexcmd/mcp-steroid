@@ -4,11 +4,20 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.create
+import com.jonnyzzz.mcpSteroid.testHelper.McpRegistrationTransport
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertNoErrorsInOutput
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -21,6 +30,15 @@ class NpxKtAgentRoutingIntegrationTest {
     fun claudeUsesDevrigStdioToDiscoverProjectAndExecuteCode() {
         val agent = session.aiAgents.claude
         val diagnostics = session.diagnosticsSummary()
+        val registration = agent.mcpRegistrations.singleOrNull()
+            ?: error("AI_NPX must register exactly one MCP server for Claude\n$diagnostics\n${agent.mcpRegistrations}")
+        assertEquals("mcp-steroid", registration.name)
+        assertEquals(McpRegistrationTransport.STDIO, registration.transport)
+        assertEquals("/home/agent/devrig", registration.command?.command)
+        assertEquals(listOf("mpc"), registration.command?.args)
+        assertNull(registration.url, "AI_NPX must not register direct HTTP MCP for Claude")
+        assertClaudeStrictConfigUsesOnlyDevrigStdio(agent.strictMcpConfigJson, diagnostics)
+
         val result = agent.runPrompt(
             prompt = """
                 You are validating the MCP server named "mcp-steroid".
@@ -68,6 +86,7 @@ class NpxKtAgentRoutingIntegrationTest {
     }
 
     companion object {
+        private val json = Json { ignoreUnknownKeys = true }
         private val lifetime by lazy { CloseableStackHost(NpxKtAgentRoutingIntegrationTest::class.java.simpleName) }
         private val session by lazy {
             IntelliJContainer.create(
@@ -88,6 +107,23 @@ class NpxKtAgentRoutingIntegrationTest {
         @JvmStatic
         fun cleanup() {
             lifetime.closeAllStacks()
+        }
+
+        private fun assertClaudeStrictConfigUsesOnlyDevrigStdio(configJson: String?, diagnostics: String) {
+            val config = json.parseToJsonElement(
+                configJson ?: error("Claude AI_NPX must provide --mcp-config\n$diagnostics")
+            ).jsonObject
+            val servers = config["mcpServers"]?.jsonObject
+                ?: error("Claude --mcp-config missing mcpServers\n$diagnostics\n$config")
+            assertEquals(setOf("mcp-steroid"), servers.keys, "Claude must receive exactly one MCP server")
+            val server = servers.getValue("mcp-steroid").jsonObject
+            assertEquals("stdio", server["type"]?.jsonPrimitive?.contentOrNull)
+            assertEquals("/home/agent/devrig", server["command"]?.jsonPrimitive?.contentOrNull)
+            assertEquals(
+                listOf("mpc"),
+                server["args"]?.jsonArray?.map { it.jsonPrimitive.contentOrNull },
+            )
+            assertFalse(server.containsKey("url"), "Claude AI_NPX config must not contain direct HTTP MCP URL")
         }
     }
 }
