@@ -162,6 +162,13 @@ class NpxProjectRoutingServiceTest {
     }
 
     @Test
+    fun `single ide policy returns null when no ides are routable`() {
+        val service = routingService()
+
+        assertEquals(null, service.singleIdeOrNull())
+    }
+
+    @Test
     fun `single ide policy returns null when multiple ides are routable`() {
         val projectA = Files.createDirectories(tempDir.resolve("a"))
         val projectB = Files.createDirectories(tempDir.resolve("b"))

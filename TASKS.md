@@ -123,7 +123,18 @@ Routing and naming:
   suffix parsing.
 - [ ] Stale exposed project name returns an actionable "call
   steroid_list_projects to refresh" error.
-- [ ] `singleIdeOrNull()` covers zero, one, and multiple IDE states.
+- [x] `singleIdeOrNull()` covers zero, one, and multiple IDE states.
+  Added zero-state coverage and tied it to the existing one-IDE and
+  multiple-IDE tests. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T131643-npx-kt-single-ide-policy`.
+  Plan review quorum passed:
+  Claude `run_20260518-111353-97845`, Codex
+  `run_20260518-111353-97846`, Gemini `run_20260518-111353-97847`.
+  Final review quorum passed:
+  Claude `run_20260518-111734-202`, Codex
+  `run_20260518-111734-203`, Gemini `run_20260518-111734-204`.
 
 Window, screenshot, and input routing:
 - [ ] Window `projectName` is rewritten with the same project suffix.
