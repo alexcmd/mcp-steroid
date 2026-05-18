@@ -19,7 +19,7 @@ import java.util.Locale
  * launcher (`bin/mcp-steroid-proxy` / `.bat`).
  *
  * The unit tests in `NpxKtCommandTest` / `NpxKtCommandOutputTest` already pin command selection
- * and routing behaviour inside the JVM; this class extends that to the shell
+ * and routing behavior inside the JVM; this class extends that to the shell
  * launcher script and JNI boundaries. The same launcher is exercised in MCP
  * mode by `CliMcpStdioIntegrationTest` and for stdout-cleanliness by
  * `CliMcpStdioStdoutCleanlinessTest` — together those three classes form the
@@ -29,8 +29,9 @@ import java.util.Locale
  * a logback config that fires before `main()`, or a startup banner in the
  * application-plugin-generated start script could each violate the routing
  * contract without any in-JVM test ever seeing it. Spawning the actual binary
- * is the only way to verify the user-visible behaviour.
+ * is the only way to verify the user-visible behavior.
  */
+@Suppress("FunctionName")
 class CliOptionsIntegrationTest {
 
     private val installDir: File by lazy { NpxKtMcpInstaller.resolveInstallDir() }
@@ -130,8 +131,8 @@ class CliOptionsIntegrationTest {
             "unknown flag must exit 64 (sysexits EX_USAGE); stdout=\n${r.stdout}\nstderr=\n${r.stderr}")
         assertTrue(r.stdout.isBlank(),
             "unknown-arg path must keep stdout clean so machine consumers aren't confused; got:\n${r.stdout}")
-        assertTrue(r.stderr.contains("Unknown argument(s)"),
-            "stderr should announce 'Unknown argument(s)'; got:\n${r.stderr}")
+        assertTrue(r.stderr.contains("Error:"),
+            "stderr should announce the parser error; got:\n${r.stderr}")
         assertTrue(r.stderr.contains("--no-such-flag"),
             "stderr should echo the offending token; got:\n${r.stderr}")
         assertTrue(r.stderr.contains("Usage:"),
@@ -139,22 +140,21 @@ class CliOptionsIntegrationTest {
     }
 
     @Test
-    fun `multiple unknown args are all surfaced in the error message`() {
+    fun `multiple unknown args fail on the first parser error`() {
         val r = runLauncher("--alpha", "--beta")
         assertEquals(64, r.exitCode)
         assertTrue(r.stderr.contains("--alpha"), "got:\n${r.stderr}")
-        assertTrue(r.stderr.contains("--beta"), "got:\n${r.stderr}")
     }
 
     // --------------------- mixed-flag precedence (real binary) --------------
 
     @Test
-    fun `--help mixed with an unknown arg still routes to help`() {
-        // Parser unit tests pin this; verify the real launcher honours it too
-        // so a future shell-launcher tweak doesn't reorder args.
+    fun `unknown arg before --help remains a parser error`() {
         val r = runLauncher("--bogus", "--help")
-        assertEquals(0, r.exitCode, "--help should win over unknown args; stderr=\n${r.stderr}")
-        assertTrue(r.stdout.contains("Usage:"), "got:\n${r.stdout}")
+        assertEquals(64, r.exitCode, "unknown arg should fail before help; stderr=\n${r.stderr}")
+        assertTrue(r.stdout.isBlank(), "parse errors must keep stdout clean; got:\n${r.stdout}")
+        assertTrue(r.stderr.contains("--bogus"), "got:\n${r.stderr}")
+        assertTrue(r.stderr.contains("Usage:"), "got:\n${r.stderr}")
     }
 
     @Test
@@ -164,14 +164,15 @@ class CliOptionsIntegrationTest {
         // visibly so the user fixes their wrapper script.
         val r = runLauncher("--MCP")
         assertEquals(64, r.exitCode, "--MCP (wrong case) must NOT trigger MCP mode")
-        assertTrue(r.stderr.contains("Unknown argument(s)"), "got:\n${r.stderr}")
+        assertTrue(r.stderr.contains("Error:"), "got:\n${r.stderr}")
+        assertTrue(r.stderr.contains("--MCP"), "got:\n${r.stderr}")
     }
 
     // --------------------------- backend subcommand ------------------------
 
     @Test
-    fun `backend exits 0 and prints 'No IDEs detected' on a clean test host`() {
-        // The CI runner has no IDE markers in $HOME, so the no-IDEs branch is
+    fun `backend exits 0 and prints backend status`() {
+        // The CI runner has no IDE markers in $HOME, so the no-backends branch is
         // the deterministic outcome here. The wire-level happy path
         // (IDE present + projects open) is covered by `BackendCommandFetchTest`
         // against an in-process Ktor mock.
@@ -188,27 +189,42 @@ class CliOptionsIntegrationTest {
             "backend must produce at least one line of output; got:\n${r.stdout}")
         // One of the two expected shapes:
         val output = r.stdout.trimEnd()
-        val isNoIdes = output == "No IDEs detected."
-        val looksLikeIdeListing = output.lines().any { line ->
-            // IDE-listing lines start with the IDE name and include `version `
-            // somewhere on the same line. Empty $HOME → "No IDEs detected.".
-            line.contains("  version ") && line.contains("(pid ")
+        val backendStatus = output.removeOptionalHeadliner()
+        val isNoBackends = backendStatus == "No backends detected."
+        val looksLikeIdeListing = backendStatus.lines().any { line ->
+            line.contains("Discovered ") && line.contains("backend")
         }
         assertTrue(
-            isNoIdes || looksLikeIdeListing,
-            "backend output must be either the no-IDEs message or an IDE listing; got:\n$output",
+            isNoBackends || looksLikeIdeListing,
+            "backend output must be either the no-backends message or a backend listing; got:\n$output",
         )
+    }
+
+    @Test
+    fun `json commands do not print the headliner before JSON`() {
+        val backend = runLauncher("backend", "--json")
+        assertEquals(0, backend.exitCode, "backend --json failed; stdout=\n${backend.stdout}\nstderr=\n${backend.stderr}")
+        assertTrue(backend.stdout.trimStart().startsWith("{"),
+            "backend --json stdout must start with JSON object; got:\n${backend.stdout}")
+
+        val project = runLauncher("project", "--json")
+        assertEquals(0, project.exitCode, "project --json failed; stdout=\n${project.stdout}\nstderr=\n${project.stderr}")
+        assertTrue(project.stdout.trimStart().startsWith("{"),
+            "project --json stdout must start with JSON object; got:\n${project.stdout}")
     }
 
     @Test
     fun `backend --help prints help, NOT IDE listing`() {
         // Help wins over backend by parser precedence — confirm the real
-        // launcher honours that so a future shell-launcher tweak can't
+        // launcher honors that so a future shell-launcher tweak can't
         // accidentally open connections in response to a help request.
         val r = runLauncher("backend", "--help")
         assertEquals(0, r.exitCode, "--help should win over backend; stderr=\n${r.stderr}")
         assertTrue(r.stdout.contains("Usage:"), "got:\n${r.stdout}")
-        assertTrue(!r.stdout.contains("No IDEs detected") && !r.stdout.contains("(pid "),
-            "help output must not include backend listing artefacts; got:\n${r.stdout}")
+        assertTrue(!r.stdout.contains("No backends detected") && !r.stdout.contains("Discovered "),
+            "help output must not include backend listing artifacts; got:\n${r.stdout}")
     }
+
+    private fun String.removeOptionalHeadliner(): String =
+        if (startsWith("devrig v")) substringAfter("\n\n", this).trimStart('\n') else this
 }

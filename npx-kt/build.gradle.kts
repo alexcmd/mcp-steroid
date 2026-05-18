@@ -183,6 +183,7 @@ dependencies {
 application {
     applicationName = "mcp-steroid-proxy"
     mainClass.set("com.jonnyzzz.mcpSteroid.proxy.MainKt")
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
 // Provider<File> for the resolved plugin zip — derived from `Configuration.elements`

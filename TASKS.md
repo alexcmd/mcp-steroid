@@ -368,12 +368,37 @@ Prompt/resource behavior:
   `run_20260518-135010-58149`, Gemini `run_20260518-135010-58166`.
 
 CLI/runtime behavior:
-- [ ] `devrig mpc` starts a clean stdio MCP server and exits cleanly on stdin
+- [x] `devrig mpc` starts a clean stdio MCP server and exits cleanly on stdin
   close.
-- [ ] No stdout leaks before MCP frames in `mpc` mode.
-- [ ] Non-MCP commands restore stdout before printing user output.
-- [ ] `DEVRIG_HOME` override accepts only existing absolute canonical paths;
+- [x] No stdout leaks before MCP frames in `mpc` mode.
+  Covered by
+  `CliMcpStdioStdoutCleanlinessTest.host launcher writes only JSON-RPC frames to stdout`,
+  which runs the real `installDist` launcher with `mpc`, completes after stdin
+  closes, and parses every stdout line as JSON-RPC. Verification:
+  `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioStdoutCleanlinessTest.host launcher writes only JSON-RPC frames to stdout' --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliOptionsIntegrationTest' --rerun-tasks --console=plain`
+  passed after fixing launcher stderr noise and CliKt-native parse-error
+  expectations. A final review caught JSON stdout corruption from the
+  headliner; `CliOptionsIntegrationTest` now asserts `backend --json` and
+  `project --json` start with a JSON object. MCP Steroid inspections on touched
+  Kotlin files passed in `eid_20260518T163728-npx-cli-runtime-fix`.
+  Plan review quorum passed:
+  Claude `run_20260518-140511-65506`, Codex
+  `run_20260518-140511-65505`, Gemini `run_20260518-140511-65507`.
+  Final review quorum passed after the JSON/headliner and clean-host fixes:
+  Claude `run_20260518-143833-90110`, Codex
+  `run_20260518-143833-90113`, Gemini `run_20260518-143833-90111`.
+- [x] Non-MCP commands restore stdout before printing user output.
+  Covered by `CliOptionsIntegrationTest` through the real launcher and
+  `NpxKtCommandOutputTest` in-process via `NpxKtServices.mcpStdout`. The fix
+  keeps help output on stdout, version as a single stdout line, and parse
+  errors on stderr with clean stdout. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.NpxKtCommandOutputTest' --tests 'com.jonnyzzz.mcpSteroid.proxy.HomePathsTest' --tests 'com.jonnyzzz.mcpSteroid.proxy.NpxKtCommandTest' --rerun-tasks --console=plain`
+  passed.
+- [x] `DEVRIG_HOME` override accepts only existing absolute canonical paths;
   no `--home` flag.
+  Covered by `HomePathsTest` for env-var canonicalization/rejection and
+  `NpxKtCommandTest.removed home flag is not a command` for the deleted CLI
+  flag. Verification included in the `:npx-kt:test` command above.
 - [ ] Startup failure before MCP handshake is visible on stderr and test
   logs.
 

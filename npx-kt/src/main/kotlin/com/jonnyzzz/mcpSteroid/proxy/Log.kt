@@ -5,10 +5,10 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter.ofPattern
 
 /**
- * Wire the `--debug` flag into the bundled logback configuration. Reads the
- * `proxy.log.level` system property at logback-init time (see `logback.xml`):
- *  - default: INFO
- *  - `--debug`: DEBUG
+ * Wire the `--debug` flag into the bundled logback configuration.
+ * The `proxy.log.level` system property is read at logback-init time
+ * (see `logback.xml`). The default level is WARN. With `--debug`, the level
+ * is DEBUG.
  *
  * MUST run before the first SLF4J call — logback initialises lazily on first
  * use and pins the level. [main] calls this right after command parsing for
@@ -16,9 +16,9 @@ import java.time.format.DateTimeFormatter.ofPattern
  */
 fun applyDebugLogging(debug: Boolean) {
     // Only set the property when --debug is requested — leaving it unset lets
-    // operators override the INFO default from the outside with
-    // `-Dproxy.log.level=WARN` etc. The hard-coded default in logback.xml
-    // (`${proxy.log.level:-INFO}`) handles the no-flag case.
+    // operators override the WARN default from the outside with
+    // `-Dproxy.log.level=INFO` etc. The hard-coded default in logback.xml
+    // (`${proxy.log.level:-WARN}`) handles the no-flag case.
     if (debug) {
         System.setProperty("proxy.log.level", "DEBUG")
     }
