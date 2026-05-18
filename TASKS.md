@@ -135,8 +135,21 @@ Window, screenshot, and input routing:
   actionable error.
 
 Bridge client and handler behavior:
-- [ ] Bearer token is sent when marker token is present.
-- [ ] Authorization header is absent when marker token is empty.
+- [x] Bearer token is sent when marker token is present.
+- [x] Authorization header is absent when marker token is empty.
+  Positive bearer forwarding was already covered by
+  `bridge client sends bearer token and rewritten original project name`; added
+  focused empty-token coverage asserting the Authorization header is omitted.
+  Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T103131-npx-kt-bridge-auth-coverage`.
+  Review quorum passed:
+  Claude `run_20260518-083302-49403`, Gemini
+  `run_20260518-083302-49404`, Claude
+  `run_20260518-083523-50945`. Codex
+  `run_20260518-083302-49405` was not counted because it blocked before
+  reading the patch on a missing marinade `/tmp` path.
 - [ ] `project_name` is rewritten to the original IDE project name.
 - [ ] `steroid_execute_code` forwards `timeout` and `dialog_killer`.
 - [ ] `steroid_execute_code` forwards progress SSE events.

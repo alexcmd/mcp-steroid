@@ -118,18 +118,7 @@ class NpxToolBridgeClientTest {
     fun `bridge client sends bearer token and rewritten original project name`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val route = ProjectRoute(
-            idePid = 42,
-            bridgeBaseUrl = "http://127.0.0.1:$port",
-            token = "secret-token",
-            originalProjectName = "original-project",
-            exposedProjectName = "original-project-abcdefgh",
-            projectPath = tempDir.toString(),
-            realProjectHome = tempDir.toRealPath(),
-            hash8 = "abcdefgh",
-            ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
-            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-        )
+        val route = route(tempDir)
         val bridge = NpxToolBridgeClient(
             routing = NpxProjectRoutingService { emptyMap() },
             httpClient = httpClient,
@@ -150,6 +139,23 @@ class NpxToolBridgeClientTest {
             "original-project",
             json["arguments"]?.jsonObject?.get("project_name")?.jsonPrimitive?.content,
         )
+    }
+
+    @Test
+    fun `bridge client omits authorization header when token is empty`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val bridge = NpxToolBridgeClient(
+            routing = NpxProjectRoutingService { emptyMap() },
+            httpClient = httpClient,
+        )
+
+        val result = bridge.callTool(route(tempDir, token = ""), "steroid_execute_code") {
+            put("project_name", "original-project")
+        }
+
+        assertEquals(false, result.isError)
+        assertEquals(null, receivedAuth)
     }
 
     @Test
@@ -412,11 +418,11 @@ class NpxToolBridgeClientTest {
             ),
         )
 
-    private fun route(tempDir: Path): ProjectRoute =
+    private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =
         ProjectRoute(
             idePid = 42,
             bridgeBaseUrl = "http://127.0.0.1:$port",
-            token = "secret-token",
+            token = token,
             originalProjectName = "original-project",
             exposedProjectName = "original-project-abcdefgh",
             projectPath = tempDir.toString(),
