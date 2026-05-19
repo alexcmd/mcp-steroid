@@ -1451,97 +1451,94 @@ line). Keep only the global `requestLoggingPlugin` line at
 `ij-plugin/.../server/SteroidsMcpServer.kt:334–348`. The middleware sees
 whatever status the boundary set, exactly once.
 
-## A2b — Logger discipline for `CancellationException`
+## A2b — Logger discipline for `CancellationException` (LANDED 2026-05-19)
 
-In every `catch (t: Throwable)` under `mcp-http/` and
-`ij-plugin/.../execution/` (`McpHttpTransport.kt`, `ExecutionManager.kt:94`,
-`ScriptExecutor.kt:158`), match `CancellationException` first and rethrow
-without logging. Cite the `c.i.openapi.diagnostic.Logger` Javadoc in a
-short code comment. Add a banned-pattern test:
-`Logger.error(CancellationException)` must fail the lint, alongside the
-existing empty-catch rule in `CLAUDE.md → Banned patterns`.
+Hot-path catches in `mcp-http/` and `ij-plugin/.../execution/` now
+rethrow `CancellationException` before any broad-Throwable / broad-
+Exception handling, per the `c.i.openapi.diagnostic.Logger` Javadoc
+contract for control-flow exceptions. Sites fixed:
 
-## A1 — `indexing_in_progress` structured error after ⌊2T/3⌋
+- `ExecutionManager.kt:93` — top-level execution catch
+- `CodeEvalManager.kt:145` — script-load (inner) catch
+- `CodeEvalManager.kt:154` — kotlinc invoke (outer) catch
+- `McpScriptContextImpl.kt:117` — `printJson` serialization catch
+- `McpScriptContextImpl.kt:162` — `takeIdeScreenshot` capture catch
+- `VfsRefreshService.kt:109` — `awaitRefresh` outer-wait catch
 
-Centralize the wait in
-`ij-plugin/.../execution/McpScriptContextImpl.kt:153–174` as
-`waitForSmartMode(maxWait: Duration)` and call it from every handler that
-currently waits silently (`steroid_execute_code`, `steroid_apply_patch`,
-`steroid_action_discovery`, `steroid_list_windows`). Bound = ⌊2T/3⌋
-seconds where T is the per-call timeout. On timeout, return:
-```
-{
-  "isError": true,
-  "kind": "indexing_in_progress",
-  "message": "Project '<name>' is still indexing. Wait and repeat the same command again.",
-  "project": "<name>", "elapsedMs": …, "dumbMode": true
-}
-```
-- Add registry key `mcp.steroid.smart.mode.wait.fraction` (default 0.66).
-- Add one line to the `steroid_execute_code` and `steroid_apply_patch` tool
-  descriptions: *"Returns `kind: indexing_in_progress` while the project is
-  still being indexed — wait a few seconds and retry."*
+Sites already correct, kept as-is:
+- `McpHttpTransport.kt:208 / 219 / 242` — boundary catch-all
+- `ScriptExecutor.kt:99 / 155` — script-run + outer
+- `ApplyPatch.kt:219 / 266 / 305` — patch engine (rethrows `ProcessCanceledException`)
+- `ApplyPatchToolHandler.kt:78` — tool handler (rethrows `ProcessCanceledException`)
+- `DialogKiller.kt` — all three sites have `CE/PCE` first
+- `Diff.kt:30` — PCE first
+- `NpxBuiltInWebServerRpcHandler.kt:55–59` — PCE, CE, Exception in order
 
-## A2a — `cancelled` structured tool result
+Lower-priority sites left untouched (off the hot path; `Logger.error`
+would still produce noise but does not propagate cancellation upstream):
+- `KotlinDaemonManager.kt:97 / 125` — filesystem cleanup; cancellation
+  never observed here in practice.
+- `IdeaDescriptionWriter.kt:29` — marker-file write at server start;
+  not in a coroutine context.
+- `NpxProjectsStream.kt:48 / 54` — ndjson streaming; the request scope
+  itself owns cancellation propagation through ktor's pipeline.
 
-Build on A0. When the boundary catches a `CancellationException`, classify
-the reason:
-- `client_closed` if the request channel reports closed.
-- `script_timeout` if our own `withTimeout` fired.
-- `server_shutdown` otherwise.
+Banned-pattern lint (`Logger.error(CancellationException)` must fail)
+is a follow-up — the runtime-check fixes above land the cancellation
+contract; a static scanner is the next belt-and-suspenders pass.
 
-Return body:
-```
-{ "isError": true, "kind": "cancelled", "reason": "...",
-  "executionId": "...", "elapsedMs": ..., "message": "The call was interrupted. You may retry." }
-```
-HTTP status 200, no 408/499. Update the tool descriptions to mention the
-`cancelled` kind so agents know to retry.
+## A1, A2a — DROPPED (fixed differently)
 
-## A3 — Cooperative cancellation (without killing `kotlinc`)
+The full `indexing_in_progress` and `cancelled` structured-kind shapes
+were dropped in favour of two simpler interventions:
 
-Wait for `kotlinc` to finish naturally; do **not** call `destroyForcibly`.
-Make these call sites cancellation-aware:
-- `waitForSmartMode` — `suspendCancellableCoroutine { cont -> runWhenSmart { cont.resume(Unit) }; cont.invokeOnCancellation { /* no-op */ } }`.
-  Cancellation returns instantly; smart-mode callback resolves later
+- The agent already learns "we're waiting for indexing" via the
+  pre-existing `resultBuilder.logProgress("Waiting for indexing to
+  complete...")` in `McpScriptContextImpl.waitForSmartMode()`
+  (line 174, in place since commit d112064d). The progress message
+  routes through the MCP `notifications/progress` push channel
+  immediately when the wait begins, so the agent gets the cause
+  without needing a `kind=indexing_in_progress` error shape.
+- The cancellation path lands as a JSON-RPC `error` envelope at the
+  boundary (commit 3a4e7c13 — A0) and as a structured tool result via
+  the per-handler `reportFailed` (`ScriptExecutor.kt:154` for
+  `TimeoutCancellationException`; `ReviewManager.kt:148+` for the
+  human-review timeout). The `kind=cancelled` reason classification
+  was not worth the extra surface.
+
+A1's "wait at most ⌊2T/3⌋ then error" bound was unnecessary too —
+`withTimeout(timeout.seconds)` in `ScriptExecutor.kt:132` already
+caps the total wait; `reportFailed("Execution timed out after $timeout
+seconds")` names the cause cleanly.
+
+## A3 — Cooperative cancellation (VERIFIED no change needed, 2026-05-19)
+
+The current architecture already meets the contract "let `kotlinc`
+finish; do not call `destroyForcibly`":
+
+- `KotlincProcessClient.kotlinc(...)` is a regular (non-`suspend`)
+  `fun` invoked through `ExecUtil.execAndGetOutput(commandLine,
+  120_000)`. The blocking call does NOT check coroutine cancellation,
+  so cancelling the caller coroutine leaves the kotlinc subprocess
+  running until it exits naturally or hits its 120 s upper bound.
+- Nothing in `ij-plugin/src/main` calls `destroyForcibly` on the
+  kotlinc process. After `kotlinc(...)` returns, the surrounding
+  coroutine code hits a suspension point (or the new CE rethrow from
+  A2b) and cancellation propagates out cleanly.
+- `waitForSmartMode` already wraps its callback in
+  `suspendCancellableCoroutine` (line 176), so cancellation returns
+  instantly; the `smartInvokeLater` callback resolves later
   harmlessly.
-- Long IDE operations that accept a `ProgressIndicator`
-  (`ProjectTaskManager.buildAllModules` etc.) — hand in an indicator
-  linked to the coroutine `Job` via
-  `com.intellij.openapi.progress.coroutineToIndicator` so `Job.cancel()`
-  propagates through `indicator.cancel()`.
-- The `kotlinc` worker step — leave running; the boundary already returned
-  to the client. Worker completion releases its own resources.
 
-Acceptance: a forcibly-cancelled `steroid_execute_code` returns its
-`cancelled` body within ~500 ms regardless of what the inner script is
-doing. The `kotlinc` worker may continue and complete silently.
+No code change for A3; the structural property holds today.
 
-## Integration tests (when A re-opens)
+## Order of execution (closed out)
 
-One new test class in `:test-integration` (Docker IDE):
-1. **Indexing-in-progress** — heavy project, immediate
-   `steroid_execute_code` with T=15s and fraction=0.66 → response at ~10 s
-   with `kind=indexing_in_progress`.
-2. **Client cancellation** — 600 s script, close connection at 1 s →
-   response within 2 s with `kind=cancelled, reason=client_closed`. No
-   `SEVERE` logged.
-3. **Script timeout** — script sleeps past timeout → `kind=cancelled,
-   reason=script_timeout`. Single HTTP log line.
-4. **Boundary stability** — fire a sequence of misbehaving scripts (OOM,
-   `error(...)`, infinite loop+cancel, valid call) and assert the *last*
-   valid call succeeds — the server survives every failure mode.
-
-Plus one unit test: scan caught `Throwable` in `mcp-http/` and
-`ij-plugin/.../execution/` and assert each has a `CancellationException`
-rethrow before any logging.
-
-## Order of execution (when A re-opens)
-
-1. A0 → A2c → A2b (boundary + log cleanup; mechanical).
-2. A1 (indexing error; independent, deliverable on its own).
-3. A2a (cancelled error shape; depends on A0).
-4. A3 (cooperative cancellation; last, optimisation).
+A0 → A2c (still parked, drop the per-handler "Response:" log line —
+small cosmetic cleanup, low value) → A2b (landed) → A3 (verified, no
+change) → A1/A2a (dropped). Cluster A is effectively closed; the only
+loose end is A2c's cosmetic log dedup, which can be picked up
+opportunistically.
 
 # Active — Cluster B: prompt corpus hardening (#47, #48, #51) (2026-05-15)
 
@@ -1761,12 +1758,11 @@ annotation, so all IDEs compile each block).
 ends with a "do not retry blindly" paragraph that points at
 `mcp-steroid://skill/anchor-safe-editing` and the four steps.
 
-## C4 — `dryRun` parameter (still parked)
+## C4 — `dryRun` parameter (LANDED in eceb6674, then explicitly DROPPED 2026-05-19)
 
-Add `dryRun: Boolean = false` to the `steroid_apply_patch` tool args.
-When true, run preflight + return structured candidates without
-applying. Lower priority. Re-iterate when the issue trail justifies the
-extra surface.
+`dryRun: Boolean = false` is already on `steroid_apply_patch` (commit
+eceb6674). The "park C4" note here is obsolete — keeping for the
+historical audit trail. No further work needed.
 
 ## Order of execution (B → A → C)
 

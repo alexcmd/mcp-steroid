@@ -32,6 +32,7 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.search.GlobalSearchScope
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.vision.VisionService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -114,6 +115,9 @@ class McpScriptContextImpl(
             }
             resultBuilder.logMessage(jsonString)
             resultBuilder.noteUserOutput()
+        } catch (e: CancellationException) {
+            // Cancellation propagates — don't wrap it as a serialization error.
+            throw e
         } catch (e: Exception) {
             resultBuilder.logMessage("Failed to serialize to JSON: ${e.message}")
         }
@@ -159,6 +163,10 @@ class McpScriptContextImpl(
             resultBuilder.logMessage("Component tree saved to ${artifacts.treePath}")
             resultBuilder.logMessage("Screenshot metadata saved to ${artifacts.metaPath}")
             artifacts.imagePath.toString()
+        } catch (e: CancellationException) {
+            // Coroutine cancellation propagates — same rule as
+            // ProcessCanceledException (below): never log, never wrap.
+            throw e
         } catch (e: Exception) {
             if (e is ProcessCanceledException) throw e
             resultBuilder.logException("Failed to capture IDE screenshot", e)

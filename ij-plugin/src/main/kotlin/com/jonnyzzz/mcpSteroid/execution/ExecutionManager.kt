@@ -90,6 +90,11 @@ class ExecutionManager(
                         builder
                     )
                     log.info("Execution $executionId completed")
+                } catch (e: CancellationException) {
+                    // Coroutine cancellation must propagate — never log, never wrap.
+                    // The boundary catch-all in McpHttpTransport converts it to a
+                    // structured tool result via `JsonRpcErrorCodes.INTERNAL_ERROR`.
+                    throw e
                 } catch (t: Throwable) {
                     log.warn("Unexpected error: ${t.message}", t)
                     builder.logException("Unexpected error", t)
