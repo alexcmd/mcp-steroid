@@ -1,7 +1,6 @@
 import com.jonnyzzz.mcpSteroid.gradle.GenerateMetadataTask
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import org.gradle.api.artifacts.Configuration
 import org.gradle.api.attributes.Usage
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.security.MessageDigest
@@ -91,35 +90,6 @@ val jdkManifest by configurations.creating {
     }
 }
 
-data class JdkPlatform(val id: String, val usageAttr: String) {
-    val configName: String = "jdk${id.split('-').joinToString("") { it.replaceFirstChar(Char::uppercase) }}"
-}
-
-/**
- * Retained for the upcoming version.json generator: these resolvable
- * configurations keep consuming :jdk-downloader's verified Corretto outputs so
- * that task can compute archive metadata. distZip intentionally no longer reads
- * them; today's npx-kt package expects Java on PATH instead of bundling JDKs.
- */
-val jdkPlatforms = listOf(
-    JdkPlatform("linux-amd64", "jdk-linux-amd64"),
-    JdkPlatform("linux-arm", "jdk-linux-arm"),
-    JdkPlatform("mac-arm", "jdk-mac-arm"),
-    JdkPlatform("windows-amd64", "jdk-windows-amd64"),
-)
-
-val jdkConfigs: Map<String, Configuration> = jdkPlatforms.associate { platform ->
-    val cfg = configurations.create(platform.configName) {
-        isCanBeConsumed = false
-        isCanBeResolved = true
-        attributes {
-            attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, platform.usageAttr))
-        }
-    }
-    dependencies.add(cfg.name, project(":jdk-downloader"))
-    platform.id to cfg
-}
-
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
@@ -194,14 +164,6 @@ val ijPluginZipFile = ijPluginZip.elements.map { it.single().asFile }
 val jdkManifestFile = jdkManifest.elements.map { it.single().asFile }
 val sevenZipBinariesDir = sevenZipBinaries.elements.map { it.single().asFile }
 val sevenZipLicenseFile = sevenZipBinariesDir.map { it.resolve("7z/License.txt") }
-/**
- * Retained with jdkPlatforms/jdkConfigs for future version.json generation even
- * though the distribution no longer copies these extracted JDK trees.
- */
-val jdkDirs: Map<String, Provider<File>> = jdkPlatforms.associate { platform ->
-    val cfg = jdkConfigs.getValue(platform.id)
-    platform.id to cfg.elements.map { it.single().asFile }
-}
 
 distributions {
     main {

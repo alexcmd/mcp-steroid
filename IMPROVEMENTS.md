@@ -83,11 +83,6 @@ Test coverage:
   `NpxBridgeService.isAuthorized()` on the projects-stream route
   whenever it wants — `IdeMonitorService` already sends the header. Not
   in this branch to keep the behaviour change focused.
-- **`NpxBridgeService.markerTokenLine()` is now dead code.** It produced
-  the "NPX Token: $token" line for the legacy text marker; the JSON
-  marker carries the token as a typed field. Left in place for now to
-  avoid churning unrelated callers; flagged for a follow-up cleanup.
-
 ## Branch findings — IntelliJ's HTTP servers (research follow-up)
 
 - **`docs/intellij-builtin-servers.md`** catalogues both the platform's
