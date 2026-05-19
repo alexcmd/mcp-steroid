@@ -28,6 +28,11 @@ class ResourceRegistrar(
     private val handler: () -> PromptsContextHandler,
 ) {
 
+    companion object {
+        /** Bare `mcp-steroid://` scheme prefix — anything starting with it is one of our resources. */
+        const val ROOT_RESOURCE_URI: String = "mcp-steroid://"
+    }
+
     fun register(resources: McpResourceRegistrar, prompts: McpPromptRegistrar) {
         val resourcesIndex = ResourcesIndex()
         val context = handler().buildPromptsContext()
