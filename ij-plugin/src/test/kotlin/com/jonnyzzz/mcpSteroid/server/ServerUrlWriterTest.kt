@@ -26,6 +26,9 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
             val marker = PidMarkerJson.decode(Files.readString(markerFile))
             assertEquals(pid, marker.pid)
             assertEquals("http://localhost:6315/mcp", marker.mcpUrl)
+            assertNotNull("IntelliJ built-in web server info should be present", marker.intellijWebServer)
+            assertTrue("web server port should be known", marker.intellijWebServer!!.port > 0)
+            assertTrue("web server token should be present", marker.intellijWebServer!!.token.isNotBlank())
         } finally {
             Disposer.dispose(writer)
         }

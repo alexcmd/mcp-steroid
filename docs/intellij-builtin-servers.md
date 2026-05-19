@@ -145,11 +145,11 @@ optional `terminal` / `vcs` add-ons.
 
 ## What this repo does with these endpoints
 
-- **Built-in web server**: we currently **do not** make any cross-process
-  requests to it. The IDE-side `mcp-steroid` plugin can use it via
-  `BuiltInServerManager` (e.g. to surface its own URL), but the
-  `npx-kt` monitor talks directly to our `mcp-steroid` ktor server, not
-  to `/api/*`.
+- **Built-in web server**: the IDE-side `mcp-steroid` plugin now records
+  `BuiltInServerManager` metadata on `PidMarker.intellijWebServer`
+  (port, tokenized `/api/about` URL, and auth token). The `npx-kt`
+  monitor still talks directly to our `mcp-steroid` ktor server for the
+  main bridge flow; the built-in server metadata is discovery context.
 - **MCP Server plugin**: detected at marker-write time and surfaced on
   `PidMarker.intellijMcpServer` so `npx-kt` can route an MCP client at
   IntelliJ's bundled tools alongside our own. Wiring:

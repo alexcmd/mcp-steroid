@@ -2,7 +2,6 @@ package com.jonnyzzz.mcpSteroid
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import java.nio.file.Path
 
 /**
@@ -33,6 +32,7 @@ data class PidMarker(
     val ide: IdeInfo,
     val plugin: PluginInfo,
     val createdAt: String,
+    val intellijWebServer: IntelliJWebServerInfo? = null,
     val intellijMcpServer: IntelliJMcpServerInfo? = null,
 ) {
     companion object {
@@ -43,7 +43,7 @@ data class PidMarker(
          * Directory the plugin writes markers into.
          *
          * When [MCP_STEROID_HOME_ENV] is set, markers live directly under
-         * `$MCP_STEROID_HOME/markers`. Otherwise they use the default managed
+         * `$MCP_STEROID_HOME/markers`. Otherwise, they use the default managed
          * home root under the given [userHome]: `~/.mcp-steroid/markers`.
          */
         fun markerDirectory(
@@ -107,6 +107,4 @@ object PidMarkerJson {
 
     fun decode(text: String): PidMarker = json.decodeFromString(PidMarker.serializer(), text)
 
-    /** Best-effort decode for diagnostic use (returns the raw object on failure to deserialize the typed shape). */
-    fun decodeRaw(text: String): JsonObject = json.parseToJsonElement(text) as JsonObject
 }

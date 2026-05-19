@@ -53,9 +53,29 @@ class PidMarkerTest {
     }
 
     @Test
-    fun `decode tolerates absent intellijMcpServer field (defaults to null)`() {
-        val text = PidMarkerJson.encode(sample.copy(intellijMcpServer = null))
+    fun `intellijWebServer roundtrips when present`() {
+        val withWebServer = sample.copy(
+            intellijWebServer = IntelliJWebServerInfo(
+                enabled = true,
+                host = "127.0.0.1",
+                port = 63342,
+                baseUrl = "http://127.0.0.1:63342",
+                aboutUrl = "http://127.0.0.1:63342/api/about?_ijt=token",
+                token = "token",
+            )
+        )
+        val text = PidMarkerJson.encode(withWebServer)
         val decoded = PidMarkerJson.decode(text)
+        assertEquals(withWebServer, decoded)
+        assertTrue(text.contains("\"intellijWebServer\""), "intellijWebServer field missing: $text")
+        assertTrue(text.contains("\"token\": \"token\""), "token missing")
+    }
+
+    @Test
+    fun `decode tolerates absent intellij server fields (defaults to null)`() {
+        val text = PidMarkerJson.encode(sample.copy(intellijWebServer = null, intellijMcpServer = null))
+        val decoded = PidMarkerJson.decode(text)
+        assertEquals(null, decoded.intellijWebServer)
         assertEquals(null, decoded.intellijMcpServer)
     }
 

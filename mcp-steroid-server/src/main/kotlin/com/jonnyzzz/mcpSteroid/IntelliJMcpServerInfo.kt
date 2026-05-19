@@ -23,10 +23,10 @@ import kotlinx.serialization.Serializable
 data class IntelliJMcpServerInfo(
     /** `true` only if the plugin is loaded **and** `McpServerService.isRunning`. */
     val enabled: Boolean = false,
-    /** TCP port the IDE's MCP server is listening on. `0` when [enabled] is false. */
+    /** TCP port where the IDE's MCP server accepts connections. `0` when [enabled] is false. */
     val port: Int = 0,
-    /** Full URL to the MCP streamable HTTP endpoint (e.g. `http://127.0.0.1:64342/stream`). */
+    /** Full URL to the MCP streamable HTTP endpoint. */
     val streamUrl: String = "",
-    /** Full URL to the MCP SSE endpoint (e.g. `http://127.0.0.1:64342/sse`). */
+    /** Full URL to the MCP SSE endpoint. */
     val sseUrl: String = "",
 )

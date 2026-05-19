@@ -2,14 +2,20 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.util.Disposer
+import com.intellij.util.Urls
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.IntelliJWebServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import org.jetbrains.ide.BuiltInServerManager
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -30,7 +36,7 @@ class ServerUrlWriter : Disposable {
     private var markerFile: Path? = null
 
     /**
-     * Write the MCP server URL to the user home as a JSON marker file.
+     * Write the MCP server URL to the user's home as a JSON marker file.
      * Stale marker files from dead processes are cleaned up first.
      *
      * The marker carries the IntelliJ-hosted MCP server's port (matches
@@ -38,7 +44,7 @@ class ServerUrlWriter : Disposable {
      * [NpxBridgeService.token]) so external monitors can address the
      * server without parsing the URL or guessing the token.
      *
-     * @param serverUrl The MCP server URL (e.g., "http://localhost:<port>/mcp")
+     * @param serverUrl The MCP server URL.
      */
     fun writeServerUrlToUserHome(serverUrl: String) {
         writeServerUrlToUserHome(serverUrl, env = System.getenv())
@@ -61,6 +67,7 @@ class ServerUrlWriter : Disposable {
             ide = IdeInfo.ofApplication(),
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
+            intellijWebServer = buildIntelliJWebServerInfo(),
             intellijMcpServer = IntelliJMcpServerProbe.getInstanceOrNull()?.probe(),
         )
         val content = PidMarkerJson.encode(marker)
@@ -83,6 +90,52 @@ class ServerUrlWriter : Disposable {
                 log.warn("Failed to clean up MCP Steroid marker file on shutdown", e)
             }
         }
+    }
+
+    private fun buildIntelliJWebServerInfo(): IntelliJWebServerInfo? {
+        return try {
+            val rawManager = BuiltInServerManager.getInstance()
+            val manager = if (ApplicationManager.getApplication().isDispatchThread) {
+                rawManager
+            } else {
+                rawManager.waitForStart()
+            }
+            if (manager.serverDisposable == null) {
+                return IntelliJWebServerInfo(enabled = false)
+            }
+
+            val host = "127.0.0.1"
+            val authority = "$host:${manager.port}"
+            val baseUrl = Urls.newHttpUrl(authority, "", null).toExternalForm()
+            val aboutUrl = Urls.newHttpUrl(authority, "/api/about", null)
+            val authorizedAboutUrl = manager.addAuthToken(aboutUrl)
+            val token = extractQueryParameter(authorizedAboutUrl.parameters, "_ijt")
+
+            IntelliJWebServerInfo(
+                enabled = true,
+                host = host,
+                port = manager.port,
+                baseUrl = baseUrl,
+                aboutUrl = authorizedAboutUrl.toExternalForm(),
+                token = token.orEmpty(),
+            )
+        } catch (e: Exception) {
+            log.warn("Failed to query IntelliJ's built-in web server", e)
+            null
+        }
+    }
+
+    private fun extractQueryParameter(parameters: String?, name: String): String? {
+        val query = parameters?.removePrefix("?") ?: return null
+        return query.split('&')
+            .asSequence()
+            .mapNotNull { pair ->
+                val key = pair.substringBefore('=', missingDelimiterValue = pair)
+                if (key != name) return@mapNotNull null
+                val value = pair.substringAfter('=', missingDelimiterValue = "")
+                URLDecoder.decode(value, StandardCharsets.UTF_8)
+            }
+            .firstOrNull()
     }
 
     /**
