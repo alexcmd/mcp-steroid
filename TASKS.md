@@ -464,8 +464,28 @@ agent prompt/tool-selection bugs.
   `test-integration/build/test-logs/test/run-20260518-175606-devrig-stdio-mcp-real-ide-bridge`.
   Final review quorum passed: Claude `run_20260518-160215-19238`, Gemini
   `run_20260518-160215-19239`, Codex `run_20260518-160215-19240`.
-- [ ] One real running IDE, no AI: progress notification is observable for an
+- [x] One real running IDE, no AI: progress notification is observable for an
   execute-code call.
+  Added a devrig stdio progress test that calls `steroid_execute_code` with a
+  client progress token and asserts the matching `notifications/progress`
+  frame contains the script marker. Added a small stdio harness helper for
+  capturing out-of-band JSON-RPC frames, and fixed the IDE-side npx bridge to
+  serialize SSE emits and drain progress before the final result/error event.
+  Verification:
+  `./gradlew :ij-plugin:compileKotlin :test-helper:compileKotlin :test-integration:compileTestKotlin --console=plain`
+  passed.
+  `./gradlew :test-integration:test --tests 'com.jonnyzzz.mcpSteroid.integration.tests.NpxKtRealIdeBridgeIntegrationTest' --rerun-tasks --console=plain`
+  passed; run dir
+  `test-integration/build/test-logs/test/run-20260518-184657-devrig-stdio-mcp-real-ide-bridge`.
+  MCP Steroid inspections on touched files passed with `INSPECTION_TOTAL: 0`
+  in `eid_20260518T185050-devrig-real-ide-progress`.
+  `git diff --check` passed.
+  Final quorum review was attempted but blocked by run-agent infrastructure:
+  Claude `run_20260518-165133-58882`, Codex
+  `run_20260518-165133-58881`, and Gemini
+  `run_20260518-165133-58884` produced no `STATUS.md`/`RESULT.md` after
+  3h38m and were terminated; Codex reported a closed stdin tool error and
+  Gemini repeatedly failed on `fetch failed sending request`.
 - [ ] One real running IDE, no AI: `steroid_apply_patch` works on a disposable
   fixture file.
 - [ ] One real running IDE, no AI: screenshot/input route to the same IDE.

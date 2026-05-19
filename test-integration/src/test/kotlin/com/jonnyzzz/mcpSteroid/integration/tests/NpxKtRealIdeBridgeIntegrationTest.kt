@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -60,6 +61,46 @@ class NpxKtRealIdeBridgeIntegrationTest {
         assertTrue(
             textContent(result).contains(marker),
             "execute_code result must contain marker $marker\n$diagnostics\n$result",
+        )
+    }
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.MINUTES)
+    fun devrigStdioForwardsExecuteCodeProgressNotifications() {
+        val diagnostics = session.diagnosticsSummary()
+        val npxCommand = NpxSteroidDriver.deploy(session.scope, session.mcpSteroid).npxCommand
+
+        val process = startContainerStdioMcp(npxCommand)
+        process.initialize()
+
+        val projectName = waitForProjectName(process, diagnostics)
+        val progressToken = "devrig-progress-${System.nanoTime()}"
+        val progressMarker = "DEVRIG_REAL_IDE_PROGRESS"
+        val result = toolCallWithOutOfBandFrames(
+            process = process,
+            name = "steroid_execute_code",
+            arguments = buildJsonObject {
+                put("project_name", projectName)
+                put("task_id", "real-ide-devrig-progress")
+                put("reason", "verify devrig stdio forwards execute-code progress")
+                put("code", """progress("$progressMarker"); println("DONE")""")
+                putJsonObject("_meta") {
+                    put("progressToken", progressToken)
+                }
+            },
+            diagnostics = diagnostics,
+        )
+
+        assertFalse(isToolError(result.result), "execute_code must not return a tool error\n$diagnostics\n${result.result}")
+        val progressFrames = result.outOfBandFrames + process.drainNoMore(timeoutMillis = 500)
+        val matchingProgress = progressFrames
+            .filter { it["method"]?.jsonPrimitive?.contentOrNull == "notifications/progress" }
+            .mapNotNull { it["params"]?.jsonObject }
+            .filter { it["progressToken"]?.jsonPrimitive?.contentOrNull == progressToken }
+        assertTrue(
+            matchingProgress.any { it["message"]?.jsonPrimitive?.contentOrNull?.contains(progressMarker) == true },
+            "Expected progress notification with token $progressToken and marker $progressMarker\n" +
+                    "$diagnostics\nframes=$progressFrames\nresult=${result.result}",
         )
     }
 
@@ -118,6 +159,26 @@ class NpxKtRealIdeBridgeIntegrationTest {
         return response["result"]?.jsonObject ?: error("tools/call response missing result\n$diagnostics\n$response")
     }
 
+    private fun toolCallWithOutOfBandFrames(
+        process: StdioMcpProcess,
+        name: String,
+        arguments: JsonObject,
+        diagnostics: String,
+    ): ToolCallExchange {
+        val exchange = process.requestWithOutOfBandFrames(
+            "tools/call",
+            buildJsonObject {
+                put("name", name)
+                put("arguments", arguments)
+            },
+            timeoutMillis = 60_000,
+        )
+        assertNull(exchange.response["error"], "tools/call returned JSON-RPC error\n$diagnostics\n${exchange.response}")
+        val result = exchange.response["result"]?.jsonObject
+            ?: error("tools/call response missing result\n$diagnostics\n${exchange.response}")
+        return ToolCallExchange(result = result, outOfBandFrames = exchange.outOfBandFrames)
+    }
+
     private fun isToolError(result: JsonObject): Boolean =
         result["isError"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() == true
 
@@ -127,6 +188,11 @@ class NpxKtRealIdeBridgeIntegrationTest {
                 content.jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
             }
             ?: error("tool result missing content: $result")
+
+    private data class ToolCallExchange(
+        val result: JsonObject,
+        val outOfBandFrames: List<JsonObject>,
+    )
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true }

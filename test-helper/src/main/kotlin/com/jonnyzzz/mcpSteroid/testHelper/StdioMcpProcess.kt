@@ -90,7 +90,23 @@ class StdioMcpProcess(
      * Send a JSON-RPC request and block until the matching response arrives or
      * [timeoutMillis] elapses. The id is generated and matched internally.
      */
-    fun request(method: String, params: JsonObject, timeoutMillis: Long = 10_000): JsonObject {
+    fun request(method: String, params: JsonObject, timeoutMillis: Long = 10_000): JsonObject =
+        requestCollectingFrames(method, params, timeoutMillis, logOutOfBandFrames = true)
+            .response
+
+    fun requestWithOutOfBandFrames(
+        method: String,
+        params: JsonObject,
+        timeoutMillis: Long = 10_000,
+    ): StdioMcpExchange =
+        requestCollectingFrames(method, params, timeoutMillis, logOutOfBandFrames = false)
+
+    private fun requestCollectingFrames(
+        method: String,
+        params: JsonObject,
+        timeoutMillis: Long,
+        logOutOfBandFrames: Boolean,
+    ): StdioMcpExchange {
         val id = nextId.getAndIncrement()
         val payload = buildJsonObject {
             put("jsonrpc", "2.0")
@@ -100,17 +116,24 @@ class StdioMcpProcess(
         }
         writeFrame(payload)
 
+        val outOfBandFrames = mutableListOf<JsonObject>()
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
         while (System.nanoTime() < deadline) {
             val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
             val element = responseQueue.poll(remaining.coerceAtLeast(1), TimeUnit.MILLISECONDS) ?: continue
             val responseId = (element["id"] as? JsonPrimitive)?.content
-            if (responseId == id.toString()) return element
-            // Out-of-band notifications or unrelated messages — surface them in
-            // stderr so a flaky failure leaves a trace, then keep polling.
-            System.err.println("[STDIO-CLIENT] discarding non-matching frame (expected id=$id): $element")
+            if (responseId == id.toString()) {
+                return StdioMcpExchange(response = element, outOfBandFrames = outOfBandFrames.toList())
+            }
+            if (logOutOfBandFrames) {
+                System.err.println("[STDIO-CLIENT] discarding non-matching frame (expected id=$id): $element")
+            }
+            outOfBandFrames += element
         }
-        throw AssertionError("Timed out after ${timeoutMillis}ms waiting for response to method=$method id=$id")
+        throw AssertionError(
+            "Timed out after ${timeoutMillis}ms waiting for response to method=$method id=$id; " +
+                    "out-of-band frames=$outOfBandFrames"
+        )
     }
 
     fun notify(method: String, params: JsonObject) {
@@ -155,6 +178,11 @@ class StdioMcpProcess(
         }
     }
 }
+
+data class StdioMcpExchange(
+    val response: JsonObject,
+    val outOfBandFrames: List<JsonObject>,
+)
 
 /**
  * Start [launcher] as a subprocess and connect it to the stdio MCP test harness.
