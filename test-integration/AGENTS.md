@@ -709,6 +709,40 @@ Extracts a human-readable summary for `>> tool_name (detail)` lines. Handles:
 - `agent-{name}-{N}-raw.ndjson` — raw NDJSON lines from STDOUT (unfiltered).
 - `agent-{name}-{N}-decoded.txt` — human-readable decoded output + stderr/info lines.
 
+### Parsing the agent's actual tool calls (IMPROVEMENTS harness)
+
+When a prompt-quality test needs to verify what the agent **actually called**
+(e.g. did `printCsv` show up in any `steroid_execute_code` submission?),
+**parse the raw NDJSON, not the decoded prose transcript**. Substring matching
+on the prose is unreliable: agents fetch prompt articles via
+`steroid_fetch_resource` and the article body is echoed verbatim into the
+transcript — that defeats `combined.contains("printCsv")`-style checks with
+false positives. The B5 / `PrintCsvPrintToonPromptTest` work hit this on round 1.
+
+NDJSON file lookup: `test-integration/build/test-logs/test/run-<timestamp>-<title>/agent-<slug>-<n>-raw.ndjson`,
+where `<slug>` is `agent.displayName.lowercase().replace(Regex("[^a-z0-9]+"), "-")`
+(`claude-code`, `codex`, `gemini`). Take the maxByOrNull-lastModified file for
+the most recent `runPrompt(...)` invocation.
+
+Three distinct tool-call shapes — a parser must handle all three:
+
+| Agent | Locator | Tool-name format | Code field |
+|---|---|---|---|
+| Claude Code (2.1.x) | `obj.message.content[*]` where `type=tool_use` | `mcp__<server>__<tool>` (double underscore) | `input.code` |
+| Codex | `obj.item` where `obj.type=item.completed` and `item.type=mcp_tool_call` | `item.tool` (or `item.name` on older builds), bare `steroid_execute_code` OR `__steroid_execute_code` suffix | `item.arguments.code` (fallback: `item.input.code`) |
+| Gemini | Root object where `obj.type=tool_use` | `mcp_<server>_<tool>` (SINGLE underscore between `mcp` prefix and server slug) | `parameters.code` |
+
+Match the tool name via `endsWith("steroid_execute_code")` to cover all
+prefixings. Reference implementation: `PrintCsvPrintToonPromptTest.readAgentExecCodeBodies`
+(`test-integration/src/test/.../tests/PrintCsvPrintToonPromptTest.kt`) — copy
+into new harness tests verbatim.
+
+`FindDuplicatesPromptTest.readAgentExecCodeBodies` is the older copy and only
+handles the Claude + Codex shapes. A follow-up is open to extend it to
+Gemini (the third branch above) — it's not a blocker because that test
+asserts behavior that's also visible in Claude/Codex outputs, but the
+inconsistency is worth resolving the next time someone touches the file.
+
 ### `ClaudeOutputFilter`
 
 Claude Code 2.1.x switched from streaming events (`content_block_delta`, `tool_use`, `tool_result`) to

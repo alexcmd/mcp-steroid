@@ -63,7 +63,39 @@ Get services: `project.service<MyService>()` or `service<AppService>()`. Use `ch
 ### Error handling
 
 - Never catch `ProcessCanceledException` — rethrow it.
+- **Never log `CancellationException` (or any subclass) as an error.** On the
+  hot script-execution path (`mcp-http/`, `ij-plugin/.../execution/`,
+  `ij-plugin/.../server/`), every `catch (Throwable)` / `catch (Exception)`
+  must match `CancellationException` first and rethrow without logging —
+  this is the `c.i.openapi.diagnostic.Logger` Javadoc contract for
+  control-flow exceptions. Audit completed in commit `efcd3400` (2026-05-19);
+  see TASKS.md → "A2b" for the site-by-site list of fixed catches, sites
+  already correct (do not retouch), and intentionally-deferred sites
+  off the hot path. The user-visible failure from issue #46
+  (`SEVERE: StandaloneCoroutine was cancelled` + dual 200/500 log lines)
+  was driven by this rule being violated; A0's boundary catch-all
+  (`McpHttpTransport.handlePost`, commit `3a4e7c13`) plus the A2b
+  rethrows form the complete fix.
+- One exception: `ScriptExecutor.kt:150` deliberately catches
+  `TimeoutCancellationException` BEFORE the generic `CancellationException`
+  catch and calls `reportFailed("Execution timed out after $timeout seconds")`.
+  TCE is a CE subclass; the script-timeout case is a domain error that
+  needs to surface to the agent, not a control-flow signal to propagate.
 - Use `Logger.getInstance(MyClass::class.java)` for logging.
+
+### Cancellation and the `kotlinc` subprocess
+
+`KotlincProcessClient.kotlinc(args, workingDir)` is a regular (non-`suspend`)
+`fun` that calls `ExecUtil.execAndGetOutput(commandLine, 120_000)`. The
+blocking JVM call does NOT check `kotlinx.coroutines` cancellation, so a
+cancelled caller coroutine will NOT terminate the in-flight kotlinc
+subprocess — kotlinc runs to completion (or its 120 s upper bound). This
+is **intentional**: killing kotlinc mid-compile is flaky on macOS+JDK21
+and the saved cycles are small. Nothing in `ij-plugin/src/main` calls
+`process.destroyForcibly()` on the kotlinc process, and adding such a
+call would defeat the contract. After `kotlinc(...)` returns, the
+CE-rethrow wrappers above ensure the cancellation propagates upstream
+cleanly. (Cluster A's A3, verified-by-inspection 2026-05-19.)
 
 ## Build
 
