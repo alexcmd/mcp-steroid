@@ -2394,3 +2394,70 @@ Codex run `task-lifecycle/run_20260515-133645-60441`. Commits pushed to
 
 GUI integration test green (`ManagedBackendGui*`, BUILD SUCCESSFUL 2m9s),
 manual single-instance smoke green. See run dir for full transcript.
+
+# GH-issue triage queue — A + B bundles (2026-05-19)
+
+Source: open-issue review on `jonnyzzz/mcp-steroid`. Bundle C/D/E deferred;
+issue #11 dropped per owner. One commit per issue, atomic.
+
+## Bundle A — recipes / docs (no production code)
+
+- [ ] **#63** `mcp-steroid://ide/inspect-and-fix`: refresh
+  `InspectionEngine.inspectEx(...)` snippet against current platform; verify
+  via `steroid_execute_code` paste-and-run on a live IDE
+- [ ] **#60** `steroid_execute_code` tool description + recipes: surface the
+  "last expression is not auto-printed → use `println(...)`" tip; add a
+  worked example near the top of the tool description; do NOT add a new
+  `returnLastExpression` parameter (narrow-tool-surface — see memory
+  `feedback_narrow_tool_surface`)
+- [ ] **#61** Action discovery: add a `requireAction(id)` recipe under
+  `prompts/src/main/prompts/ide/` showing
+  `ActionManager.getInstance().getAction(id) ?: error("no action $id …")`;
+  cross-link from the action-invocation skill
+- [ ] **#15** Short doc: "MCP Steroid vs IntelliJ Built-in MCP Server" —
+  place under `docs/`, link from README
+- [ ] **#32** Tips & Tricks Migration — scope first (what corpus, what
+  destination); likely a `prompts/` move, but do not start coding until the
+  scope is one-pager-sized
+
+## Bundle B — small code fixes (≤ a day each)
+
+- [ ] **#59** Stop tracking `.idea/mcp-steroid.md`. Move to
+  `.idea/mcp-steroid/runtime.json` (or similar), `.gitignore` it, and on
+  first write of the new path delete the old `.idea/mcp-steroid.md` if it
+  exists so existing checkouts self-heal. Update any clients that read the
+  old path (TC DSL repo notes, `run-agent.sh`, etc. — grep before changing)
+- [ ] **#57** `steroid_apply_patch`: under
+  `native2AsciiForPropertiesFiles=true`, neighboring unchanged
+  `.properties` lines get re-encoded. Make the patcher write back unchanged
+  lines byte-identical to source; add a regression test with a non-ASCII
+  `.properties` file
+- [ ] **#55** `steroid_take_screenshot` JFrame capture is ~1.37× larger
+  than X display. Divide capture rect by
+  `JFrame.graphicsConfiguration.defaultTransform.scaleX/scaleY` (or use
+  `JBUI.sysScale(component)`). Verify on a Retina Mac + Linux Docker
+- [ ] **#12** Make `reason` optional in `steroid_execute_code`. Update
+  schema (nullable) + tool description; keep emitting the field in
+  audit/feedback logs when supplied
+
+## Tracking
+
+Working order:
+1. A (4 issues + a scope note for #32)
+2. B (4 issues, atomic commits)
+3. Stop and report; do NOT start bundle C yet
+
+# Gradle-script "Nothing here" popup (2026-05-19)
+
+User-reported repro: triggering Debug on a Gradle script in
+`~/Work/mcp-steroid` opens an IntelliJ popup that just says "Nothing here".
+
+- [ ] Reproduce locally via MCP Steroid on the user's open `mcp-steroid`
+  project
+- [ ] Identify which IntelliJ action raised the popup and what
+  precondition failed (likely an `ActionPlaces.POPUP`-style `update()` that
+  returns no targets — same family as the test-debug "caret on `fun`
+  keyword" pitfall in memory)
+- [ ] Update the relevant `prompts/` recipe(s) to steer agents away from
+  the failure mode (either correct invocation, or a hard "don't debug
+  Gradle scripts this way — use $X instead")
