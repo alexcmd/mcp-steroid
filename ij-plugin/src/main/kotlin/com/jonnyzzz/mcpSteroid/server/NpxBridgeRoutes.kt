@@ -136,11 +136,10 @@ fun Route.installNpxBridgeRoutes(
             if (!call.requireNpxBridgeAuthorization()) return@post
             val request = call.parseToolCallRequestOrRespondBadRequest() ?: return@post
             val bridge = NpxBridgeService.getInstance()
-            call.respondTextWriter(contentType = ContentType.Text.EventStream) {
+            call.respondTextWriter(contentType = NDJSON_CONTENT_TYPE) {
                 bridge.streamToolCall(serverCoreProvider(), request) { event ->
-                    val eventType = event.eventType() ?: "message"
-                    write("event: $eventType\n")
-                    write("data: ${event}\n\n")
+                    write(NpxStreamJson.encodeObject(event))
+                    write("\n")
                     flush()
                 }
             }

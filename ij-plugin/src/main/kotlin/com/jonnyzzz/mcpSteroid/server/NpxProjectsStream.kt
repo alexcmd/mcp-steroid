@@ -5,22 +5,25 @@ import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondTextWriter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.format.DateTimeFormatter
-import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
  * Streams the projects-stream NDJSON response into [ApplicationCall].
  *
- * Behaviour:
+ * Behavior:
  *  - Reads the request body as [NpxStreamClientInfo] (best-effort: malformed
  *    or empty body falls back to defaults so clients on older protocols
  *    still connect).
@@ -39,7 +42,7 @@ internal suspend fun ApplicationCall.streamProjectsNdjson(
     instanceId: String,
     pid: Long,
     nextSeq: () -> Long,
-    pingInterval: Duration = 5.seconds,
+    pingInterval: Duration = NPX_STREAM_KEEPALIVE_INTERVAL_SECONDS.seconds,
     onClientInfo: (NpxStreamClientInfo) -> Unit,
 ) {
     val rawBody = try { receiveText() } catch (e: Exception) { "" }
@@ -55,11 +58,21 @@ internal suspend fun ApplicationCall.streamProjectsNdjson(
     onClientInfo(clientInfo)
 
     respondTextWriter(contentType = NDJSON_CONTENT_TYPE) {
+        val sendMutex = Mutex()
+        suspend fun sendLine(line: String) {
+            sendMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    write(line)
+                    write("\n")
+                    flush()
+                }
+            }
+        }
+
         coroutineScope {
             val pings = launch {
                 while (isActive) {
                     delay(pingInterval)
-                    if (!coroutineContext.isActive) break
                     val ping = NpxStreamEnvelope(
                         type = "ping",
                         seq = nextSeq(),
@@ -67,9 +80,7 @@ internal suspend fun ApplicationCall.streamProjectsNdjson(
                         instanceId = instanceId,
                         pid = pid,
                     )
-                    write(NpxStreamJson.encodeEnvelope(ping))
-                    write("\n")
-                    flush()
+                    sendLine(NpxStreamJson.encodeEnvelope(ping))
                 }
             }
 
@@ -83,9 +94,7 @@ internal suspend fun ApplicationCall.streamProjectsNdjson(
                         pid = pid,
                         projects = projects,
                     )
-                    write(NpxStreamJson.encodeEnvelope(snapshot))
-                    write("\n")
-                    flush()
+                    sendLine(NpxStreamJson.encodeEnvelope(snapshot))
                 }
             } finally {
                 pings.cancel()

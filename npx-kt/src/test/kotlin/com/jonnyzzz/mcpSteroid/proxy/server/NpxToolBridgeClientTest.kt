@@ -64,9 +64,9 @@ class NpxToolBridgeClientTest {
     private var receivedAuth: String? = null
     private var receivedBody: String? = null
     private val beforeResultEvents = mutableListOf<String>()
-    private var sseResponse: String? = null
-    private var holdSseEntered: CompletableDeferred<Unit>? = null
-    private var holdSseRelease: CompletableDeferred<Unit>? = null
+    private var streamResponse: String? = null
+    private var holdStreamEntered: CompletableDeferred<Unit>? = null
+    private var holdStreamRelease: CompletableDeferred<Unit>? = null
     private var httpStatus = HttpStatusCode.OK
     private var httpBody = ""
 
@@ -82,19 +82,18 @@ class NpxToolBridgeClientTest {
                         call.respondText(httpBody, ContentType.Text.Plain, httpStatus)
                         return@post
                     }
-                    call.respondTextWriter(ContentType.Text.EventStream) {
-                        val custom = sseResponse
+                    call.respondTextWriter(ContentType.parse("application/x-ndjson")) {
+                        val custom = streamResponse
                         if (custom != null) {
                             write(custom)
                             flush()
                             return@respondTextWriter
                         }
-                        val hold = holdSseRelease
+                        val hold = holdStreamRelease
                         if (hold != null) {
-                            write("event: progress\n")
-                            write("""data: {"type":"progress","message":"started"}""" + "\n\n")
+                            write("""{"type":"progress","message":"started"}""" + "\n")
                             flush()
-                            holdSseEntered?.complete(Unit)
+                            holdStreamEntered?.complete(Unit)
                             hold.await()
                             return@respondTextWriter
                         }
@@ -103,12 +102,11 @@ class NpxToolBridgeClientTest {
                             content = listOf(ContentItem.Text("ok")),
                             isError = false,
                         )
-                        write("event: result\n")
                         write(
-                            "data: " + buildJsonObject {
+                            buildJsonObject {
                                 put("type", "result")
                                 put("result", McpJson.encodeToJsonElement(ToolCallResult.serializer(), result))
-                            } + "\n\n"
+                            }.toString() + "\n"
                         )
                         flush()
                     }
@@ -130,9 +128,9 @@ class NpxToolBridgeClientTest {
     @AfterEach
     fun tearDown() {
         beforeResultEvents.clear()
-        sseResponse = null
-        holdSseEntered = null
-        holdSseRelease = null
+        streamResponse = null
+        holdStreamEntered = null
+        holdStreamRelease = null
         httpStatus = HttpStatusCode.OK
         httpBody = ""
         httpClient.close()
@@ -315,11 +313,7 @@ class NpxToolBridgeClientTest {
             content = listOf(ContentItem.Text("screenshot saved in $screenshotExecutionId")),
             isError = false,
         )
-        sseResponse = """
-            event: result
-            data: {"type":"result","result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}
-
-        """.trimIndent() + "\n"
+        streamResponse = """{"type":"result","result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}""" + "\n"
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
@@ -525,11 +519,9 @@ class NpxToolBridgeClientTest {
     fun `execute code bridge handler forwards timeout dialog killer and progress events`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        beforeResultEvents += """
-            event: progress
-            data: {"type":"progress","message":"compile started"}
-
-        """.trimIndent() + "\n"
+        beforeResultEvents += """{"type":"heartbeat","message":"ignored"}""" + "\n"
+        beforeResultEvents += """{"type":"future","message":"ignored"}""" + "\n"
+        beforeResultEvents += """{"type":"progress","message":"compile started"}""" + "\n"
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
@@ -570,12 +562,12 @@ class NpxToolBridgeClientTest {
     }
 
     @Test
-    fun `bridge client propagates cancellation while waiting for SSE result`(
+    fun `bridge client propagates cancellation while waiting for NDJSON result`(
         @TempDir tempDir: Path,
     ) {
         runBlocking {
-            holdSseEntered = CompletableDeferred()
-            holdSseRelease = CompletableDeferred()
+            holdStreamEntered = CompletableDeferred()
+            holdStreamRelease = CompletableDeferred()
             val bridge = NpxToolBridgeClient(
                 routing = NpxProjectRoutingService { emptyMap() },
                 httpClient = httpClient,
@@ -593,7 +585,7 @@ class NpxToolBridgeClientTest {
             }
 
             withTimeout(5.seconds) {
-                holdSseEntered?.await()
+                holdStreamEntered?.await()
             }
             result.cancel()
             try {
@@ -601,20 +593,16 @@ class NpxToolBridgeClientTest {
                     result.await()
                 }
             } finally {
-                holdSseRelease?.complete(Unit)
+                holdStreamRelease?.complete(Unit)
             }
         }
     }
 
     @Test
-    fun `bridge client returns error result for malformed SSE data`(
+    fun `bridge client returns error result for malformed NDJSON data`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        sseResponse = """
-            event: result
-            data: {not json}
-
-        """.trimIndent() + "\n"
+        streamResponse = "{not json}\n"
         val bridge = NpxToolBridgeClient(
             routing = NpxProjectRoutingService { emptyMap() },
             httpClient = httpClient,
@@ -625,18 +613,14 @@ class NpxToolBridgeClientTest {
         }
 
         assertEquals(true, result.isError)
-        assertTrue(result.errorText().contains("Malformed SSE data"))
+        assertTrue(result.errorText().contains("Malformed NDJSON data"))
     }
 
     @Test
-    fun `bridge client returns error result for SSE error event`(
+    fun `bridge client returns error result for NDJSON error message`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        sseResponse = """
-            event: error
-            data: {"type":"error","message":"upstream failed"}
-
-        """.trimIndent() + "\n"
+        streamResponse = """{"type":"error","message":"upstream failed"}""" + "\n"
         val bridge = NpxToolBridgeClient(
             routing = NpxProjectRoutingService { emptyMap() },
             httpClient = httpClient,
@@ -692,14 +676,10 @@ class NpxToolBridgeClientTest {
     }
 
     @Test
-    fun `bridge client returns error result when result event has no result field`(
+    fun `bridge client returns error result when result message has no result field`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        sseResponse = """
-            event: result
-            data: {"type":"result"}
-
-        """.trimIndent() + "\n"
+        streamResponse = """{"type":"result"}""" + "\n"
         val bridge = NpxToolBridgeClient(
             routing = NpxProjectRoutingService { emptyMap() },
             httpClient = httpClient,
@@ -710,18 +690,14 @@ class NpxToolBridgeClientTest {
         }
 
         assertEquals(true, result.isError)
-        assertTrue(result.errorText().contains("result event did not include result"))
+        assertTrue(result.errorText().contains("result message did not include result"))
     }
 
     @Test
-    fun `bridge client returns error result when SSE stream closes without result`(
+    fun `bridge client returns error result when NDJSON stream closes without result`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        sseResponse = """
-            event: progress
-            data: {"type":"progress","message":"still running"}
-
-        """.trimIndent() + "\n"
+        streamResponse = """{"type":"progress","message":"still running"}""" + "\n"
         val bridge = NpxToolBridgeClient(
             routing = NpxProjectRoutingService { emptyMap() },
             httpClient = httpClient,
@@ -736,19 +712,16 @@ class NpxToolBridgeClientTest {
     }
 
     @Test
-    fun `bridge client decodes multiline SSE data frame`(
+    fun `bridge client ignores heartbeat and unknown NDJSON messages before result`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val resultBody = ToolCallResult(
-            content = listOf(ContentItem.Text("multiline ok")),
+            content = listOf(ContentItem.Text("ndjson ok")),
             isError = false,
         )
-        sseResponse = """
-            event: result
-            data: {"type":"result",
-            data: "result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}
-
-        """.trimIndent() + "\n"
+        streamResponse = """{"type":"heartbeat"}""" + "\n" +
+                """{"type":"future","message":"ignored"}""" + "\n" +
+                """{"type":"result","result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}""" + "\n"
         val bridge = NpxToolBridgeClient(
             routing = NpxProjectRoutingService { emptyMap() },
             httpClient = httpClient,
@@ -759,7 +732,7 @@ class NpxToolBridgeClientTest {
         }
 
         assertEquals(false, result.isError)
-        assertEquals("multiline ok", (result.content.single() as ContentItem.Text).text)
+        assertEquals("ndjson ok", (result.content.single() as ContentItem.Text).text)
     }
 
     private fun routingService(vararg states: IdeMonitorState): NpxProjectRoutingService =

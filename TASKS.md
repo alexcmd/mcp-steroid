@@ -587,6 +587,22 @@ Implementation tasks:
   `OpenProjectToolHandler`.
 - [x] Use `/npx/v1/tools/call/stream` for routed calls that can produce
   progress and forward progress events as MCP progress notifications.
+- [x] Unify devrig bridge streaming on NDJSON for projects and tool calls.
+  Projects keep `ping`; tool calls keep `heartbeat`; both use a shared 10 s
+  keepalive cadence and npx-kt uses a 50 s socket idle timeout. Unknown
+  tool-call messages are ignored so future protocol messages do not break
+  current clients. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest' --rerun-tasks --console=plain`
+  and
+  `./gradlew :test-integration:test --tests 'com.jonnyzzz.mcpSteroid.integration.tests.NpxKtRealIdeBridgeIntegrationTest' --rerun-tasks --console=plain`
+  passed. Final real IDE run dir:
+  `test-integration/build/test-logs/test/run-20260519-093144-devrig-stdio-mcp-real-ide-bridge`.
+  MCP Steroid inspections reported zero findings on all touched files
+  (`eid_20260519T092307-devrig-ndjson-transport`; final focused
+  `NpxProjectsStream.kt` pass `eid_20260519T093009-devrig-ndjson-transport`).
+  Peer
+  reviews: Claude `run_20260519-071356-24092` GO; Gemini
+  `run_20260519-072044-27703` GO.
 - [x] Define and test `OpenProjectToolHandler` routing policy: require exactly
   one discovered/routable IDE; otherwise return an actionable error.
 - [x] Implement local npx-kt `PromptsContextHandler`. Given exposed

@@ -281,27 +281,27 @@ class NpxToolBridgeClient(
                 errorMessage = "HTTP ${response.status.value} from $url: ${response.bodyAsText()}"
                 return@execute
             }
-            readSse(response.bodyAsChannel()) { event, data ->
-                if (errorMessage != null) return@readSse
+            readNdjson(response.bodyAsChannel()) { line ->
+                if (errorMessage != null) return@readNdjson
                 val json = try {
-                    McpJson.parseToJsonElement(data).jsonObject
+                    McpJson.parseToJsonElement(line).jsonObject
                 } catch (e: Exception) {
-                    errorMessage = "Malformed SSE data from $url: ${e.javaClass.simpleName}: ${e.message}; data=${data.take(200)}"
-                    return@readSse
+                    errorMessage = "Malformed NDJSON data from $url: ${e.javaClass.simpleName}: ${e.message}; data=${line.take(200)}"
+                    return@readNdjson
                 }
-                when (event ?: json["type"]?.jsonPrimitive?.contentOrNull) {
+                when (json["type"]?.jsonPrimitive?.contentOrNull) {
                     "progress" -> json["message"]?.jsonPrimitive?.contentOrNull?.let { progress?.report(it) }
                     "result" -> {
                         val resultElement = json["result"]
                         if (resultElement == null) {
-                            errorMessage = "SSE result event did not include result from $url"
-                            return@readSse
+                            errorMessage = "NDJSON result message did not include result from $url"
+                            return@readNdjson
                         }
                         result = try {
                             McpJson.decodeFromJsonElement(ToolCallResult.serializer(), resultElement)
                         } catch (e: Exception) {
-                            errorMessage = "Malformed SSE result from $url: ${e.javaClass.simpleName}: ${e.message}; data=${data.take(200)}"
-                            return@readSse
+                            errorMessage = "Malformed NDJSON result from $url: ${e.javaClass.simpleName}: ${e.message}; data=${line.take(200)}"
+                            return@readNdjson
                         }
                     }
                     "error" -> errorMessage = json["message"]?.jsonPrimitive?.contentOrNull ?: "Tool call failed"
@@ -324,28 +324,13 @@ class JsonObjectBuilder(private val target: kotlinx.serialization.json.JsonObjec
         target.putJsonArray(key, builder)
 }
 
-suspend fun readSse(
+suspend fun readNdjson(
     channel: ByteReadChannel,
-    emit: suspend (event: String?, data: String) -> Unit,
+    emit: suspend (line: String) -> Unit,
 ) {
-    var event: String? = null
-    val data = StringBuilder()
     while (!channel.isClosedForRead) {
         val line = channel.readUTF8Line() ?: break
-        when {
-            line.isBlank() -> {
-                if (data.isNotEmpty()) {
-                    emit(event, data.toString())
-                    event = null
-                    data.clear()
-                }
-            }
-            line.startsWith("event:") -> event = line.removePrefix("event:").trim()
-            line.startsWith("data:") -> {
-                if (data.isNotEmpty()) data.append('\n')
-                data.append(line.removePrefix("data:").trimStart())
-            }
-        }
+        if (line.isBlank()) continue
+        emit(line)
     }
-    if (data.isNotEmpty()) emit(event, data.toString())
 }

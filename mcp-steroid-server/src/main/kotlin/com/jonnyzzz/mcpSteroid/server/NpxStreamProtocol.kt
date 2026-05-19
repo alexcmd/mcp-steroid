@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.server
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Wire-protocol envelope for the `/npx/v1/projects/stream` NDJSON response.
@@ -60,6 +61,9 @@ object NpxStreamJson {
     fun decodeEnvelope(line: String): NpxStreamEnvelope =
         json.decodeFromString(NpxStreamEnvelope.serializer(), line)
 
+    fun encodeObject(obj: JsonObject): String =
+        json.encodeToString(JsonObject.serializer(), obj)
+
     fun encodeClientInfo(info: NpxStreamClientInfo): String =
         json.encodeToString(NpxStreamClientInfo.serializer(), info)
 
@@ -72,3 +76,14 @@ const val NPX_PROJECTS_STREAM_PATH: String = "/npx/v1/projects/stream"
 
 /** MIME type the IDE responds with on the projects-stream endpoint. */
 const val NPX_NDJSON_MIME_TYPE: String = "application/x-ndjson"
+
+/**
+ * Keepalive cadence for npx bridge NDJSON streams.
+ *
+ * The project stream sends `ping`; the tool-call stream sends `heartbeat`.
+ * The names intentionally match the existing per-stream protocols.
+ */
+const val NPX_STREAM_KEEPALIVE_INTERVAL_SECONDS: Int = 10
+
+/** Client idle timeout budget: five missed keepalives. */
+const val NPX_STREAM_IDLE_TIMEOUT_MILLIS: Long = 50_000

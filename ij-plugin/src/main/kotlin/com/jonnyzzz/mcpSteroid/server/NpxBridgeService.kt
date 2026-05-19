@@ -173,7 +173,7 @@ class NpxBridgeService {
         }
         val heartbeatJob = scope.launch {
             while (isActive) {
-                delay(2.seconds)
+                delay(NPX_STREAM_KEEPALIVE_INTERVAL_SECONDS.seconds)
                 emitEvent(
                     buildJsonObject {
                         put("type", "heartbeat")

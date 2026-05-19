@@ -4,6 +4,7 @@ import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeDiscoveryService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.proxy.monitor.IntelliJPortDiscovery
 import com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingService
+import com.jonnyzzz.mcpSteroid.server.NPX_STREAM_IDLE_TIMEOUT_MILLIS
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import io.ktor.client.HttpClient
@@ -60,7 +61,7 @@ class NpxKtServices(
         val httpClient = HttpClient(CIO) {
             install(HttpTimeout) {
                 requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
-                socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                socketTimeoutMillis = NPX_STREAM_IDLE_TIMEOUT_MILLIS
                 connectTimeoutMillis = 10_000
             }
             expectSuccess = false
