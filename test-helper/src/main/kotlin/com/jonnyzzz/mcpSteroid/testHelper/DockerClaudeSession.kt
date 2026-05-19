@@ -50,20 +50,20 @@ class DockerClaudeSession(
         mcpConfigJson = claudeHttpMcpConfig(mcpUrl, mcpName)
     }
 
-    override fun registerNpxMcp(npxCommand: StdioMcpCommand, mcpName: String) {
-        runInContainer(args = claudeMcpAddStdioArgs(npxCommand, mcpName))
-            .assertExitCode(0) { "NPX MCP server registration" }
-            .assertNoErrorsInOutput("NPX MCP server registration")
+    override fun registerStdioMcp(command: StdioMcpCommand, mcpName: String) {
+        runInContainer(args = claudeMcpAddStdioArgs(command, mcpName))
+            .assertExitCode(0) { "devrig MCP server registration" }
+            .assertNoErrorsInOutput("devrig MCP server registration")
         mcpRegistrationLog += McpRegistration(
             name = mcpName,
             transport = McpRegistrationTransport.STDIO,
-            command = npxCommand,
+            command = command,
         )
-        mcpConfigJson = claudeStdioMcpConfig(npxCommand, mcpName)
+        mcpConfigJson = claudeStdioMcpConfig(command, mcpName)
     }
 
-    override fun registerNpxKtMcp(installDir: File, mcpName: String) {
-        registerNpxMcp(session.installNpxKtMcp(installDir), mcpName)
+    override fun registerDevrigMcp(installDir: File, mcpName: String) {
+        registerStdioMcp(session.installDevrigMcp(installDir), mcpName)
     }
 
     /**

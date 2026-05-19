@@ -34,11 +34,11 @@ enum class AiMode {
     AI_MCP,
 
     /**
-     * Agents connect to MCP Steroid via an NPX stdio proxy.
-     * [NpxSteroidDriver] is deployed before agents are initialized; each agent
-     * has [AiAgentSession.registerNpxMcp] called with the resulting command.
+     * Agents connect to MCP Steroid via devrig stdio.
+     * [DevrigSteroidDriver] is deployed before agents are initialized; each agent
+     * has [AiAgentSession.registerStdioMcp] called with the resulting command.
      */
-    AI_NPX,
+    AI_DEVRIG,
 }
 
 /**
@@ -95,11 +95,11 @@ class IntelliJContainer(
             .assertExitCode(0) { "$description failed\nstdout=$stdout\nstderr=$stderr" }
     }
 
-    fun deployDevrigLauncher(packageZip: File = IdeTestFolders.npxKtPackageZip): String {
+    fun deployDevrigLauncher(packageZip: File = IdeTestFolders.devrigPackageZip): String {
         require(packageZip.isFile) { "devrig distribution ZIP does not exist: ${packageZip.absolutePath}" }
 
         val launcherPath = "/home/agent/devrig"
-        scope.copyToContainer(packageZip, "/tmp/mcp-steroid-proxy.zip")
+        scope.copyToContainer(packageZip, "/tmp/devrig.zip")
         execAndAssert(
             description = "install devrig launcher",
             timeoutSeconds = 120,
@@ -107,12 +107,12 @@ class IntelliJContainer(
                 set -euo pipefail
                 rm -rf /home/agent/devrig-cli "$launcherPath"
                 mkdir -p /home/agent/devrig-cli
-                unzip -q /tmp/mcp-steroid-proxy.zip -d /home/agent/devrig-cli
-                app_dir="${'$'}(find /home/agent/devrig-cli -mindepth 1 -maxdepth 1 -type d -name 'mcp-steroid-proxy-*' | head -1)"
+                unzip -q /tmp/devrig.zip -d /home/agent/devrig-cli
+                app_dir="${'$'}(find /home/agent/devrig-cli -mindepth 1 -maxdepth 1 -type d -name 'devrig-*' | head -1)"
                 test -n "${'$'}app_dir"
                 mv "${'$'}app_dir" /home/agent/devrig-cli/app
-                chmod +x /home/agent/devrig-cli/app/bin/mcp-steroid-proxy
-                ln -sfn mcp-steroid-proxy /home/agent/devrig-cli/app/bin/devrig
+                chmod +x /home/agent/devrig-cli/app/bin/devrig
+                ln -sfn devrig /home/agent/devrig-cli/app/bin/devrig
                 ln -sfn /home/agent/devrig-cli/app/bin/devrig "$launcherPath"
                 "$launcherPath" --version
             """.trimIndent(),

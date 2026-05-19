@@ -182,7 +182,7 @@ val buildPluginOnCI by tasks.registering {
  * * `test-helper` — pure-test plumbing (Docker reaper, etc.); not exercised by the plugin.
  * * `test-integration` — Docker-based smoke matrix; runs on its own dedicated TC config.
  * * `test-experiments` — long-running experimental Docker tests; ditto.
- * * `npx`, `npx-kt` — Node/Kotlin packaging for the standalone npx wrapper. Distributed
+ * * `npx`, `npx-kt` — Node/Kotlin packaging for standalone devrig. Distributed
  *   separately, no influence on the IDE plugin.
  *
  * The website (`website/`) is not a Gradle module, so it is not in this list — it is

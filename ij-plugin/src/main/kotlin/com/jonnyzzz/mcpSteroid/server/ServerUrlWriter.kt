@@ -25,9 +25,8 @@ import java.time.format.DateTimeFormatter
  * Writes the MCP server URL marker to the managed MCP Steroid marker directory.
  *
  * The marker file is `~/.mcp-steroid/markers/<pid>.mcp-steroid`, a JSON
- * document defined by [PidMarker]. External monitors (the `npx-kt` Kotlin
- * proxy, the npm `npx` proxy) read it to discover where this IDE's MCP server
- * is reachable. The `.idea/mcp-steroid.md` per-project description is written
+ * document defined by [PidMarker]. External monitors, including devrig, read
+ * it to discover where this IDE's MCP server is reachable. The `.idea/mcp-steroid.md` per-project description is written
  * separately by [IdeaDescriptionWriter].
  */
 @Service(Service.Level.APP)

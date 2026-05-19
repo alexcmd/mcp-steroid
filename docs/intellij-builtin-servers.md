@@ -147,11 +147,11 @@ optional `terminal` / `vcs` add-ons.
 
 - **Built-in web server**: the IDE-side `mcp-steroid` plugin now records
   `BuiltInServerManager` metadata on `PidMarker.intellijWebServer`
-  (port, tokenized `/api/about` URL, and auth token). The `npx-kt`
-  monitor still talks directly to our `mcp-steroid` ktor server for the
+  (port, tokenized `/api/about` URL, and auth token). The devrig monitor
+  still talks directly to our `mcp-steroid` ktor server for the
   main bridge flow; the built-in server metadata is discovery context.
 - **MCP Server plugin**: detected at marker-write time and surfaced on
-  `PidMarker.intellijMcpServer` so `npx-kt` can route an MCP client at
+  `PidMarker.intellijMcpServer` so devrig can route an MCP client at
   IntelliJ's bundled tools alongside our own. Wiring:
   `IntelliJMcpServerProbe` (interface) +
   `IntelliJMcpServerProbeImpl` (real impl), registered only via

@@ -95,11 +95,11 @@ class ConsoleAwareAgentSession(
         delegate.registerHttpMcp(mcpUrl, mcpName)
     }
 
-    override fun registerNpxMcp(npxCommand: StdioMcpCommand, mcpName: String) {
-        delegate.registerNpxMcp(npxCommand, mcpName)
+    override fun registerStdioMcp(command: StdioMcpCommand, mcpName: String) {
+        delegate.registerStdioMcp(command, mcpName)
     }
 
-    override fun registerNpxKtMcp(installDir: File, mcpName: String) {
-        delegate.registerNpxKtMcp(installDir, mcpName)
+    override fun registerDevrigMcp(installDir: File, mcpName: String) {
+        delegate.registerDevrigMcp(installDir, mcpName)
     }
 }

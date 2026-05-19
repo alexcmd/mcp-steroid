@@ -8,29 +8,20 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
-/**
- * Locates a `7z` binary capable of extracting NSIS installers (Windows IDE `.exe`).
- *
- * **Priority order:**
- *  1. JAR-bundled `7z.exe` + `7z.dll` + `License.txt` from 7-Zip 23.01 on
- *     Windows hosts only. The fixed tuple is copied on first use to
- *     `~/.cache/mcp-steroid/7z/<sha256>/` and reused thereafter; the cache key is
- *     derived from the primary `7z.exe` bytes.
- *  2. `7z` / `7za` / `7zz` on `PATH`. This is the primary path on Linux and
- *     macOS hosts, and the Windows fallback when bundled resources are unavailable
- *     (for example in narrow unit-test classpaths).
- *
- * 7-Zip 23.01 statically links NSIS and LZMA2 support into `7z.dll`; we no
- * longer ship separate `Formats/Nsis.dll` or `Codecs/Lzma2.dll` plugin files.
- *
- * License: 7-Zip is **LGPL v2.1+** (https://www.7-zip.org/license.txt). The license text
- * ships alongside the binary in the installDist / JAR. See `THIRD_PARTY_NOTICES.md`.
- */
+// Bundled Windows 7-Zip files are preferred when present. PATH lookup covers
+// Linux, macOS, and the Windows fallback. The bundled 7-Zip 23.01 `7z.dll`
+// contains NSIS and LZMA2 support; no separate plugin files are shipped.
 object SevenZipLocator {
     private data class BundledPayload(
         val primaryName: String,
         val fileNames: List<String>,
         val executableNames: Set<String>,
+    )
+
+    private data class CacheTarget(
+        val dir: File,
+        val binary: File,
+        val isComplete: Boolean,
     )
 
     private val windowsPayload = BundledPayload(
@@ -39,7 +30,7 @@ object SevenZipLocator {
         executableNames = setOf("7z.exe"),
     )
 
-    // Compatibility with older unpacked npx-kt trees and existing tests. Current builds
+    // For compatibility with unpacked devrig trees and existing tests, current builds
     // no longer ship this payload; Linux/macOS hosts use PATH unless such a legacy tree
     // is supplied explicitly by the embedding distribution.
     private val legacyUnixPayload = BundledPayload(
@@ -75,7 +66,7 @@ object SevenZipLocator {
     }
 
     private fun extractBundled(os: HostOs, architecture: HostArchitecture): File? {
-        val sevenZipDir = npxKtSevenZipDirOrNull()
+        val sevenZipDir = devrigSevenZipDirOrNull()
         if (sevenZipDir != null) {
             val source = bundledFilePath(sevenZipDir, os, architecture)
             if (source != null) {
@@ -93,22 +84,20 @@ object SevenZipLocator {
             sourceDir.resolve(fileName).takeIf { Files.isRegularFile(it) } ?: return null
         }
         val primaryBytes = Files.readAllBytes(sourceFiles.getValue(payload.primaryName))
-        val digest = sha256(primaryBytes).take(16) // 16 hex chars is enough to namespace cached copies
-        val targetDir = File(cacheRoot, digest)
-        val targetBinary = File(targetDir, payload.primaryName)
-        if (isCompleteCachedPayload(targetDir, payload, primaryBytes.size)) {
-            return targetBinary
+        val target = cacheTarget(payload, primaryBytes)
+        if (target.isComplete) {
+            return target.binary
         }
 
-        targetDir.mkdirs()
+        target.dir.mkdirs()
         sourceFiles.forEach { (fileName, sourceFile) ->
-            val target = targetDir.toPath().resolve(fileName)
-            val tmpFile = Files.createTempFile(targetDir.toPath(), fileName, ".tmp")
+            val targetFile = target.dir.toPath().resolve(fileName)
+            val tmpFile = Files.createTempFile(target.dir.toPath(), fileName, ".tmp")
             try {
                 Files.copy(sourceFile, tmpFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-                Files.move(tmpFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                Files.move(tmpFile, targetFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
                 if (fileName in payload.executableNames) {
-                    target.toFile().setExecutable(true, false)
+                    targetFile.toFile().setExecutable(true, false)
                 }
             } catch (e: Exception) {
                 deleteTempFileOnFailure(tmpFile, e)
@@ -116,7 +105,7 @@ object SevenZipLocator {
             }
         }
 
-        return targetBinary
+        return target.binary
     }
 
     private fun extractBundledResource(os: HostOs, architecture: HostArchitecture): File? {
@@ -128,27 +117,25 @@ object SevenZipLocator {
         }
 
         val primaryBytes = resourceBytes.getValue(windowsPayload.primaryName)
-        val digest = sha256(primaryBytes).take(16) // 16 hex chars is enough to namespace cached copies
-        val targetDir = File(cacheRoot, digest)
-        val targetBinary = File(targetDir, windowsPayload.primaryName)
-        if (isCompleteCachedPayload(targetDir, windowsPayload, primaryBytes.size)) {
-            return targetBinary
+        val target = cacheTarget(windowsPayload, primaryBytes)
+        if (target.isComplete) {
+            return target.binary
         }
 
-        targetDir.mkdirs()
+        target.dir.mkdirs()
         resourceBytes.forEach { (fileName, bytes) ->
-            val target = targetDir.toPath().resolve(fileName)
-            val tmpFile = Files.createTempFile(targetDir.toPath(), fileName, ".tmp")
+            val targetFile = target.dir.toPath().resolve(fileName)
+            val tmpFile = Files.createTempFile(target.dir.toPath(), fileName, ".tmp")
             try {
                 Files.write(tmpFile, bytes)
                 Files.move(
                     tmpFile,
-                    target,
+                    targetFile,
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE,
                 )
                 if (fileName in windowsPayload.executableNames) {
-                    target.toFile().setExecutable(true, false)
+                    targetFile.toFile().setExecutable(true, false)
                 }
             } catch (e: Exception) {
                 deleteTempFileOnFailure(tmpFile, e)
@@ -156,7 +143,17 @@ object SevenZipLocator {
             }
         }
 
-        return targetBinary
+        return target.binary
+    }
+
+    private fun cacheTarget(payload: BundledPayload, primaryBytes: ByteArray): CacheTarget {
+        val digest = sha256(primaryBytes).take(16) // 16 hex chars is enough to namespace cached copies
+        val targetDir = File(cacheRoot, digest)
+        return CacheTarget(
+            dir = targetDir,
+            binary = File(targetDir, payload.primaryName),
+            isComplete = isCompleteCachedPayload(targetDir, payload, primaryBytes.size),
+        )
     }
 
     private fun deleteTempFileOnFailure(tmpFile: Path, cause: Exception) {
@@ -192,9 +189,9 @@ object SevenZipLocator {
         HostOs.MAC -> null
     }
 
-    private fun npxKtSevenZipDirOrNull(): Path? {
+    private fun devrigSevenZipDirOrNull(): Path? {
         val rootClass = try {
-            Class.forName("com.jonnyzzz.mcpSteroid.proxy.NpxKtRoot")
+            Class.forName("com.jonnyzzz.mcpSteroid.devrig.DevrigRoot")
         } catch (e: ClassNotFoundException) {
             return null
         }
@@ -203,14 +200,13 @@ object SevenZipLocator {
         return try {
             rootClass.getMethod("sevenZipDir").invoke(instance) as Path
         } catch (e: InvocationTargetException) {
-            val cause = e.cause
-            when (cause) {
+            when (val cause = e.cause) {
                 is RuntimeException -> throw cause
                 is Error -> throw cause
-                else -> throw IllegalStateException("Cannot resolve npx-kt 7z directory", cause)
+                else -> throw IllegalStateException("Cannot resolve devrig 7z directory", cause)
             }
         } catch (e: ReflectiveOperationException) {
-            throw IllegalStateException("Cannot invoke com.jonnyzzz.mcpSteroid.proxy.NpxKtRoot.sevenZipDir()", e)
+            throw IllegalStateException("Cannot invoke com.jonnyzzz.mcpSteroid.devrig.DevrigRoot.sevenZipDir()", e)
         }
     }
 

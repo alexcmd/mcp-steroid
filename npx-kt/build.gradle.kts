@@ -108,7 +108,7 @@ dependencies {
     // Brings :mcp-core and :prompts transitively.
     implementation(project(":mcp-steroid-server"))
 
-    // IDE-free ExecutionStorage core. Lets the proxy persist execution
+    // IDE-free ExecutionStorage core. Lets devrig persist execution
     // history with the same on-disk layout the IntelliJ plugin uses, so
     // downstream tooling that reads .idea/mcp-steroid/{eid}/ artefacts
     // works against both backends without conditional logic.
@@ -141,7 +141,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // Spin up an in-process Ktor server in monitor round-trip tests so the
     // monitor's HTTP client talks to a real socket. testImplementation only —
-    // the production `mcp-steroid-proxy` binary stays a pure ktor-client.
+    // the production `devrig` binary stays a pure ktor-client.
     testImplementation("io.ktor:ktor-server-core:$ktorVersion")
     testImplementation("io.ktor:ktor-server-cio:$ktorVersion")
 
@@ -151,9 +151,27 @@ dependencies {
 }
 
 application {
-    applicationName = "mcp-steroid-proxy"
-    mainClass.set("com.jonnyzzz.mcpSteroid.proxy.MainKt")
+    applicationName = "devrig"
+    mainClass.set("com.jonnyzzz.mcpSteroid.devrig.MainKt")
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.jar {
+    archiveBaseName.set("devrig")
+}
+
+tasks.distZip {
+    archiveBaseName.set("devrig")
+}
+
+tasks.distTar {
+    archiveBaseName.set("devrig")
+}
+
+tasks.startScripts {
+    doFirst {
+        outputDir?.deleteRecursively()
+    }
 }
 
 // Provider<File> for the resolved plugin zip — derived from `Configuration.elements`
@@ -169,7 +187,7 @@ distributions {
     main {
         contents {
             // Repo-root EULA — same file `:ij-plugin` already ships inside its
-            // plugin zip. Bundled at the npx-kt dist root so the binary carries
+            // plugin zip. Bundled at the devrig dist root so the binary carries
             // its own license text alongside the launcher and bundled plugin.
             from(rootProject.layout.projectDirectory.file("EULA"))
 
@@ -181,7 +199,7 @@ distributions {
             }
 
             // 7-Zip binaries from :intellij-downloader's extractSevenZipResources.
-            // Bundled unpacked at the dist root under `7z/<platform>/` so the proxy
+            // Bundled unpacked at the dist root under `7z/<platform>/` so devrig
             // can call <install>/7z/<platform>/7zz directly — no extraction-on-
             // first-use detour. The +x bit is preserved on the 7zz binaries.
             from(sevenZipBinariesDir) {
@@ -201,16 +219,16 @@ distributions {
                 from(rootProject.layout.projectDirectory.file("EULA"))
             }
 
-            // JDK bundling intentionally disabled — see TODO-NPX-BOOTSTRAPPER.md; npx-kt expects Java on PATH today, version.json will tell future bootstraps which Corretto build to fetch.
+            // JDK bundling intentionally disabled — see TODO-NPX-BOOTSTRAPPER.md; devrig expects Java on PATH today, version.json will tell future bootstraps which Corretto build to fetch.
         }
     }
 }
 
 tasks.test {
     useJUnitPlatform()
-    // Hand the build's project.version through to ProxyVersionMetadataTest so it can
-    // end-to-end-assert the value `loadProxyVersion()` returns at runtime.
-    systemProperty("npx-kt.expected.version", version.toString())
+    // Hand the build's project.version through to DevrigVersionMetadataTest so it can
+    // end-to-end-assert the generated runtime value.
+    systemProperty("devrig.expected.version", version.toString())
 }
 
 kotlin {
@@ -220,23 +238,23 @@ kotlin {
 // `project.version` rendered as a String once so both the metadata generator
 // (just below) and the bundled-libraries verifier (further down) can use it without
 // re-evaluating Gradle's Provider chain.
-val proxyVersion: String = version.toString()
+val devrigVersion: String = version.toString()
 
 // Generate the same encoded Kotlin metadata shape as :ij-plugin's PluginMetadata,
-// but in npx-kt's proxy package so runtime version reporting needs no classpath
+// but in devrig's package so runtime version reporting needs no classpath
 // resource fallback.
 val generatedSourcesPath = layout.buildDirectory.dir("generated/kotlin")
-val generateProxyVersionMetadata by tasks.registering(GenerateMetadataTask::class) {
+val generateDevrigVersionMetadata by tasks.registering(GenerateMetadataTask::class) {
     group = "build"
-    description = "Generate encoded npx-kt proxy version metadata"
+    description = "Generate encoded devrig version metadata"
 
-    versionString.set(proxyVersion)
-    packageName.set("com.jonnyzzz.mcpSteroid.proxy")
-    fileName.set("ProxyVersionMetadata")
-    objectName.set("ProxyVersionMetadata")
-    functionName.set("getProxyVersion")
-    functionKdoc.set("npx-kt proxy version (encoded)")
-    outputFile.set(generatedSourcesPath.map { it.file("ProxyVersionMetadata.kt") })
+    versionString.set(devrigVersion)
+    packageName.set("com.jonnyzzz.mcpSteroid.devrig")
+    fileName.set("DevrigVersionMetadata")
+    objectName.set("DevrigVersionMetadata")
+    functionName.set("getDevrigVersion")
+    functionKdoc.set("devrig version (encoded)")
+    outputFile.set(generatedSourcesPath.map { it.file("DevrigVersionMetadata.kt") })
 }
 
 kotlin.sourceSets.main {
@@ -244,11 +262,11 @@ kotlin.sourceSets.main {
 }
 
 tasks.withType<KotlinCompile>().configureEach {
-    dependsOn(generateProxyVersionMetadata)
+    dependsOn(generateDevrigVersionMetadata)
 }
 
 // Dedicated source set for stdio MCP server integration tests
-// (CliMcpStdioIntegrationTest). The tests spawn `bin/mcp-steroid-proxy` from the
+// (CliMcpStdioIntegrationTest). The tests spawn `bin/devrig` from the
 // `installDist` output as a subprocess and exchange JSON-RPC frames over stdio.
 // They are NOT part of the default `:npx-kt:test` run — invoke explicitly via
 // `./gradlew :npx-kt:integrationTest`.
@@ -300,25 +318,25 @@ tasks.register<Test>("integrationTest") {
     }
     inputs.file(launcherProvider)
     doFirst {
-        systemProperty("npx.kt.launcher", launcherProvider.get().absolutePath)
+        systemProperty("devrig.launcher", launcherProvider.get().absolutePath)
     }
 }
 
-val npxKtPackageElements by configurations.creating {
+val devrigPackageElements by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {
-        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "npx-kt-package"))
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "devrig-package"))
     }
 }
 
 artifacts {
-    add(npxKtPackageElements.name, tasks.distZip)
+    add(devrigPackageElements.name, tasks.distZip)
 }
 
 val generateVersionJson by tasks.registering {
     group = "build"
-    description = "Emit the npx-kt version.json manifest"
+    description = "Emit the devrig version.json manifest"
     dependsOn(tasks.distZip)
     inputs.file(jdkManifestFile).withPropertyName("jdkManifest")
     inputs.file(ijPluginZipFile).withPropertyName("ijPluginZip")
@@ -334,8 +352,8 @@ val generateVersionJson by tasks.registering {
         val distZip = tasks.distZip.get().archiveFile.get().asFile
         val pluginZip = ijPluginZipFile.get()
 
-        val npxKtEntry = linkedMapOf<String, Any?>(
-            "name" to "npx-kt",
+        val devrigEntry = linkedMapOf<String, Any?>(
+            "name" to "devrig",
             "downloadUrl" to "$baseUrl/${distZip.name}",
             "sha-512" to sha512(distZip),
         )
@@ -350,7 +368,7 @@ val generateVersionJson by tasks.registering {
             "value" to null,
         )
         val manifest = linkedMapOf<String, Any?>(
-            "packages" to jdkEntries + listOf(npxKtEntry, ijPluginEntry),
+            "packages" to jdkEntries + listOf(devrigEntry, ijPluginEntry),
             "signature" to signature,
         )
 
@@ -370,7 +388,7 @@ tasks.named("assemble") {
 // `expectedFiles` below when the change is intentional.
 val verifyBundledLibraries by tasks.registering {
     group = "verification"
-    description = "List and verify libraries bundled in the npx-kt distZip"
+    description = "List and verify libraries bundled in the devrig distZip"
     dependsOn(tasks.distZip)
     doLast {
         val zip = tasks.distZip.get().outputs.files.singleFile
@@ -422,7 +440,7 @@ val verifyBundledLibraries by tasks.registering {
             val missing = expectedLicensesFiles - licensesFiles
             val unexpected = licensesFiles - expectedLicensesFiles
             throw GradleException(buildString {
-                appendLine("licenses/ subtree mismatch in :npx-kt distZip!")
+                appendLine("licenses/ subtree mismatch in :npx-kt devrig distZip!")
                 if (missing.isNotEmpty()) {
                     appendLine("Missing entries:")
                     missing.forEach { appendLine("  - $it") }
@@ -487,19 +505,19 @@ val verifyBundledLibraries by tasks.registering {
 
             // Launchers — the `application` plugin marks BOTH executable in the zip
             // (Windows ignores the bit; Unix needs it for the shell launcher).
-            "bin/mcp-steroid-proxy:X",
-            "bin/mcp-steroid-proxy.bat:X",
+            "bin/devrig:X",
+            "bin/devrig.bat:X",
 
             // Internal jars (this project + sibling subprojects).
-            "lib/npx-kt-$proxyVersion.jar",
-            "lib/closeable-stack-$proxyVersion.jar",
-            "lib/execution-storage-$proxyVersion.jar",
-            "lib/intellij-downloader-$proxyVersion.jar",
-            "lib/mcp-core-$proxyVersion.jar",
-            "lib/mcp-steroid-server-$proxyVersion.jar",
-            "lib/mcp-stdio-$proxyVersion.jar",
-            "lib/prompts-$proxyVersion.jar",
-            "lib/prompts-api-$proxyVersion.jar",
+            "lib/devrig-$devrigVersion.jar",
+            "lib/closeable-stack-$devrigVersion.jar",
+            "lib/execution-storage-$devrigVersion.jar",
+            "lib/intellij-downloader-$devrigVersion.jar",
+            "lib/mcp-core-$devrigVersion.jar",
+            "lib/mcp-steroid-server-$devrigVersion.jar",
+            "lib/mcp-stdio-$devrigVersion.jar",
+            "lib/prompts-$devrigVersion.jar",
+            "lib/prompts-api-$devrigVersion.jar",
 
             // Kotlin runtime.
             "lib/kotlin-stdlib-2.2.20.jar",
@@ -560,7 +578,7 @@ val verifyBundledLibraries by tasks.registering {
             val missing = expectedFiles - allFiles
             val unexpected = allFiles - expectedFiles
             throw GradleException(buildString {
-                appendLine("Bundled libraries mismatch in :npx-kt distZip!")
+                appendLine("Bundled libraries mismatch in :npx-kt devrig distZip!")
                 if (missing.isNotEmpty()) {
                     appendLine("Missing entries:")
                     missing.forEach { appendLine("  - $it") }

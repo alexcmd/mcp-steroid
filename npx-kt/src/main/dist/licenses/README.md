@@ -1,7 +1,7 @@
 # Bundled licenses
 
 This directory aggregates the licensing material of every third-party
-component shipped inside the mcp-steroid-proxy distribution. Files
+component shipped inside the devrig distribution. Files
 also exist in each component's own folder; this index is the
 operator-facing single point of reference.
 
@@ -10,7 +10,7 @@ operator-facing single point of reference.
 | Component | License location |
 |---|---|
 | 7-Zip (NSIS-capable Unix builds)     | `seven-zip/License.txt`        |
-| MCP Steroid (this proxy + IntelliJ plugin) | `mcp-steroid/EULA`       |
+| MCP Steroid (devrig + IntelliJ plugin) | `mcp-steroid/EULA`       |
 
 ## License summaries
 
@@ -20,7 +20,7 @@ operator-facing single point of reference.
 
 ## Externally fetched components
 
-`mcp-steroid-proxy` does not bundle a JVM. It expects `java` on the
+`devrig` does not bundle a JVM. It expects `java` on the
 system PATH (or `JAVA_HOME` set). When a future release adds a
 bootstrap that auto-fetches a per-OS Amazon Corretto 21 JDK, the
 Corretto legal text will travel with that download into

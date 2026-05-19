@@ -249,7 +249,7 @@ private fun resolveDmgPayloadDir(mountPoint: File): File {
  * via [SevenZipLocator]. The resulting directory is a runnable Windows IDE install
  * (NSIS bundles flat files; 7zip extracts them verbatim).
  *
- * The bundled `7z` binary is used automatically when the npx-kt distribution ships one
+ * The bundled `7z` binary is used automatically when the devrig distribution ships one
  * for the host. Otherwise the locator falls back to `7z` / `7za` on `PATH`; if neither
  * is available a clear error is raised.
  */
@@ -264,7 +264,7 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     val sevenZip = SevenZipLocator.locate() ?: error(
         "No 7z binary available to extract Windows installer ${archiveFile.name}. " +
             "On Linux/Mac the bundled 7zz binary is expected; " +
-            "on Windows install 7-Zip or use the npx-kt distribution with bundled 7z."
+            "on Windows install 7-Zip or use the devrig distribution with bundled 7z."
     )
 
     // NSIS extracts files flat — wrap them in a per-archive subdirectory so the

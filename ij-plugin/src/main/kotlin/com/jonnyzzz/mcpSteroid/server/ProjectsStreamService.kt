@@ -75,7 +75,7 @@ class ProjectsStreamService : Disposable {
 
     fun clientConnected(info: NpxStreamClientInfo) {
         log.info(
-            "npx-kt monitor connected — client=${info.client} " +
+            "devrig monitor connected — client=${info.client} " +
                     "clientPid=${info.clientPid} clientVersion=${info.clientVersion} " +
                     "clientInstanceId=${info.clientInstanceId} " +
                     "platform=${info.platform} arch=${info.arch} " +

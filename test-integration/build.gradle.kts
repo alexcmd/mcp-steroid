@@ -21,29 +21,19 @@ val agentOutputFilterDist by configurations.creating {
     isCanBeResolved = true
 }
 
-// Resolvable configuration to get the NPX package zip from :npx subproject
-val npxPackageDist by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-    attributes {
-        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "npx-package"))
-    }
-}
-
 // Resolvable configuration to get the Kotlin devrig CLI distribution zip from :npx-kt.
-val npxKtPackageDist by configurations.creating {
+val devrigPackageDist by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
-        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "npx-kt-package"))
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "devrig-package"))
     }
 }
 
 dependencies {
     pluginZip(project(":ij-plugin"))
     agentOutputFilterDist(project(path = ":agent-output-filter", configuration = "executableDistribution"))
-    npxPackageDist(project(":npx"))
-    npxKtPackageDist(project(":npx-kt"))
+    devrigPackageDist(project(":npx-kt"))
 
     // Infrastructure code lives in src/main/kotlin so it can be reused by :test-experiments.
     implementation(project(":test-helper"))
@@ -82,7 +72,7 @@ fun Test.configureIntegrationTest(sourceSetName: String = "test") {
     testLogging { showStandardStreams = true }
     systemProperty("junit.jupiter.execution.timeout.default", "15m")
 
-    dependsOn(pluginZip, agentOutputFilterDist, npxPackageDist, npxKtPackageDist)
+    dependsOn(pluginZip, agentOutputFilterDist, devrigPackageDist)
     doFirst {
         delete(layout.buildDirectory.dir("test-results/${this@configureIntegrationTest.name}/binary"))
         val testOutDir = layout.buildDirectory
@@ -107,12 +97,8 @@ fun Test.configureIntegrationTest(sourceSetName: String = "test") {
             agentOutputFilterDist.singleFile.absolutePath,
         )
         systemProperty(
-            "test.integration.npx.package.zip",
-            npxPackageDist.singleFile.absolutePath,
-        )
-        systemProperty(
-            "test.integration.npx.kt.package.zip",
-            npxKtPackageDist.singleFile.absolutePath,
+            "test.integration.devrig.package.zip",
+            devrigPackageDist.singleFile.absolutePath,
         )
         systemProperty(
             "test.integration.repo.cache.dir",

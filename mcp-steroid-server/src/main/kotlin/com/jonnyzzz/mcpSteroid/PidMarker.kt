@@ -7,9 +7,8 @@ import java.nio.file.Path
 /**
  * Schema-versioned JSON document written to
  * `~/.mcp-steroid/markers/<pid>.mcp-steroid` by every IDE that runs the
- * MCP Steroid plugin. Discovered by external monitors (npx-kt, the
- * npm-distributed npx proxy) to learn where the IDE's MCP server is
- * reachable.
+ * MCP Steroid plugin. Discovered by external monitors, including devrig,
+ * to learn where the IDE's MCP server is reachable.
  *
  * Forward/backward compatibility: readers MUST decode with
  * [PidMarkerJson], which is configured to ignore unknown JSON keys and
@@ -54,7 +53,7 @@ data class PidMarker(
         /**
          * Managed MCP Steroid home root that owns marker storage.
          *
-         * Exposed so proxy-side home path resolution can share the same
+         * Exposed so devrig home path resolution can share the same
          * environment resolution as the plugin while still appending its own
          * managed subdirectories.
          */

@@ -767,7 +767,7 @@ fun IntelliJContainer.Companion.create(
     val resolvedMcpConnectionMode: McpConnectionMode = mcpConnectionMode ?: when (aiMode) {
         AiMode.NONE -> McpConnectionMode.None
         AiMode.AI_MCP -> McpConnectionMode.Http
-        AiMode.AI_NPX -> McpConnectionMode.Npx(NpxSteroidDriver.deploy(container, mcpSteroidDriver))
+        AiMode.AI_DEVRIG -> McpConnectionMode.Devrig(DevrigSteroidDriver.deploy(container, mcpSteroidDriver))
     }
 
     val aiAgentDriver = AiAgentDriver(

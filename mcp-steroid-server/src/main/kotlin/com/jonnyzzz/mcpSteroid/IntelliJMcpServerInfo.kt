@@ -12,9 +12,9 @@ import kotlinx.serialization.Serializable
  *  - `sseUrl`    — MCP SSE
  *
  * See `docs/intellij-builtin-servers.md` for the full lifecycle / auth
- * notes. Surfaced on [PidMarker.intellijMcpServer] so external monitors
- * (npx-kt, the npm npx proxy) can discover and route to the bundled
- * IntelliJ MCP tools alongside `mcp-steroid`'s own server.
+ * notes. Surfaced on [PidMarker.intellijMcpServer] so devrig can discover
+ * and route to the bundled IntelliJ MCP tools alongside `mcp-steroid`'s own
+ * server.
  *
  * All fields are optional with safe defaults so that markers written by
  * older IDEs without the bundled server still decode cleanly.

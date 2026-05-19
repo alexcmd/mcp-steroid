@@ -37,19 +37,19 @@ class DockerGeminiSession(
         )
     }
 
-    override fun registerNpxMcp(npxCommand: StdioMcpCommand, mcpName: String) {
-        runInContainer(args = geminiMcpAddStdioArgs(npxCommand, mcpName))
-            .assertExitCode(0) { "NPX MCP server registration" }
-            .assertNoErrorsInOutput(message = "NPX MCP server registration")
+    override fun registerStdioMcp(command: StdioMcpCommand, mcpName: String) {
+        runInContainer(args = geminiMcpAddStdioArgs(command, mcpName))
+            .assertExitCode(0) { "devrig MCP server registration" }
+            .assertNoErrorsInOutput(message = "devrig MCP server registration")
         mcpRegistrationLog += McpRegistration(
             name = mcpName,
             transport = McpRegistrationTransport.STDIO,
-            command = npxCommand,
+            command = command,
         )
     }
 
-    override fun registerNpxKtMcp(installDir: File, mcpName: String) {
-        registerNpxMcp(session.installNpxKtMcp(installDir), mcpName)
+    override fun registerDevrigMcp(installDir: File, mcpName: String) {
+        registerStdioMcp(session.installDevrigMcp(installDir), mcpName)
     }
 
     fun runInContainer(args: List<String>, timeoutSeconds: Long = 120): StartedProcess {

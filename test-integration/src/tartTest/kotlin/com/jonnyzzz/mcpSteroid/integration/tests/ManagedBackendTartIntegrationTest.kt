@@ -38,7 +38,7 @@ class ManagedBackendTartIntegrationTest {
 
             val javaHomeArchive = packageHostJavaHome(runDir)
             scpToGuest(ip, javaHomeArchive, "~/java-home.tar.gz", runDir)
-            scpToGuest(ip, IdeTestFolders.npxKtPackageZip, "~/mcp-steroid-proxy.zip", runDir)
+            scpToGuest(ip, IdeTestFolders.devrigPackageZip, "~/devrig.zip", runDir)
             sshScript(
                 ip = ip,
                 description = "install devrig distribution",
@@ -48,8 +48,8 @@ class ManagedBackendTartIntegrationTest {
                     rm -rf "${'$'}HOME/devrig-cli" "${'$'}HOME/java-home" /tmp/mcp-home
                     mkdir -p "${'$'}HOME/devrig-cli" "${'$'}HOME/java-home" /tmp/mcp-home
                     tar -xzf "${'$'}HOME/java-home.tar.gz" -C "${'$'}HOME/java-home"
-                    ditto -x -k "${'$'}HOME/mcp-steroid-proxy.zip" "${'$'}HOME/devrig-cli"
-                    app_dir="${'$'}(find "${'$'}HOME/devrig-cli" -maxdepth 1 -type d -name 'mcp-steroid-proxy-*' | head -1)"
+                    ditto -x -k "${'$'}HOME/devrig.zip" "${'$'}HOME/devrig-cli"
+                    app_dir="${'$'}(find "${'$'}HOME/devrig-cli" -maxdepth 1 -type d -name 'devrig-*' | head -1)"
                     test -n "${'$'}app_dir"
                     mv "${'$'}app_dir" "${'$'}HOME/devrig-cli/app"
                     cat > "${'$'}HOME/devrig-cli/devrig" <<'SH'
@@ -57,7 +57,7 @@ class ManagedBackendTartIntegrationTest {
                     set -euo pipefail
                     export JAVA_HOME="${'$'}HOME/java-home"
                     export PATH="${'$'}JAVA_HOME/bin:${'$'}PATH"
-                    exec "${'$'}HOME/devrig-cli/app/bin/mcp-steroid-proxy" "${'$'}@"
+                    exec "${'$'}HOME/devrig-cli/app/bin/devrig" "${'$'}@"
                     SH
                     chmod +x "${'$'}HOME/devrig-cli/devrig"
                     "${'$'}HOME/devrig-cli/devrig" --version
