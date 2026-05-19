@@ -101,6 +101,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpTool {
             reason = reason,
             screenshotExecutionId = screenshotExecutionId,
             sequence = parsed,
+            rawSequence = sequence,
         ))
     }
 }
@@ -110,7 +111,8 @@ data class InputParams(
     val taskId: String,
     val reason: String,
     val screenshotExecutionId: String,
-    val sequence: List<InputStep>
+    val sequence: List<InputStep>,
+    val rawSequence: String? = null,
 )
 
 interface VisionInputToolHandler {

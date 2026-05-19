@@ -23,7 +23,11 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 @Serializable
-data class ApplyPatchRequest(val hunks: List<ApplyPatchHunk>, val dryRun: Boolean = false)
+data class ApplyPatchRequest(
+    val hunks: List<ApplyPatchHunk>,
+    val dryRun: Boolean = false,
+    val taskId: String,
+)
 
 @Serializable
 data class ApplyPatchHunk(val filePath: String, val oldString: String, val newString: String)
@@ -115,13 +119,13 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
 
         val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
             ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
-        args["task_id"]?.jsonPrimitive?.contentOrNull
+        val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
             ?: return ToolCallResult.errorResult("Missing required parameter: task_id")
 
         val rawHunks = args["hunks"]
             ?: return ToolCallResult.errorResult("Missing required parameter: hunks (array)")
         // Some MCP clients (Claude Code's tool-call envelope under certain
-        // configurations) pass complex parameters as serialised JSON strings
+        // configurations) pass complex parameters as serialized JSON strings
         // instead of native arrays. `?.jsonArray` would have thrown
         // IllegalArgumentException on a JsonPrimitive, leaking a stacktrace
         // through the MCP layer. Detect-and-decode keeps the contract clean
@@ -160,7 +164,7 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
         // are rejected explicitly — `JsonPrimitive.booleanOrNull` parses `.content`
         // regardless of whether the original JSON token was a boolean or a
         // quoted string, so without the `isString` guard `"dry_run": "true"`
-        // would silently flip behavior. A non-strict accept is too risky here:
+        // would silently flip behavior. A non-strict parser is too risky here:
         // the flag gates whether the patch writes to disk.
         val dryRun: Boolean = when (val raw = args["dry_run"]) {
             null -> false
@@ -176,7 +180,7 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
             else -> return ToolCallResult.errorResult("dry_run must be a JSON boolean, got ${raw::class.simpleName}")
         }
 
-        return handler().applyPatch(projectName, ApplyPatchRequest(hunks, dryRun = dryRun))
+        return handler().applyPatch(projectName, ApplyPatchRequest(hunks, dryRun = dryRun, taskId = taskId))
     }
 }
 

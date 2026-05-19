@@ -38,6 +38,16 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <!--
+      Optional integration with IntelliJ's bundled MCP Server plugin
+      (com.intellij.mcpServer). When that plugin is loaded and enabled,
+      mcpServer-integration.xml registers IntelliJMcpServerProbeImpl,
+      which surfaces the IDE-bundled MCP server's endpoint on our pid
+      marker so external monitors can discover both servers from one
+      file. Plugin loads normally when the dependency is missing.
+    -->
+    <depends optional="true" config-file="mcpServer-integration.xml">com.intellij.mcpServer</depends>
+
     <extensionPoints>
         <!-- Extension point for screenshot metadata providers -->
         <extensionPoint

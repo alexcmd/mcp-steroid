@@ -1,4 +1,653 @@
 
+# Active focus — npx-kt testing and stabilization plan (2026-05-18)
+
+Goal: turn npx-kt/devrig `mpc` mode from "implemented" into a stable,
+diagnosable replacement for the direct IDE HTTP MCP server.
+
+Why this exists: the first full `AI_NPX` batch proved the fast/fake-IDE path
+is useful, but the long real-IDE/agent path is still fragile. We hit two
+separate infrastructure failures before a clean agent result:
+
+- fixed: container file writes used `cat > $containerPath` and broke on Java
+  prefs paths containing shell metacharacters;
+- open blocker: IDE archive download repeatedly failed moving
+  `idea-2026.1.2-aarch64.tar.gz.tmp` to the final archive path with
+  `NoSuchFileException`, leaving the download directory empty.
+
+Related GitHub issue:
+- [#54 Improve IDE-first Gradle verification workflow for agents](https://github.com/jonnyzzz/mcp-steroid/issues/54)
+  tracks why this batch fell back to command-line Gradle and what needs to
+  improve so agents can use IntelliJ/Gradle runner first.
+
+Plan-review quorum:
+- [x] Gemini review via `run-agent.sh gemini`
+  `run_20260518-071443-9948`: `NO-GO` for stability because downloader,
+  lifecycle, cancellation, and apply-patch/screenshot coverage are missing.
+- [x] Codex review via `run-agent.sh codex`
+  `run_20260518-071443-9949`: `NO-GO` until downloader and deterministic
+  bridge/fake-IDE gaps are closed.
+- [x] Claude review via `run-agent.sh claude`
+  `run_20260518-071443-9947`: `REVIEW_NO_GO_WITH_CHANGES`; specifically
+  requires real tool-calling AI_NPX smoke, downloader diagnosis, SSE error
+  tests, and two-IDE duplicate-name routing tests.
+- [ ] Re-review with 3x quorum after the Phase 0/2/3 blockers below are
+  implemented.
+
+## Stabilization order
+
+Do not start with the AI agent. The order is:
+
+1. Phase 0: harness and infrastructure health.
+2. Phase 1: fast compile/static gates.
+3. Phase 2: pure npx-kt unit tests.
+4. Phase 3: fake-IDE stdio integration tests.
+5. Phase 4: real IDE bridge tests without AI.
+6. Phase 5: one AI_NPX agent smoke at a time.
+7. Phase 6: release-readiness gates and final quorum review.
+
+## Phase 0 — harness and infrastructure health
+
+- [x] Diagnose the IDE downloader `.tmp -> final` failure with a concrete
+  stack/log entry and failing path. Current observed stack:
+  `IdeDownloader.moveDownloadedFile` from
+  `test-integration/build/ide-download/idea-2026.1.2-aarch64.tar.gz.tmp` to
+  `idea-2026.1.2-aarch64.tar.gz`.
+  Root cause: concurrent in-process callers shared the same deterministic
+  `<archive>.tmp`; the first caller moved it to the final path while another
+  caller still expected the temp path to exist.
+- [x] Add a focused downloader regression for the root cause if it is
+  downloader concurrency, stream lifecycle, or temp-file reuse.
+  Added `IdeDownloaderTest.resolveAndDownload serializes concurrent downloads
+  for the same archive`.
+- [x] Decide whether the integration harness should use a per-test archive
+  download directory or a downloader-level file lock to prevent concurrent
+  archive downloads from sharing the same `.tmp` path.
+  Decision: use a minimal per-destination in-process lock in
+  `resolveAndDownload`. Do not add per-test archive directories or sidecar
+  file locks unless a future failure proves cross-JVM contention.
+  Verification:
+  `./gradlew :intellij-downloader:test --tests 'com.jonnyzzz.mcpSteroid.ideDownloader.IdeDownloaderTest'`
+  passed. MCP Steroid inspections on touched files passed with
+  `INSPECTION_TOTAL: 0` in
+  `eid_20260518T094303-npx-kt-stabilization-downloader-lock`.
+  Review quorum passed:
+  Claude `run_20260518-074341-21893`, Codex
+  `run_20260518-074352-22060`, Gemini `run_20260518-074358-22279`.
+- [x] Make long-test run directories easy to find from failure output:
+  run dir, screenshot dir, video dir, agent raw/decoded logs, and IDE log.
+  Added `IntelliJContainer.diagnosticsSummary()` and threaded it into
+  readiness/modal/snapshot failures plus `NpxKtAgentRoutingIntegrationTest`
+  assertion failures. Verification:
+  `./gradlew :test-integration:compileKotlin :test-integration:compileTestKotlin`
+  passed. MCP Steroid inspections: `NpxKtAgentRoutingIntegrationTest.kt`
+  clean; `intelliJ-container.kt` still has pre-existing whole-file shell
+  string/Grazie warnings and no broad suppressions were added
+  (`eid_20260518T095948-npx-kt-stabilization-run-dir-diagnostics`).
+  Review quorum passed:
+  Claude `run_20260518-080354-33015`, Codex
+  `run_20260518-080402-33156`, Gemini `run_20260518-080407-33338`.
+- [ ] Keep credential checks out of fast phases. AI-only phases may require
+  `~/.anthropic`, `~/.openai`, and `~/.vertex`; export both
+  `GEMINI_API_KEY` and `GOOGLE_API_KEY` from `~/.vertex` for Gemini.
+- [ ] Keep the Gemini missing-key skip exception limited to Gemini on CI.
+  Anthropic/OpenAI keys must continue to fail hard when missing.
+
+## Phase 1 — fast compile/static gates
+
+Preferred execution path is IntelliJ/Gradle runner via MCP Steroid once issue
+#54 is addressed. Until then, if shell Gradle is used, record that in the
+final report.
+
+- [ ] MCP Steroid inspections on all touched Kotlin files.
+- [ ] `:mcp-core:compileKotlin`
+- [ ] `:mcp-stdio:compileKotlin`
+- [ ] `:mcp-stdio:test`
+- [ ] `:mcp-steroid-server:compileKotlin`
+- [ ] `:npx-kt:compileKotlin`
+- [ ] `:npx-kt:compileTestKotlin`
+- [ ] `:npx-kt:compileIntegrationTestKotlin`
+- [ ] `:test-helper:compileKotlin`
+- [ ] `:test-integration:compileKotlin`
+- [ ] `:test-integration:compileTestKotlin`
+- [ ] Never run root `./gradlew test` for this work.
+
+## Phase 2 — npx-kt unit coverage
+
+Routing and naming:
+- [x] Same real project path + IDE pid produces a stable hash suffix.
+- [x] Different IDE pid produces a different hash suffix.
+- [x] Different canonical project path produces a different hash suffix.
+- [x] Duplicate original IDE project names in two IDEs produce distinct
+  exposed names.
+- [x] Exposed project names map back to original IDE project names without
+  suffix parsing.
+- [x] Stale exposed project name returns an actionable "call
+  steroid_list_projects to refresh" error.
+  Completed routing-name coverage with existing tests for stable hash,
+  different PID hash, reverse mapping, and stale-name errors, plus new tests
+  for different canonical project homes and duplicate original project names
+  across IDEs. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T143416-npx-routing-naming`.
+  Plan review quorum passed:
+  Claude `run_20260518-123118-18695`, Codex
+  `run_20260518-123118-18696`, Gemini `run_20260518-123118-18697`.
+  Final review quorum passed:
+  Claude `run_20260518-123518-20509`, Codex
+  `run_20260518-123518-20510`, Gemini `run_20260518-123518-20511`.
+- [x] `singleIdeOrNull()` covers zero, one, and multiple IDE states.
+  Added zero-state coverage and tied it to the existing one-IDE and
+  multiple-IDE tests. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T131643-npx-kt-single-ide-policy`.
+  Plan review quorum passed:
+  Claude `run_20260518-111353-97845`, Codex
+  `run_20260518-111353-97846`, Gemini `run_20260518-111353-97847`.
+  Final review quorum passed:
+  Claude `run_20260518-111734-202`, Codex
+  `run_20260518-111734-203`, Gemini `run_20260518-111734-204`.
+
+Window, screenshot, and input routing:
+- [x] Window `projectName` is rewritten with the same project suffix.
+- [x] Window routing disambiguates same-name projects by project home/pid.
+- [x] `rewriteWindow` handles null `projectName` and null `projectPath`.
+- [x] Screenshot `execution_id` is remembered and follow-up `steroid_input`
+  routes to the same IDE.
+- [x] `steroid_input` rejects screenshot ids from another IDE with an
+  actionable error.
+  Completed window/input routing coverage with existing tests for basic
+  window suffixing and screenshot execution-id memory, plus new tests for
+  same-name project window disambiguation, null window metadata, same-IDE
+  `steroid_input` forwarding, and cross-IDE screenshot rejection.
+  Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test files returned
+  `{}` in `eid_20260518T144639-npx-window-input-routing`.
+  Plan review quorum passed:
+  Claude `run_20260518-123809-22691`, Codex
+  `run_20260518-123809-22690`, Gemini `run_20260518-123809-22715`.
+  Final review quorum passed:
+  Claude `run_20260518-124746-28200`, Codex
+  `run_20260518-124746-28199`, Gemini `run_20260518-124746-28201`.
+
+Bridge client and handler behavior:
+- [x] Bearer token is sent when marker token is present.
+- [x] Authorization header is absent when marker token is empty.
+  Positive bearer forwarding was already covered by
+  `bridge client sends bearer token and rewritten original project name`; added
+  focused empty-token coverage asserting the Authorization header is omitted.
+  Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T103131-npx-kt-bridge-auth-coverage`.
+  Review quorum passed:
+  Claude `run_20260518-083302-49403`, Gemini
+  `run_20260518-083302-49404`, Claude
+  `run_20260518-083523-50945`. Codex
+  `run_20260518-083302-49405` was not counted because it blocked before
+  reading the patch on a missing marinade `/tmp` path.
+- [x] `project_name` is rewritten to the original IDE project name.
+- [x] `steroid_execute_code` forwards `timeout` and `dialog_killer`.
+- [x] `steroid_execute_code` forwards progress SSE events.
+  Existing handler tests already asserted original project-name rewriting for
+  execute-code and apply-patch routes and progress SSE forwarding. Extended the
+  execute-code handler test to assert `dialog_killer` forwarding alongside the
+  existing timeout assertion. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T123439-npx-kt-bridge-forwarding`.
+  Review quorum passed:
+  Claude `run_20260518-103628-71075`, Codex
+  `run_20260518-103628-71076`, Gemini `run_20260518-103628-71077`.
+- [x] `steroid_apply_patch` forwards task id, dry-run, hunks, and original
+  project name.
+  Extended the existing apply-patch handler test to assert `dry_run` plus the
+  forwarded hunk `file_path`, `old_string`, and `new_string` fields alongside
+  the existing task id and original project-name assertions. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T124014-npx-kt-bridge-apply-patch`.
+  Review quorum passed:
+  Claude `run_20260518-104137-73671`, Codex
+  `run_20260518-104137-73672`, Gemini `run_20260518-104137-73673`.
+- [x] `steroid_execute_feedback` forwards rating, explanation, and code.
+  Added focused execute-feedback handler coverage asserting the original
+  project name, task id, success rating, explanation, and code are forwarded to
+  the IDE bridge. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T124518-npx-kt-bridge-feedback`.
+  Review quorum passed:
+  Claude `run_20260518-104859-84310`, Codex
+  `run_20260518-104859-84311`, Gemini `run_20260518-104859-84312`.
+- [x] `steroid_action_discovery` forwards action groups, caret offset, and
+  max actions.
+  Added focused action-discovery handler coverage asserting the original
+  project name, file path, caret offset, action groups, max actions per group,
+  and task id are forwarded to the IDE bridge. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T125551-npx-kt-action-discovery`.
+  Plan review quorum passed:
+  Claude `run_20260518-105230-86075`, Codex
+  `run_20260518-105230-86076`, Gemini `run_20260518-105230-86077`.
+  Final review quorum passed:
+  Claude `run_20260518-105621-87871`, Codex
+  `run_20260518-105621-87870`, Gemini `run_20260518-105621-87872`.
+- [x] `steroid_take_screenshot` remembers execution ids.
+  Added focused screenshot handler coverage asserting a returned `eid_...`
+  from the IDE bridge is remembered for later input routing, while the
+  original project name, task id, and reason are forwarded to
+  `steroid_take_screenshot`. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T130238-npx-kt-screenshot-memory`.
+  Plan review quorum passed:
+  Claude `run_20260518-110003-89798`, Codex
+  `run_20260518-110003-89799`, Gemini `run_20260518-110003-89800`.
+  Final review quorum passed:
+  Claude `run_20260518-110307-91830`, Codex
+  `run_20260518-110307-91829`, Gemini `run_20260518-110307-91831`.
+- [x] `steroid_open_project` covers zero/one/multiple IDE routing policy.
+  Simplified the handler to use the bridge routing service directly and added
+  focused coverage for zero IDEs, multiple IDEs, and the singleton IDE forward
+  path. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed on rerun; the first attempt failed before assertions on a transient
+  embedded-server `BindException`. MCP Steroid inspections on touched Kotlin
+  files returned `{}` in `eid_20260518T130940-npx-kt-open-project-policy`.
+  Plan review quorum passed:
+  Claude `run_20260518-110618-94077`, Codex
+  `run_20260518-110618-94078`, Gemini `run_20260518-110618-94079`.
+  Final review quorum passed:
+  Claude `run_20260518-111023-95891`, Codex
+  `run_20260518-111023-95890`, Gemini `run_20260518-111023-95892`.
+- [x] SSE `error` event returns a `ToolCallResult` error.
+- [x] HTTP 4xx/5xx returns a `ToolCallResult` error with enough upstream
+  context.
+  Added focused `NpxToolBridgeClientTest` coverage for upstream 401 and 500
+  responses, asserting the returned tool error includes HTTP status and
+  upstream body context. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T102517-npx-kt-bridge-http-hardening`.
+  Review quorum passed:
+  Claude `run_20260518-082728-46323`, Codex
+  `run_20260518-082728-46324`, Gemini `run_20260518-082728-46325`.
+- [x] Channel closes with no `result` returns a no-result error.
+- [x] Malformed SSE `data:` returns an actionable tool error instead of
+  throwing out of the MCP call.
+- [x] `event: result` without `result` field returns an actionable tool
+  error.
+- [x] Multi-line `data:` SSE frames are concatenated and decoded correctly.
+  Added focused `NpxToolBridgeClientTest` coverage for malformed SSE JSON,
+  SSE error events, missing result fields, no-result stream closure, and
+  multi-line SSE data frames. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest'`
+  passed. MCP Steroid inspections on touched Kotlin files passed with
+  `INSPECTION_TOTAL: 0` in
+  `eid_20260518T101622-npx-kt-bridge-sse-hardening`.
+  Review quorum passed:
+  Claude `run_20260518-081642-38276`, Codex
+  `run_20260518-081647-38362`, Gemini `run_20260518-081653-38569`.
+- [x] Progress tokens are isolated across concurrent routed calls.
+- [x] Cancellation/timeout behavior is covered at the bridge boundary.
+  Added `McpToolRegistryTest` coverage for two concurrent tool calls with
+  distinct `_meta.progressToken` values and separate progress notifications.
+  Added `NpxToolBridgeClientTest` coverage that coroutine cancellation while
+  waiting for an SSE result propagates as `CancellationException` instead of a
+  tool error. Timeout behavior is covered at the bridge boundary by the
+  existing execute-code handler test that forwards the tool-level `timeout` to
+  the IDE; the npx bridge intentionally uses an infinite HTTP timeout and does
+  not enforce a second client-side tool timeout. Verification:
+  `./gradlew :mcp-core:test --tests 'com.jonnyzzz.mcpSteroid.mcp.McpToolRegistryTest' --rerun-tasks --console=plain`
+  passed on sequential rerun. The first attempt overlapped with another
+  Gradle invocation and failed in `:prompts:jar` on a generated class
+  `NoSuchFileException`; no test assertions had run.
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on touched Kotlin test files passed with
+  `INSPECTION_TOTAL: 0` in
+  `eid_20260518T150204-npx-progress-cancellation`.
+  Plan review quorum passed:
+  Claude `run_20260518-125210-29927`, Codex
+  `run_20260518-125210-29928`, Gemini `run_20260518-125210-29929`.
+
+Prompt/resource behavior:
+- [x] Prompt context maps IDE build to product code and baseline.
+- [x] Malformed/unknown IDE build falls back to `PromptsContext.Generic`.
+  Existing prompt-context tests cover routed IDE build parsing, singleton
+  route selection, and known product-code baseline parsing. Added fallback
+  coverage for malformed builds and unknown product prefixes, and hardened
+  `NpxPromptsContextHandler` to return `PromptsContext.Generic` for product
+  codes outside the supported set. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxProjectRoutingServiceTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on touched Kotlin files passed with
+  `INSPECTION_TOTAL: 0` in `eid_20260518T152848-npx-prompt-context`.
+  Plan review quorum passed:
+  Codex `run_20260518-131055-37520`, Gemini
+  `run_20260518-131055-37521`, replacement Codex
+  `run_20260518-131234-38415`. Claude plan review hit an external rate limit
+  in `run_20260518-131055-37519`.
+  Final review quorum passed on the corrected diff:
+  Claude `run_20260518-132950-46268`, Codex
+  `run_20260518-132950-46267`, Gemini `run_20260518-132950-46269`.
+- [x] Prompt and resource rendering stays local to npx-kt and is not routed
+  to the IDE.
+  Extended `CliMcpStdioFakeIdeIntegrationTest` so `resources/list`,
+  `resources/read`, `prompts/list`, `prompts/get`, and local
+  `steroid_fetch_resource` run before any routed IDE tool call, with the fake
+  `/npx/v1/tools/call/stream` counter still at zero. The same test then calls
+  `steroid_execute_code` and asserts the counter increments, proving the
+  counter observes real routed tool calls. Verification:
+  `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioFakeIdeIntegrationTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T153835-npx-local-prompts`.
+  Plan review quorum passed:
+  Claude `run_20260518-133436-48895`, Codex
+  `run_20260518-133436-48894`, Gemini `run_20260518-133436-48896`.
+  Final review quorum passed:
+  Claude `run_20260518-133910-51964`, Codex
+  `run_20260518-133910-51965`, Gemini `run_20260518-133910-51970`.
+- [x] devrig stdio tool/resource/prompt descriptors match the direct IDE MCP
+  server for the supported surface.
+  Added `NpxDescriptorParityTest`, which builds the devrig side through real
+  `StubMcpSteroidTools` and compares it to a direct-IDE-style in-process MCP
+  server. Tool descriptors match exactly; direct IDE prompt/resource
+  descriptors are asserted as an identical-descriptor subset of the npx
+  deferred multi-IDE surface. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxDescriptorParityTest' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on the touched Kotlin test file returned
+  `{}` in `eid_20260518T154928-npx-descriptor-parity`.
+  Plan review quorum passed:
+  Claude `run_20260518-134239-53914`, Codex
+  `run_20260518-134239-53913`, Gemini `run_20260518-134239-53915`.
+  Final review quorum passed:
+  Claude `run_20260518-135010-58122`, Codex
+  `run_20260518-135010-58149`, Gemini `run_20260518-135010-58166`.
+
+CLI/runtime behavior:
+- [x] `devrig mpc` starts a clean stdio MCP server and exits cleanly on stdin
+  close.
+- [x] No stdout leaks before MCP frames in `mpc` mode.
+  Covered by
+  `CliMcpStdioStdoutCleanlinessTest.host launcher writes only JSON-RPC frames to stdout`,
+  which runs the real `installDist` launcher with `mpc`, completes after stdin
+  closes, and parses every stdout line as JSON-RPC. Verification:
+  `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioStdoutCleanlinessTest.host launcher writes only JSON-RPC frames to stdout' --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliOptionsIntegrationTest' --rerun-tasks --console=plain`
+  passed after fixing launcher stderr noise and CliKt-native parse-error
+  expectations. A final review caught JSON stdout corruption from the
+  headliner; `CliOptionsIntegrationTest` now asserts `backend --json` and
+  `project --json` start with a JSON object. MCP Steroid inspections on touched
+  Kotlin files passed in `eid_20260518T163728-npx-cli-runtime-fix`.
+  Plan review quorum passed:
+  Claude `run_20260518-140511-65506`, Codex
+  `run_20260518-140511-65505`, Gemini `run_20260518-140511-65507`.
+  Final review quorum passed after the JSON/headliner and clean-host fixes:
+  Claude `run_20260518-143833-90110`, Codex
+  `run_20260518-143833-90113`, Gemini `run_20260518-143833-90111`.
+- [x] Non-MCP commands restore stdout before printing user output.
+  Covered by `CliOptionsIntegrationTest` through the real launcher and
+  `NpxKtCommandOutputTest` in-process via `NpxKtServices.mcpStdout`. The fix
+  keeps help output on stdout, version as a single stdout line, and parse
+  errors on stderr with clean stdout. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.NpxKtCommandOutputTest' --tests 'com.jonnyzzz.mcpSteroid.proxy.HomePathsTest' --tests 'com.jonnyzzz.mcpSteroid.proxy.NpxKtCommandTest' --rerun-tasks --console=plain`
+  passed.
+- [x] `DEVRIG_HOME` override accepts only existing absolute canonical paths;
+  no `--home` flag.
+  Covered by `HomePathsTest` for env-var canonicalization/rejection and
+  `NpxKtCommandTest.removed home flag is not a command` for the deleted CLI
+  flag. Verification included in the `:npx-kt:test` command above.
+- [x] Startup failure before MCP handshake is visible on stderr and test
+  logs.
+  Covered by
+  `CliMcpStdioStdoutCleanlinessTest.host startup failure before handshake is visible on stderr`,
+  which runs the real `mpc` launcher with an invalid absolute `DEVRIG_HOME`,
+  feeds a normal MCP handshake, and asserts exit 64, blank stdout, and stderr
+  containing `Startup failure:`, `DEVRIG_HOME`, and the canonical-path failure.
+  Verification:
+  `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioStdoutCleanlinessTest.host startup failure before handshake is visible on stderr' --rerun-tasks --console=plain`
+  passed. MCP Steroid inspections on touched files passed in
+  `eid_20260518T164958-npx-startup-failure`. Plan review quorum passed:
+  Claude `run_20260518-144349-93818`, Codex
+  `run_20260518-144349-93819`, Gemini `run_20260518-144349-93845`.
+  Final review quorum passed:
+  Claude `run_20260518-145115-97139`, replacement Claude
+  `run_20260518-145416-98573`, Gemini `run_20260518-145115-97141`.
+  Codex final review `run_20260518-145115-97140` hit a missing marinade
+  bootstrap path before reviewing the diff.
+
+## Phase 3 — fake-IDE stdio integration
+
+- [ ] `CliMcpStdioIntegrationTest`: initialize, ping, tools/list,
+  prompts/list, resources/list.
+- [ ] `CliMcpStdioStdoutCleanlinessTest`: no stdout pollution before MCP
+  frames.
+- [ ] `CliMcpStdioFakeIdeIntegrationTest`: one fake IDE marker, list projects
+  returns exposed project name.
+- [ ] Fake IDE execute-code route receives original project name and returns
+  known marker.
+- [ ] Fake IDE windows route rewrites project names and window ids.
+- [ ] Fake IDE prompt/resource read works locally in devrig.
+- [ ] Fake IDE progress event becomes MCP progress notification.
+- [ ] Add two-IDE fake coverage where both IDEs expose the same original
+  project name.
+- [ ] Add stale-marker fake coverage: marker disappears, old project name
+  fails with refresh instruction, new marker is rediscovered.
+- [ ] Add unreachable-port and 401/500 bridge failure cases.
+- [ ] Add dropped project stream / reconnect behavior coverage.
+
+## Phase 4 — real IDE bridge, no AI
+
+Run these before any AI agent smoke. They separate devrig/IDE bridge bugs from
+agent prompt/tool-selection bugs.
+
+- [ ] Selected ij-plugin npx endpoint tests:
+  `/npx/v1/products`, metadata auth, project stream, windows, and
+  `/npx/v1/tools/call/stream` result/progress/error.
+- [x] One real running IDE, no AI: devrig stdio initializes.
+- [x] One real running IDE, no AI: `steroid_list_projects` discovers the IDE
+  marker and returns exposed project name.
+- [x] One real running IDE, no AI: `steroid_execute_code` prints a unique
+  marker and returns it through devrig.
+  Added `NpxKtRealIdeBridgeIntegrationTest`, which starts one Docker IDE with
+  the plugin, uses HTTP MCP only for setup, registers only `/home/agent/devrig
+  mpc` as the test MCP server, and verifies initialize -> list projects ->
+  execute-code through devrig stdio. Also fixed `NpxSteroidDriver.deploy` so
+  the immutable container request builder actually runs the install script, and
+  refreshed `/npx/v1/projects/stream` on subscription so devrig routes the
+  exposed project name back to the current IDE project name after Gradle import.
+  Verification:
+  `./gradlew :test-integration:test --tests 'com.jonnyzzz.mcpSteroid.integration.tests.NpxKtRealIdeBridgeIntegrationTest' --rerun-tasks --console=plain`
+  passed; run dir
+  `test-integration/build/test-logs/test/run-20260518-175606-devrig-stdio-mcp-real-ide-bridge`.
+  Final review quorum passed: Claude `run_20260518-160215-19238`, Gemini
+  `run_20260518-160215-19239`, Codex `run_20260518-160215-19240`.
+- [x] One real running IDE, no AI: progress notification is observable for an
+  execute-code call.
+  Added a devrig stdio progress test that calls `steroid_execute_code` with a
+  client progress token and asserts the matching `notifications/progress`
+  frame contains the script marker. Added a small stdio harness helper for
+  capturing out-of-band JSON-RPC frames, and fixed the IDE-side npx bridge to
+  serialize SSE emits and drain progress before the final result/error event.
+  Verification:
+  `./gradlew :ij-plugin:compileKotlin :test-helper:compileKotlin :test-integration:compileTestKotlin --console=plain`
+  passed.
+  `./gradlew :test-integration:test --tests 'com.jonnyzzz.mcpSteroid.integration.tests.NpxKtRealIdeBridgeIntegrationTest' --rerun-tasks --console=plain`
+  passed; run dir
+  `test-integration/build/test-logs/test/run-20260518-184657-devrig-stdio-mcp-real-ide-bridge`.
+  MCP Steroid inspections on touched files passed with `INSPECTION_TOTAL: 0`
+  in `eid_20260518T185050-devrig-real-ide-progress`.
+  `git diff --check` passed.
+  Final quorum review was attempted but blocked by run-agent infrastructure:
+  Claude `run_20260518-165133-58882`, Codex
+  `run_20260518-165133-58881`, and Gemini
+  `run_20260518-165133-58884` produced no `STATUS.md`/`RESULT.md` after
+  3h38m and were terminated; Codex reported a closed stdin tool error and
+  Gemini repeatedly failed on `fetch failed sending request`.
+- [ ] One real running IDE, no AI: `steroid_apply_patch` works on a disposable
+  fixture file.
+- [ ] One real running IDE, no AI: screenshot/input route to the same IDE.
+- [ ] Optional but preferred before stable: two real IDEs with duplicate
+  project names route independently.
+- [ ] Follow-up from real-IDE bridge review: unify
+  `IntelliJContainer.deployDevrigLauncher` with the wrapper used by
+  `NpxSteroidDriver.deploy`.
+- [ ] Follow-up from real-IDE bridge review: refresh or invalidate project
+  stream snapshots if a project rename happens after an active subscription.
+- [ ] Follow-up from real-IDE bridge review: add AI_NPX config assertions for
+  Codex and Gemini, not only Claude.
+
+## Phase 5 — AI_NPX long integration tests
+
+Run one Docker IDE / one agent test at a time. Never parallelize
+`:test-integration` or `:test-experiments`.
+
+Definition of "AI_NPX smoke passed":
+- the agent sees the devrig-provided `mcp-steroid` server as connected;
+- the agent calls `steroid_list_projects`;
+- the agent uses the exact exposed `project_name`;
+- the agent calls `steroid_execute_code`;
+- the result contains a unique test-generated marker;
+- no `DEVRIG_NPX_FAILED` marker appears;
+- run dir and agent raw/decoded logs are recorded in this file.
+
+Tasks:
+- [ ] Rewrite stale AI_NPX prompts that only enumerate tools and say "do not
+  call tools"; they must call `steroid_list_projects` and
+  `steroid_execute_code`.
+- [ ] Claude AI_NPX smoke against one real IDE.
+- [ ] Gemini AI_NPX smoke against one real IDE using `~/.vertex` for both
+  Gemini env var names.
+- [ ] Codex AI_NPX smoke against one real IDE using `~/.openai` when supported
+  by the harness.
+- [ ] Prompt/resource skill smoke through devrig stdio.
+- [ ] On any >60s stall, collect screenshot, run dir, container process list,
+  and IDE thread dump before killing.
+
+## Phase 6 — release-readiness gates
+
+- [ ] MCP Steroid inspections are clean on every touched Kotlin file.
+- [ ] No new IDE inspection warnings.
+- [ ] Fast, unit, fake-IDE, and real-IDE no-AI phases pass in order.
+- [ ] Full AI_NPX smoke passes. If blocked by infrastructure, this file must
+  link the tracked issue, the exact failure, the run directory, and the
+  fallback no-AI bridge verification for the same commit.
+- [ ] Add structured bridge diagnostics if AI_NPX failures remain opaque:
+  tool name, exposed project name, original project name, IDE pid, elapsed
+  time, SSE event counts, and upstream error body.
+- [ ] 3x `run-agent.sh` quorum review after the above gates.
+- [ ] Commit in small logical batches by phase.
+
+# Active focus — npx-kt as stable MCP Steroid stdio replacement (2026-05-17)
+
+Goal: make npx-kt/devrig `mpc` mode a real replacement for the IDE HTTP MCP
+server by routing tool calls through discovered IDE bridge endpoints while
+keeping prompt/resource rendering local to npx-kt.
+
+Plan-review status:
+- [x] Draft plan reviewed by `run-agent.sh claude`
+  (`run_20260517-191744-64301`, `REVIEW_OK_WITH_CHANGES`).
+- [x] Implementation reviewed by `run-agent.sh` reviewers:
+  Claude `run_20260517-194637-73425` (`REVIEW_OK`), Codex
+  `run_20260517-194637-73427` (`REVIEW_DONE_WITH_FINDINGS`), replacement
+  Claude `run_20260517-200233-80021` (`REVIEW_OK`). Gemini
+  `run_20260517-194637-73426` could not run because `GEMINI_API_KEY` is not set.
+- [x] Final devrig MCP stdio diff review from Claude
+  `run_20260517-201918-86348` returned `REVIEW_OK`.
+- [x] MCP Steroid inspections are clean for all touched Kotlin files
+  (`INSPECTION_PROBLEMS: 0`, `eid_20260517T223723-npx-kt-devrig-mpc-routing`).
+
+Implementation tasks:
+- [x] Add a project routing service under `npx-kt` that consumes discovered IDE
+  metadata, project snapshots, and windows.
+- [x] Generate exposed `project_name` values as
+  `<ideProjectName>-<hash8>`, where `hash8` is base64-url-no-pad of the first
+  6 bytes of `SHA-256(realProjectHome.toRealPath UTF-8 + 0x00 + idePid UTF-8)`.
+  Project names are session-scoped; agents must refresh after an IDE restart.
+- [x] Apply the same suffix logic to window `projectName` values and preserve
+  `windowId` routing so input/screenshot calls reach the owning IDE.
+- [x] Store a reverse mapping from exposed `project_name` to the IDE pid,
+  bridge URL, and original IDE project name. Tool calls must rewrite
+  `project_name` back to the original name before crossing the bridge. Never
+  parse the suffix at routing time; use exact map lookup.
+- [x] Record screenshot `execution_id -> idePid` so follow-up
+  `steroid_input` calls route to the same IDE even when multiple IDE windows
+  are present.
+- [x] Treat stale exposed names as typed, actionable errors:
+  "project_name <...> is no longer present; call steroid_list_projects to
+  refresh".
+- [x] Implement network-backed npx-kt handlers for every `McpSteroidTools`
+  handler interface that needs IDE routing:
+  `ListProjectsToolHandler`, `ListWindowsToolHandler`,
+  `ExecuteCodeToolHandler`, `ApplyPatchToolHandler`,
+  `ExecuteFeedbackToolHandler`, `ActionDiscoveryToolHandler`,
+  `VisionScreenshotToolHandler`, `VisionInputToolHandler`, and
+  `OpenProjectToolHandler`.
+- [x] Use `/npx/v1/tools/call/stream` for routed calls that can produce
+  progress and forward progress events as MCP progress notifications.
+- [x] Unify devrig bridge streaming on NDJSON for projects and tool calls.
+  Projects keep `ping`; tool calls keep `heartbeat`; both use a shared 10 s
+  keepalive cadence and npx-kt uses a 50 s socket idle timeout. Unknown
+  tool-call messages are ignored so future protocol messages do not break
+  current clients. Verification:
+  `./gradlew :npx-kt:test --tests 'com.jonnyzzz.mcpSteroid.proxy.server.NpxToolBridgeClientTest' --rerun-tasks --console=plain`
+  and
+  `./gradlew :test-integration:test --tests 'com.jonnyzzz.mcpSteroid.integration.tests.NpxKtRealIdeBridgeIntegrationTest' --rerun-tasks --console=plain`
+  passed. Final real IDE run dir:
+  `test-integration/build/test-logs/test/run-20260519-093144-devrig-stdio-mcp-real-ide-bridge`.
+  MCP Steroid inspections reported zero findings on all touched files
+  (`eid_20260519T092307-devrig-ndjson-transport`; final focused
+  `NpxProjectsStream.kt` pass `eid_20260519T093009-devrig-ndjson-transport`).
+  Peer
+  reviews: Claude `run_20260519-071356-24092` GO; Gemini
+  `run_20260519-072044-27703` GO.
+- [x] Define and test `OpenProjectToolHandler` routing policy: require exactly
+  one discovered/routable IDE; otherwise return an actionable error.
+- [x] Implement local npx-kt `PromptsContextHandler`. Given exposed
+  `project_name`, resolve the IDE metadata and render prompts/resources with
+  that IDE's product code and baseline version. Do not route prompt/resource
+  rendering to an IDE.
+- [x] Register generated resources/prompts in the npx-kt stdio server using
+  the same `ResourceRegistrar` path as the IJ plugin.
+- [x] Move `ResourceRegistrar` from `ij-plugin` into `mcp-steroid-server`
+  because it uses no IntelliJ Platform APIs.
+- [x] Keep no-IDE and stale-project errors explicit and actionable.
+- [x] Add unit tests for hash suffix stability, reverse project mapping, and
+  project/window rewriting.
+- [x] Add unit tests for prompt context selection.
+- [x] Add unit tests for bridge routing request bodies.
+- [x] Add bridge-routing unit tests with a fake HTTP client/engine verifying
+  the request body rewrites `project_name` to the original IDE project name and
+  sets the bearer token header.
+- [x] Add npx-kt stdio integration tests with one fake IDE bridge discovered
+  through marker/discovery, covering `steroid_list_projects` and a routed tool
+  call.
+- [x] Extend npx-kt fake-IDE stdio integration coverage to
+  `steroid_list_windows` and prompt/resource reads.
+- [x] Add/extend agent integration tests for `AiMode.AI_NPX` with one running
+  IDE so an AI agent uses devrig stdio MCP end-to-end, not the HTTP MCP server.
+- [x] Validate with scoped Gradle tests, MCP Steroid inspections, and a debug
+  IDE/runtime check where practical. The Docker+Claude agent scenario was
+  compiled but not run in this batch because it requires external agent
+  credentials and a long Docker IDE run; the fake-IDE stdio route is executed.
+- [ ] Commit in small logical batches:
+  1. planning/TASKS update;
+  2. ResourceRegistrar move;
+  3. routing/name-mapping service + unit tests;
+  4. local list/prompts handlers;
+  5. network bridge handlers + stdio integration tests;
+  6. agent-level integration tests;
+  7. cleanup/inspection fixes. Earlier items 1-5 are already committed.
+
+# Active notes — npx-kt CLI home override (2026-05-16)
+
+- Runtime help intentionally documents only user-facing commands/options. The
+  npx home override remains available for tests and automation via
+  `DEVRIG_HOME=<path>`; it prints a stderr notice when used. Do not re-add the
+  old `--home` flag.
+
 # Active focus — TC quality validation triage (2026-05-11)
 
 Post-philosophy-iteration TC run against `jb/main 2f21517a` (the merge
@@ -1128,3 +1777,587 @@ extra surface.
 4. **C3** → **C2** → **C1** (recovery hints).
 5. **C4** (dryRun, deferred).
 
+---
+
+# Managed-backend review findings (2026-05-15)
+
+Three parallel `run-agent.sh codex` review passes against `mcp-5` after
+iter7. Items below are the consensus set (≥2 reviewers, with which
+reviewers agreed in parentheses). One item — first-start writers into
+the real user home — is intentionally **deferred** per user direction
+("Let's keep it so for now, we are going to review that step later").
+
+The reviewer reports are preserved at
+`.run-agent-managed-backends/reviews-{a,b,c}/run_*/FINAL_RESULT.md`.
+
+## Blockers
+
+### B1 — `backend stop` can SIGTERM/SIGKILL an unrelated process (A, B, C)
+`npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/proxy/ManagedBackend.kt:282-309`.
+Stop trusts the PID file, calls `ProcessHandle.of(pid).destroy()` without
+proving that pid still belongs to a managed IDE under
+`homePaths.backendsDir`. PID reuse → wrong process killed.
+**Fix:** before signalling, check `ProcessHandle.info().command()` is
+under `homePaths.backendsDir`, or verify the `.<pid>.mcp-steroid`
+marker matches our backend descriptor. On mismatch → delete stale PID
+file, report "stale" outcome, no signal.
+
+### B2 — Archive extraction allows path-traversal / symlink escape (A, B, C)
+`intellij-downloader/src/main/kotlin/.../IdeUnpacker.kt:76-92`, `:133-140`, `:291-293`.
+The `outputFile.canonicalPath.startsWith(unpackDir.canonicalPath)`
+prefix check is bypassable (no trailing separator); tar symlinks aren't
+target-validated.
+**Fix:** add trailing `File.separator` to the prefix check; for
+symlinks resolve `linkTarget = unpackDir.resolve(entry.linkName).normalize()`
+and reject when it escapes the unpack dir.
+
+✅ resolved
+
+### B3 — Build / installDist blocked by `:intellij-downloader:extractSevenZipResources` (B only)
+Likely fallout of the parallel 7zip-into-npx-kt worker mid-edit;
+expected to resolve as that worker lands. Re-check after each iter
+lands.
+
+## Majors
+
+### M1 — `idea-community` may resolve to an Ultimate (`IU-…`) bundle (A)
+iter4's marker captured `ide.build: IU-253.28294.334` while the backend
+ID was `idea-community-2025.3`. Either the resolver picked the wrong
+URL, or the plugin reports the build of a different IDE process.
+**Action:** read-only investigation first — confirm whether the
+download URL the resolver returns for `code=IIC` actually serves a
+Community binary, and whether the marker's `ide.build` reflects the
+running JVM's ApplicationInfo. Only fix if a real mismatch is found.
+
+### M2 — `backend start <product>` / `stop <product>` (no version) hits the network (B, C)
+`ManagedBackend.kt` resolves "latest stable" via the products API instead
+of consulting `homePaths.backendsDir/<product-key>-*`. Means stop
+depends on JetBrains uptime AND can target a version different from
+what's installed.
+**Fix:** for product-only argv, prefer the highest-versioned entry on
+disk. Fall back to API only when nothing is installed.
+
+### M3 — Single-instance lock is racy across concurrent CLI calls (A, B, C)
+`ManagedBackend.kt:231-273` — scan-then-spawn has no file lock; two
+concurrent `backend start` calls can both pass the scan and both spawn.
+**Fix:** `FileChannel.tryLock()` on `homePaths.stateDir/global.lock`
+for the duration of the start sequence.
+
+### M4 — JSON backend ids use natural stable identifiers (A, B, C) ✅ resolved
+`BackendCommand.kt` — `backend --json` no longer exposes synthetic ordinal-based identifiers
+as primary keys in `backends[]`.
+**Fix:** use each row's natural id: `pid-<n>` for marker-discovered IDEs,
+`port-<n>` for port-discovered IDEs, or the managed backend id.
+
+### M5 — SevenZipLocator cache writes are racy (A, C) ✅ resolved (download-A batch)
+`SevenZipLocator.kt:69-73`, `:103-107`. Fixed `*.tmp` filename per
+binary; two concurrent first-runs collide.
+**Fix:** randomise tmp name with `Files.createTempFile` and atomic-move
+to the cache slot.
+
+### M6 — `backend stop --json` reports a `logPath` that `start` never writes (A, B)
+The schema lies. Either `start` writes to that path, or `stop` omits the field.
+**Fix:** drop the field, or have `start` write to that path (it's the
+log file we already capture — wire it).
+
+### M7 — Partial / interrupted downloads poison the install dir (B) ✅ resolved (download-A batch)
+No transactional rename; an aborted `download` leaves a half-extracted
+bundle that subsequent `download` calls treat as installed.
+**Fix:** extract to `<id>.partial/`, atomic rename to `<id>/` only on
+full success.
+
+### M8 — CLI parser accepts malformed flags / extra positional args (A, B) ✅ resolved
+Two reviewers independently found ambiguous argv shapes that resolve
+to unexpected modes.
+**Fix:** added table-driven parser validation plus fuzz-style parser tests;
+reject unrecognised flags, missing value-flag values, and extra
+positionals.
+
+## Minors
+
+| | | reviewers |
+|---|---|---|
+| m1 | `DEVRIG_HOME=~/...` not expanded; `..` normalised rather than rejected ✅ resolved | A, B, C |
+| m2 | `NpxKtRoot` has a production-visible mutable test seam ✅ resolved | A, B, C |
+| m3 | Text rendering uses UTF-16 `String.length`, not terminal display width ✅ resolved | A, B |
+| m4 | Some unit tests depend on live JetBrains/Google APIs (flaky offline) ✅ resolved | A |
+| m5 | Banned silent `catch (_:Exception)` in `IdeDownloader.kt:58-60` ✅ resolved (download-A batch) | A, B, C |
+| m6 | Help banner omits `--version <v>` for `backend start/stop` ✅ resolved | C |
+| m7 | `tempFile.renameTo(dest)` success not checked in `IdeDownloader.kt:79-98` ✅ resolved (download-A batch) | A |
+
+## Deferred (per user, 2026-05-15)
+
+- **First-start config writers target the real user home (`~/.config/JetBrains/...`, `~/.java/...`).** Reviewers flagged this as a blocker (A, B) — managed IDEs can clobber the user's real JetBrains preferences. User direction: "Let's keep it so for now, we are going to review that step later." Re-open later with a per-backend user-home design.
+
+## Plan / execution
+
+Sequential codex runs via `~/Work/marinator/marinade/marinade/run-agent.sh codex`.
+One focused brief per task; collect handoff, push, iterate. Order:
+
+1. **M1 investigation** (read-only first; if false alarm, close out, otherwise
+   becomes a new blocker fix).
+2. **B1** + **M2** + **M3** + **M6** — all lifecycle-correctness, all in
+   `ManagedBackend.kt`. One coherent commit chain.
+3. **B2** — archive extraction security, isolated to `IdeUnpacker.kt`.
+4. **M5** + **M7** + **m5** + **m7** — download/cache atomicity & banned
+   pattern, isolated to `IdeDownloader.kt` + `SevenZipLocator.kt`.
+5. **M4** — JSON synthetic IDs, isolated to renderer.
+6. **M8** — CLI parser tightening.
+7. **m1** + **m2** + **m3** + **m4** + **m6** — polish batch ✅ resolved.
+
+B3 watched but not actively fixed (parallel worker territory).
+
+## Additional items (added 2026-05-15 by user)
+
+### M9 — Centralised downloads folder + cleanup after unpack
+Today downloads land in per-backend dirs. Move all download staging to
+`~/.mcp-steroid/downloads/`. Once a download is unpacked into
+`~/.mcp-steroid/backends/<id>/`, **remove** the file from `downloads/`.
+`HomePaths` gets a new `downloadsDir` property; `BackendManager.download`
+routes the archive there, unpacks, then `Files.delete()`.
+
+✅ resolved (download-B batch)
+
+### M10 — Recoverable downloads + checksum/signature verification
+Two parts:
+
+**Recoverable:** if `download` is interrupted, a follow-up
+`download` should resume from the saved bytes via HTTP `Range` request
+(or skip from the start if the server doesn't support 206 Partial Content).
+The `.partial` extension stays until the full size is verified.
+
+**Verified:** the JetBrains products API exposes per-download checksum
+fields (`checksumLink`, `sha256`, signature URL) and Android Studio's
+`developer.android.com/studio` page exposes SHA-256 checksums next to
+each download URL. After download, fetch the upstream checksum and
+verify SHA-256 of the local file. On mismatch → reject the file,
+delete, fail loudly.
+
+When the source doesn't expose a checksum we trust:
+  - DO log a `WARN` (visible without --debug) noting "no checksum
+    available from upstream; skipping verification".
+  - Don't fabricate a fallback; just record the gap.
+
+✅ resolved (download-B batch)
+
+## Revised plan / execution
+
+Sequential codex runs. Order:
+
+1. **M1 investigation** (read-only).
+2. **B1 / M2 / M3 / M6** — lifecycle in `ManagedBackend.kt`.
+3. **B2** — archive extraction security in `IdeUnpacker.kt`.
+4. **M5 / M7 / M9 / M10 / m5 / m7** — download path overhaul:
+   centralised `downloads/` dir, resumable transfer, SHA-256
+   verification, `.partial` atomic rename, fix silent catch +
+   unchecked rename. All in `IdeDownloader.kt` + `SevenZipLocator.kt`
+   + `HomePaths.kt`.
+5. **M4** — JSON synthetic IDs.
+6. **M8** — CLI parser tightening.
+7. **m1 / m2 / m3 / m4 / m6** — polish ✅ resolved.
+
+## Additional item (added 2026-05-15)
+
+### M11 — `devrig backend provision <id>` — install MCP Steroid into an existing IDE
+
+New CLI subcommand to provision the MCP Steroid plugin into an
+**already-running** IDE that was discovered by port scan but doesn't
+yet have the plugin installed. The current listing already
+distinguishes port-discovered ("mcp-steroid plugin not installed —
+project list unavailable") rows; promote the action by appending a
+clear pointer:
+
+```
+  [3] IntelliJ IDEA Ultimate (port 63342)
+        run: devrig backend provision port-63342
+```
+
+Identifier: stable port-based id (e.g. `port-63342`) since port-
+discovered IDEs don't have a `<product-key>-<version>` natural id.
+Surface the same id in the JSON `backends[]` row so machine
+consumers can pipe it.
+
+**Research first** (read-only, single codex pass):
+- Inspect `~/Work/intellij` for the built-in HTTP server (`org.jetbrains.builtInWebServer` / `BuiltInServerManager` / the `WebServerPathHandler` SPI).
+  Document every action the running IDE exposes — specifically:
+  - is there an endpoint that returns the plugins / config / system path?
+  - is there an endpoint that installs a plugin (with or without restart)?
+  - what's the auth model (CSRF token / Origin / nothing)?
+- Cross-reference with what Toolbox / Settings Sync uses. Toolbox is
+  known to inject plugins; figure out how.
+- If no useful endpoint exists, derive the plugins folder from
+  `/api/about`'s `productCode` + `baselineVersion` + `buildNumber`
+  and the per-OS JetBrains config convention
+  (`~/Library/Application Support/JetBrains/<ProductSlug><Version>/plugins/`
+  on Mac; `$XDG_CONFIG_HOME/JetBrains/<ProductSlug><Version>/plugins/`
+  on Linux; `%APPDATA%\JetBrains\<ProductSlug><Version>\plugins\`
+  on Windows).
+
+**Implementation** (after research lands):
+- Spawn the same plugin-source resolution as `BackendManager.download`'s
+  plugin deploy step: `NpxKtRoot.ijPluginDir()` → copy into the
+  target IDE's plugins dir.
+- Hot-reload if possible (Plugin Hot Reload plugin or built-in
+  dynamic-plugin reloader); otherwise prompt the user to restart the
+  IDE.
+- JSON output shape: `{tool, action: "provision", id, productCode, pluginsDir, hotReloaded: <true|false>, restartRequired: <true|false>}`.
+
+Slots into the pipeline **right after M1** — before the lifecycle batch.
+
+## Revised pipeline order (2026-05-15)
+
+1. M1 investigation (in flight).
+2. **M11 — `backend provision`** (research → design → implement).
+3. B1 / M2 / M3 / M6 — `ManagedBackend.kt` lifecycle.
+4. B2 — `IdeUnpacker.kt` security.
+5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
+6. M4 — JSON synthetic IDs.
+7. M8 — CLI parser tightening.
+8. m1 / m2 / m3 / m4 / m6 — polish ✅ resolved.
+
+## M1 follow-up: confirmed bug, fix required (2026-05-15)
+
+Investigation (run `task-m1/run_20260515-123930-99884`) confirmed the
+IIC-vs-IIU mismatch. **Live evidence:**
+
+- JetBrains products API `?code=IIC&release.type=release` returns
+  release 2025.3 with these download URLs:
+  - `https://download.jetbrains.com/idea/idea-2025.3-aarch64.dmg`
+  - `https://download.jetbrains.com/idea/idea-2025.3.tar.gz`
+  - `https://download.jetbrains.com/idea/idea-2025.3.dmg`
+  - `https://download.jetbrains.com/idea/idea-2025.3.exe`
+- HEAD checks on the same URLs return **HTTP 200 with identical
+  Content-Length** to the IIU 2025.3 download. The correctly-named
+  Community URL `ideaIC-2025.3-aarch64.dmg` returns **HTTP 404** — JetBrains
+  hasn't shipped a Community 2025.3 binary.
+- The unpacked `product-info.json` on iter4's host run reported
+  `productCode: IU`. The IDE that started was Ultimate.
+- The NEXT release in the IIC feed (2025.2.6.2) has proper
+  `ideaIC-2025.2.6.2-aarch64.dmg` URLs (HTTP 200), unpacks as
+  Community.
+
+**Fix:**
+
+1. `IdeReleaseLookup.kt`: when iterating product API releases, require
+   the chosen download URL's filename to contain a product-specific
+   token. For Community editions, that token is `ideaIC-` / `pycharm-community-`
+   / `IC-` (whichever the per-OS URL uses). Skip releases whose URL
+   filename doesn't match. The most recent stable that passes the
+   filter becomes the "latest stable".
+2. `BackendManager.download`: post-unpack, read
+   `<bundle>/Contents/Resources/product-info.json` (macOS) or
+   `<bundle>/product-info.json` (Linux/Windows). Assert the
+   `productCode` matches what the requested IdeProduct expects
+   (`IC` for `IdeProduct.IntelliJIdeaCommunity` etc.). On mismatch:
+   delete the broken install, fail loudly.
+
+This is now a **blocker fix** (was logged as M1 investigation). Pipeline
+moves M1-fix in front of M11.
+
+## Revised pipeline order (2026-05-15)
+
+1. **M1-fix** — IIC resolver filter + post-unpack productCode assertion.
+2. M11 — `backend provision`.
+3. B1 / M2 / M3 / M6 — `ManagedBackend.kt` lifecycle.
+4. B2 — `IdeUnpacker.kt` security.
+5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
+6. M4 — JSON synthetic IDs.
+7. M8 — CLI parser tightening.
+8. m1 / m2 / m3 / m4 / m6 — polish ✅ resolved.
+
+## Additional item (added 2026-05-15)
+
+### M12 — Managed-backend GUI test: stream `devrig …` output to the on-video console
+
+`test-integration/src/test/kotlin/com/jonnyzzz/mcpSteroid/integration/tests/ManagedBackendGuiIntegrationTest.kt`
+currently runs the `devrig backend download/start/stop` commands via
+container exec, captures stdout/stderr to assertion strings, and the
+video records only Xvfb's fluxbox desktop. The viewer can't see what
+the test is actually doing.
+
+Make the video more useful:
+- Run each `devrig …` invocation inside a visible `xterm` window on
+  the Xvfb display (the container's `ide-base` image already has
+  `xterm` + `xvfb` + `fluxbox` + `ffmpeg` ready).
+- Pipe the command's combined output through `tee` so the test still
+  gets the bytes for assertions, AND the xterm shows them in
+  real time.
+- The "frame" the existing tests use to spawn IDE windows is
+  reusable — see `WhatYouSeeTest` for an `xterm`-as-IDE-frame
+  precedent, and the existing `XcvbVideoDriver` for the recording
+  loop. No new infrastructure needed.
+
+Shape:
+
+```kotlin
+container.execAndAssertOnVideo(
+    title = "devrig backend download idea-community",
+    script = "DEVRIG_HOME=/tmp/mcp-home /home/agent/devrig backend download idea-community",
+)
+```
+
+…where `execAndAssertOnVideo` launches `xterm -title <…> -hold -e bash -c <script>` against `DISPLAY=:0`, waits for the wrapped process to exit, captures the exit code + bytes via the `tee` sidekick (write to a file the test reads after the xterm window closes), then asserts on the captured output.
+
+Slot: between M8 (parser tightening) and the polish batch.
+
+✅ resolved
+
+## Revised pipeline order (2026-05-15, final)
+
+1. M1-fix — IIC resolver filter + post-unpack assertion (in flight).
+2. M11 — `backend provision`.
+3. B1 / M2 / M3 / M6 — `ManagedBackend.kt` lifecycle.
+4. B2 — `IdeUnpacker.kt` security.
+5. M5 / M7 / M9 / M10 / m5 / m7 — download path overhaul.
+6. M4 — JSON synthetic IDs.
+7. M8 — CLI parser tightening.
+8. **M12 — managed-backend test: stream `devrig` output to the on-video xterm.**
+9. m1 / m2 / m3 / m4 / m6 — polish ✅ resolved.
+
+## M13 — `backend provision` three explicit methods (2026-05-15)
+
+M11 landed Option-B-as-I-then-called-it (file-system install with
+PathManager-default plugin folder). User now wants all three options
+exposed as choices:
+
+- **A — install-files**: discover plugin folder via the IDE's own
+  `~/.intellij/<pid>-built-in-server.json` (written by
+  `BuiltInServerDiscoveryService` in `community/platform/built-in-server/
+  src/org/jetbrains/ide/BuiltInServerInfoService.kt` when the registry
+  flag `ij.platform.experimental.discoverability` is on). That JSON's
+  `paths.plugins` is the **authoritative** override-respecting plugins
+  folder. Write our plugin tree there; print restart hint.
+  - Fallback when the discoverability JSON isn't present: PathManager-
+    default convention (the existing M11 logic).
+- **B — install-marketplace**: GET `/api/installPlugin?pluginId=com.jonnyzzz.mcp-steroid&action=install`
+  against the target IDE. `Origin: http://localhost` is required to
+  avoid the trust prompt; even so, the IDE pops the REST API consent
+  dialog (its wording is already toned down in our parallel
+  `marinator/rest-api-dialog-wording` branch). MCP Steroid is on
+  Marketplace at plugin id 27834.
+- **C — manual**: print "to install manually: drop the plugin into
+  <suggested path>, then restart the IDE", and exit. Useful when neither
+  REST nor file-system access is desirable.
+
+CLI: `devrig backend provision <id> --method <auto|install-files|install-marketplace|manual>`. Default `auto`:
+1. install-files (prefer discoverability JSON; fall back to PathManager-default).
+2. If install-files's chosen directory isn't writable, prompt the
+   user to retry with `--method install-marketplace` or `--method manual`.
+
+JSON output adds a `method` field on every variant.
+
+## Pipeline update
+
+M13 slots **right after M11** (already done) and BEFORE the lifecycle
+batch B1/M2/M3/M6 — touches the same `BackendProvision*` files M11
+just added.
+
+## M13 update (2026-05-15) — manual mode only
+
+User feedback:
+- **Option A (install-files via `~/.intellij/<pid>-built-in-server.json`)** — not viable. `BuiltInServerDiscoveryService` was reverted upstream; the discoverability JSON isn't in shipped IDE builds.
+- **Option B (install-marketplace)** — not great because the IDE would pull a Marketplace build, NOT the version bundled with the devrig launcher. We want the bundled plugin to be the source of truth.
+
+Therefore M13's deliverable shrinks to **manual mode only**:
+- `devrig backend provision <id>` prints actionable instructions and the per-OS suggested install path (best-effort derived from `/api/about`), then exits.
+- No file writes, no REST install calls.
+- Listing of port-discovered IDEs continues to suggest `devrig backend provision port-<port>` next to each row.
+
+M11's filesystem-install code path needs to be **removed** in this iteration — keep the listing + the `port-<port>` id parsing, drop the actual copy-files step. (Or hide it behind an unadvertised `--method install-files` flag that defaults off.) Net result: fewer surfaces to maintain; the user makes the install decision deliberately.
+
+✅ resolved (manual mode only)
+
+## M14 — Relocate MCP Steroid plugin marker into `~/.mcp-steroid/markers/`
+
+Today the plugin writes the PID-marker file at `~/.<pid>.mcp-steroid`
+(directly in the user home root). That's noisy and conflicts with the
+"all state under `~/.mcp-steroid/`" principle the rest of the project now follows.
+
+Both sides need updating in lockstep:
+
+1. **Plugin (`ij-plugin/src/main/kotlin/com/jonnyzzz/mcpSteroid/server/ServerUrlWriter.kt`)**:
+   - Write to `~/.mcp-steroid/markers/<pid>.mcp-steroid` (no leading dot in the filename — we don't need to hide files inside a dedicated subdir).
+   - Create the subdir on first write.
+   - Cleanup logic now scans `~/.mcp-steroid/markers/` instead of the home root.
+   - Honor `MCP_STEROID_HOME` env var when set (plugin reads env at IDE startup).
+
+2. **Proxy (`npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/proxy/monitor/IdeDiscovery.kt`)**:
+   - Scan `~/.mcp-steroid/markers/` (via `homePaths.markersDir`).
+   - Drop the home-root scan entirely after one release — for now, scan BOTH and warn (DEBUG) when the legacy location surfaces something.
+
+3. **Shared (`mcp-steroid-server` module's `PidMarker`)**:
+   - Add `PidMarker.markerDirectory(userHome: Path): Path` returning
+     `userHome.resolve(".mcp-steroid/markers")` so plugin and proxy
+     can't drift.
+   - Filename helper: `markerFileNameFor(pid)` returns `$pid.mcp-steroid`
+     (the leading-dot legacy `fileNameFor` stays for compat reads).
+
+4. **HomePaths**: add `markersDir = home.resolve("markers")` (the path lives under the managed home root the proxy already manages).
+
+5. **Stale-file cleanup**: keep the existing pid-alive check (`ProcessHandle.of(pid).isPresent`); apply it to the new directory.
+
+6. **Tests**: bump the existing discovery tests to use the new location; add one to confirm the proxy still reads a legacy `~/.<pid>.mcp-steroid` (with a DEBUG log) for the transition window.
+
+✅ resolved
+
+## Pipeline update (2026-05-15, again)
+
+1. Lifecycle batch B1/M2/M3/M6 (running).
+2. **M13** (now: manual-only — small shrink-down of the M11 surface).
+3. **M14** (marker relocation: plugin + proxy in lockstep).
+4. B2 archive security.
+5. Download overhaul M5+M7+M9+M10+m5+m7.
+6. M4 JSON synthetic IDs.
+7. M8 parser tighten.
+8. M12 video xterm.
+9. Polish m1+m2+m3+m4+m6 ✅ resolved.
+
+## Post-pipeline follow-ups (added 2026-05-15)
+
+Synthesised from each codex run's `IMPROVEMENTS.md` after the
+managed-backends pipeline landed. Higher priority first.
+
+### F1 — M8 introduced a regression: `backend --help` / `backend --version` exit 64 ✅ resolved
+
+`Cli.kt`'s strict allow-list (commit `dc733cac`) dropped `--help` /
+`--version` from every backend mode's allowed-flag set. Pre-tightening,
+`parseCliMode` checked `--help` / `-h` BEFORE `backend`, so `backend --help`
+routed to Help. Now it lands in `Unknown` with exit 64.
+
+**Fix:** re-introduce `--help` / `-h` / `--version` / `-v` as universal
+flags that route to Help / Version regardless of the mode keyword
+preceding them. Add explicit parametrised tests for
+`backend --help`, `backend download --help`, `project --version`.
+
+### F2 — `:npx-kt:installDist` fails when previous tree has read-only bundled JDK files ✅ resolved
+
+Surfaced by `task-lifecycle` and `task-m13`. Manual recovery is
+`chmod -R u+w npx-kt/build/install/mcp-steroid-proxy && rm -rf` before
+rerunning.
+
+**Fix:** in `npx-kt/build.gradle.kts`, add a `doFirst { ... }` to the
+`installDist` task that chmod-fixes any pre-existing install tree
+before the `Sync` task copies into it.
+
+### F3 — `SevenZipLocatorTest` writes through the real `~/.cache/mcp-steroid/7z/` ✅ resolved
+
+`SevenZipLocator.cacheRoot` is a `private val by lazy` bound to
+`user.home`. Tests run against the real host cache, leaving side
+effects.
+
+**Fix:** mirror the `NpxKtRootTestSupport` pattern from m2 — a
+`SevenZipLocatorTestSupport` object in the test sourceset overrides
+the cache root via package-internal access. Reset between tests.
+
+### F4 — `IntelliJPortDiscoveryTest` has a port-bind race ✅ resolved
+
+`task-polish` hit `Address already in use` on its first full-module
+run; immediate rerun passed.
+
+**Fix:** bind Ktor fake IDE servers with `embeddedServer(port = 0)` and
+read the resolved connector port after start. No pre-release
+`ServerSocket(0).localPort` hand-off and no `Thread.sleep` retries.
+
+### F5 — GUI integration test re-downloads ~1 GB IDE archive every run ✅ resolved
+
+Cold-cache run is ~2 minutes; transient `EOFException` mid-stream has
+surfaced (M14 run).
+
+**Fix:** persistent test archive cache under
+`~/.cache/mcp-steroid-test/` reused across dev-loop runs; falls back to
+fresh download when the file is missing/stale. The test stages cached
+`ideaIC-*.tar.gz` archives into `/tmp/mcp-home/downloads/` before
+`devrig backend download` and back-populates archive files after a
+successful download.
+
+### F6 — Plugin `sinceBuild` must move with the resolver's oldest fallback ✅ resolved
+
+M1-fix's `idea-community` fallback to 2025.2.6.2 (build `IC-252`) does
+not load with `sinceBuild=253`. The two surfaces (resolver oldest
+release in `IdeProduct.knownProducts` + plugin manifest `sinceBuild`)
+are coupled but live in different modules.
+
+**Fix:** declare `MANAGED_BACKEND_MIN_SUPPORTED_BUILD = "252"` in
+`:intellij-downloader` and gate `:ij-plugin:test` with
+`PluginCompatibilityFloorTest`, which reads `ij-plugin/build.gradle.kts`
+and fails if `pluginConfiguration.ideaVersion.sinceBuild` drifts from
+the resolver baseline.
+
+### F7 — Remove legacy home-root marker fallback after one release (DEFERRED)
+
+The M14 transition keeps a DEBUG-only fallback scanning
+`~/.<pid>.mcp-steroid`. Drop the fallback + transition tests after
+one release cycle (once shipped plugins all write to
+`~/.mcp-steroid/markers/`). Track which release first shipped the new
+layout (next ij-plugin release after `5e324746`).
+
+**No action now.**
+
+### F8 — Bounded retry on transient `checksumLink` fetch failures ✅ resolved
+
+M10's checksum verification fails closed if the `.sha256` URL returns
+a transient error. Safest default; but CDN blips would unnecessarily
+fail downloads.
+
+**Fix:** small bounded retry (3 attempts, exponential backoff capped
+at ~10 s) inside the checksum-fetch path only. Final failure still
+surfaces the error verbatim.
+
+### F9 — Log the selected archive URL on `--debug` even on cache hits ✅ resolved
+
+Today only a cold download surfaces the URL chosen by the resolver;
+a cached rerun shows just the products-API fetch. Hampers forensics.
+
+**Fix:** in `IdeDistribution.resolveAndDownload`, log the resolved
+URL + local destination at INFO (always) or DEBUG (selectable) BEFORE
+the cache check.
+
+### F10 — npx-kt fixtures conflate API product code (`IIC`) with installed `product-info.json` code (`IC`) ✅ resolved
+
+Naming hygiene only. Fixtures should distinguish:
+- `apiProductCode = "IIC"` — JetBrains products-API code
+- `installedProductCode = "IC"` — value in `product-info.json`
+
+### F11 — `backend provision` listing should hide IDEs already running MCP Steroid ✅ resolved
+
+Today the listing scans all port-discovered IDEs, including ones
+with the plugin already loaded. Once an IDE has produced a marker
+file, the listing should hide those rows.
+
+**Fix:** provision list now runs the same marker discovery as `backend`,
+filters port-discovered rows whose normalised build already appears in
+a marker, prints the already-installed message when the filter empties
+the list, and emits `discoveryNote` in JSON when rows were removed.
+
+### F12 — East-Asian wide characters and combining marks (display width)
+
+m3 (polish batch) intentionally fixed surrogate-pair / code-point
+width only. East-Asian wide characters render at 2 columns; combining
+marks at 0. Both still misalign in text mode.
+
+**Fix:** extend `String.codePointWidth()` to consult Unicode East
+Asian Width. Defer combining marks if scope grows.
+
+---
+
+## Lifecycle batch (B1 + M2 + M3 + M6) — ✅ resolved 2026-05-15
+
+Codex run `task-lifecycle/run_20260515-133645-60441`. Commits pushed to
+`origin/mcp-5`:
+
+- `3a44bb88` — B1: `BackendManager.stop` verifies `ProcessHandle.info().command()`
+  resolves under `homePaths.backendsDir` or the `~/.<pid>.mcp-steroid` marker
+  decodes & matches descriptor; stale pid file deleted, `{outcome: "stale"}`
+  emitted on mismatch, no signal sent.
+- `6c5df613` — M2: product-only `backend start/stop <product>` prefers the
+  highest locally-installed `<product-key>-<version>` entry; falls back to
+  the products API only when nothing is installed.
+- `4f3e0ea3` — M3: `BackendManager.start` serialised via
+  `FileChannel.tryLock(state/global.lock)`; contended starts exit 64 with
+  "another devrig backend operation is in progress; retry shortly".
+- `1ea0fc32` — M6: launches redirect stdout/stderr to `logs/managed.log`;
+  start text + JSON report that path (Windows still uses WMI detach so
+  redirection there is best-effort).
+
+GUI integration test green (`ManagedBackendGui*`, BUILD SUCCESSFUL 2m9s),
+manual single-instance smoke green. See run dir for full transcript.

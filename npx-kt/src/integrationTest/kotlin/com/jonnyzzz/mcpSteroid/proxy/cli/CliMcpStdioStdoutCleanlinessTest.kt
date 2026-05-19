@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy.cli
 
+import com.jonnyzzz.mcpSteroid.proxy.DEVRIG_HOME_ENV
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.NpxKtMcpInstaller
 import com.jonnyzzz.mcpSteroid.testHelper.ProjectHomeDirectory
@@ -15,7 +16,9 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.startProcess
 import kotlinx.coroutines.flow.flowOf
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.nio.file.Path
 import java.util.Locale
 
 /**
@@ -42,6 +45,7 @@ import java.util.Locale
  * [RunProcessRequest.startProcess] for the host, `startProcessInContainer` for
  * Docker — instead of a raw [ProcessBuilder].
  */
+@Suppress("FunctionName")
 class CliMcpStdioStdoutCleanlinessTest {
 
     private val installDir: File by lazy { NpxKtMcpInstaller.resolveInstallDir() }
@@ -55,21 +59,7 @@ class CliMcpStdioStdoutCleanlinessTest {
 
     @Test
     fun `host launcher writes only JSON-RPC frames to stdout`() {
-        val osName = System.getProperty("os.name").lowercase(Locale.ROOT)
-        val isWindows = "windows" in osName
-        val launcherName = if (isWindows) "mcp-steroid-proxy.bat" else "mcp-steroid-proxy"
-        val launcher = File(installDir, "bin/$launcherName")
-        check(launcher.isFile) { "launcher missing at ${launcher.absolutePath}" }
-
-        val command = if (isWindows) {
-            // .bat must be invoked through cmd.exe; the application plugin's
-            // generated script handles arg quoting on its own.
-            listOf("cmd.exe", "/c", launcher.absolutePath)
-        } else {
-            check(launcher.canExecute()) { "launcher not executable: ${launcher.absolutePath}" }
-            listOf(launcher.absolutePath)
-        }
-        val variantLabel = "host:${if (isWindows) "windows" else osName}"
+        val (variantLabel, command) = hostMpcCommand()
 
         // RunProcessRequest's stdin overloads take ByteArray/String directly
         // and wrap them as a single-element Flow internally.
@@ -93,6 +83,58 @@ class CliMcpStdioStdoutCleanlinessTest {
             variantLabel = variantLabel,
             stderrForDiagnostics = result.stderr,
         )
+    }
+
+    @Test
+    fun `host startup failure before handshake is visible on stderr`(@TempDir tempDir: Path) {
+        val (_, command) = hostMpcCommand()
+        val missingHome = tempDir.resolve("missing-devrig-home")
+
+        val result = RunProcessRequest()
+            .command(command)
+            .stdin(StdoutCleanlinessHarness.handshakeBytes)
+            .environment(mapOf(DEVRIG_HOME_ENV to missingHome.toString()))
+            .logPrefix("STDOUT-CLEAN-host")
+            .description("npx-kt startup failure before MCP handshake")
+            .timeoutSeconds(30)
+            .quietly()
+            .startProcess()
+            .awaitForProcessFinish()
+
+        check(result.exitCode == 64) {
+            "launcher exited with ${result.exitCode}\nstdout=\n${result.stdout}\nstderr=\n${result.stderr}"
+        }
+        check(result.stdout.isBlank()) {
+            "startup failure must not emit partial MCP frames on stdout; got:\n${result.stdout}"
+        }
+        check(result.stderr.contains("Startup failure:")) {
+            "startup failure must be visible on stderr; got:\n${result.stderr}"
+        }
+        check(result.stderr.contains(DEVRIG_HOME_ENV) && result.stderr.contains("cannot resolve canonical path")) {
+            "stderr must identify the invalid home override; got:\n${result.stderr}"
+        }
+    }
+
+    private fun hostMpcCommand(): Pair<String, List<String>> {
+        val osName = System.getProperty("os.name").lowercase(Locale.ROOT)
+        val isWindows = "windows" in osName
+        val launcherName = if (isWindows) "mcp-steroid-proxy.bat" else "mcp-steroid-proxy"
+        val launcher = File(installDir, "bin/$launcherName")
+        check(launcher.isFile) { "launcher missing at ${launcher.absolutePath}" }
+
+        // `mpc` is the launcher's opt-in subcommand for stdio MCP mode (see
+        // `com.jonnyzzz.mcpSteroid.proxy.NpxKtArgs.command`). Without it the launcher behaves
+        // like a normal CLI (`--help`) and prints help text to stdout — which would make
+        // this very test fail for the wrong reason.
+        val command = if (isWindows) {
+            // .bat must be invoked through cmd.exe; the application plugin's
+            // generated script handles arg quoting on its own.
+            listOf("cmd.exe", "/c", launcher.absolutePath, "mpc")
+        } else {
+            check(launcher.canExecute()) { "launcher not executable: ${launcher.absolutePath}" }
+            listOf(launcher.absolutePath, "mpc")
+        }
+        return "host:${if (isWindows) "windows" else osName}" to command
     }
 
     @Test
@@ -120,7 +162,7 @@ class CliMcpStdioStdoutCleanlinessTest {
 
         val result = container.startProcessInContainer {
             this
-                .args(containerLauncher)
+                .args(containerLauncher, "mpc")
                 .interactive()
                 .stdin(flowOf(StdoutCleanlinessHarness.handshakeBytes))
                 .description("npx-kt stdout cleanliness check")

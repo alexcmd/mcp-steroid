@@ -1,6 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.testHelper
 
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.PidMarker
+import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
@@ -8,8 +12,15 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.mkdirs
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import java.io.File
 import java.io.InputStream
+import java.net.URI
 import java.nio.file.Files
 import java.util.zip.ZipInputStream
+
+private fun parsePortOrZero(url: String): Int = try {
+    URI(url).port.takeIf { it > 0 } ?: 0
+} catch (e: Exception) {
+    0
+}
 
 private fun ContainerDriver.copyIfPresent(localFile: File, containerPath: String) {
     if (localFile.isFile) {
@@ -81,10 +92,12 @@ private fun ContainerDriver.deployNpxProxy(
     val guestPackageJson = "$guestDir/package.json"
     val guestLockFile = "$guestDir/package-lock.json"
     val guestConfig = "$guestDir/proxy.json"
-    val markerPath = "$userHome/.1.mcp-steroid"
+    val markerPid = 1L
+    val markerPath = "$userHome/.mcp-steroid/markers/${PidMarker.markerFileNameFor(markerPid)}"
 
     mkdirs(guestDir)
     mkdirs(guestDistDir)
+    mkdirs("$userHome/.mcp-steroid/markers")
     copyToContainer(hostPackageJson, guestPackageJson)
     copyIfPresent(hostLockFile, guestLockFile)
     copyToContainer(hostDistFile, guestIndex)
@@ -102,14 +115,28 @@ private fun ContainerDriver.deployNpxProxy(
         executable = false,
     )
 
+    val fakeMarkerPort = parsePortOrZero(ideMcpUrl)
+    val fakeMarker = PidMarker(
+        pid = markerPid,
+        mcpUrl = ideMcpUrl,
+        port = fakeMarkerPort,
+        token = "test-helper-fake-token",
+        ide = IdeInfo(
+            name = "IntelliJ IDEA (test-helper fake)",
+            version = "0.0.0",
+            build = "test"
+        ),
+        plugin = PluginInfo(
+            id = "com.jonnyzzz.mcpSteroid",
+            name = "MCP Steroid (test-helper fake)",
+            version = "0.0.0"
+        ),
+        createdAt = "2026-01-01T00:00:00Z",
+    )
+
     writeFileInContainer(
         markerPath,
-        """
-        $ideMcpUrl
-
-        IntelliJ MCP Steroid Server
-URL: $ideMcpUrl
-        """.trimIndent() + "\n",
+        PidMarkerJson.encode(fakeMarker) + "\n",
         executable = false,
     )
 

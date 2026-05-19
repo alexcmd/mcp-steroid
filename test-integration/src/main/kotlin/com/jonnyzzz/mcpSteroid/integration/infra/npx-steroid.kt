@@ -3,17 +3,19 @@ package com.jonnyzzz.mcpSteroid.integration.infra
 
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
-import com.jonnyzzz.mcpSteroid.testHelper.prepareNpxProxyFromZipFile
+import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
+import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 
 /**
- * Holds the NPX stdio proxy command that AI agents use to connect to MCP Steroid.
+ * Holds the devrig MCP stdio command that AI agents use to connect to MCP Steroid.
  *
  * Deploy via [NpxSteroidDriver.Companion.deploy] after the MCP Steroid server is ready.
- * The deployed proxy forwards stdio JSON-RPC requests to the MCP Steroid HTTP endpoint
- * inside the container, bridging agents that only support stdio MCP transport.
+ * The deployed devrig launcher discovers the IDE through its marker file and routes
+ * MCP stdio JSON-RPC requests through the npx-kt bridge.
  *
- * The NPX package zip is resolved via Gradle configuration (`:npx` subproject) and
- * passed as the `test.integration.npx.package.zip` system property.
+ * The devrig distribution zip is resolved via Gradle configuration (`:npx-kt`
+ * subproject) and passed as the `test.integration.npx.kt.package.zip` system property.
  *
  * Used by [AiAgentDriver] when the container is created with [AiMode.AI_NPX].
  */
@@ -23,26 +25,47 @@ class NpxSteroidDriver(
 
     companion object {
         /**
-         * Deploy the NPX proxy inside [container] and return a ready [NpxSteroidDriver].
-         *
-         * Extracts the NPX package zip (from [IdeTestFolders.npxPackageZip]) and copies
-         * the proxy files into the container. Creates an isolated home directory so that
-         * multiple concurrent proxies don't collide. The proxy is pointed at
-         * [McpSteroidDriver.guestMcpUrl] so it can reach the MCP Steroid server on
-         * the container's loopback interface.
-         *
-         * Must be called after [McpSteroidDriver.waitForMcpReady].
+         * Install the launcher inside [container] after [McpSteroidDriver.waitForMcpReady].
          */
         fun deploy(
             container: ContainerDriver,
             mcpSteroid: McpSteroidDriver,
         ): NpxSteroidDriver {
-            val npxZipFile = IdeTestFolders.npxPackageZip
-            val userHome = "/home/npx-${System.currentTimeMillis()}"
-            println("[NpxSteroidDriver] Deploying NPX proxy (userHome=$userHome, url=${mcpSteroid.guestMcpUrl}, zip=${npxZipFile.name})...")
-            val npxCommand = container.prepareNpxProxyFromZipFile(npxZipFile, mcpSteroid.guestMcpUrl, userHome)
-            println("[NpxSteroidDriver] NPX proxy ready")
-            return NpxSteroidDriver(npxCommand)
+            val devrigZipFile = IdeTestFolders.npxKtPackageZip
+            val launcherPath = "/home/agent/devrig"
+            println("[NpxSteroidDriver] Deploying devrig MCP stdio (mcp=${mcpSteroid.guestMcpUrl}, zip=${devrigZipFile.name})...")
+            container.copyToContainer(devrigZipFile, "/tmp/mcp-steroid-proxy.zip")
+            container.startProcessInContainer {
+                args(
+                    "bash",
+                    "-lc",
+                    $$"""
+                    set -eu
+                    rm -rf /home/agent/devrig-cli "$$launcherPath"
+                    mkdir -p /home/agent/devrig-cli
+                    unzip -q /tmp/mcp-steroid-proxy.zip -d /home/agent/devrig-cli
+                    app_dir="$(find /home/agent/devrig-cli -mindepth 1 -maxdepth 1 -type d -name 'mcp-steroid-proxy-*' | head -1)"
+                    test -n "$app_dir"
+                    mv "$app_dir" /home/agent/devrig-cli/app
+                    chmod +x /home/agent/devrig-cli/app/bin/mcp-steroid-proxy
+                    cat > "$$launcherPath" <<'EOF'
+                    #!/usr/bin/env bash
+                    set -eu
+                    export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-default}"
+                    export PATH="$JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+                    exec /home/agent/devrig-cli/app/bin/mcp-steroid-proxy "$@"
+                    EOF
+                    chmod +x "$$launcherPath"
+                    "$$launcherPath" --version
+                    """.trimIndent()
+                )
+                    .timeoutSeconds(120)
+                    .description("install devrig MCP stdio launcher")
+            }.awaitForProcessFinish()
+                .assertExitCode(0) { "install devrig MCP stdio launcher" }
+
+            println("[NpxSteroidDriver] devrig MCP stdio ready")
+            return NpxSteroidDriver(StdioMcpCommand(command = launcherPath, args = listOf("mpc")))
         }
     }
 }

@@ -1,155 +1,159 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.proxy
 
+import com.jonnyzzz.mcpSteroid.logger
 import com.jonnyzzz.mcpSteroid.proxy.server.runStubStdioMcpServer
-import kotlinx.coroutines.CoroutineScope
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
+import kotlin.random.Random
+import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
-fun main(@Suppress("unused_parameter") args: Array<String>) {
-    // STDOUT IS RESERVED FOR MCP NDJSON FRAMES.
-    //
-    // First action of the process: capture the real stdin / stdout, then
-    // reroute the global `System.out` to stderr so any stray `println` from
-    // application or third-party code (logback fallbacks before logback.xml
-    // loads, kotlinx.coroutines warnings, posthog client noise, etc.) lands
-    // on stderr instead of corrupting the JSON-RPC stream. The MCP transport
-    // uses the saved-aside originals exclusively.
-    //
-    // Order matters: this redirect runs BEFORE any class touches a logger or
-    // System.out — that's why it lives ahead of the runBlocking entry. The
-    // stdout-cleanliness integration test pins this invariant.
+fun main(rawArgs: Array<String>) {
+    // Replace stdout immediately. MCP stdio reserves the original stdout for
+    // frames, and command detection / service setup must not leak there.
     val mcpStdin = System.`in`
     val mcpStdout = System.out
     System.setOut(System.err)
 
-    // npx-kt now boots a real MCP stdio server backed by McpStdioServer +
+    val command = parseNpxKtCommand(rawArgs)
+    val headliner = buildHeadliner()
+    if (command is NpxKtCommand.MCP) {
+        System.err.println(headliner)
+    } else {
+        System.setOut(mcpStdout)
+    }
+
+    val homePaths = resolveHomePathsOrDie()
+
+    //setup logging. That is essential to avoid logger usages BEFORE this statement
+    configureLoggingAndLogStarted(homePaths, rawArgs.toList(), command.debug)
+
+    val lifetime = CloseableStackHost()
+    val exitCode = try {
+        NpxKtServices(
+            lifetime = lifetime,
+            homePaths = homePaths,
+            mcpStdin = mcpStdin,
+            mcpStdout = mcpStdout,
+        ).mainImpl1(command, headliner)
+    } catch (t: Throwable) {
+        System.err.println("Unexpected error ${t.message}")
+        t.printStackTrace(System.err)
+        64
+    } finally {
+        lifetime.closeAllStacks()
+    }
+    exitProcess(exitCode)
+}
+
+private fun buildHeadliner(): String = buildString {
+    val proxyVersion = ProxyVersionMetadata.getProxyVersion()
+    appendLine("devrig v$proxyVersion — This environment empowers your AI with the best deterministic coding tools.")
+    appendLine()
+}
+
+fun NpxKtServices.mainImpl1(
+    command: NpxKtCommand,
+    headliner: String,
+): Int {
+    class DevrigCoroutineExceptionHandler
+
+    val log = logger<DevrigCoroutineExceptionHandler>()
+    val exceptionHandler = CoroutineExceptionHandler { context, throwable ->
+        log.warn("devrig coroutine exception: ${throwable.message} in $context", throwable)
+    }
+
+    return runBlocking(Dispatchers.IO + CoroutineName("devrig") + exceptionHandler + SupervisorJob()) {
+        coroutineScope {
+            mainImpl2(command, headliner)
+        }
+    }
+}
+
+suspend fun NpxKtServices.mainImpl2(
+    command: NpxKtCommand,
+    headliner: String,
+): Int = coroutineScope {
+    if (command.runsTool()) {
+        backgroundScope.launch {
+            delay(Random.nextInt(200, 1300).milliseconds)
+            checkForUpdates()
+        }
+
+        backgroundScope.launch {
+            beacon.captureStarted(command)
+        }
+    }
+
+    if (command is NpxKtCommand.MCP) {
+        beacon.runHeartbeat()
+        try {
+            mainImplMcp()
+            return@coroutineScope 0
+        } catch (t: Throwable) {
+            System.err.println("Unexpected error ${t.message}")
+            t.printStackTrace(System.err)
+            return@coroutineScope 64
+        }
+    }
+
+    if (command.printsHeadliner()) {
+        mcpStdout.println(headliner)
+    }
+    try {
+        runCli(command)
+    } catch (t: Throwable) {
+        System.err.println("Unexpected error calling $command. ${t.message}")
+        t.printStackTrace(System.err)
+        64
+    }
+}
+
+private fun NpxKtCommand.runsTool(): Boolean = when (this) {
+    is NpxKtCommand.MCP,
+    is NpxKtCommand.NpxCommandBackend,
+    is NpxKtCommand.NpxCommandBackendDownload,
+    is NpxKtCommand.NpxCommandBackendStart,
+    is NpxKtCommand.NpxCommandBackendStop,
+    is NpxKtCommand.NpxCommandBackendProvision,
+    is NpxKtCommand.NpxCommandProject -> true
+    is NpxKtCommand.NpxCommandHelp,
+    is NpxKtCommand.NpxCommandVersion,
+    is NpxKtCommand.NpxCommandParseError -> false
+}
+
+private fun NpxKtCommand.printsHeadliner(): Boolean =
+    runsTool() && this !is NpxKtCommand.MCP && !json
+
+suspend fun NpxKtServices.mainImplMcp() = coroutineScope {
+    // npx-kt boots a real MCP stdio server backed by McpStdioServer and
     // McpSteroidTools (with stub handlers — see StubMcpSteroidTools). The legacy
     // proxy path that aggregates discovered IDE MCP servers lives in
-    // [legacyProxyMain] and is intentionally unreachable for now; the source is
-    // retained so the existing proxy classes (ServerRegistry, NpxBeacon, the old
-    // StdioServer, etc.) keep compiling and their unit tests keep passing while
-    // the new stdio server is being filled in.
-    runBlocking { runStubStdioMcpServer(input = mcpStdin, output = mcpStdout) }
-}
+    // com.jonnyzzz.mcpSteroid.proxy.attic.legacyProxyMain and is intentionally
+    // unreachable; the source is retained in the attic package.
+    //
+    // Alongside the stdio server, the new IDE monitor runs discovery from
+    // <pid>.mcp-steroid JSON markers in the devrig home markers directory
+    // plus legacy .<pid>.mcp-steroid markers from $HOME during the transition.
+    // The monitor opens one POST /npx/v1/projects/stream per IDE and receives
+    // push notifications on project open/close.
 
-/**
- * Legacy entry point — boots the discovery/proxy stack (ServerRegistry +
- * NpxBeacon + the old StdioServer). Not wired into [main]; kept to retain
- * compile-time references to the proxy classes during the migration so unit
- * tests under `src/test/kotlin/.../proxy/` keep building.
- */
-@Suppress("unused")
-private fun legacyProxyMain(args: Array<String>) {
-    val cliArgs = parseArgs(args.toList())
-
-    if (cliArgs.help) {
-        System.err.print(
-            """
-            Usage: mcp-steroid-proxy [--config path] [--scan-interval ms] [--log-traffic] [--cli]
-
-            Default mode:
-              stdio MCP server over stdin/stdout
-
-            CLI mode:
-              --cli [--cli-method <method> --cli-params-json '<json>']
-              --cli --tool <toolName> [--arguments-json '<json>']
-              --cli --uri <resourceUri>
-
-            CLI defaults to --cli-method tools/list when no CLI selector is provided.
-            """.trimIndent() + "\n"
-        )
-        return
-    }
-
-    val config = loadConfig(cliArgs).also { it.version = loadProxyVersion() }
-    val traffic = TrafficLogger(config)
-    val registry = ServerRegistry(config, traffic)
-    val beacon = NpxBeacon(config)
-
-    runBlocking {
-        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-        beacon.capture(BeaconEvents.STARTED, mapOf("mode" to cliArgs.mode))
-
-        registry.refreshDiscovery()
-        beacon.captureDiscoveryChanged(registry, "startup")
-
-        if (cliArgs.mode == "cli") {
-            try {
-                emitUpgradeNotice(registry, config, beacon)
-            } catch (e: Exception) {
-                // Ignore update-check failures in CLI mode
-            }
-            runCliMode(cliArgs, registry, traffic, beacon)
-            beacon.shutdown()
-            return@runBlocking
-        }
-
-        // Schedule update checks
-        if (config.updates.enabled) {
-            scope.launch {
-                delay(config.updates.initialDelayMs)
-                runUpgradeCheck(registry, config, beacon)
-                while (isActive) {
-                    delay(config.updates.intervalMs)
-                    runUpgradeCheck(registry, config, beacon)
-                }
-            }
-        }
-
-        // Periodic discovery refresh
-        scope.launch {
-            while (isActive) {
-                delay(config.scanIntervalMs)
-                try {
-                    registry.refreshDiscovery()
-                    beacon.captureDiscoveryChanged(registry, "interval")
-                } catch (e: Exception) {
-                    // Ignore refresh failures
-                }
-            }
-        }
-
-        beacon.startHeartbeat(scope, registry)
-
-        // Run stdio server (blocks until stdin closes)
-        val server = StdioServer(registry, traffic, beacon)
-        server.run()
-
-        beacon.shutdown()
-    }
-}
-
-private var upgradeNoticeShown = false
-private var upgradeCheckInFlight = false
-
-private suspend fun emitUpgradeNotice(registry: ServerRegistry, config: ProxyConfig, beacon: NpxBeacon) {
-    if (upgradeCheckInFlight) return
-    upgradeCheckInFlight = true
+    val discoveryJob = ideDiscovery.start(this)
+    val monitorJob = ideMonitor.start(this)
+    val portDiscoveryJob = portDiscovery.start(this)
     try {
-        val notice = buildUpgradeNotice(registry, config)
-        if (notice != null && !upgradeNoticeShown) {
-            upgradeNoticeShown = true
-            System.err.write("$notice\n".toByteArray(Charsets.UTF_8))
-            System.err.flush()
-            beacon.capture(BeaconEvents.UPGRADE_RECOMMENDED, mapOf(
-                "current_version" to extractBaseVersion(config.version ?: "")
-            ))
-        }
+        runStubStdioMcpServer(this@mainImplMcp)
     } finally {
-        upgradeCheckInFlight = false
-    }
-}
-
-private suspend fun runUpgradeCheck(registry: ServerRegistry, config: ProxyConfig, beacon: NpxBeacon) {
-    try {
-        emitUpgradeNotice(registry, config, beacon)
-    } catch (e: Exception) {
-        // Ignore periodic update-check failures
+        portDiscoveryJob.cancel()
+        monitorJob.cancel()
+        discoveryJob.cancel()
     }
 }

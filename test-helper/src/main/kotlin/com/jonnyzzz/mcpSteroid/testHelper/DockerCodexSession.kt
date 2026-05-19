@@ -26,11 +26,19 @@ class DockerCodexSession(
     val model: String = DEFAULT_MODEL,
 ) : AiAgentSession {
     override val displayName: String = Companion.displayName
+    private val mcpRegistrationLog = mutableListOf<McpRegistration>()
+    override val mcpRegistrations: List<McpRegistration>
+        get() = mcpRegistrationLog.toList()
 
     override fun registerHttpMcp(mcpUrl: String, mcpName: String) {
         runInContainer(args = codexMcpAddArgs(mcpUrl, mcpName))
             .assertExitCode(0) { "MCP server registration" }
             .assertNoErrorsInOutput("MCP server registration")
+        mcpRegistrationLog += McpRegistration(
+            name = mcpName,
+            transport = McpRegistrationTransport.HTTP,
+            url = mcpUrl,
+        )
     }
 
     override fun registerNpxKtMcp(installDir: File, mcpName: String) {
@@ -41,6 +49,11 @@ class DockerCodexSession(
         runInContainer(args = codexMcpAddStdioArgs(npxCommand, mcpName))
             .assertExitCode(0) { "NPX MCP server registration" }
             .assertNoErrorsInOutput("NPX MCP server registration")
+        mcpRegistrationLog += McpRegistration(
+            name = mcpName,
+            transport = McpRegistrationTransport.STDIO,
+            command = npxCommand,
+        )
     }
 
     /**

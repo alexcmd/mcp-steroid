@@ -11,6 +11,7 @@ import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryResponse
 import com.jonnyzzz.mcpSteroid.server.ListProductsResponse
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
+import com.jonnyzzz.mcpSteroid.server.NpxBridgeService
 import com.jonnyzzz.mcpSteroid.server.ServerMetadataResponse
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
@@ -195,7 +196,9 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     fun testNpxProductsEndpoint(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
-        val response = client.get("http://localhost:${server.port}/npx/v1/products")
+        val response = client.get("http://localhost:${server.port}/npx/v1/products") {
+            npxBridgeAuthorization()
+        }
 
         assertEquals(HttpStatusCode.OK, response.status)
         val products = McpJson.decodeFromString(ListProductsResponse.serializer(), response.bodyAsText())
@@ -206,10 +209,25 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         assertTrue("Product plugin version should be reported", first.plugin.version.isNotBlank())
     }
 
+    fun testNpxProductsEndpointRejectsMissingOrWrongToken(): Unit = timeoutRunBlocking(30.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+
+        val missingTokenResponse = client.get("http://localhost:${server.port}/npx/v1/products")
+        assertEquals(HttpStatusCode.Unauthorized, missingTokenResponse.status)
+
+        val wrongTokenResponse = client.get("http://localhost:${server.port}/npx/v1/products") {
+            header(HttpHeaders.Authorization, "Bearer wrong-token")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, wrongTokenResponse.status)
+    }
+
     fun testNpxServerMetadataEndpoint(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
-        val response = client.get("http://localhost:${server.port}/npx/v1/server-metadata")
+        val response = client.get("http://localhost:${server.port}/npx/v1/server-metadata") {
+            npxBridgeAuthorization()
+        }
 
         assertEquals(HttpStatusCode.OK, response.status)
         val metadata = McpJson.decodeFromString(ServerMetadataResponse.serializer(), response.bodyAsText())
@@ -233,7 +251,12 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
                 put("version", "1.0.0")
             }
         }
-    }.toString()
+    }
+        .toString()
+
+    private fun HttpRequestBuilder.npxBridgeAuthorization() {
+        header(HttpHeaders.Authorization, "Bearer ${NpxBridgeService.getInstance().token}")
+    }
 
     private fun buildExecuteCodeRequest(projectName: String) = buildJsonObject {
         put("jsonrpc", "2.0")
