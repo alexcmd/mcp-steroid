@@ -1,5 +1,17 @@
 # IMPROVEMENTS — branch `mcp-5`
 
+## Current state after devrig cleanup (2026-05-19)
+
+The original `mcp-5` notes below describe the history of the npx-kt monitor
+work. Current code has since moved on:
+
+- The user-facing tool is `devrig`; Gradle module names remain `:npx-kt` and
+  `:npx`.
+- The active Kotlin package is `com.jonnyzzz.mcpSteroid.devrig`.
+- The npm TypeScript MCP proxy and Kotlin attic implementation were removed.
+- Remaining `Npx*` names are bridge protocol names for the IDE-side
+  `/npx/v1/*` routes, not active npm proxy code.
+
 Process notes and friction encountered while implementing the `npx-kt`
 project-monitoring service (push-style HTTP, JSON PID markers).
 

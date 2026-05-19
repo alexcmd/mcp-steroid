@@ -1,4 +1,41 @@
 
+# Current devrig state — rename / cleanup checkpoint (2026-05-19)
+
+This is the current source of truth after the devrig cleanup commit
+`4af587ef devrig: remove legacy npx proxy code`.
+
+- The Gradle module names stay `:npx-kt` and `:npx`, but the product name,
+  launchers, npm package name, generated version metadata, logs, test names,
+  and user-facing text are now `devrig`.
+- Active Kotlin CLI code lives under
+  `npx-kt/src/main/kotlin/com/jonnyzzz/mcpSteroid/devrig`. The old
+  `com.jonnyzzz.mcpSteroid.proxy` package is gone from active sources.
+- The old `npx-kt/.../proxy/attic` implementation and its tests were removed.
+  Do not resurrect the Kotlin attic code; port needed behavior into the
+  active `devrig` package instead.
+- The npm `:npx` module is now a thin `devrig` launcher stub. It no longer
+  contains the TypeScript MCP proxy implementation, protocol parser,
+  registry, traffic logger, beacon, or update checker. Current stub contract:
+  `DEVRIG_KOTLIN_LAUNCHER` points at the Kotlin `devrig` executable, and the
+  stub forwards all CLI args to it.
+- `Npx*` names and `/npx/v1/*` paths remain intentionally in the IDE bridge
+  protocol (`NpxBridgeService`, `NpxStream*`, `NpxBridge*`). Treat them as
+  protocol names, not as evidence that the old npm proxy still exists.
+- Agent/test-helper registration should talk in terms of generic stdio MCP
+  registration (`registerStdioMcp`) plus devrig-specific install/deploy
+  helpers. Do not reintroduce `registerNpxMcp` or `NpxProxyInstaller`.
+- `devrig mpc` is the stdio MCP subcommand. Normal CLI output may use the
+  captured service stdout; MCP mode must keep MCP stdout clean and route logs
+  through stderr / devrig log files.
+
+Verification for the cleanup checkpoint:
+- `./gradlew :npx:check :npx-kt:test :test-helper:compileKotlin :test-integration:compileKotlin :test-experiments:compileTestKotlin --console=plain`
+  passed.
+- `git diff --check` passed.
+- Targeted MCP Steroid inspections on the touched Kotlin files passed with
+  `INSPECTION_PROBLEMS=0` in
+  `eid_20260519T124941-devrig-rename-cleanup`.
+
 # Active focus — npx-kt testing and stabilization plan (2026-05-18)
 
 Goal: turn npx-kt/devrig `mpc` mode from "implemented" into a stable,

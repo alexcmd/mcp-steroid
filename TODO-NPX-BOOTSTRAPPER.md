@@ -1,5 +1,28 @@
 # TODO — npx bootstrapper, per-user lazy-fetch architecture
 
+## Current status after devrig rename (2026-05-19)
+
+This plan predates the devrig rename and the removal of the npm TypeScript
+MCP proxy. Use these facts before implementing anything from the older notes
+below:
+
+- The npm package is now named `devrig`, not `mcp-steroid-proxy`.
+- The npm `:npx` module currently contains only a thin TypeScript launcher
+  stub. It does not implement MCP, marker discovery, update checks, beaconing,
+  registry lookup, or traffic logging.
+- The Kotlin distribution still comes from Gradle module `:npx-kt`, but the
+  application name and launcher are `devrig` (`bin/devrig`,
+  `bin/devrig.bat`).
+- Active Kotlin sources are under
+  `com.jonnyzzz.mcpSteroid.devrig`; the old `...proxy` package and the attic
+  implementation are gone.
+- The bridge protocol names remain `Npx*` and `/npx/v1/*` for compatibility
+  with the IDE plugin. Do not rename those protocol DTOs/routes as part of a
+  bootstrapper change unless there is a separate compatibility plan.
+- A future npm bootstrapper should launch the Kotlin `devrig` binary. The
+  temporary stub contract is `DEVRIG_KOTLIN_LAUNCHER=<path-to-devrig> npx
+  devrig ...`.
+
 Status: **planned, not started.** The current `:npx-kt` distZip
 ships a self-contained 1 GB compressed (1.6 GB installed) tree with
 every bundled JDK + plugin + 7-Zip + license corpus. That's acceptable
