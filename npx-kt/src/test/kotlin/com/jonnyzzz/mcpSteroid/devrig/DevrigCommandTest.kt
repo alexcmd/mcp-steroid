@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -17,6 +18,9 @@ class DevrigCommandTest {
         assertIs<DevrigCommand.MCP>(command("mpc"))
         assertIs<DevrigCommand.DevrigCommandBackend>(command("backend"))
         assertIs<DevrigCommand.DevrigCommandProject>(command("project"))
+        assertEquals(AiAgentCli.CLAUDE, assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "claude")).agent)
+        assertEquals(AiAgentCli.CODEX, assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "codex")).agent)
+        assertEquals(AiAgentCli.GEMINI, assertIs<DevrigCommand.DevrigCommandInstall>(command("install", "gemini")).agent)
     }
 
     @Test
@@ -35,6 +39,11 @@ class DevrigCommandTest {
 
         val project = assertIs<DevrigCommand.DevrigCommandProject>(command("project", "--json"))
         assertTrue(project.json)
+
+        val install = assertIs<DevrigCommand.DevrigCommandInstall>(command("--debug", "install", "claude", "--json"))
+        assertEquals(AiAgentCli.CLAUDE, install.agent)
+        assertTrue(install.debug)
+        assertTrue(install.json)
     }
 
     @Test
@@ -66,6 +75,7 @@ class DevrigCommandTest {
         assertIs<DevrigCommand.DevrigCommandParseError>(command("foo"))
         assertIs<DevrigCommand.DevrigCommandParseError>(command("--no-such"))
         assertIs<DevrigCommand.DevrigCommandParseError>(command("backend", "download", "idea-community", "extra"))
+        assertIs<DevrigCommand.DevrigCommandParseError>(command("install", "other"))
     }
 
     @Test

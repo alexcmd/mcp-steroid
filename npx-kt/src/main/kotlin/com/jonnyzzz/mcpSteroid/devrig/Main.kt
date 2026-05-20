@@ -124,7 +124,8 @@ private fun DevrigCommand.runsTool(): Boolean = when (this) {
     is DevrigCommand.DevrigCommandBackendStart,
     is DevrigCommand.DevrigCommandBackendStop,
     is DevrigCommand.DevrigCommandBackendProvision,
-    is DevrigCommand.DevrigCommandProject -> true
+    is DevrigCommand.DevrigCommandProject,
+    is DevrigCommand.DevrigCommandInstall -> true
     is DevrigCommand.DevrigCommandHelp,
     is DevrigCommand.DevrigCommandVersion,
     is DevrigCommand.DevrigCommandParseError -> false

@@ -84,6 +84,7 @@ class DevrigCommandOutputTest {
         assertTrue(out.contains("devrig mpc"), "help should advertise mpc subcommand; got:\n$out")
         assertTrue(out.contains("--version"), "help should advertise --version; got:\n$out")
         assertTrue(out.contains("--help"), "help should advertise --help itself; got:\n$out")
+        assertTrue(out.contains("devrig install claude|codex|gemini"), "help should advertise agent install; got:\n$out")
         assertTrue(out.contains("backend download [<id>] [--version <v>] [--json]"), "help should advertise download version override; got:\n$out")
         assertTrue(out.contains("no id → list IDEs available for download"), "help should explain download without id; got:\n$out")
         assertTrue(out.contains("backend start    [<id>] [--version <v>] [--json]"), "help should advertise start version override; got:\n$out")
