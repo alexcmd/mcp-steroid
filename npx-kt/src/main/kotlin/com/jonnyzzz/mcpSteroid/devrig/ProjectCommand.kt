@@ -35,8 +35,9 @@ fun projectListingFromRows(rows: List<BackendRow>): ProjectListing = ProjectList
  *
  *   [1] <project-name>  →  <project-path>
  *         <IDE name> <version> (pid <pid>)
+ *         MCP Steroid: <version>
  *
- * Skipped K backend(s) with no mcp-steroid plugin:
+ * Skipped K backend(s) with MCP Steroid not installed:
  *   - <IDE display> (build <build>, port <port>)
  *
  * ```
@@ -71,6 +72,7 @@ fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
         val paddedName = entry.project.name.padEndCodePoints(padWidth)
         out.println("  [${index + 1}] $paddedName  →  ${entry.project.path}")
         out.println("        ${backendDisplayName(entry.row)} (${backendLocatorLabel(entry.row)})")
+        out.println("        ${backendPluginStatusText(entry.row)}")
         if (index < projectEntries.lastIndex) out.println()
     }
 
@@ -122,14 +124,15 @@ private fun renderSkippedProjectFooter(
         out.println("Skipped ${unreachableRows.size} ${backendNoun(unreachableRows.size)} that did not return a project snapshot:")
         for (row in unreachableRows) {
             out.println("  - ${backendDisplayName(row)} (${backendLocatorLabel(row)}): unreachable: ${row.errorMessage ?: "unreachable"}")
+            out.println("    ${backendPluginStatusText(row)}")
         }
         if (portRows.isNotEmpty()) out.println()
     }
 
     if (portRows.isNotEmpty()) {
-        out.println("Skipped ${portRows.size} ${backendNoun(portRows.size)} with no mcp-steroid plugin:")
+        out.println("Skipped ${portRows.size} ${backendNoun(portRows.size)} with MCP Steroid not installed:")
         for (row in portRows) {
-            out.println("  - ${backendDisplayName(row)} (${backendLocatorLabel(row)})")
+            out.println("  - ${backendDisplayName(row)} (${backendLocatorLabel(row)}): ${backendPluginStatusText(row)}")
         }
     }
 }

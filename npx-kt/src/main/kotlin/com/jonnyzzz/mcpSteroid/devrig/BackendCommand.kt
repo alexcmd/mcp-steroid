@@ -649,11 +649,13 @@ private fun backendCommandClientInfo(): NpxStreamClientInfo =
  * Discovered N backend(s):
  *
  *   [1] <IDE name> <version> (<locator>)
+ *         MCP Steroid: <version>
  *         <project-name>  →  <project-path>
  *         …
  *
  *   [2] <IDE name> <version> (<locator>)
- *         (mcp-steroid plugin not installed — project list unavailable)
+ *         MCP Steroid: not installed
+ *         (project list unavailable)
  *
  * ```
  * The list uses `[N]` index markers so it visibly is a list, and the trailing
@@ -670,10 +672,11 @@ fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
     out.println()
     for ((index, row) in rows.withIndex()) {
         out.println("  [${index + 1}] ${backendDisplayName(row)} (${backendLocatorLabel(row)})${backendActionSuffix(row)}")
+        out.println("        ${backendPluginStatusText(row)}")
         when (row) {
             is BackendRow.FromMarker -> renderMarkerProjects(row, out)
             is BackendRow.FromPort -> out.println(
-                "        (mcp-steroid plugin not installed — project list unavailable)"
+                "        (project list unavailable)"
             )
             is BackendRow.FromManaged -> renderManagedBackend(row.info, out)
         }

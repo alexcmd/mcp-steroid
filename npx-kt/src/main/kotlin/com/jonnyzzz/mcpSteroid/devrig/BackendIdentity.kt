@@ -12,16 +12,30 @@ import kotlinx.serialization.json.put
 const val BACKEND_TYPE_INTELLIJ = "intellij"
 
 fun markerBackendDisplayName(ide: DiscoveredIde): String =
-    "${ide.marker.ide.name} ${ide.marker.ide.version}".trim()
+    ideNameWithVersion(ide.marker.ide.name, ide.marker.ide.version)
 
-fun markerBackendLocatorLabel(ide: DiscoveredIde): String = "pid ${ide.pid}"
+fun markerBackendLocatorLabel(ide: DiscoveredIde): String = buildString {
+    ide.marker.ide.build.trim().takeIf { it.isNotEmpty() }?.let {
+        append("build ").append(it).append(", ")
+    }
+    append("pid ").append(ide.pid)
+}
 
 fun markerBackendIdentityJson(ide: DiscoveredIde): JsonObject = buildJsonObject {
     put("name", ide.marker.ide.name)
     put("version", ide.marker.ide.version)
     put("build", ide.marker.ide.build)
+    put("buildNumber", ide.marker.ide.build)
     put("pid", ide.pid)
     put("mcpUrl", ide.mcpUrl)
+}
+
+private fun ideNameWithVersion(name: String, version: String): String {
+    val trimmedName = name.trim()
+    val trimmedVersion = version.trim()
+    if (trimmedVersion.isEmpty()) return trimmedName
+    if (trimmedName == trimmedVersion || trimmedName.endsWith(" $trimmedVersion")) return trimmedName
+    return "$trimmedName $trimmedVersion".trim()
 }
 
 fun portBackendDisplayName(ide: DiscoveredIdeByPort): String =
@@ -50,6 +64,15 @@ fun backendStableId(row: BackendRow): String = when (row) {
     is BackendRow.FromManaged -> row.info.id
 }
 
+fun backendPluginStatusText(row: BackendRow): String = when (row) {
+    is BackendRow.FromMarker -> {
+        val plugin = row.ide.marker.plugin
+        "${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}"
+    }
+    is BackendRow.FromPort,
+    is BackendRow.FromManaged -> "MCP Steroid: not installed"
+}
+
 fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject {
     put("id", id)
     put("type", BACKEND_TYPE_INTELLIJ)
@@ -57,6 +80,7 @@ fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject 
     put("displayName", backendDisplayName(row))
     put("locator", backendLocatorLabel(row))
     put("managed", row.managed)
+    put("plugin", backendPluginJson(row))
     put("actions", backendActionsJson(row))
     when (row) {
         is BackendRow.FromMarker -> {
@@ -86,6 +110,22 @@ fun backendEntryJson(id: String, row: BackendRow): JsonObject = buildJsonObject 
             put("installPath", info.installPath.toString())
             put("cachePath", info.cachePath.toString())
             info.runningPid?.let { put("runningPid", it) }
+        }
+    }
+}
+
+private fun backendPluginJson(row: BackendRow): JsonObject = buildJsonObject {
+    when (row) {
+        is BackendRow.FromMarker -> {
+            val plugin = row.ide.marker.plugin
+            put("installed", true)
+            put("id", plugin.id)
+            put("name", plugin.name)
+            put("version", plugin.version)
+        }
+        is BackendRow.FromPort,
+        is BackendRow.FromManaged -> {
+            put("installed", false)
         }
     }
 }

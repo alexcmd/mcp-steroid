@@ -35,7 +35,7 @@ class BackendCommandRenderTest {
         name: String,
         version: String,
         pid: Long,
-        build: String = "$name-$version-build",
+        build: String = "IU-253.21581.142",
         mcpUrl: String = "http://127.0.0.1:65000/mcp",
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
@@ -124,10 +124,25 @@ class BackendCommandRenderTest {
         val text = render(rows)
         assertTrue(text.contains("Discovered 1 backend:"),
             "expected list header for one IDE (singular); got:\n$text")
-        assertTrue(text.contains("[1] IntelliJ IDEA 2025.3.3 (pid 1234)"),
-            "expected numbered list entry with version+locator; got:\n$text")
+        assertTrue(text.contains("[1] IntelliJ IDEA 2025.3.3 (build IU-253.21581.142, pid 1234)"),
+            "expected numbered list entry with version+build+locator; got:\n$text")
+        assertTrue(text.contains("MCP Steroid: 0.0.0-test"),
+            "expected MCP Steroid plugin status; got:\n$text")
         assertTrue(text.contains("my-app") && text.contains("→") && text.contains("/Users/x/Work/my-app"),
             "expected project to render as name → path; got:\n$text")
+    }
+
+    @Test
+    fun `marker IDE does not duplicate version already present in name`() {
+        val rows = listOf(
+            BackendRow.FromMarker(
+                ide = markerIde("IntelliJ IDEA 2026.1.4", "2026.1.4", pid = 1234L, build = "IU-261.1"),
+                projects = listOf(ProjectInfo(name = "my-app", path = "/Users/x/Work/my-app")),
+            )
+        )
+        val text = render(rows)
+        assertTrue(text.contains("[1] IntelliJ IDEA 2026.1.4 (build IU-261.1, pid 1234)"), text)
+        assertFalse(text.contains("2026.1.4 2026.1.4"), text)
     }
 
     @Test
@@ -245,7 +260,7 @@ class BackendCommandRenderTest {
             )
         )
         val text = render(rows)
-        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate 2025.3.3 EAP (pid 1)"),
+        assertTrue(text.contains("[1] IntelliJ IDEA Ultimate 2025.3.3 EAP (build IU-253.21581.142, pid 1)"),
             "got: $text")
     }
 
@@ -263,7 +278,9 @@ class BackendCommandRenderTest {
         // version-like tokens.
         assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342) (run: devrig backend provision port-63342)"),
             "expected the full IDE header line; got:\n$text")
-        assertTrue(text.contains("mcp-steroid plugin not installed"),
+        assertTrue(text.contains("MCP Steroid: not installed"),
+            "must explain why projects are unavailable; got:\n$text")
+        assertTrue(text.contains("(project list unavailable)"),
             "must explain why projects are unavailable; got:\n$text")
     }
 
