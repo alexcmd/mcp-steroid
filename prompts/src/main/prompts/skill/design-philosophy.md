@@ -1,6 +1,6 @@
 MCP Steroid — Design philosophy
 
-The three tenets that govern every MCP Steroid change. Read before proposing a new tool, a new McpScriptContext method, or a wrapper helper.
+The four tenets that govern every MCP Steroid change. Read before proposing a new tool, a new McpScriptContext method, a wrapper helper, or any persistent state in the devrig CLI.
 
 # Three tenets
 
