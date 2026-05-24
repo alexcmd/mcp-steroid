@@ -64,8 +64,15 @@ class ScriptClassLoaderFactory {
     internal fun productionCandidateLoaders(): List<ClassLoader> =
         productionCandidateLoaderSeq().toList()
 
+    // Walk main + content-module classloaders in stable order, mirroring ideClasspath().
+    // Without content modules a script that compiles against a class in a content module
+    // (e.g. AiaActivationAuthFacade in 2025.3+) cannot resolve it at runtime, causing
+    // same-FQN-different-Class CCEs on service<T>() casts. See #76.
     private fun productionCandidateLoaderSeq(): Sequence<ClassLoader> =
-        orderedPluginDescriptors().asSequence().flatMap { d -> sequenceOf(d.pluginClassLoader) }.filterNotNull()
+        orderedPluginDescriptors().asSequence().flatMap { d ->
+            sequenceOf(d.pluginClassLoader) +
+                d.contentModules.asSequence().map { it.pluginClassLoader }
+        }.filterNotNull()
 
     @org.jetbrains.annotations.TestOnly
     internal fun newIdeDelegateLoaderForTests(loaders: List<ClassLoader>): ClassLoader =
