@@ -71,11 +71,19 @@ fun selfMcpCommand(
 
 private fun resolveDevrigLauncher(): Path {
     val name = if (isWindows()) "devrig.bat" else "devrig"
-    val launcher = DevrigRoot.path.resolve("bin").resolve(name)
-    require(launcher.isRegularFile()) {
-        "devrig launcher is missing: $launcher"
+    val expected = DevrigRoot.path.resolve("bin").resolve(name)
+    if (expected.isRegularFile()) return expected
+
+    // Fat-jar / non-Gradle-distribution layouts don't have `<root>/bin/devrig`.
+    // Fall back to the current process's launcher so `devrig install`
+    // still records a reproducible command line.
+    val processCommand = ProcessHandle.current().info().command().orElse(null)
+    if (processCommand != null) {
+        val launcher = Path.of(processCommand)
+        if (launcher.isRegularFile()) return launcher
     }
-    return launcher
+
+    error("devrig launcher is missing: $expected")
 }
 
 private fun isWindows(): Boolean =

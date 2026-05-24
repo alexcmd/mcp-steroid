@@ -10,8 +10,6 @@ import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.headers
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -116,21 +114,6 @@ sealed interface BackendRow {
  *  the human-readable list. The JSON is pretty-printed so a human can
  *  still read it without `jq`; `jq` accepts both forms equally.
  */
-fun runBackendCommand(
-    out: PrintStream,
-    homePaths: HomePaths = resolveHomePaths(),
-    command: DevrigCommand.DevrigCommandBackend = DevrigCommand.DevrigCommandBackend(),
-) : Int {
-    val json = command.json
-    val rows = collectBackendRows(homePaths)
-    if (json) {
-        renderBackendJson(rows, out)
-    } else {
-        renderBackendOutput(rows, out)
-    }
-    return 0
-}
-
 fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend): Int {
     val rows = collectBackendRows()
     if (command.json) {
@@ -139,37 +122,6 @@ fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend
         renderBackendOutput(rows, mcpStdout)
     }
     return 0
-}
-
-fun collectBackendRows(
-    homePaths: HomePaths = resolveHomePaths(),
-): List<BackendRow> {
-    val discovery = createIdeDiscoveryService(homePaths)
-
-    // Short-lived HTTP client. The MCP path uses an infinite-stream client;
-    // here we want fast failure so a stuck IDE doesn't hang the CLI.
-    val httpClient = HttpClient(CIO) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 3_000
-            requestTimeoutMillis = 10_000
-            socketTimeoutMillis = 10_000
-        }
-        expectSuccess = false
-    }
-    val portDiscovery = IntelliJPortDiscovery(httpClient = httpClient)
-
-    return try {
-        collectBackendRows(
-            discovery = discovery,
-            httpClient = httpClient,
-            portDiscovery = portDiscovery,
-            clientInfo = backendCommandClientInfo(),
-            managedBackends = { BackendManager(homePaths).list() },
-        )
-    } finally {
-        portDiscovery.close()
-        httpClient.close()
-    }
 }
 
 fun DevrigServices.collectBackendRows(): List<BackendRow> {
@@ -395,20 +347,11 @@ fun runBackendActionJson(
     id: String,
     block: () -> JsonObject,
 ): Int {
-    val originalOut = System.out
-    val originalErr = System.err
-    val sink = PrintStream(OutputStream.nullOutputStream(), true, Charsets.UTF_8)
-    try {
-        System.setOut(sink)
-        System.setErr(sink)
-        val payload = block()
-        System.setOut(originalOut)
-        System.setErr(originalErr)
+    return try {
+        val payload = withSilencedSystemStreams { block() }
         out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
-        return 0
+        0
     } catch (e: Exception) {
-        System.setOut(originalOut)
-        System.setErr(originalErr)
         val payload = buildJsonObject {
             putToolJson()
             put("action", action)
@@ -417,7 +360,29 @@ fun runBackendActionJson(
             put("exitCode", 64)
         }
         out.println(backendPrettyJson.encodeToString(JsonObject.serializer(), payload))
-        return 64
+        64
+    }
+}
+
+/**
+ * Silence stray stdout/stderr writes from [block]. The receiver-action
+ * lambdas in the `backend --json` path occasionally print progress text
+ * through libraries we don't control; redirecting `System.out`/`System.err`
+ * keeps the single JSON document on stdout clean.
+ *
+ * Process-global by design — devrig is a one-shot CLI, so swapping the
+ * shared `System.out` is fine. Do NOT use this from concurrent paths
+ * (e.g. the MCP server loop) where another coroutine might write to
+ * stdout in parallel.
+ */
+private inline fun <T> withSilencedSystemStreams(block: () -> T): T {
+    val originalOut = System.out
+    val originalErr = System.err
+    val sink = PrintStream(OutputStream.nullOutputStream(), true, Charsets.UTF_8)
+    System.setOut(sink)
+    System.setErr(sink)
+    try {
+        return block()
     } finally {
         System.setOut(originalOut)
         System.setErr(originalErr)
