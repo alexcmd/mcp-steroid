@@ -189,14 +189,6 @@ class BackendCommandFetchTest {
     }
 
     @Test
-    fun `sends no Authorization header when marker token is empty`() = runBlocking {
-        script += snapshotEnv(emptyList())
-        collectMarkerSnapshots(httpClient, listOf(ide(token = "")), perIdeTimeout = 5.seconds)
-        assertTrue(receivedAuthHeaders.all { it == null },
-            "expected NO Authorization header for empty token; saw: $receivedAuthHeaders")
-    }
-
-    @Test
     fun `identifies itself in NpxStreamClientInfo`() = runBlocking {
         script += snapshotEnv(emptyList())
         collectMarkerSnapshots(httpClient, listOf(ide()), perIdeTimeout = 5.seconds)

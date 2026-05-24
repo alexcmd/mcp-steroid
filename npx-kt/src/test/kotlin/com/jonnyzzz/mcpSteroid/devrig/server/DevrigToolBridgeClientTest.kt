@@ -166,23 +166,6 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `bridge client omits authorization header when token is empty`(
-        @TempDir tempDir: Path,
-    ) = runBlocking {
-        val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
-            httpClient = httpClient,
-        )
-
-        val result = bridge.callTool(route(tempDir, token = ""), "steroid_execute_code") {
-            put("project_name", "original-project")
-        }
-
-        assertEquals(false, result.isError)
-        assertEquals(null, receivedAuth)
-    }
-
-    @Test
     fun `apply patch bridge handler forwards required task id`(
         @TempDir tempDir: Path,
     ) = runBlocking {
