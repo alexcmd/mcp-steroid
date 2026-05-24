@@ -55,7 +55,25 @@ class ScriptClassLoaderFactory {
             .toList()
     }
 
-    private fun newIdeClassloader(): ClassLoader {
+    /**
+     * Candidate classloaders consulted by [newIdeClassloader] in delegation order.
+     * Exposed (test-only) so regressions in the "include content modules" policy are
+     * detectable without spelunking inside the anonymous delegate's findClass cache.
+     */
+    @org.jetbrains.annotations.TestOnly
+    internal fun productionCandidateLoaders(): List<ClassLoader> =
+        productionCandidateLoaderSeq().toList()
+
+    private fun productionCandidateLoaderSeq(): Sequence<ClassLoader> =
+        orderedPluginDescriptors().asSequence().flatMap { d -> sequenceOf(d.pluginClassLoader) }.filterNotNull()
+
+    @org.jetbrains.annotations.TestOnly
+    internal fun newIdeDelegateLoaderForTests(loaders: List<ClassLoader>): ClassLoader =
+        newIdeClassloader(loaders.asSequence())
+
+    private fun newIdeClassloader(): ClassLoader = newIdeClassloader(productionCandidateLoaderSeq())
+
+    private fun newIdeClassloader(candidates: Sequence<ClassLoader>): ClassLoader {
         return object : ClassLoader(null) {
             val myLuckyGuess: ConcurrentMap<Long, ClassLoader> = ConcurrentHashMap()
 
@@ -78,8 +96,7 @@ class ScriptClassLoaderFactory {
                     }
                 }
 
-                for (descriptor in orderedPluginDescriptors()) {
-                    val l = descriptor.pluginClassLoader ?: continue
+                for (l in candidates) {
                     if (l === guess1 || l === guess2) continue
 
                     try {
@@ -101,8 +118,7 @@ class ScriptClassLoaderFactory {
             }
 
             override fun findResource(name: String?): URL? {
-                for (descriptor in orderedPluginDescriptors()) {
-                    val l = descriptor.pluginClassLoader ?: continue
+                for (l in candidates) {
                     val url = l.getResource(name) ?: continue
                     return url
                 }
@@ -112,8 +128,7 @@ class ScriptClassLoaderFactory {
             @Throws(IOException::class)
             override fun findResources(name: String?): Enumeration<URL> {
                 return sequence {
-                    for (descriptor in orderedPluginDescriptors()) {
-                        val l = descriptor.pluginClassLoader ?: continue
+                    for (l in candidates) {
                         val urls = l.getResources(name) ?: continue
                         for (url in urls) {
                             yield(url ?: continue)
