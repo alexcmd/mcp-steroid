@@ -56,6 +56,19 @@ Related GitHub issue:
   tracks why this batch fell back to command-line Gradle and what needs to
   improve so agents can use IntelliJ/Gradle runner first.
 
+JDK/runtime launcher decision (2026-05-24):
+- [x] Reviewed `gradle-jvm-wrapper` for `:npx-kt` and rejected it for this
+  branch. It patches Gradle wrapper scripts, not the `application` plugin
+  launchers used by the proxy package.
+- [x] Keep current pre-installed-JDK behaviour for `:npx-kt`: launchers use
+  `JAVA_HOME` first, then `java` on `PATH`, and fail clearly when neither is
+  available.
+- [x] Keep future JDK acquisition in the npm/runtime bootstrap plan, with JDKs
+  cached under `~/.mcp-steroid/jdk/...` and Amazon Corretto metadata reused from
+  `:jdk-downloader`.
+- [x] Documented the decision in `TODO-NPX-BOOTSTRAPPER.md`; no production code
+  change was made.
+
 Plan-review quorum:
 - [x] Gemini review via `run-agent.sh gemini`
   `run_20260518-071443-9948`: `NO-GO` for stability because downloader,

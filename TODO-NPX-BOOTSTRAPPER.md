@@ -13,6 +13,10 @@ below:
 - The Kotlin distribution still comes from Gradle module `:npx-kt`, but the
   application name and launcher are `devrig` (`bin/devrig`,
   `bin/devrig.bat`).
+- The `:npx-kt` distZip no longer bundles a JVM. It ships the devrig jars, the
+  MCP Steroid plugin zip, 7-Zip helpers, and license material; the generated
+  launcher still expects a pre-installed Java 21 runtime via `JAVA_HOME` or
+  `java` on `PATH`.
 - Active Kotlin sources are under
   `com.jonnyzzz.mcpSteroid.devrig`; the old `...proxy` package and the attic
   implementation are gone.
@@ -24,22 +28,46 @@ below:
   devrig ...`.
 
 Status: **planned, not started.** The current `:npx-kt` distZip
-ships a self-contained 1 GB compressed (1.6 GB installed) tree with
-every bundled JDK + plugin + 7-Zip + license corpus. That's acceptable
-short-term, but each user only ever runs one JDK on one OS — paying
-for four JDKs is wasteful, and a 1 GB npm download is a poor first
-impression.
+requires a pre-installed JVM. The bootstrapper is the planned place for
+runtime JDK acquisition.
 
-This document captures the plan to split the monolith into a tiny
-JavaScript npm bootstrap + a per-OS lazy fetch from a remote feed.
-**No work has started; the existing 1 GB distZip stays.**
+This document captures the plan to replace the current JVM-dependent
+npm payload with a tiny JavaScript bootstrap + a per-OS lazy fetch
+from a remote feed.
+**No work has started.** The `:jdk-downloader` module already owns the
+pinned Amazon Corretto metadata used by `version.json`; the runtime
+bootstrap still needs to consume it.
+
+## Explicit non-solution: `gradle-jvm-wrapper`
+
+`https://github.com/mfilippov/gradle-jvm-wrapper` was reviewed on
+2026-05-24 and should **not** be applied to `:npx-kt`.
+
+Reasons:
+
+- The plugin patches Gradle's `wrapper` task output (`gradlew` /
+  `gradlew.bat`). It does not patch the `application` plugin launchers
+  under `bin/devrig`, which are the scripts end users run.
+- Its injected script downloads/extracts the configured JVM into its
+  own install directory and then exports `JAVA_HOME` before the normal
+  Gradle wrapper Java lookup runs. That is good for making `gradlew`
+  hermetic, but it does not preserve the pre-installed-JDK behaviour we
+  want for the devrig launcher.
+- The devrig MCP runtime must keep stdout clean for MCP frames. Any runtime
+  JDK acquisition should live in the npm/bootstrap layer or a
+  purpose-built generated application launcher where stderr/progress
+  routing is controlled deliberately.
+
+Keep the JDK cache under `~/.mcp-steroid/jdk/...` when the bootstrap is
+implemented, and reuse the Amazon Corretto URLs/checksums produced by
+`:jdk-downloader` instead of duplicating JDK coordinates.
 
 ## Goal
 
-Replace the one-step `npx mcp-steroid-proxy` (downloads ~1 GB once,
-runs) with a two-tier path:
+Replace the one-step `npx devrig` (requires Java to be
+pre-installed today) with a two-tier path:
 
-1. `npx mcp-steroid` resolves a **tiny** JavaScript wrapper (~kilobytes,
+1. `npx devrig` resolves a **tiny** JavaScript wrapper (~kilobytes,
    not megabytes).
 2. The wrapper fetches a small `version.json` manifest from
    `https://mcp-steroid.jonnyzzz.com/version.json`.
@@ -78,9 +106,10 @@ The differences:
 - `devrig` uses a YAML manifest (`.idew.yaml`); ours would use JSON
   (simpler for JS, no extra dep).
 
-## Component split (what becomes "downloadable" instead of "bundled")
+## Component split
 
-Today's installDist breakdown (`du -sh`):
+Historical installDist pressure, and the target shape for downloadable
+components:
 
 | Path                           | Size  | After split                       |
 |---|---|---|
@@ -98,7 +127,7 @@ Today's installDist breakdown (`du -sh`):
 Bundled in the **npm package** (the wrapper's payload):
 - The JS bootstrap entry point (~kB).
 - `lib/` (the npx-kt jars — needed to launch anything).
-- `bin/mcp-steroid-proxy` launcher script (already exists).
+- `bin/devrig` launcher script (already exists).
 - `EULA`.
 - `licenses/` (legal must travel with the binary).
 
@@ -212,7 +241,7 @@ Pseudocode, JS:
      cpu = process.arch         // 'x64' | 'arm64'
      platform = mapToInternal(os, cpu)  // 'linux-amd64' | ... | 'windows-amd64'
 
-2. Resolve cache root: ~/.mcp-steroid/ (or %LOCALAPPDATA%\mcp-steroid on Win).
+2. Resolve cache root: ~/.mcp-steroid/.
 
 3. Fetch manifest:
      if (mtime(manifest cache) < 24h ago) {
@@ -245,7 +274,7 @@ Pseudocode, JS:
      PATH=<jdk cache>/bin:$PATH   (optional convenience)
 
 6. Locate the launcher in the npx-kt cache:
-     <npx-kt cache>/bin/mcp-steroid-proxy (or .bat on Windows)
+     <npx-kt cache>/bin/devrig (or .bat on Windows)
 
 7. Exec into the launcher with the remaining argv. The launcher
    reads DEVRIG_JAVA_HOME, locates its own jars, and runs.
@@ -255,27 +284,32 @@ Pseudocode, JS:
 
 Sized so each commit is reviewable on its own.
 
-1. **Carve the npx-kt distribution into "core" + "downloadable" zips.**
+1. **Keep the npx-kt distribution JVM-free.**
+   Do not add a Gradle-wrapper-level JVM bootstrap. The generated
+   launcher continues to use a pre-installed JDK until the npm
+   bootstrap owns JDK acquisition.
+
+2. **Carve the npx-kt distribution into "core" + "downloadable" zips.**
    The Gradle build emits two artifacts:
    - `npx-kt-<version>-minimal.zip` — just `bin/` + `lib/` + `EULA`
      + `licenses/`. ~40 MB.
    - `npx-kt-<version>-jdk-<platform>.zip` x 4 — per-platform JDK
      payload. ~150 MB compressed each.
-   The existing monolithic `distZip` stays as a deprecated path until
-   the bootstrap is live.
+   The existing `distZip` stays as the direct-download/offline path
+   until the bootstrap is live.
 
-2. **Add the manifest generator.** A new Gradle task in `:npx-kt` (or
+3. **Add the manifest generator.** A new Gradle task in `:npx-kt` (or
    a tiny new module `:bootstrap-manifest`) emits `version.json`
    alongside the zip artifacts. SHA-256 computed from each artifact
    at the same time. URLs are placeholders during local builds; CI
    substitutes the real CDN base URL.
 
-3. **Set up the publish target.** `mcp-steroid.jonnyzzz.com` hosts
+4. **Set up the publish target.** `mcp-steroid.jonnyzzz.com` hosts
    the manifest + the per-component zips. Today the GitHub Pages
    site exists under `website/`; the bootstrap fetches from a CDN
    subdomain (or the same site under `/releases/`).
 
-4. **Create `:npx-bootstrap` (the JS package).** Pure JavaScript,
+5. **Create `:npx-bootstrap` (the JS package).** Pure JavaScript,
    `package.json` with one `bin` entry, ~200 lines:
    - Fetch + cache manifest.
    - Per-package fetch + SHA-256 verify.
@@ -287,7 +321,7 @@ Sized so each commit is reviewable on its own.
    - Cross-platform `chmod +x` after extract.
    - Set env + `spawnSync` into the launcher.
 
-5. **Wire CI to publish on release.** Existing GitHub Actions builds
+6. **Wire CI to publish on release.** Existing GitHub Actions builds
    the zips; new workflow uploads them to the CDN and refreshes
    `version.json`. Publish must be atomic — the manifest update
    happens last so a fetch during the publish window either gets the
@@ -295,13 +329,13 @@ Sized so each commit is reviewable on its own.
    zips. (Two-stage publish: stage the zips at a versioned URL,
    atomically rename the manifest pointing to them.)
 
-6. **Replace the monolithic distZip in the npm release.** The npm
+7. **Replace the current distZip in the npm release.** The npm
    `package.json`'s `bin` becomes `:npx-bootstrap`'s launcher; the
-   1 GB monolith is no longer published as an npm payload.
-   Operators who still want the offline-monolith can download it
-   directly from the website.
+   full JVM distribution is no longer published as an npm payload.
+   Operators who still want the offline/direct-download package can
+   download it directly from the website.
 
-7. **Permanent: dist size monitor.** A CI check that fails if the
+8. **Permanent: dist size monitor.** A CI check that fails if the
    npx-bootstrap npm package crosses some small threshold (1 MB?).
    Keeps the bootstrap honest.
 
@@ -351,11 +385,14 @@ Sized so each commit is reviewable on its own.
 - This repo's `:jdk-downloader/build.gradle.kts` — the
   download-verify-extract pipeline in Gradle form; the bootstrap
   re-implements the same flow in JS.
+- `gradle-jvm-wrapper` — reviewed and rejected for `:npx-kt`; it is a
+  Gradle wrapper patcher, not a runtime launcher bootstrapper.
 
 ## Non-goals
 
 - No replacement for the standalone `:npx-kt` distZip. Operators who
-  prefer the offline monolith should still be able to download it.
+  prefer the offline/direct-download package should still be able to
+  download it.
 - No GUI installer. CLI-only.
 - No automatic IDE provisioning (the bootstrap fetches the proxy and
   its JDK; the proxy's own `backend` subcommand handles IDE

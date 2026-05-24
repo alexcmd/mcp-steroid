@@ -21,9 +21,10 @@ operator-facing single point of reference.
 ## Externally fetched components
 
 `devrig` does not bundle a JVM. It expects `java` on the
-system PATH (or `JAVA_HOME` set). When a future release adds a
-bootstrap that auto-fetches a per-OS Amazon Corretto 21 JDK, the
-Corretto legal text will travel with that download into
-`~/.mcp-steroid/jdk/<version>/legal/` rather than living in this
-package. See `TODO-NPX-BOOTSTRAPPER.md` in the repo root for the
-plan.
+system PATH (or `JAVA_HOME` set). This package intentionally does not
+patch its launcher with a Gradle-wrapper-level JVM downloader. When a
+future release adds a bootstrap that auto-fetches a per-OS Amazon
+Corretto 21 JDK, the Corretto legal text will travel with that
+download into `~/.mcp-steroid/jdk/<version>/legal/` rather than living
+in this package. See `TODO-NPX-BOOTSTRAPPER.md` in the repo root for
+the plan.
