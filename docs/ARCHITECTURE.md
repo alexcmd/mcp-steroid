@@ -12,6 +12,12 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - OCR helper: external `ocr-tesseract` app invoked via process client.
 - Kotlinc helper: bundled Kotlin compiler invoked via process client.
 - Storage & review: execution logs/artifacts and review workflow.
+- **devrig CLI** (`npx-kt/`): stateless stdio MCP server + `backend` /
+  `project` CLI that discovers IntelliJ instances on the host and
+  routes tool calls to them. Project / IDE naming is governed by the
+  [`docs/devrig-naming.md`](devrig-naming.md) spec; on-demand routing
+  rationale lives in
+  [`docs/devrig-scanning-research.md`](devrig-scanning-research.md).
 
 ## Request Flow (exec_code)
 1) HTTP request arrives at `/mcp` and is validated by `McpHttpTransport`.
@@ -43,3 +49,11 @@ This document is a concise architecture map. For authoritative details, see `AGE
 ## Related Docs
 - `README.md`: usage, HTTP flow, tool contracts
 - `AGENTS.md`: contributor rules and deep implementation notes
+- [`PHILOSOPHY.md`](PHILOSOPHY.md): the four design tenets (small
+  MCP tool surface; prompts + direct IntelliJ APIs; devrig is
+  stateless; `McpScriptContext` last-resort)
+- [`devrig-naming.md`](devrig-naming.md): canonical contract for
+  project and backend (IDE) names across the devrig CLI and the
+  devrig stdio MCP server
+- [`devrig-scanning-research.md`](devrig-scanning-research.md):
+  on-demand `rebuildSnapshot()` decision record

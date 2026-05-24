@@ -15,6 +15,23 @@ new tools or new context methods.
 
 For the test code that drives DPAIA / arena scenarios see `test-experiments/CLAUDE.md`.
 
+## Specs in this folder
+
+Long-form contract documents owned by `docs/` (read these directly
+rather than mirroring their contents into per-folder guides):
+
+- [`PHILOSOPHY.md`](PHILOSOPHY.md) — the four design tenets.
+- [`devrig-naming.md`](devrig-naming.md) — devrig CLI + stdio MCP
+  project/backend naming contract (slug rule, `bootHash`,
+  `archiveSha256`, `actions[].argv`, on-demand routing).
+- [`devrig-scanning-research.md`](devrig-scanning-research.md) —
+  decision record for on-demand `rebuildSnapshot()` vs background
+  scanners (option A).
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — top-level architecture
+  map.
+- [`TESTING-STRATEGY.md`](TESTING-STRATEGY.md) — test layout +
+  per-module scoping rules.
+
 ## Prompt optimization (autoresearch)
 
 MCP Steroid serves prompt resources (`mcp-steroid://` URIs) that guide AI agents. Optimizing these

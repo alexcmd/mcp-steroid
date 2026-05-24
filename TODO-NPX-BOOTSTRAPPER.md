@@ -2,6 +2,15 @@
 
 ## Current status after devrig rename (2026-05-19)
 
+> **Contract reference.** The devrig CLI's project/backend naming,
+> JSON output schemas, and on-demand routing model are now specified
+> in [`docs/devrig-naming.md`](docs/devrig-naming.md). Any
+> bootstrapper work that touches discovery, MCP routing, or the
+> public CLI surface must keep that contract intact. The on-demand
+> rebuild decision (no background scanners in the devrig process) is
+> recorded in
+> [`docs/devrig-scanning-research.md`](docs/devrig-scanning-research.md).
+
 This plan predates the devrig rename and the removal of the npm TypeScript
 MCP proxy. Use these facts before implementing anything from the older notes
 below:
