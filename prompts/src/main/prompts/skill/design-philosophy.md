@@ -1,10 +1,10 @@
 MCP Steroid — Design philosophy
 
-The three tenets that govern every MCP Steroid change. Read before proposing a new tool, a new McpScriptContext method, or a wrapper helper.
+The four tenets that govern every MCP Steroid change. Read before proposing a new tool, a new McpScriptContext method, a wrapper helper, or any persistent state in the devrig CLI.
 
-# Three tenets
+# Four tenets
 
-If a change touches the MCP tool surface, the `McpScriptContext` runtime, or wraps an IntelliJ API in a "helper" — these tenets apply.
+If a change touches the MCP tool surface, the `McpScriptContext` runtime, the `devrig` CLI's persistence model, or wraps an IntelliJ API in a "helper" — these tenets apply.
 
 ## Tenet 1 — minimal MCP tool surface
 
@@ -43,7 +43,22 @@ Don't:
 
 This is what the strategy page means by "Give AI the whole IDE, not just the files." The **MCP tool surface** stays narrow; the **IntelliJ capability surface** stays full, exposed through `steroid_execute_code` plus recipes like the ones at `mcp-steroid://ide/...` and `mcp-steroid://skill/...`.
 
-## Tenet 3 — `McpScriptContext` methods are last-resort
+## Tenet 3 — devrig is stateless
+
+**The `devrig` binary holds no state across calls.** Every CLI invocation is a fresh process; `devrig mpc` (the stdio MCP server) holds only in-memory caches that live for the duration of the session and are rebuilt from scratch on the next process start.
+
+- **No persistent state on disk** is owned by devrig itself. On-disk artefacts (`~/.mcp-steroid/backends/`, `~/.mcp-steroid/markers/`, download caches) are inputs devrig *reads*, never things it serialises its own state into.
+- **No cross-call coordination.** Two `devrig` processes against the same `~/.mcp-steroid` directory must behave identically to one process; see [`docs/devrig-naming.md`](https://github.com/jonnyzzz/mcp-steroid/blob/main/docs/devrig-naming.md).
+- **In-memory caches are allowed** within one process — the routing-model snapshot, the marker decoder cache, the installer's per-call working set. They die with the process.
+- **Background scanning is implementation-detail, not contract.** Today `devrig mpc` runs marker / port / per-IDE-stream scanners in the background; whether those stay or get replaced by on-demand rebuild is a tactical decision that does not change the caller-visible contract.
+
+Adding state to devrig requires:
+
+1. A written argument that the in-memory + on-call-rebuild model genuinely cannot cover the case. "More efficient" is not enough.
+2. Three-reviewer consensus across `run-agent.sh codex` / `claude` / `gemini`. **One reviewer disagreeing kills the proposal.**
+3. A migration story: devrig must be deletable + re-installable without losing functionality the user cares about.
+
+## Tenet 4 — `McpScriptContext` methods are last-resort
 
 **Don't add methods to `McpScriptContext` casually.** The current surface (see the `McpScriptContext` source for the exact list — `project`, `disposable`, `printJson(...)`, `progress(...)`, `applyPatch { }`, `findProjectFile(...)`, `projectScope()`, the inspection / highlighting helpers, etc.) exists because the IntelliJ API genuinely couldn't cover those cases at the time. They are not the extension point — the IntelliJ API is. The surface is already substantial; that's why "don't grow it" is a tenet, not a preference.
 

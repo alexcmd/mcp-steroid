@@ -24,6 +24,11 @@ fun printHelp(out: PrintStream) : Int {
                                          `--json` emits a single machine-readable
                                          object on stdout; default is human text.
 
+          devrig install claude|codex|gemini
+                                         register this devrig binary as the
+                                         mcp-steroid stdio MCP server in the
+                                         selected coding agent.
+
           devrig backend download [<id>] [--version <v>] [--json]
                                          no id → list IDEs available for download.
                                          With id, download and install a managed

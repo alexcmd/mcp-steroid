@@ -182,8 +182,14 @@ class BackendCommandJsonRenderTest {
         assertEquals("IntelliJ IDEA", backend["name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("2025.3.3", backend["version"]?.jsonPrimitive?.contentOrNull)
         assertEquals("IU-253.21581.142", backend["build"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("IU-253.21581.142", backend["buildNumber"]?.jsonPrimitive?.contentOrNull)
         assertEquals(1234L, backend["pid"]?.jsonPrimitive?.long)
         assertEquals("http://localhost:6315/mcp", backend["mcpUrl"]?.jsonPrimitive?.contentOrNull)
+        val plugin = backend["plugin"]!!.jsonObject
+        assertEquals(true, plugin["installed"]?.jsonPrimitive?.boolean)
+        assertEquals("com.jonnyzzz.mcp-steroid", plugin["id"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("MCP Steroid", plugin["name"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("0.0.0-test", plugin["version"]?.jsonPrimitive?.contentOrNull)
         assertEquals(0, backend["actions"]!!.jsonArray.size)
         assertNull(backend["error"], "reachable marker rows must not carry an error: $backend")
         assertNull(backend["projects"], "projects are top-level now, not nested in backends: $backend")
@@ -251,6 +257,7 @@ class BackendCommandJsonRenderTest {
         assertEquals("IU", backend["edition"]?.jsonPrimitive?.contentOrNull)
         assertEquals(253, backend["baselineVersion"]?.jsonPrimitive?.int)
         assertEquals("IU-253.21581.142", backend["buildNumber"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(false, backend["plugin"]!!.jsonObject["installed"]?.jsonPrimitive?.boolean)
         val action = backend["actions"]!!.jsonArray.single().jsonObject
         assertEquals("provision", action["id"]?.jsonPrimitive?.contentOrNull)
         assertEquals("Install MCP Steroid plugin", action["label"]?.jsonPrimitive?.contentOrNull)

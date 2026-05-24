@@ -3,12 +3,14 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
+import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 
 const val NO_BACKENDS_DETECTED_MESSAGE: String = "No backends detected."
 
@@ -54,6 +56,12 @@ sealed interface DevrigCommand {
     ) : DevrigCommand
 
     data class DevrigCommandProject(
+        override val debug: Boolean = false,
+        override val json: Boolean = false,
+    ) : DevrigCommand
+
+    data class DevrigCommandInstall(
+        val agent: AiAgentCli,
         override val debug: Boolean = false,
         override val json: Boolean = false,
     ) : DevrigCommand
@@ -150,6 +158,7 @@ private class DevrigRootCommand(
             MpcCommand(selected, this),
             backend,
             ProjectCommand(selected, this),
+            InstallCommand(selected, this),
             HelpCommand(selected, this),
             VersionCommand(selected, this),
         )
@@ -182,6 +191,20 @@ private class ProjectCommand(
     override fun run() {
         val options = options()
         select(DevrigCommand.DevrigCommandProject(debug = options.debug, json = options.json))
+    }
+}
+
+private class InstallCommand(
+    selected: SelectedDevrigCommand,
+    parent: DevrigCliktCommand,
+) : DevrigCliktCommand("install", selected, parent) {
+    private val agent by argument("agent")
+
+    override fun run() {
+        val options = options()
+        val target = AiAgentCli.parse(agent)
+            ?: throw UsageError("agent must be one of: claude, codex, gemini")
+        select(DevrigCommand.DevrigCommandInstall(target, debug = options.debug, json = options.json))
     }
 }
 
@@ -291,6 +314,7 @@ fun DevrigServices.runCli(command: DevrigCommand): Int {
             is DevrigCommand.DevrigCommandBackendStop -> runBackendStopCommand(command)
             is DevrigCommand.DevrigCommandBackendProvision -> runBackendProvisionCommand(command)
             is DevrigCommand.DevrigCommandProject -> runProjectCommand(command)
+            is DevrigCommand.DevrigCommandInstall -> runInstallCommand(command)
         }
     } catch (e: ManagedBackendLockException) {
         System.err.println(e.message)

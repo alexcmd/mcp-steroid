@@ -114,8 +114,10 @@ class ProjectCommandRenderTest {
             "expected list header for one project; got:\n$text")
         assertTrue(text.contains("[1] my-app") && text.contains("→") && text.contains("/Users/x/Work/my-app"),
             "expected project to render as name → path; got:\n$text")
-        assertTrue(text.contains("        IntelliJ IDEA 2025.3.3 (pid 1234)"),
+        assertTrue(text.contains("        IntelliJ IDEA 2025.3.3 (build IU-253.21581.142, pid 1234)"),
             "expected owning IDE line to reuse backend identity formatting; got:\n$text")
+        assertTrue(text.contains("        MCP Steroid: 0.0.0-test"),
+            "expected plugin status line; got:\n$text")
     }
 
     @Test
@@ -177,7 +179,7 @@ class ProjectCommandRenderTest {
         val text = render(listing)
         assertTrue(text.contains("Listing 1 open project(s) across 2 backend(s):"),
             "empty-project IDE should still count as queried; got:\n$text")
-        assertTrue(!text.contains("GoLand 2025.3.3 (pid 2)"),
+        assertTrue(!text.contains("GoLand 2025.3.3 (build IU-253.21581.142, pid 2)"),
             "empty-project IDE should not get a project entry; got:\n$text")
     }
 
@@ -210,8 +212,10 @@ class ProjectCommandRenderTest {
         val text = render(listing)
         assertTrue(text.contains("Skipped 1 backend that did not return a project snapshot:"),
             "expected unreachable footer; got:\n$text")
-        assertTrue(text.contains("WebStorm 2025.3.0 (pid 7): unreachable: timed out after 8s"),
+        assertTrue(text.contains("WebStorm 2025.3.0 (build IU-253.21581.142, pid 7): unreachable: timed out after 8s"),
             "expected unreachable identity + reason; got:\n$text")
+        assertTrue(text.contains("    MCP Steroid: 0.0.0-test"),
+            "expected plugin status line for skipped marker; got:\n$text")
         assertTrue(!text.contains("[1] WebStorm"), "unreachable IDE must not become a project row; got:\n$text")
     }
 
@@ -222,9 +226,9 @@ class ProjectCommandRenderTest {
             portRows = listOf(BackendRow.FromPort(portIde(port = 63342))),
         )
         val text = render(listing)
-        assertTrue(text.contains("Skipped 1 backend with no mcp-steroid plugin:"),
+        assertTrue(text.contains("Skipped 1 backend with MCP Steroid not installed:"),
             "expected no-plugin footer; got:\n$text")
-        assertTrue(text.contains("IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342)"),
+        assertTrue(text.contains("IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342): MCP Steroid: not installed"),
             "expected port IDE identity; got:\n$text")
         assertTrue(!text.contains("[2] IntelliJ IDEA Ultimate"),
             "port-only IDE must not become a project row; got:\n$text")

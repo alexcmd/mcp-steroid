@@ -4,10 +4,11 @@ This folder holds long-form research, design plans, and the DPAIA arena working 
 addition to** the root `CLAUDE.md` when changing files under `docs/` or referencing autoresearch
 results.
 
-The repo's three design tenets — small MCP tool surface; power lives in
-prompts and direct IntelliJ API usage; `McpScriptContext` is last-resort —
-are codified in [`PHILOSOPHY.md`](PHILOSOPHY.md) (and mirrored at runtime
-as `mcp-steroid://skill/design-philosophy`). Autoresearch and prompt-
+The repo's four design tenets — small MCP tool surface; power lives in
+prompts and direct IntelliJ API usage; `devrig` is stateless;
+`McpScriptContext` is last-resort — are codified in
+[`PHILOSOPHY.md`](PHILOSOPHY.md) (and mirrored at runtime as
+`mcp-steroid://skill/design-philosophy`). Autoresearch and prompt-
 optimization work in this folder is the primary lever for those tenets:
 every measurement here ultimately feeds back into recipe quality, not
 new tools or new context methods.

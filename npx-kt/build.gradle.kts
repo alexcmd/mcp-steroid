@@ -99,6 +99,7 @@ dependencies {
     implementation("com.posthog:posthog-server:2.3.0")
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation(project(":closeable-stack"))
+    implementation(project(":ai-agents"))
 
     // MCP transport: framed/NDJSON parser + McpStdioServer (replaces the old
     // StdioServer in this module — kept compiled but no longer wired into main()).
@@ -510,6 +511,7 @@ val verifyBundledLibraries by tasks.registering {
 
             // Internal jars (this project + sibling subprojects).
             "lib/devrig-$devrigVersion.jar",
+            "lib/ai-agents-$devrigVersion.jar",
             "lib/closeable-stack-$devrigVersion.jar",
             "lib/execution-storage-$devrigVersion.jar",
             "lib/intellij-downloader-$devrigVersion.jar",
