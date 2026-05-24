@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
@@ -418,13 +419,18 @@ class BackendProvisionTest {
         mcpUrl: String = "http://localhost:6315/mcp",
     ): DiscoveredIde {
         val marker = PidMarker(
+            schema = PidMarker.SCHEMA_VERSION,
             pid = pid,
-            mcpUrl = mcpUrl,
-            port = 0,
-            token = "",
+            mcpSteroidServer = McpSteroidServerInfo(
+                mcpUrl = mcpUrl,
+                port = 0,
+                headers = emptyMap(),
+            ),
             ide = IdeInfo(name = name, version = version, build = build),
             plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
             createdAt = "1970-01-01T00:00:00Z",
+            intellijWebServer = null,
+            intellijMcpServer = null,
         )
         return DiscoveredIde(pid = pid, mcpUrl = mcpUrl, markerPath = "/tmp/$pid.mcp-steroid", marker = marker)
     }

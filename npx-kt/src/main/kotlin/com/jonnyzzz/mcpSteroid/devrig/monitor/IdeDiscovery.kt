@@ -12,8 +12,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
-import java.io.File
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.name
+import kotlin.io.path.readText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -44,8 +48,6 @@ data class DiscoveredIde(
  * Behaviour:
  *  - Scans [markersDir] every [scanInterval] and emits a fresh value on the
  *    flow whenever the discovered set changes (by [DiscoveredIde] equality).
- *  - Also scans [legacyHomeDir] for one release so devrig can still find
- *    IDEs running an older plugin that writes `~/.<pid>.mcp-steroid`.
  *  - Skips markers whose host is not in [allowHosts] — the same allowlist
  *    discipline as the legacy implementation.
  *  - Skips markers whose pid is no longer alive.
@@ -53,8 +55,7 @@ data class DiscoveredIde(
  *    excluded; the rest of the scan continues.
  */
 class IdeDiscoveryService(
-    private val markersDir: File,
-    private val legacyHomeDir: File = File(System.getProperty("user.home")),
+    private val markersDir: Path,
     private val allowHosts: List<String>,
     private val scanInterval: Duration = 2.seconds,
 ) {
@@ -75,68 +76,47 @@ class IdeDiscoveryService(
 
     /** One-shot scan — exposed for test code and for manual refresh after a connection error. */
     fun scanOnce() {
-        val discovered = scanCurrent()
-        _ides.value = discovered
+        _ides.value = scanDirectory(markersDir).associateByTo(linkedMapOf()) { it.pid }.values.toSet()
     }
 
-    private fun scanCurrent(): Set<DiscoveredIde> {
-        val out = linkedMapOf<Long, DiscoveredIde>()
-        for (ide in scanDirectory(markersDir, legacyOnly = false)) {
-            out[ide.pid] = ide
+    private fun scanDirectory(dir: Path): List<DiscoveredIde> {
+        if (!Files.isDirectory(dir)) return emptyList()
+        val files = try {
+            Files.list(dir).use { it.toList() }
+        } catch (e: Exception) {
+            log.warn("Failed to list marker directory {}: {}", dir, e.message)
+            return emptyList()
         }
-        val legacy = scanDirectory(legacyHomeDir, legacyOnly = true)
-        if (legacy.isNotEmpty()) {
-            log.debug(
-                "Discovered {} MCP Steroid marker(s) in legacy home-root location {}; keeping transition fallback active",
-                legacy.size,
-                legacyHomeDir.absolutePath,
-            )
-        }
-        for (ide in legacy) {
-            out.putIfAbsent(ide.pid, ide)
-        }
-        return out.values.toSet()
-    }
-
-    private fun scanDirectory(
-        dir: File,
-        legacyOnly: Boolean,
-    ): List<DiscoveredIde> {
-        val files = dir.listFiles() ?: return emptyList()
         val out = mutableListOf<DiscoveredIde>()
         for (file in files) {
-            if (!file.isFile) continue
-            if (legacyOnly && !file.name.startsWith(".")) continue
+            if (!file.isRegularFile()) continue
             val pid = PidMarker.pidFromFileName(file.name) ?: continue
             if (!ProcessHandle.of(pid).isPresent) continue
             val text = try { file.readText() } catch (e: Exception) {
-                log.warn("Failed to read marker file {}: {}", file.absolutePath, e.message)
+                log.warn("Failed to read marker file {}: {}", file, e.message)
                 continue
             }
             // Cheap legacy-format sniff: a current marker is a JSON object so the first
-            // non-whitespace byte is '{'. Older plugin builds wrote a plain-text marker
-            // (URL on line 1 + human-readable info below) — that's a known historical
-            // format we can't read, NOT an error worth alarming the operator about.
-            // Skip it at DEBUG level. Only WARN on text that LOOKS like JSON but fails
-            // to parse — that signals real corruption (truncated write, bit-flip, etc.).
+            // non-whitespace byte is '{'. Skip non-JSON files at DEBUG; only WARN on
+            // text that LOOKS like JSON but fails to parse (truncated write, bit-flip, etc.).
             if (text.trimStart().firstOrNull() != '{') {
-                log.debug("Skipping non-JSON marker file {} (legacy text format?)", file.absolutePath)
+                log.debug("Skipping non-JSON marker file {}", file)
                 continue
             }
             val marker = try {
                 PidMarkerJson.decode(text)
             } catch (e: Exception) {
-                log.warn("Skipping malformed marker file {}: {}", file.absolutePath, e.message)
+                log.warn("Skipping malformed marker file {}: {}", file, e.message)
                 continue
             }
-            if (!isAllowedHost(marker.mcpUrl)) {
-                log.debug("Skipping marker {} — host not in allowlist", file.absolutePath)
+            if (!isAllowedHost(marker.mcpSteroidServer.mcpUrl)) {
+                log.debug("Skipping marker {} — host not in allowlist", file)
                 continue
             }
             out += DiscoveredIde(
                 pid = pid,
-                mcpUrl = marker.mcpUrl,
-                markerPath = file.absolutePath,
+                mcpUrl = marker.mcpSteroidServer.mcpUrl,
+                markerPath = file.toString(),
                 marker = marker,
             )
         }

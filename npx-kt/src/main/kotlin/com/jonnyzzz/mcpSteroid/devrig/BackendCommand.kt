@@ -16,7 +16,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.readUTF8Line
-import java.io.File
 import java.io.OutputStream
 import java.io.PrintStream
 import java.util.UUID
@@ -174,11 +173,9 @@ fun DevrigServices.scanMarkersOnce(): Set<DiscoveredIde> {
 }
 
 fun createIdeDiscoveryService(homePaths: HomePaths): IdeDiscoveryService {
-    val legacyHomeDir = File(System.getProperty("user.home"))
     val allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal")
     return IdeDiscoveryService(
-        markersDir = homePaths.markersDir.toFile(),
-        legacyHomeDir = legacyHomeDir,
+        markersDir = homePaths.markersDir,
         allowHosts = allowHosts,
     )
 }
@@ -562,14 +559,13 @@ private suspend fun fetchFirstSnapshot(
 ): List<ProjectInfo> {
     val base = ide.mcpUrl.trimEnd('/').removeSuffix("/mcp")
     val url = base + NPX_PROJECTS_STREAM_PATH
-    val token = ide.marker.token
     val body = NpxStreamJson.encodeClientInfo(clientInfo)
 
     return httpClient.preparePost(url) {
         headers {
             append(HttpHeaders.ContentType, "application/json")
-            if (token.isNotEmpty()) {
-                append(HttpHeaders.Authorization, "Bearer $token")
+            for ((name, value) in ide.marker.mcpSteroidServer.headers) {
+                append(name, value)
             }
         }
         setBody(body)

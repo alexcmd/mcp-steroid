@@ -89,7 +89,7 @@ class DevrigProjectRoutingService(
         return ProjectRoute(
             idePid = idePid,
             bridgeBaseUrl = bridgeBaseUrl(ide.mcpUrl),
-            token = ide.marker.token,
+            headers = ide.marker.mcpSteroidServer.headers,
             originalProjectName = project.name,
             exposedProjectName = "${project.name}-$hash8",
             projectPath = project.path,
@@ -132,7 +132,7 @@ class DevrigProjectRoutingService(
 data class ProjectRoute(
     val idePid: Long,
     val bridgeBaseUrl: String,
-    val token: String,
+    val headers: Map<String, String>,
     val originalProjectName: String,
     val exposedProjectName: String,
     val projectPath: String,

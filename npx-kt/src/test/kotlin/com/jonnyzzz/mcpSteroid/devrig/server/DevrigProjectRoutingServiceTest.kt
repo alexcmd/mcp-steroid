@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
@@ -84,7 +85,7 @@ class DevrigProjectRoutingServiceTest {
         assertEquals("mcp-steroid-${route.hash8}", route.exposedProjectName)
         assertEquals("mcp-steroid", route.originalProjectName)
         assertEquals("http://127.0.0.1:4343", route.bridgeBaseUrl)
-        assertEquals("secret-42", route.token)
+        assertEquals(mapOf("Authorization" to "Bearer secret-42"), route.headers)
         assertEquals(route, service.requireProject(route.exposedProjectName))
     }
 
@@ -420,13 +421,18 @@ class DevrigProjectRoutingServiceTest {
             mcpUrl = "http://127.0.0.1:4343/mcp",
             markerPath = "/tmp/$pid.mcp-steroid",
             marker = PidMarker(
+                schema = PidMarker.SCHEMA_VERSION,
                 pid = pid,
-                mcpUrl = "http://127.0.0.1:4343/mcp",
-                port = 4343,
-                token = "secret-$pid",
+                mcpSteroidServer = McpSteroidServerInfo(
+                    mcpUrl = "http://127.0.0.1:4343/mcp",
+                    port = 4343,
+                    headers = mapOf("Authorization" to "Bearer secret-$pid"),
+                ),
                 ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
                 createdAt = "2026-05-17T00:00:00Z",
+                intellijWebServer = null,
+                intellijMcpServer = null,
             ),
         )
 }

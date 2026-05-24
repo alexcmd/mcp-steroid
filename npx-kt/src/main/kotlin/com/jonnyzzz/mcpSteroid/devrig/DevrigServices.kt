@@ -11,7 +11,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.HttpTimeoutConfig
-import java.io.File
 import java.io.InputStream
 import java.io.PrintStream
 import java.util.UUID
@@ -72,8 +71,7 @@ class DevrigServices(
 
     val ideDiscovery: IdeDiscoveryService by lazy {
         IdeDiscoveryService(
-            markersDir = homePaths.markersDir.toFile(),
-            legacyHomeDir = File(System.getProperty("user.home")),
+            markersDir = homePaths.markersDir,
             allowHosts = listOf("localhost", "127.0.0.1", "host.docker.internal"),
         )
     }

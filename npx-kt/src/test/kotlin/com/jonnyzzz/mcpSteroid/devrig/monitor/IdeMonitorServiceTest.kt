@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig.monitor
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
@@ -130,8 +131,7 @@ class IdeMonitorServiceTest {
         script += snapshot(listOf(ProjectInfo("alpha", "/p/alpha")))
 
         val discovery = IdeDiscoveryService(
-            markersDir = PidMarker.markerDirectory(homeDir, env = emptyMap()).toFile(),
-            legacyHomeDir = homeDir.toFile(),
+            markersDir = PidMarker.markerDirectory(homeDir),
             allowHosts = listOf("127.0.0.1"),
             scanInterval = 200.milliseconds,
         )
@@ -163,39 +163,6 @@ class IdeMonitorServiceTest {
     }
 
     @Test
-    fun `monitor sends no Authorization header when the marker carries an empty token`(
-        @TempDir homeDir: Path,
-    ) = runBlocking {
-        writeMarker(homeDir, port, token = "")
-        script += snapshot(listOf(ProjectInfo("alpha", "/p/alpha")))
-
-        val discovery = IdeDiscoveryService(
-            markersDir = PidMarker.markerDirectory(homeDir, env = emptyMap()).toFile(),
-            legacyHomeDir = homeDir.toFile(),
-            allowHosts = listOf("127.0.0.1"),
-            scanInterval = 200.milliseconds,
-        )
-        val monitor = IdeMonitorService(
-            httpClient = httpClient,
-            discovery = discovery,
-            clientInfo = NpxStreamClientInfo(client = "test-suite"),
-            reconnectBackoff = 200.milliseconds,
-        )
-        discovery.start(scope)
-        monitor.start(scope)
-
-        withTimeout(10.seconds) {
-            monitor.states.first { it[ourPid]?.lastSnapshot?.isNotEmpty() == true }
-        }
-        // The fake server records every incoming Authorization; an empty token
-        // path must not emit a header at all (not even "Bearer ").
-        assertTrue(
-            receivedAuthHeaders.all { it == null },
-            "expected no Authorization header for empty token; saw: $receivedAuthHeaders"
-        )
-    }
-
-    @Test
     fun `monitor follows multiple snapshot envelopes from the IDE`(
         @TempDir homeDir: Path,
     ) = runBlocking {
@@ -206,8 +173,7 @@ class IdeMonitorServiceTest {
         script += snapshot(listOf(ProjectInfo("b", "/p/b")))
 
         val discovery = IdeDiscoveryService(
-            markersDir = PidMarker.markerDirectory(homeDir, env = emptyMap()).toFile(),
-            legacyHomeDir = homeDir.toFile(),
+            markersDir = PidMarker.markerDirectory(homeDir),
             allowHosts = listOf("127.0.0.1"),
             scanInterval = 200.milliseconds,
         )
@@ -232,15 +198,20 @@ class IdeMonitorServiceTest {
 
     private fun writeMarker(homeDir: Path, port: Int, token: String = "deadbeef") {
         val marker = PidMarker(
+            schema = PidMarker.SCHEMA_VERSION,
             pid = ourPid,
-            mcpUrl = "http://127.0.0.1:$port/mcp",
-            port = port,
-            token = token,
+            mcpSteroidServer = McpSteroidServerInfo(
+                mcpUrl = "http://127.0.0.1:$port/mcp",
+                port = port,
+                headers = mapOf("Authorization" to "Bearer $token"),
+            ),
             ide = IdeInfo(name = "FakeIDE", version = "x", build = "y"),
             plugin = PluginInfo(id = "x", name = "y", version = "z"),
             createdAt = "2026-05-10T12:34:56Z",
+            intellijWebServer = null,
+            intellijMcpServer = null,
         )
-        val markerDir = PidMarker.markerDirectory(homeDir, env = emptyMap())
+        val markerDir = PidMarker.markerDirectory(homeDir)
         java.nio.file.Files.createDirectories(markerDir)
         File(markerDir.toFile(), PidMarker.markerFileNameFor(ourPid))
             .writeText(PidMarkerJson.encode(marker))

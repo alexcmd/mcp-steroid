@@ -17,39 +17,20 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
     fun testWriteCreatesMarkerUnderManagedMarkersDirectory() = withTemporaryUserHome { userHome ->
         val writer = ServerUrlWriter()
         try {
-            writer.writeServerUrlToUserHome("http://localhost:6315/mcp", env = emptyMap())
+            writer.writeServerUrlToUserHome("http://localhost:6315/mcp")
 
             val pid = ProcessHandle.current().pid()
-            val markerFile = PidMarker.markerDirectory(userHome, env = emptyMap())
-                .resolve(PidMarker.markerFileNameFor(pid))
+            val markerFile = PidMarker.markerDirectory(userHome).resolve(PidMarker.markerFileNameFor(pid))
             assertTrue("marker should be written to $markerFile", Files.isRegularFile(markerFile))
             val marker = PidMarkerJson.decode(Files.readString(markerFile))
             assertEquals(pid, marker.pid)
-            assertEquals("http://localhost:6315/mcp", marker.mcpUrl)
+            assertEquals("http://localhost:6315/mcp", marker.mcpSteroidServer.mcpUrl)
             assertNotNull("IntelliJ built-in web server info should be present", marker.intellijWebServer)
             assertTrue("web server port should be known", marker.intellijWebServer!!.port > 0)
-            assertTrue("web server token should be present", marker.intellijWebServer!!.token.isNotBlank())
-        } finally {
-            Disposer.dispose(writer)
-        }
-    }
-
-    fun testWriteHonoursMcpSteroidHomeAndDeletesLegacyMarkerForCurrentPid() = withTemporaryUserHome { userHome ->
-        val writer = ServerUrlWriter()
-        try {
-            val pid = ProcessHandle.current().pid()
-            val legacyFile = legacyMarkerFile(userHome, pid)
-            Files.writeString(legacyFile, "legacy")
-            val overrideHome = userHome.resolve("custom-mcp-home")
-
-            writer.writeServerUrlToUserHome(
-                "http://localhost:6316/mcp",
-                env = mapOf(PidMarker.MCP_STEROID_HOME_ENV to overrideHome.toString()),
+            assertTrue(
+                "web server headers should carry the x-ijt token",
+                marker.intellijWebServer!!.headers["x-ijt"]?.isNotBlank() == true,
             )
-
-            val markerFile = overrideHome.resolve("markers").resolve(PidMarker.markerFileNameFor(pid))
-            assertTrue("marker should be written to $markerFile", Files.isRegularFile(markerFile))
-            assertFalse("legacy marker for current pid should be removed", Files.exists(legacyFile))
         } finally {
             Disposer.dispose(writer)
         }
@@ -59,12 +40,12 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
         val writer = ServerUrlWriter()
         try {
             val deadPid = deadPid()
-            val markerDir = PidMarker.markerDirectory(userHome, env = emptyMap())
+            val markerDir = PidMarker.markerDirectory(userHome)
             Files.createDirectories(markerDir)
             val staleMarker = markerDir.resolve(PidMarker.markerFileNameFor(deadPid))
             Files.writeString(staleMarker, "stale")
 
-            writer.writeServerUrlToUserHome("http://localhost:6317/mcp", env = emptyMap())
+            writer.writeServerUrlToUserHome("http://localhost:6317/mcp")
 
             assertFalse("stale marker for dead pid should be removed", Files.exists(staleMarker))
             val currentMarker = markerDir.resolve(PidMarker.markerFileNameFor(ProcessHandle.current().pid()))
@@ -85,9 +66,6 @@ class ServerUrlWriterTest : BasePlatformTestCase() {
             deleteRecursively(userHome)
         }
     }
-
-    private fun legacyMarkerFile(userHome: Path, pid: Long): Path =
-        userHome.resolve(".$pid.mcp-steroid")
 
     private fun deadPid(): Long {
         val process = ProcessBuilder("/bin/echo", "server-url-writer-test").start()

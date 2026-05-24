@@ -12,23 +12,12 @@ class PidMarkerLayoutTest {
 
         assertEquals(
             userHome.resolve(".mcp-steroid").resolve("markers"),
-            PidMarker.markerDirectory(userHome, env = emptyMap()),
+            PidMarker.markerDirectory(userHome),
         )
     }
 
     @Test
     fun `markerFileNameFor returns pid file without leading dot`() {
         assertEquals("1234.mcp-steroid", PidMarker.markerFileNameFor(1234))
-    }
-
-    @Test
-    fun `MCP_STEROID_HOME overrides managed marker home`() {
-        val userHome = Path.of("/tmp/example-home")
-        val override = Path.of("/tmp/custom-mcp-home")
-
-        assertEquals(
-            override.resolve("markers"),
-            PidMarker.markerDirectory(userHome, env = mapOf(PidMarker.MCP_STEROID_HOME_ENV to override.toString())),
-        )
     }
 }

@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
@@ -744,13 +745,18 @@ class DevrigToolBridgeClientTest {
             mcpUrl = "http://127.0.0.1:$port/mcp",
             markerPath = projectHome.resolve("$pid.mcp-steroid").toString(),
             marker = PidMarker(
+                schema = PidMarker.SCHEMA_VERSION,
                 pid = pid,
-                mcpUrl = "http://127.0.0.1:$port/mcp",
-                port = port,
-                token = "secret-token",
+                mcpSteroidServer = McpSteroidServerInfo(
+                    mcpUrl = "http://127.0.0.1:$port/mcp",
+                    port = port,
+                    headers = mapOf("Authorization" to "Bearer secret-token"),
+                ),
                 ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
                 createdAt = "2026-05-17T00:00:00Z",
+                intellijWebServer = null,
+                intellijMcpServer = null,
             ),
         )
 
@@ -758,7 +764,7 @@ class DevrigToolBridgeClientTest {
         ProjectRoute(
             idePid = 42,
             bridgeBaseUrl = "http://127.0.0.1:$port",
-            token = token,
+            headers = mapOf("Authorization" to "Bearer $token"),
             originalProjectName = "original-project",
             exposedProjectName = "original-project-abcdefgh",
             projectPath = tempDir.toString(),

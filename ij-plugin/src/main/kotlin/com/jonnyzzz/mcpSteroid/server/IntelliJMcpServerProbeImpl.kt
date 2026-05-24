@@ -36,6 +36,7 @@ internal class IntelliJMcpServerProbeImpl : IntelliJMcpServerProbe {
                 port = service.port,
                 streamUrl = derivedStreamUrl,
                 sseUrl = sseUrl,
+                headers = emptyMap(),
             )
         }
     } catch (e: Exception) {

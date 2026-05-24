@@ -1,48 +1,41 @@
 package com.jonnyzzz.mcpSteroid
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class PidMarkerTest {
 
-    private val sample = PidMarker(
-        pid = 12345,
-        mcpUrl = "http://localhost:64531/mcp",
-        port = 64531,
-        token = "deadbeefcafebabe",
-        ide = IdeInfo(name = "IntelliJ IDEA", version = "2025.3.3", build = "IU-253.1.1"),
-        plugin = PluginInfo(id = "com.jonnyzzz.mcpSteroid", name = "MCP Steroid", version = "1.0.0"),
-        createdAt = "2026-05-10T12:34:56Z",
-    )
-
     @Test
     fun `roundtrip preserves all fields`() {
-        val text = PidMarkerJson.encode(sample)
-        val decoded = PidMarkerJson.decode(text)
-        assertEquals(sample, decoded)
+        val original = samplePidMarker()
+        val decoded = PidMarkerJson.decode(PidMarkerJson.encode(original))
+        assertEquals(original, decoded)
     }
 
     @Test
-    fun `encoded form is pretty-printed JSON`() {
-        val text = PidMarkerJson.encode(sample)
+    fun `encoded form is pretty-printed JSON with mcpSteroidServer sub-object`() {
+        val text = PidMarkerJson.encode(samplePidMarker())
         assertTrue(text.startsWith("{\n"), "expected pretty-printed start, got: $text")
         assertTrue(text.contains("\"schema\": 1"), "schema field missing: $text")
         assertTrue(text.contains("\"pid\": 12345"), "pid field missing: $text")
+        assertTrue(text.contains("\"mcpSteroidServer\""), "mcpSteroidServer field missing: $text")
         assertTrue(text.contains("\"mcpUrl\": \"http://localhost:64531/mcp\""), "mcpUrl field missing: $text")
         assertTrue(text.contains("\"port\": 64531"), "port field missing: $text")
-        assertTrue(text.contains("\"token\": \"deadbeefcafebabe\""), "token field missing: $text")
+        assertTrue(text.contains("\"Authorization\": \"Bearer deadbeefcafebabe\""), "headers missing: $text")
     }
 
     @Test
     fun `intellijMcpServer roundtrips when present`() {
-        val withIde = sample.copy(
+        val withIde = samplePidMarker().copy(
             intellijMcpServer = IntelliJMcpServerInfo(
                 enabled = true,
                 port = 64342,
                 streamUrl = "http://127.0.0.1:64342/stream",
                 sseUrl = "http://127.0.0.1:64342/sse",
+                headers = emptyMap(),
             )
         )
         val text = PidMarkerJson.encode(withIde)
@@ -54,47 +47,29 @@ class PidMarkerTest {
 
     @Test
     fun `intellijWebServer roundtrips when present`() {
-        val withWebServer = sample.copy(
+        val withWebServer = samplePidMarker().copy(
             intellijWebServer = IntelliJWebServerInfo(
                 enabled = true,
                 host = "127.0.0.1",
                 port = 63342,
                 baseUrl = "http://127.0.0.1:63342",
                 aboutUrl = "http://127.0.0.1:63342/api/about?_ijt=token",
-                token = "token",
+                headers = mapOf("x-ijt" to "token"),
             )
         )
         val text = PidMarkerJson.encode(withWebServer)
         val decoded = PidMarkerJson.decode(text)
         assertEquals(withWebServer, decoded)
         assertTrue(text.contains("\"intellijWebServer\""), "intellijWebServer field missing: $text")
-        assertTrue(text.contains("\"token\": \"token\""), "token missing")
+        assertTrue(text.contains("\"x-ijt\": \"token\""), "x-ijt header missing")
     }
 
     @Test
-    fun `decode tolerates absent intellij server fields (defaults to null)`() {
-        val text = PidMarkerJson.encode(sample.copy(intellijWebServer = null, intellijMcpServer = null))
+    fun `decode roundtrips when intellij sub-objects are absent (null)`() {
+        val text = PidMarkerJson.encode(samplePidMarker())
         val decoded = PidMarkerJson.decode(text)
-        assertEquals(null, decoded.intellijWebServer)
-        assertEquals(null, decoded.intellijMcpServer)
-    }
-
-    @Test
-    fun `decode of legacy marker without port + token falls back to defaults`() {
-        val legacy = """
-            {
-              "schema": 1,
-              "pid": 12345,
-              "mcpUrl": "http://localhost:64531/mcp",
-              "ide": {"name":"IntelliJ IDEA","version":"x","build":"y"},
-              "plugin": {"id":"x","name":"y","version":"z"},
-              "createdAt": "2026-05-10T12:34:56Z"
-            }
-        """.trimIndent()
-        val decoded = PidMarkerJson.decode(legacy)
-        assertEquals(0, decoded.port)
-        assertEquals("", decoded.token)
-        assertEquals(12345L, decoded.pid)
+        assertNull(decoded.intellijWebServer)
+        assertNull(decoded.intellijMcpServer)
     }
 
     @Test
@@ -103,10 +78,16 @@ class PidMarkerTest {
             {
               "schema": 7,
               "pid": 12345,
-              "mcpUrl": "http://localhost:64531/mcp",
+              "mcpSteroidServer": {
+                "mcpUrl": "http://localhost:64531/mcp",
+                "port": 64531,
+                "headers": {"Authorization": "Bearer t"}
+              },
               "ide": {"name":"IntelliJ IDEA","version":"2025.3.3","build":"IU-253.1.1"},
               "plugin": {"id":"x","name":"y","version":"z"},
               "createdAt": "2026-05-10T12:34:56Z",
+              "intellijWebServer": null,
+              "intellijMcpServer": null,
               "futureField": {"nested": [1,2,3]},
               "anotherFuture": "ignored"
             }
@@ -121,18 +102,33 @@ class PidMarkerTest {
         val badJson = """
             {
               "pid": 12345,
-              "mcpUrl": "http://localhost:64531/mcp"
+              "mcpSteroidServer": {"mcpUrl":"http://localhost:64531/mcp"}
             }
         """.trimIndent()
         assertThrows(Exception::class.java) { PidMarkerJson.decode(badJson) }
     }
 
     @Test
-    fun `file name parsing accepts new and legacy layouts`() {
+    fun `file name parsing accepts the canonical pid layout`() {
         assertEquals("12345.mcp-steroid", PidMarker.markerFileNameFor(12345))
         assertEquals(12345L, PidMarker.pidFromFileName("12345.mcp-steroid"))
-        assertEquals(12345L, PidMarker.pidFromFileName(".12345.mcp-steroid"))
-        assertEquals(null, PidMarker.pidFromFileName(".mcp-steroid"))
-        assertEquals(null, PidMarker.pidFromFileName(".12345.mcp-steroid.json"))
+        assertNull(PidMarker.pidFromFileName(".12345.mcp-steroid"))
+        assertNull(PidMarker.pidFromFileName(".mcp-steroid"))
+        assertNull(PidMarker.pidFromFileName("12345.mcp-steroid.json"))
     }
+
+    private fun samplePidMarker(): PidMarker = PidMarker(
+        schema = PidMarker.SCHEMA_VERSION,
+        pid = 12345,
+        mcpSteroidServer = McpSteroidServerInfo(
+            mcpUrl = "http://localhost:64531/mcp",
+            port = 64531,
+            headers = mapOf("Authorization" to "Bearer deadbeefcafebabe"),
+        ),
+        ide = IdeInfo(name = "IntelliJ IDEA", version = "2025.3.3", build = "IU-253.1.1"),
+        plugin = PluginInfo(id = "com.jonnyzzz.mcpSteroid", name = "MCP Steroid", version = "1.0.0"),
+        createdAt = "2026-05-10T12:34:56Z",
+        intellijWebServer = null,
+        intellijMcpServer = null,
+    )
 }

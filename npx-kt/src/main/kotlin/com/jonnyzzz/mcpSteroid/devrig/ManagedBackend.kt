@@ -417,7 +417,7 @@ class BackendManager(
             workDir = bundleDir,
             stdoutLog = managedLog.toFile(),
             stderrLog = managedLog.toFile(),
-            environment = mapOf(PidMarker.MCP_STEROID_HOME_ENV to homePaths.home.toString()),
+            environment = emptyMap(),
         )
 
         Files.createDirectories(pidFile.parent)
@@ -538,10 +538,8 @@ class BackendManager(
     }
 
     private fun markerPathsForPid(pid: Long): List<Path> = listOf(
-        homePaths.markersDir.resolve(PidMarker.markerFileNameFor(pid)),
-        PidMarker.markerDirectory(ideUserHome, env = emptyMap()).resolve(PidMarker.markerFileNameFor(pid)),
-        ideUserHome.resolve(".$pid.mcp-steroid"),
-    ).distinct()
+        PidMarker.markerDirectory(ideUserHome).resolve(PidMarker.markerFileNameFor(pid)),
+    )
 
     fun list(): List<ManagedBackendInfo> {
         if (!Files.isDirectory(homePaths.backendsDir)) return emptyList()

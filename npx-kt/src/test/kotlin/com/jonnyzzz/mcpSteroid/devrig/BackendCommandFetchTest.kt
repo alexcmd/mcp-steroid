@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
@@ -124,15 +125,20 @@ class BackendCommandFetchTest {
     private fun ide(token: String = "deadbeef", overrideUrl: String? = null): DiscoveredIde {
         val mcpUrl = overrideUrl ?: "http://127.0.0.1:$port/mcp"
         val marker = PidMarker(
+            schema = PidMarker.SCHEMA_VERSION,
             pid = 1234L,
-            mcpUrl = mcpUrl,
-            port = port,
-            token = token,
+            mcpSteroidServer = McpSteroidServerInfo(
+                mcpUrl = mcpUrl,
+                port = port,
+                headers = mapOf("Authorization" to "Bearer $token"),
+            ),
             ide = IdeInfo("FakeIDE", "x", "y"),
             plugin = PluginInfo("x", "y", "z"),
             createdAt = "1970-01-01T00:00:00Z",
+            intellijWebServer = null,
+            intellijMcpServer = null,
         )
-        return DiscoveredIde(pid = 1234L, mcpUrl = mcpUrl, markerPath = "/tmp/.1234.mcp-steroid", marker = marker)
+        return DiscoveredIde(pid = 1234L, mcpUrl = mcpUrl, markerPath = "/tmp/1234.mcp-steroid", marker = marker)
     }
 
     // ----------------------- single-IDE happy path -------------------------

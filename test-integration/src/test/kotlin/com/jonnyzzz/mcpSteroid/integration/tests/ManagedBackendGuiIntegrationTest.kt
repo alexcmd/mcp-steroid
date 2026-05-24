@@ -140,14 +140,12 @@ class ManagedBackendGuiIntegrationTest {
             timeoutSeconds = 180,
             script = """
                 set -euo pipefail
-                marker="/tmp/mcp-home/markers/$pid.mcp-steroid"
-                legacy="/home/agent/.$pid.mcp-steroid"
+                marker="/home/agent/.mcp-steroid/markers/$pid.mcp-steroid"
                 deadline=${'$'}((SECONDS + 180))
                 found=0
                 while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
-                  if [ -f "${'$'}marker" ] && jq -e --argjson pid "$pid" '.pid == ${'$'}pid and (.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "${'$'}marker" >/dev/null; then
+                  if [ -f "${'$'}marker" ] && jq -e --argjson pid "$pid" '.pid == ${'$'}pid and (.mcpSteroidServer.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "${'$'}marker" >/dev/null; then
                     cat "${'$'}marker"
-                    test ! -e "${'$'}legacy"
                     found=1
                     break
                   fi
@@ -157,8 +155,7 @@ class ManagedBackendGuiIntegrationTest {
                   :
                 else
                 echo "MCP Steroid marker did not appear at ${'$'}marker" >&2
-                find /tmp/mcp-home/markers -maxdepth 1 -name '*.mcp-steroid' -print -exec cat {} \; >&2 || true
-                find /home/agent -maxdepth 1 -name '.*.mcp-steroid' -print -exec cat {} \; >&2 || true
+                find /home/agent/.mcp-steroid/markers -maxdepth 1 -name '*.mcp-steroid' -print -exec cat {} \; >&2 || true
                 exit 1
                 fi
             """.trimIndent(),

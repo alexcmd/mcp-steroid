@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
@@ -41,15 +42,20 @@ class BackendCommandRenderTest {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
         val marker = PidMarker(
+            schema = PidMarker.SCHEMA_VERSION,
             pid = pid,
-            mcpUrl = mcpUrl,
-            port = 65000,
-            token = "",
+            mcpSteroidServer = McpSteroidServerInfo(
+                mcpUrl = mcpUrl,
+                port = 65000,
+                headers = emptyMap(),
+            ),
             ide = ideInfo,
             plugin = pluginInfo,
             createdAt = "1970-01-01T00:00:00Z",
+            intellijWebServer = null,
+            intellijMcpServer = null,
         )
-        return DiscoveredIde(pid = pid, mcpUrl = mcpUrl, markerPath = "/tmp/.$pid.mcp-steroid", marker = marker)
+        return DiscoveredIde(pid = pid, mcpUrl = mcpUrl, markerPath = "/tmp/$pid.mcp-steroid", marker = marker)
     }
 
     private fun portIde(

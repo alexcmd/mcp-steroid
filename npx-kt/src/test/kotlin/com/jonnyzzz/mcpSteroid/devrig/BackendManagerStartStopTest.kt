@@ -1,9 +1,10 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
+import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
-import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import kotlinx.coroutines.delay
@@ -38,7 +39,8 @@ class BackendManagerStartStopTest {
         assertTrue(started.pid > 0)
         assertEquals("${started.pid}\n", Files.readString(homePaths.pidFile("idea-community-2025.3.3")))
         assertTrue(ProcessHandle.of(started.pid).orElseThrow().isAlive)
-        val marker = homePaths.markersDir.resolve(PidMarker.markerFileNameFor(started.pid))
+        val marker = PidMarker.markerDirectory(tempDir.resolve("user-home"))
+            .resolve(PidMarker.markerFileNameFor(started.pid))
         Files.createDirectories(marker.parent)
         Files.writeString(marker, "marker")
 
@@ -120,18 +122,26 @@ class BackendManagerStartStopTest {
         val process = startUnrelatedSleeper()
         val userHome = tempDir.resolve("user-home")
         try {
+            val markersDir = PidMarker.markerDirectory(userHome)
             Files.createDirectories(homePaths.stateDir)
-            Files.createDirectories(homePaths.markersDir)
+            Files.createDirectories(markersDir)
             Files.writeString(homePaths.pidFile("idea-community-2025.3.3"), "${process.pid()}\n")
             Files.writeString(
-                homePaths.markersDir.resolve(PidMarker.markerFileNameFor(process.pid())),
+                markersDir.resolve(PidMarker.markerFileNameFor(process.pid())),
                 PidMarkerJson.encode(
                     PidMarker(
+                        schema = PidMarker.SCHEMA_VERSION,
                         pid = process.pid(),
-                        mcpUrl = "http://localhost:63342/mcp",
+                        mcpSteroidServer = McpSteroidServerInfo(
+                            mcpUrl = "http://localhost:63342/mcp",
+                            port = 63342,
+                            headers = emptyMap(),
+                        ),
                         ide = IdeInfo(name = "IntelliJ IDEA Community", version = "2025.3.3", build = "IC-253.1"),
                         plugin = PluginInfo(id = "com.jonnyzzz.mcpSteroid", name = "MCP Steroid", version = "1.0.0"),
                         createdAt = "2026-05-14T21:00:00Z",
+                        intellijWebServer = null,
+                        intellijMcpServer = null,
                     ),
                 ),
             )

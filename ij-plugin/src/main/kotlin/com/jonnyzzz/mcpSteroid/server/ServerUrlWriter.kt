@@ -10,6 +10,7 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.util.Urls
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.IntelliJWebServerInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
@@ -46,23 +47,19 @@ class ServerUrlWriter : Disposable {
      * @param serverUrl The MCP server URL.
      */
     fun writeServerUrlToUserHome(serverUrl: String) {
-        writeServerUrlToUserHome(serverUrl, env = System.getenv())
-    }
-
-    internal fun writeServerUrlToUserHome(
-        serverUrl: String,
-        env: Map<String, String>,
-    ) {
         val userHome = Path.of(System.getProperty("user.home"))
         val pid = ProcessHandle.current().pid()
-        val markerDir = PidMarker.markerDirectory(userHome, env)
+        val markerDir = PidMarker.markerDirectory(userHome)
         val file = markerDir.resolve(PidMarker.markerFileNameFor(pid))
 
         val marker = PidMarker(
+            schema = PidMarker.SCHEMA_VERSION,
             pid = pid,
-            mcpUrl = serverUrl,
-            port = SteroidsMcpServer.getInstance().port,
-            token = NpxBridgeService.getInstance().token,
+            mcpSteroidServer = McpSteroidServerInfo(
+                mcpUrl = serverUrl,
+                port = SteroidsMcpServer.getInstance().port,
+                headers = bearerHeaders(NpxBridgeService.getInstance().token),
+            ),
             ide = IdeInfo.ofApplication(),
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
@@ -74,7 +71,7 @@ class ServerUrlWriter : Disposable {
 
         try {
             Files.createDirectories(markerDir)
-            cleanupStaleMarkerFiles(userHome, markerDir, pid)
+            cleanupStaleMarkers(markerDir)
             Files.writeString(file, content)
             markerFile = file
             log.info("MCP Steroid marker file created: $file")
@@ -99,9 +96,7 @@ class ServerUrlWriter : Disposable {
             } else {
                 rawManager.waitForStart()
             }
-            if (manager.serverDisposable == null) {
-                return IntelliJWebServerInfo(enabled = false)
-            }
+            if (manager.serverDisposable == null) return null
 
             val host = "127.0.0.1"
             val authority = "$host:${manager.port}"
@@ -116,7 +111,7 @@ class ServerUrlWriter : Disposable {
                 port = manager.port,
                 baseUrl = baseUrl,
                 aboutUrl = authorizedAboutUrl.toExternalForm(),
-                token = token.orEmpty(),
+                headers = ijtHeaders(token.orEmpty()),
             )
         } catch (e: Exception) {
             log.warn("Failed to query IntelliJ's built-in web server", e)
@@ -137,22 +132,8 @@ class ServerUrlWriter : Disposable {
             .firstOrNull()
     }
 
-    /**
-     * Remove marker files left behind by IDE processes that no longer exist.
-     * Current markers are scanned in [markerDir]. Legacy home-root markers are
-     * also removed when they belong to this IDE pid or to a dead process, so a
-     * new-plugin startup cleans the noisy `~/.<pid>.mcp-steroid` layout.
-     */
-    private fun cleanupStaleMarkerFiles(
-        userHome: Path,
-        markerDir: Path,
-        currentPid: Long,
-    ) {
-        cleanupMarkerDirectory(markerDir)
-        cleanupLegacyMarkerFiles(userHome, currentPid)
-    }
-
-    private fun cleanupMarkerDirectory(markerDir: Path) {
+    /** Remove marker files left behind by IDE processes that no longer exist. */
+    private fun cleanupStaleMarkers(markerDir: Path) {
         if (!Files.isDirectory(markerDir)) return
         try {
             Files.list(markerDir).use { stream ->
@@ -173,36 +154,15 @@ class ServerUrlWriter : Disposable {
         }
     }
 
-    private fun cleanupLegacyMarkerFiles(
-        userHome: Path,
-        currentPid: Long,
-    ) {
-        try {
-            Files.list(userHome).use { stream ->
-                stream.filter { file ->
-                    val fileName = file.fileName.toString()
-                    val pid = PidMarker.pidFromFileName(fileName)
-                    fileName.startsWith(".") &&
-                        pid != null &&
-                        Files.isRegularFile(file) &&
-                        (pid == currentPid || !ProcessHandle.of(pid).isPresent)
-                }.forEach { staleFile ->
-                    try {
-                        Files.deleteIfExists(staleFile)
-                        log.info("Removed legacy MCP marker file: $staleFile")
-                    } catch (e: Exception) {
-                        log.warn("Failed to delete legacy MCP marker file: $staleFile", e)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            log.warn("Failed to cleanup legacy marker files in $userHome", e)
-        }
-    }
-
     override fun dispose() = Unit
 
     companion object {
         fun getInstance(): ServerUrlWriter = service()
     }
 }
+
+private fun bearerHeaders(token: String): Map<String, String> =
+    mapOf("Authorization" to "Bearer $token")
+
+private fun ijtHeaders(token: String): Map<String, String> =
+    mapOf("x-ijt" to token)

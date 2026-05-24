@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig.cli
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
@@ -73,9 +74,10 @@ class CliMcpStdioFakeIdeIntegrationTest {
     fun setUp(@TempDir tempDir: Path) {
         port = freePort()
         val devrigHome = Files.createDirectories(tempDir.resolve("devrig-home"))
+        val fakeUserHome = Files.createDirectories(tempDir.resolve("user-home"))
         projectHome = Files.createDirectories(tempDir.resolve("sample-project"))
         startFakeIdeBridge(projectHome)
-        writeMarker(devrigHome)
+        writeMarker(fakeUserHome)
 
         val launcherPath = System.getProperty("devrig.launcher")
             ?: error("System property 'devrig.launcher' is not set. Run via `./gradlew :npx-kt:integrationTest`.")
@@ -84,7 +86,13 @@ class CliMcpStdioFakeIdeIntegrationTest {
         process = startStdioMcpProcess(
             launcher = launcher,
             lifetime = lifetime,
-            environment = mapOf(DEVRIG_HOME_ENV to devrigHome.toString()),
+            // HOME redirects the subprocess JVM's user.home so the universal
+            // marker location ~/.mcp-steroid/markers points at a temp dir
+            // instead of polluting the developer's real home.
+            environment = mapOf(
+                DEVRIG_HOME_ENV to devrigHome.toString(),
+                "HOME" to fakeUserHome.toString(),
+            ),
         )
     }
 
@@ -265,16 +273,21 @@ class CliMcpStdioFakeIdeIntegrationTest {
             projects = listOf(ProjectInfo("sample", projectHome.toString())),
         )
 
-    private fun writeMarker(devrigHome: Path) {
-        val markersDir = Files.createDirectories(devrigHome.resolve("markers"))
+    private fun writeMarker(userHome: Path) {
+        val markersDir = Files.createDirectories(PidMarker.markerDirectory(userHome))
         val marker = PidMarker(
+            schema = PidMarker.SCHEMA_VERSION,
             pid = pid,
-            mcpUrl = "http://127.0.0.1:$port/mcp",
-            port = port,
-            token = "fake-token",
+            mcpSteroidServer = McpSteroidServerInfo(
+                mcpUrl = "http://127.0.0.1:$port/mcp",
+                port = port,
+                headers = mapOf("Authorization" to "Bearer fake-token"),
+            ),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
             plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
             createdAt = Instant.now().toString(),
+            intellijWebServer = null,
+            intellijMcpServer = null,
         )
         Files.writeString(markersDir.resolve(PidMarker.markerFileNameFor(pid)), PidMarkerJson.encode(marker))
     }

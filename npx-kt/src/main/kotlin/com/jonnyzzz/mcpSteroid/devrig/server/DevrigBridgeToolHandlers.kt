@@ -59,8 +59,8 @@ class DevrigListWindowsToolHandler(
                 val bridgeBaseUrl = DevrigProjectRoutingService.bridgeBaseUrl(state.ide.mcpUrl)
                 val response = services.commandHttpClient.get("$bridgeBaseUrl/npx/v1/windows") {
                     headers {
-                        if (state.ide.marker.token.isNotEmpty()) {
-                            append(HttpHeaders.Authorization, "Bearer ${state.ide.marker.token}")
+                        for ((name, value) in state.ide.marker.mcpSteroidServer.headers) {
+                            append(name, value)
                         }
                     }
                 }
@@ -231,7 +231,7 @@ class DevrigOpenProjectToolHandler(
         val route = ProjectRoute(
             idePid = ide.pid,
             bridgeBaseUrl = DevrigProjectRoutingService.bridgeBaseUrl(ide.mcpUrl),
-            token = ide.marker.token,
+            headers = ide.marker.mcpSteroidServer.headers,
             originalProjectName = "",
             exposedProjectName = "",
             projectPath = "",
@@ -271,8 +271,8 @@ class DevrigToolBridgeClient(
         httpClient.preparePost(url) {
             headers {
                 append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                if (route.token.isNotEmpty()) {
-                    append(HttpHeaders.Authorization, "Bearer ${route.token}")
+                for ((name, value) in route.headers) {
+                    append(name, value)
                 }
             }
             setBody(requestBody)
