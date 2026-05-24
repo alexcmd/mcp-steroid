@@ -342,13 +342,14 @@ val generateVersionJson by tasks.registering {
     inputs.file(jdkManifestFile).withPropertyName("jdkManifest")
     inputs.file(ijPluginZipFile).withPropertyName("ijPluginZip")
     inputs.file(tasks.distZip.flatMap { it.archiveFile }).withPropertyName("distZip")
-    inputs.property("projectVersion", project.version.toString())
+    val projectVersion = project.provider { project.version.toString() }
+    inputs.property("projectVersion", projectVersion)
     val outputFile = layout.buildDirectory.file("version.json")
     outputs.file(outputFile)
 
     doLast {
         val jdkEntries = parseJdkManifest(jdkManifestFile.get().readText())
-        val baseUrl = "https://github.com/jonnyzzz/mcp-steroid/releases/download/v${project.version}"
+        val baseUrl = "https://github.com/jonnyzzz/mcp-steroid/releases/download/v${projectVersion.get()}"
 
         val distZip = tasks.distZip.get().archiveFile.get().asFile
         val pluginZip = ijPluginZipFile.get()
