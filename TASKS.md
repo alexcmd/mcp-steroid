@@ -2447,17 +2447,69 @@ Working order:
 2. B (4 issues, atomic commits)
 3. Stop and report; do NOT start bundle C yet
 
-# Gradle-script "Nothing here" popup (2026-05-19)
+# Gradle-script "Nothing here" popup (2026-05-19 → 2026-05-22 resolved)
 
 User-reported repro: triggering Debug on a Gradle script in
 `~/Work/mcp-steroid` opens an IntelliJ popup that just says "Nothing here".
 
-- [ ] Reproduce locally via MCP Steroid on the user's open `mcp-steroid`
-  project
-- [ ] Identify which IntelliJ action raised the popup and what
-  precondition failed (likely an `ActionPlaces.POPUP`-style `update()` that
-  returns no targets — same family as the test-debug "caret on `fun`
-  keyword" pitfall in memory)
-- [ ] Update the relevant `prompts/` recipe(s) to steer agents away from
-  the failure mode (either correct invocation, or a hard "don't debug
-  Gradle scripts this way — use $X instead")
+- [x] Reproduce + locate the source of the popup text.
+- [x] Identify the failure path.
+- [x] Update prompts to steer agents away.
+
+## Root cause
+
+`"Nothing here"` is `CommonBundle.empty.menu.filler`, exposed in IntelliJ
+source as `com.intellij.openapi.actionSystem.impl.Utils.EMPTY_MENU_FILLER`.
+It is the placeholder item that platform popup/menu rendering inserts
+when an `ActionGroup`'s post-`update()` expansion yields zero visible
+items (`Utils.kt:677` and `ActionStepBuilder.buildGroup`).
+
+The specific Gradle-script mismatch:
+
+- **Gutter mark**: `KotlinGradleTaskRunLineMarkerProvider` paints a Run
+  icon purely from PSI patterns — `isRunTaskInGutterCandidate` matches
+  `task("…")` (open-quote leaf inside a call argument) and
+  `val X by tasks.registering { … }` (identifier leaf of a property
+  with a delegate expression).
+- **Producer**: `KotlinGradleTaskRunConfigurationProducer.setupConfigurationFromContext`
+  returns `false` unless **both** `context.module` is non-null **and**
+  `GradleRunnerUtil.resolveProjectPath(module)` returns a path.
+- Outside a synced Gradle module (cold start before sync, file inside a
+  non-module folder, etc.) the producer returns false, every
+  `RunContextAction` in the line-marker group sets
+  `presentation.setEnabledAndVisible(false)` via
+  `BaseRunConfigurationAction.update`, the line-marker popup expands to
+  zero visible children, and the renderer falls back to
+  `EMPTY_MENU_FILLER` → user sees an empty popup labelled `"Nothing here"`.
+
+The user's reading is exact: "right-click or gutter icon click, with
+incorrect context, so the action group popup is shown with no actions
+there".
+
+## Verification on the live IDE
+
+`steroid_execute_code` against `mcp-steroid` (IntelliJ IDEA 2026.1.2)
+located four gutter offsets in `build.gradle.kts` — `buildPluginOnCI`,
+`ciBuildPluginTests`, `ciBuildPromptsTests`, `ciIntegrationTests`. At all
+four, `KotlinGradleTaskRunLineMarkerProvider` emits Run-gutter `Info`
+items. Once the Gradle project is synced,
+`ConfigurationContext.getConfigurationsFromContext` returns 1 valid
+`GradleRunConfiguration` per offset, so the popup is non-empty; in the
+unsynced / no-module variant, the size collapses to 0 and the
+placeholder takes over.
+
+## Delivered fix
+
+`prompts/src/main/prompts/test/run-test-at-caret.md` — two hunks:
+
+1. New `> **Pitfall: `.gradle.kts` files.**` blockquote next to the
+   existing "Choose run configuration" tip, naming the gutter pattern
+   and the `Utils.EMPTY_MENU_FILLER` placeholder, and routing to
+   `mcp-steroid://skill/execute-code-gradle` for the programmatic
+   `ExternalSystemUtil.runTask` recipe.
+2. New entry in `# See also` linking to the same Gradle execute-code
+   prompt.
+
+Validation: `./gradlew :prompts:generatePrompts` + `:prompts:compileKotlin`
+both green; the new tip text round-trips through the prompt-generator
+and compiles into the generated payload class.
