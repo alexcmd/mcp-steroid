@@ -3,7 +3,6 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
-import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
@@ -19,7 +18,6 @@ import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
-import com.jonnyzzz.mcpSteroid.server.ResourceRegistrar
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 
@@ -29,7 +27,7 @@ class StubMcpSteroidTools(
     private val bridge = DevrigToolBridgeClient(services.projectRouting, services.mcpHttpClient)
     private val listProjects = DevrigListProjectsToolHandler(services)
     private val listWindows = DevrigListWindowsToolHandler(services)
-    private val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
+    val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
     private val executeCode = DevrigExecuteCodeToolHandler(bridge)
     private val applyPatch = DevrigApplyPatchToolHandler(bridge)
     private val executeFeedback = DevrigExecuteFeedbackToolHandler(bridge)
@@ -53,10 +51,6 @@ class StubMcpSteroidTools(
             else -> unsupportedHandler(type)
         }
         return type.cast(handler)
-    }
-
-    override fun registerExtra(server: McpServerCore) {
-        ResourceRegistrar(deferContext = true) { promptsContext }.register(server.resourceRegistry, server.promptRegistry)
     }
 
     private fun unsupportedHandler(type: Class<*>): Nothing =

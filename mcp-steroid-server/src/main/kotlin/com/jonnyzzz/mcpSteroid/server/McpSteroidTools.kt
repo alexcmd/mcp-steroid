@@ -16,11 +16,8 @@ abstract class McpSteroidTools {
         tools.registerTool(VisionInputToolSpec { handler<VisionInputToolHandler>() })
         tools.registerTool(OpenProjectToolSpec { handler<OpenProjectToolHandler>() })
         tools.registerTool(FetchResourceToolHandler { handler<PromptsContextHandler>() })
-
-        registerExtra(server)
     }
 
-    protected open fun registerExtra(server: McpServerCore) {}
-    protected inline fun <reified T : Any> handler(): T = handler(T::class.java)
-    protected abstract fun <T> handler(type: Class<T>): T
+    inline fun <reified T : Any> handler(): T = handler(T::class.java)
+    abstract fun <T> handler(type: Class<T>): T
 }

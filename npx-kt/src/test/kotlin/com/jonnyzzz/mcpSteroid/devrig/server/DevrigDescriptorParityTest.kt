@@ -50,21 +50,27 @@ class DevrigDescriptorParityTest {
 
     private fun directIdeServer(context: PromptsContext): McpServerCore =
         newServer().also { server ->
-            DirectDescriptorTools(context).registerAll(server)
+            val tools = DirectDescriptorTools(context)
+            tools.registerAll(server)
+            ResourceRegistrar { tools.promptsContextHandler }
+                .register(server.resourceRegistry, server.promptRegistry)
         }
 
     private fun devrigServer(tempDir: Path): McpServerCore {
         val lifetime = CloseableStackHost()
         return try {
             newServer().also { server ->
-                StubMcpSteroidTools(
+                val tools = StubMcpSteroidTools(
                     DevrigServices(
                         lifetime = lifetime,
                         homePaths = HomePaths(tempDir.resolve("devrig-home")).also { it.mkdirsAll() },
                         mcpStdin = ByteArrayInputStream(ByteArray(0)),
                         mcpStdout = PrintStream(ByteArrayOutputStream(), true, Charsets.UTF_8),
                     )
-                ).registerAll(server)
+                )
+                tools.registerAll(server)
+                ResourceRegistrar(deferContext = true) { tools.promptsContext }
+                    .register(server.resourceRegistry, server.promptRegistry)
             }
         } finally {
             lifetime.closeAllStacks()
@@ -96,7 +102,7 @@ class DevrigDescriptorParityTest {
     private class DirectDescriptorTools(
         private val context: PromptsContext,
     ) : McpSteroidTools() {
-        private val promptsContextHandler = object : PromptsContextHandler {
+        val promptsContextHandler = object : PromptsContextHandler {
             override fun buildPromptsContext(projectName: String?): PromptsContext = context
         }
 
@@ -105,10 +111,6 @@ class DevrigDescriptorParityTest {
                 return type.cast(promptsContextHandler)
             }
             error("handler ${type.name} must not be resolved while listing descriptors")
-        }
-
-        override fun registerExtra(server: McpServerCore) {
-            ResourceRegistrar { promptsContextHandler }.register(server.resourceRegistry, server.promptRegistry)
         }
     }
 }
