@@ -199,6 +199,10 @@ fun ToolCallResult.Companion.successTextResult(message: String) = ToolCallResult
     isError = false
 )
 
+class ToolCallErrorException(override val message: String) : RuntimeException(message) {
+    val toolCallResult: ToolCallResult get() = ToolCallResult.errorResult(message)
+}
+
 // ==================== Content Types ====================
 
 @Serializable
