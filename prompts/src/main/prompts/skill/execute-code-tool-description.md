@@ -16,7 +16,7 @@ applyPatch {
 }
 ```
 
-Pre-flight validates every `old_string` is present exactly once before any edit lands; all hunks land as a single undoable IDE command; PSI is committed in-place; the surrounding `McpEditingGuard` schedules a VFS refresh AFTER the script returns. Native `Edit` chains bypass the VFS, leave PSI stale, and cost one tool call per site. See `mcp-steroid://ide/apply-patch` for the full recipe.
+Pre-flight validates every `old_string` is present exactly once before any edit lands; all hunks land as a single undoable IDE command; PSI is committed in-place; the editing guard inlined into `steroid_execute_code` schedules a VFS refresh AFTER the script returns. Native `Edit` chains bypass the VFS, leave PSI stale, and cost one tool call per site. See `mcp-steroid://ide/apply-patch` for the full recipe.
 
 Keep `old_string` to the shortest unique signature (30–60 chars usually — no need for the full 300-char safety block).
 

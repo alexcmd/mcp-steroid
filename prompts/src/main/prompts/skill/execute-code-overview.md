@@ -59,7 +59,7 @@ single `steroid_execute_code` call that uses the script-context `applyPatch { hu
 DSL — not a chain of native `Edit` calls.
 
 The DSL validates all hunks before writing, applies them as one undoable IDE command, commits PSI in
-place, and the surrounding `McpEditingGuard` refreshes VFS after the script returns. Read
+place, and the editing guard inlined into `steroid_execute_code` refreshes VFS after the script returns. Read
 `mcp-steroid://ide/apply-patch` for the full recipe.
 
 ---
