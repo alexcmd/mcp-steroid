@@ -207,7 +207,7 @@ the inspection loop unchanged.
 - **Same logical cluster surfaces multiple times.** A 2-fragment cluster is reported twice — fragment A as `main` + B as duplicate, then B as `main` + A as duplicate. An N-fragment cluster appears N times, once per fragment-as-`main`. The recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly 2× too large.
 - `maxClustersToReport` caps **unique** clusters (post-dedup) — the `seenKeys` guard ensures the loop's break runs against deduped count, not raw descriptor count.
 - `DuplicateProblemDescriptor.getTextClone()` returns a `TextClone(main: TextFragment, duplicates: List<TextFragment>)`. `TextFragment` exposes `file: VirtualFile`, `range: TextRange`, and `lines: IntRange` — everything you need to render `path:startLine-endLine` and pull the snippet text from the document.
-- Indexing must be ready. The script's bootstrap calls `waitForSmartMode()` automatically; if you trigger any reindexing in the same call, await `Observation.awaitConfiguration(project)` before the inspection runs.
+- Indexing must be ready. The script's bootstrap calls `waitForSmartMode()` automatically; if you trigger any reindexing in the same call, await `com.intellij.platform.ide.observation.Observation.awaitConfiguration(project)` before the inspection runs. (`Observation` is in `com.intellij.platform.ide.observation` — fully qualify it; the unqualified name does not resolve.)
 - **Runtime scales with project size.** A small fixture finishes in 2-5 s; a 500-file project takes 30-60 s; multi-thousand-file monorepos can take 2-5 minutes (the `HashFragmentIndex` query inside `checkFile` is project-wide). For large projects bump `steroid_execute_code` `timeout` (default 600 s, registry-configurable via `mcp.steroid.execution.timeout`) and narrow `pathFilter` to a target subtree.
 
 # Language coverage (Java, Kotlin, Python, ...)
@@ -225,6 +225,81 @@ The same `DuplicatedCode` inspection works across every language that registers 
 | Ruby     | `intellij.ruby.duplicatesDetection`     | RubyMine |
 
 If `DuplicateScopeExtension.findDuplicateScope(fileType)` returns `null` for the file's language, `checkFile` returns no problems — the file is silently skipped. No language-specific code change to the script above is required; just adjust `targetExtensions` to whatever the project uses.
+
+# When the inspection returns zero clusters
+
+If `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the recipe ran but the inspection emitted no `DuplicateProblemDescriptor`s. The most common root cause is an empty `HashFragmentIndex` — the per-file `checkFile` query returns no clones because no clones have been indexed yet. Add this diagnostic block IN THE SAME `steroid_execute_code` call, BEFORE the inspection loop:
+
+```kotlin[IU]
+// Sanity-check the index BEFORE running the inspection. An empty key set
+// means the HashFragmentIndex hasn't been populated for this project; the
+// inspection will silently emit zero clusters.
+import com.intellij.util.indexing.FileBasedIndex
+import com.jetbrains.clones.index.indexEntries.HashFragmentIndex // package may vary; resolve via your IDE if needed
+
+val keys = smartReadAction(project) {
+    FileBasedIndex.getInstance().getAllKeys(HashFragmentIndex.NAME, project).size
+}
+println("HashFragmentIndex keys: $keys (0 → index empty, expect zero clusters; ≥ 1 → inspection should find existing clones)")
+```
+
+If `keys == 0`, the typed inspection path will not surface anything. Fall back to the PSI-based body comparison below (it doesn't depend on the index).
+
+# Fallback: PSI-based body comparison (no index needed)
+
+When the bundled `DuplicatedCode` inspection returns zero (empty index, Community edition, headless environment without the duplicates-detector module) and you still need an answer, collect named functions/methods via PSI, normalize the bodies (strip whitespace + line endings), and group identical bodies. Covers intra-file clones (two methods in one class with the same body) AND cross-file clones; no inspection state required.
+
+```kotlin[IU]
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.util.PsiTreeUtil
+
+data class CloneRange(val path: String, val startLine: Int, val endLine: Int, val name: String)
+
+val targetExtensions = listOf("java", "kt")
+val pathFilter: (String) -> Boolean = { "/build/" !in it && "/.gradle/" !in it }
+val scope = GlobalSearchScope.projectScope(project)
+
+// Resolve PSI body-bearing classes by reflection-free FQN. We use
+// PsiNamedElement so this recipe covers both KtNamedFunction and PsiMethod
+// without importing language-specific modules.
+val clones = smartReadAction(project) {
+    val files = targetExtensions.flatMap { ext ->
+        FilenameIndex.getAllFilesByExt(project, ext, scope)
+    }.filter { pathFilter(it.path) }
+
+    val byBody = mutableMapOf<String, MutableList<CloneRange>>()
+    for (vf in files) {
+        val psi = PsiManager.getInstance(project).findFile(vf) ?: continue
+        val candidates = PsiTreeUtil.collectElementsOfType(psi, PsiNamedElement::class.java)
+        for (el in candidates) {
+            val text = (el as PsiElement).text
+            // Skip declarations without bodies and trivial one-liners.
+            if (text.length < 60 || !text.contains("{")) continue
+            val normalized = text.replace(Regex("\\s+"), " ").trim()
+            val doc = psi.viewProvider.document ?: continue
+            val startLine = doc.getLineNumber(el.textRange.startOffset) + 1
+            val endLine = doc.getLineNumber(el.textRange.endOffset) + 1
+            byBody.getOrPut(normalized) { mutableListOf() }
+                .add(CloneRange(vf.path, startLine, endLine, el.name ?: "<anon>"))
+        }
+    }
+    byBody.values.filter { it.size >= 2 }
+}
+
+println("CLUSTERS_FOUND: ${clones.size} (PSI body-comparison fallback)")
+clones.take(20).forEachIndexed { i, cluster ->
+    println("Cluster ${i + 1} (${cluster.size} fragments):")
+    cluster.forEach { println("  ${it.path}:${it.startLine}-${it.endLine}  ${it.name}") }
+}
+```
+
+The fallback finds named declarations (functions/methods) with byte-identical post-normalization bodies. It misses anonymous duplicates and intra-method extract candidates, but covers the dominant case the inspection would have flagged.
 
 # When the direct import does not compile
 
