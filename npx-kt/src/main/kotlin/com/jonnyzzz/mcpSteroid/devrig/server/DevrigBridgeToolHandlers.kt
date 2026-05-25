@@ -8,8 +8,6 @@ import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryParams
 import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryToolHandler
-import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
-import com.jonnyzzz.mcpSteroid.server.ApplyPatchToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
@@ -102,28 +100,6 @@ class DevrigExecuteCodeToolHandler(
             put("reason", execCodeParams.reason)
             execCodeParams.timeout?.let { put("timeout", it) }
             execCodeParams.dialogKiller?.let { put("dialog_killer", it) }
-        }
-    }
-}
-
-class DevrigApplyPatchToolHandler(
-    private val bridge: DevrigToolBridgeClient,
-) : ApplyPatchToolHandler {
-    override suspend fun applyPatch(projectName: String, applyPatchRequest: ApplyPatchRequest): ToolCallResult {
-        val route = bridge.routing.requireProject(projectName)
-        return bridge.callTool(route, "steroid_apply_patch") {
-            put("project_name", route.originalProjectName)
-            put("task_id", applyPatchRequest.taskId)
-            put("dry_run", applyPatchRequest.dryRun)
-            putJsonArray("hunks") {
-                for (hunk in applyPatchRequest.hunks) {
-                    add(buildJsonObject {
-                        put("file_path", hunk.filePath)
-                        put("old_string", hunk.oldString)
-                        put("new_string", hunk.newString)
-                    })
-                }
-            }
         }
     }
 }

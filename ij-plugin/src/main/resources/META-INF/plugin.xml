@@ -77,9 +77,6 @@
             serviceInterface="com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandlerIJ"/>
         <applicationService
-            serviceInterface="com.jonnyzzz.mcpSteroid.server.ApplyPatchToolHandler"
-            serviceImplementation="com.jonnyzzz.mcpSteroid.server.ApplyPatchToolHandlerIJ"/>
-        <applicationService
             serviceInterface="com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandlerIJ"/>
         <applicationService

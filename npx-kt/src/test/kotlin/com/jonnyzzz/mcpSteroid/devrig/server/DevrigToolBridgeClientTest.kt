@@ -12,8 +12,6 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryParams
-import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
-import com.jonnyzzz.mcpSteroid.server.ApplyPatchRequest
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
@@ -163,51 +161,6 @@ class DevrigToolBridgeClientTest {
             "original-project",
             json["arguments"]?.jsonObject?.get("project_name")?.jsonPrimitive?.content,
         )
-    }
-
-    @Test
-    fun `apply patch bridge handler forwards required task id`(
-        @TempDir tempDir: Path,
-    ) = runBlocking {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val routing = routingService(
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectHome),
-                status = IdeMonitorStatus.CONNECTED,
-                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
-            )
-        )
-        val route = routing.routes().values.single()
-        val handler = DevrigApplyPatchToolHandler(DevrigToolBridgeClient(routing, httpClient))
-        val filePath = projectHome.resolve("A.kt").toString()
-
-        val result = handler.applyPatch(
-            projectName = route.exposedProjectName,
-            applyPatchRequest = ApplyPatchRequest(
-                taskId = "patch-task",
-                dryRun = true,
-                hunks = listOf(
-                    ApplyPatchHunk(
-                        filePath = filePath,
-                        oldString = "old",
-                        newString = "new",
-                    )
-                ),
-            ),
-        )
-
-        assertEquals(false, result.isError)
-        assertEquals("Bearer secret-token", receivedAuth)
-        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
-        assertEquals("steroid_apply_patch", json["name"]?.jsonPrimitive?.content)
-        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
-        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
-        assertEquals("patch-task", arguments["task_id"]?.jsonPrimitive?.content)
-        assertEquals("true", arguments["dry_run"]?.jsonPrimitive?.content)
-        val hunk = arguments["hunks"]?.jsonArray?.single()?.jsonObject ?: error("missing hunk: $json")
-        assertEquals(filePath, hunk["file_path"]?.jsonPrimitive?.content)
-        assertEquals("old", hunk["old_string"]?.jsonPrimitive?.content)
-        assertEquals("new", hunk["new_string"]?.jsonPrimitive?.content)
     }
 
     @Test

@@ -14,10 +14,16 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
-import com.jonnyzzz.mcpSteroid.server.ApplyPatchHunk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+
+/**
+ * Single literal-text edit applied by [executeApplyPatch] / the
+ * `applyPatch { hunk(...) }` DSL on [McpScriptContext].
+ */
+@Serializable
+data class ApplyPatchHunk(val filePath: String, val oldString: String, val newString: String)
 
 /**
  * Atomic multi-site literal-text patch for MCP Steroid agents.
