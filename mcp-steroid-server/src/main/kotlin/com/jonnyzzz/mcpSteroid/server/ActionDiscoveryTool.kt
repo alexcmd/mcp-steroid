@@ -1,25 +1,22 @@
 package com.jonnyzzz.mcpSteroid.server
 
-import com.jonnyzzz.mcpSteroid.mcp.McpTool
+import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
+import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.mcp.description
+import com.jonnyzzz.mcpSteroid.mcp.get
+import com.jonnyzzz.mcpSteroid.mcp.int
+import com.jonnyzzz.mcpSteroid.mcp.param
+import com.jonnyzzz.mcpSteroid.mcp.required
+import com.jonnyzzz.mcpSteroid.mcp.string
+import com.jonnyzzz.mcpSteroid.mcp.stringArray
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 
 /**
  * Handler for the steroid_action_discovery MCP tool.
  */
-class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : McpTool {
+class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : McpToolBase() {
     override val name = "steroid_action_discovery"
 
     override val description =
@@ -28,51 +25,49 @@ class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : M
                 "Returns action IDs (pass to ActionManager.getAction(id) in exec_code), intention names, error fixes, and gutter icon actions. " +
                 "Workflow: (1) call this with file + caret offset, (2) pick action from results, (3) invoke via steroid_execute_code."
 
-    override val inputSchema = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("project_name") {
-                put("type", "string")
-                put("description", "Name of the project containing the file (from steroid_list_projects).")
-            }
-            putJsonObject("file_path") {
-                put("type", "string")
-                put("description", "Absolute path or project-relative path to the file.")
-            }
-            putJsonObject("caret_offset") {
-                put("type", "integer")
-                put("description", "Caret offset within the file (default: 0).")
-            }
-            putJsonObject("action_groups") {
-                put("type", "array")
-                putJsonObject("items") { put("type", "string") }
-                put("description", "Optional list of action group IDs to expand (default: editor popup + gutter).")
-            }
-            putJsonObject("max_actions_per_group") {
-                put("type", "integer")
-                put("description", "Limit the number of actions returned per action group (default: 200).")
-            }
-            putJsonObject("task_id") {
-                put("type", "string")
-                put("description", "Optional task ID for log grouping.")
-            }
-        }
-        putJsonArray("required") {
-            add("project_name")
-            add("file_path")
-        }
-    }
+    val projectName = InputSchemaElement.param("project_name")
+        .description("Name of the project containing the file (from steroid_list_projects).")
+        .string()
+        .required()
+        .registerToSchema()
+
+    val filePath = InputSchemaElement.param("file_path")
+        .description("Absolute path or project-relative path to the file.")
+        .string()
+        .required()
+        .registerToSchema()
+
+    val caretOffset = InputSchemaElement.param("caret_offset")
+        .description("Caret offset within the file (default: 0).")
+        .int()
+        .registerToSchema()
+
+    val actionGroups = InputSchemaElement.param("action_groups")
+        .description("Optional list of action group IDs to expand (default: editor popup + gutter).")
+        .stringArray()
+        .registerToSchema()
+
+    val maxActionsPerGroup = InputSchemaElement.param("max_actions_per_group")
+        .description("Limit the number of actions returned per action group (default: 200).")
+        .int()
+        .registerToSchema()
+
+    val taskId = InputSchemaElement.param("task_id")
+        .description("Optional task ID for log grouping.")
+        .string()
+        .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val args = context.params.arguments
-        val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
-        val filePath = args["file_path"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: file_path")
-        val caretOffset = args["caret_offset"]?.jsonPrimitive?.intOrNull ?: 0
-        val actionGroups = parseActionGroups(args["action_groups"]?.jsonArray)
-        val maxActions = args["max_actions_per_group"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 200
-        val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
+        val projectName = context[projectName]
+        val filePath = context[filePath]
+        val caretOffset = context[caretOffset] ?: 0
+        val actionGroups = context[actionGroups]
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .takeIf { context.params.arguments.containsKey("action_groups") }
+        val maxActions = context[maxActionsPerGroup]?.coerceAtLeast(0) ?: 200
+        val taskId = context[taskId]
 
         return handler().discoverActions(
             projectName,
@@ -84,16 +79,6 @@ class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : M
                 taskId = taskId
             )
         )
-    }
-
-    private fun parseActionGroups(array: JsonArray?): List<String>? {
-        array ?: return null
-        val groups = array
-            .mapNotNull { it.jsonPrimitive.contentOrNull }
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-        return groups
     }
 }
 
