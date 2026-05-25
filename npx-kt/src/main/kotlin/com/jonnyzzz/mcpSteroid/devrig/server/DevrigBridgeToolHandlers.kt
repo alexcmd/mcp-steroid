@@ -6,8 +6,6 @@ import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
-import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryParams
-import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
@@ -115,27 +113,6 @@ class DevrigExecuteFeedbackToolHandler(
             put("success_rating", params.successRating)
             params.explanation?.let { put("explanation", it) }
             params.code?.let { put("code", it) }
-        }
-    }
-}
-
-class DevrigActionDiscoveryToolHandler(
-    private val bridge: DevrigToolBridgeClient,
-) : ActionDiscoveryToolHandler {
-    override suspend fun discoverActions(
-        projectName: String,
-        actionDiscoveryParams: ActionDiscoveryParams,
-    ): ToolCallResult {
-        val route = bridge.routing.requireProject(projectName)
-        return bridge.callTool(route, "steroid_action_discovery") {
-            put("project_name", route.originalProjectName)
-            put("file_path", actionDiscoveryParams.filePath)
-            put("caret_offset", actionDiscoveryParams.caretOffset)
-            actionDiscoveryParams.actionGroups?.let { groups ->
-                put("action_groups", buildJsonArray { groups.forEach { add(it) } })
-            }
-            put("max_actions_per_group", actionDiscoveryParams.maxActions)
-            actionDiscoveryParams.taskId?.let { put("task_id", it) }
         }
     }
 }

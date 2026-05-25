@@ -10,7 +10,6 @@ abstract class McpSteroidTools {
         tools.registerTool(ListWindowsToolSpec { handler<ListWindowsToolHandler>() })
         tools.registerTool(ExecuteCodeToolSpec { handler<ExecuteCodeToolHandler>() })
         tools.registerTool(ExecuteFeedbackToolSpec { handler<ExecuteFeedbackToolHandler>() })
-        tools.registerTool(ActionDiscoveryToolSpec { handler<ActionDiscoveryToolHandler>() }) // deprecate it
         tools.registerTool(VisionScreenshotToolSpec { handler<VisionScreenshotToolHandler>() })
         tools.registerTool(VisionInputToolSpec { handler<VisionInputToolHandler>() })
         tools.registerTool(OpenProjectToolSpec { handler<OpenProjectToolHandler>() })

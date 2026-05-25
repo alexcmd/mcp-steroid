@@ -14,7 +14,6 @@ internal val EXPECTED_STEROID_TOOL_NAMES: Set<String> = setOf(
     "steroid_list_windows",
     "steroid_execute_code",
     "steroid_execute_feedback",
-    "steroid_action_discovery",
     "steroid_take_screenshot",
     "steroid_input",
     "steroid_open_project",

@@ -7,7 +7,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import com.jonnyzzz.mcpSteroid.mcp.*
-import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryResponse
 import com.jonnyzzz.mcpSteroid.server.ListProductsResponse
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
@@ -293,52 +292,6 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         assertNull("Initialize should not return error", initRpc.error)
 
         return sessionId!!
-    }
-
-    fun testActionDiscoveryToolReturnsContext(): Unit = timeoutRunBlocking(30.seconds) {
-        val server = SteroidsMcpServer.getInstance()
-        server.startServerIfNeeded()
-        val sessionId = startSession(server)
-
-        val fileText = "class ActionDiscoveryTest { void demo() { int x = 1; } }"
-        val virtualFile = myFixture.tempDirFixture.createFile("ActionDiscoveryTest.java", fileText)
-        val caretOffset = fileText.indexOf("ActionDiscoveryTest").coerceAtLeast(0)
-
-        val response = client.post(server.mcpUrl) {
-            contentType(ContentType.Application.Json)
-            accept(ContentType.Application.Json)
-            header(McpHttpTransport.SESSION_HEADER, sessionId)
-            setBody(
-                buildJsonObject {
-                    put("jsonrpc", "2.0")
-                    put("id", "action-discovery-1")
-                    put("method", "tools/call")
-                    putJsonObject("params") {
-                        put("name", "steroid_action_discovery")
-                        putJsonObject("arguments") {
-                            put("project_name", project.name)
-                            put("file_path", virtualFile.url)
-                            put("caret_offset", caretOffset)
-                            putJsonArray("action_groups") { }
-                            put("max_actions_per_group", 0)
-                        }
-                    }
-                }.toString()
-            )
-        }
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        val rpc = McpJson.decodeFromString<JsonRpcResponse>(response.bodyAsText())
-        assertNull("steroid_action_discovery should return result payload", rpc.error)
-        val toolResult = McpJson.decodeFromJsonElement<ToolCallResult>(rpc.result!!)
-        val output = toolResult.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
-        assertFalse("steroid_action_discovery should succeed, got: $output", toolResult.isError)
-
-        val payload = (toolResult.content.single() as ContentItem.Text).text
-        val discovery = McpJson.decodeFromString<ActionDiscoveryResponse>(payload)
-        assertEquals(project.name, discovery.projectName)
-        assertEquals(virtualFile.path, discovery.filePath)
-        assertTrue("Action groups should be empty when skipped", discovery.actionGroups.isEmpty())
     }
 
     /**

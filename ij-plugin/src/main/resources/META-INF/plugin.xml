@@ -80,9 +80,6 @@
             serviceInterface="com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandlerIJ"/>
         <applicationService
-            serviceInterface="com.jonnyzzz.mcpSteroid.server.ActionDiscoveryToolHandler"
-            serviceImplementation="com.jonnyzzz.mcpSteroid.server.ActionDiscoveryToolHandlerIJ"/>
-        <applicationService
             serviceInterface="com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.VisionInputToolHandlerIJ"/>
         <applicationService

@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
-import com.jonnyzzz.mcpSteroid.server.ActionDiscoveryToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
@@ -29,7 +28,6 @@ class StubMcpSteroidTools(
     val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
     private val executeCode = DevrigExecuteCodeToolHandler(bridge)
     private val executeFeedback = DevrigExecuteFeedbackToolHandler(bridge)
-    private val actionDiscovery = DevrigActionDiscoveryToolHandler(bridge)
     private val visionScreenshot = DevrigVisionScreenshotToolHandler(bridge)
     private val visionInput = DevrigVisionInputToolHandler(bridge)
     private val openProject = DevrigOpenProjectToolHandler(bridge)
@@ -41,7 +39,6 @@ class StubMcpSteroidTools(
             PromptsContextHandler::class.java -> promptsContext
             ExecuteCodeToolHandler::class.java -> executeCode
             ExecuteFeedbackToolHandler::class.java -> executeFeedback
-            ActionDiscoveryToolHandler::class.java -> actionDiscovery
             VisionScreenshotToolHandler::class.java -> visionScreenshot
             VisionInputToolHandler::class.java -> visionInput
             OpenProjectToolHandler::class.java -> openProject
