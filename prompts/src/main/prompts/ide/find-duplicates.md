@@ -8,7 +8,7 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 **Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
 
-**Recommended order.** In fresh IDE sessions, CI, or any environment where the `HashFragmentIndex` may be empty, the typed `DuplicatedCode` inspection silently returns 0 clusters. If you can't guarantee the index is populated, **start with the PSI body-comparison fallback** (under "Fallback: PSI-based body comparison (no index needed)" below) for a single-round-trip answer, then optionally cross-check with the inspection path. The recipes are independent.
+**TL;DR for agents.** **In fresh IDE sessions, CI, or test environments, skip straight to the PSI body-comparison fallback below** — the inspection-based path needs a populated `HashFragmentIndex` that won't exist yet, and silently returns 0 clusters. Only use the inspection path after you've confirmed `HashFragmentIndex keys > 0` with the diagnostic snippet. The two recipes are independent.
 
 **Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. **And the inspection emits the same logical cluster N times** (once per fragment-as-`main`), so a 2-fragment pair surfaces twice — the recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly N× too large.
 
@@ -283,7 +283,10 @@ val clones = smartReadAction(project) {
         // Kotlin: KtNamedFunction.bodyBlockExpression skips fun + name + params.
         // Match copy-paste-rename patterns where the body matches but the name differs.
         PsiTreeUtil.collectElementsOfType(psi, KtNamedFunction::class.java).forEach { fn ->
-            val body = fn.bodyBlockExpression?.text ?: return@forEach
+            // Cover both block-body (`fun f() { ... }`) and expression-body
+            // (`fun f() = expr`) forms — the second is common in idiomatic
+            // Kotlin and would slip through if we only checked block bodies.
+            val body = (fn.bodyBlockExpression?.text ?: fn.bodyExpression?.text) ?: return@forEach
             if (body.length < 60) return@forEach
             val normalized = body.replace(Regex("\\s+"), " ").trim()
             val doc = psi.viewProvider.document ?: return@forEach
