@@ -187,28 +187,6 @@ class ExecutionStorageTest {
     }
 
     @Test
-    fun `writeCodeReviewFile writes review kts file`() = runStorageTest {
-        val code = "println(\"Review me\")"
-        val executionId = storage.writeNewExecution(testExecParams(code))
-
-        val reviewPath = storage.writeCodeReviewFile(executionId, code)
-        assertTrue(Files.exists(reviewPath), "Review file should exist")
-        assertEquals(code, Files.readString(reviewPath))
-    }
-
-    @Test
-    fun `removeCodeReviewFile deletes a previously written review`() = runStorageTest {
-        val code = "println(\"Review me\")"
-        val executionId = storage.writeNewExecution(testExecParams(code))
-
-        val reviewPath = storage.writeCodeReviewFile(executionId, code)
-        assertTrue(Files.exists(reviewPath))
-
-        storage.removeCodeReviewFile(executionId)
-        assertFalse(Files.exists(reviewPath), "Review file should be removed")
-    }
-
-    @Test
     fun `writeProjectInfo persists name and path in project txt`() = runStorageTest {
         val executionId = storage.writeNewExecution(testExecParams("test"))
 

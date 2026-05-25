@@ -183,7 +183,6 @@ class IntelliJDriver(
             appendLine("# MCP Steroid plugin configuration")
             appendLine("-Dmcp.steroid.server.host=0.0.0.0")
             appendLine("-Dmcp.steroid.server.port=${MCP_STEROID_PORT.containerPort}")
-            appendLine("-Dmcp.steroid.review.mode=NEVER")
             appendLine("-Dmcp.steroid.dialog.killer.enabled=true")
             appendLine("-Dmcp.steroid.updates.enabled=false")
             appendLine("-Dmcp.steroid.analytics.enabled=false")

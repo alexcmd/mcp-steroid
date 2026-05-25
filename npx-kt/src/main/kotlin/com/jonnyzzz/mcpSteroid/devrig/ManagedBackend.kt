@@ -685,7 +685,6 @@ fun writeBackendVmOptions(homePaths: HomePaths, id: String, bundleDirName: Strin
         appendLine("-Didea.vendor.name=devrig (managed)")
         appendLine("-Xms256m")
         appendLine("-Xmx2048m")
-        appendLine("-Dmcp.steroid.review.mode=NEVER")
         appendLine("-Dmcp.steroid.updates.enabled=false")
         appendLine("-Dmcp.steroid.analytics.enabled=false")
         appendLine("-Dmcp.steroid.idea.description.enabled=false")

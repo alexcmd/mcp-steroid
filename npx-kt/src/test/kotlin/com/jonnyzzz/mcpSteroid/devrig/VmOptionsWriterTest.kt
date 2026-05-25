@@ -33,7 +33,6 @@ class VmOptionsWriterTest {
             "-Didea.vendor.name=devrig (managed)",
             "-Xms256m",
             "-Xmx2048m",
-            "-Dmcp.steroid.review.mode=NEVER",
             "-Dmcp.steroid.updates.enabled=false",
             "-Dmcp.steroid.analytics.enabled=false",
             "-Dmcp.steroid.idea.description.enabled=false",

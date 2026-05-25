@@ -93,7 +93,6 @@ class ManagedBackendGuiIntegrationTest {
                 grep -F -- "-Didea.system.path=/tmp/mcp-home/caches/$id/system" "${'$'}vmoptions"
                 grep -F -- "-Didea.log.path=/tmp/mcp-home/caches/$id/logs" "${'$'}vmoptions"
                 grep -F -- "-Didea.plugins.path=/tmp/mcp-home/caches/$id/plugins" "${'$'}vmoptions"
-                grep -F -- "-Dmcp.steroid.review.mode=NEVER" "${'$'}vmoptions"
                 grep -F -- "-Dmcp.steroid.updates.enabled=false" "${'$'}vmoptions"
                 grep -F -- "-Dmcp.steroid.analytics.enabled=false" "${'$'}vmoptions"
                 grep -F -- "-Dmcp.steroid.idea.description.enabled=false" "${'$'}vmoptions"

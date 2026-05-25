@@ -64,7 +64,6 @@ data class ExecutionProjectInfo(
  *     script.kts                       - Original code submitted by LLM
  *     params.json                      - Execution parameters
  *     output.jsonl                     - Output messages (append-only)
- *     review.kts                       - Code for review (may have user edits)
  *
  * The two providers are resolved lazily on each call so hosts can react
  * to runtime configuration changes (e.g. an IDE Registry key swap) without
@@ -228,19 +227,6 @@ open class ExecutionStorage(
 
     suspend fun writeWrappedScript(executionId: ExecutionId, code: String) {
         writeCodeExecutionData(executionId, "script-wrapped.kts", code)
-    }
-
-    suspend fun writeCodeReviewFile(executionId: ExecutionId, codeForReview: String): Path {
-        return writeCodeExecutionData(executionId, "review.kts", codeForReview)
-    }
-
-    suspend fun removeCodeReviewFile(executionId: ExecutionId) {
-        withContext(Dispatchers.IO) {
-            // deleteIfExists() returns false for a missing file (no throw),
-            // so the only failures left — permission errors and the like —
-            // are real I/O problems the caller should hear about.
-            executionId.dir.resolve("review.kts").deleteIfExists()
-        }
     }
 
     suspend fun createCompilerOutputDir(executionId: ExecutionId): Path {
