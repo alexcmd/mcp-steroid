@@ -5,7 +5,20 @@ import org.junit.jupiter.api.Test
 
 class ApplyPatchToolSpecSchemaTest {
     @Test
-    fun `inputSchema is valid JSON Schema`() {
-        assertToolSpecHasValidJsonSchema(ApplyPatchToolSpec { unreachableHandler() })
+    fun `inputSchema`() {
+        val spec = ApplyPatchToolSpec { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertToolSpecHasValidJsonSchema(spec)
+        assertToolIdentity(spec, "steroid_apply_patch")
+        assertRequiredExactly(schema, "project_name", "task_id", "hunks")
+        assertStringProperty(schema, "project_name")
+        assertStringProperty(schema, "task_id")
+        assertStringProperty(schema, "reason")
+        assertBooleanProperty(schema, "dry_run")
+        val hunkItem = assertArrayProperty(schema, "hunks").items()
+        assertRequiredExactly(hunkItem, "file_path", "old_string", "new_string")
+        assertStringProperty(hunkItem, "file_path")
+        assertStringProperty(hunkItem, "old_string")
+        assertStringProperty(hunkItem, "new_string")
     }
 }
