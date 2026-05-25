@@ -5,7 +5,15 @@ import org.junit.jupiter.api.Test
 
 class OpenProjectToolSpecSchemaTest {
     @Test
-    fun `inputSchema is valid JSON Schema`() {
-        assertToolSpecHasValidJsonSchema(OpenProjectToolSpec { unreachableHandler() })
+    fun `inputSchema`() {
+        val spec = OpenProjectToolSpec { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertToolSpecHasValidJsonSchema(spec)
+        assertToolIdentity(spec, "steroid_open_project")
+        assertRequiredExactly(schema, "project_path", "task_id", "reason")
+        assertStringProperty(schema, "project_path")
+        assertStringProperty(schema, "task_id")
+        assertStringProperty(schema, "reason")
+        assertBooleanProperty(schema, "trust_project")
     }
 }
