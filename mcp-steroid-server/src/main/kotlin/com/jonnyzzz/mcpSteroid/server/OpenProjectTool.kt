@@ -61,17 +61,9 @@ class OpenProjectToolSpec(val handler: () -> OpenProjectToolHandler) : McpToolBa
         .required()
         .registerToSchema()
 
-    val taskId = InputSchemaElement.param("task_id")
-        .description("Your task identifier to group related executions.")
-        .string()
-        .required()
-        .registerToSchema()
+    val taskId = CommonToolParams.taskId().registerToSchema()
 
-    val reason = InputSchemaElement.param("reason")
-        .description("Reason for opening the project. Required for audit logs.")
-        .string()
-        .required()
-        .registerToSchema()
+    val reason = CommonToolParams.auditReason("opening the project").registerToSchema()
 
     val trustProject = InputSchemaElement.param("trust_project")
         .description("If true, trust the project path before opening (skips trust dialog). Default: true")
