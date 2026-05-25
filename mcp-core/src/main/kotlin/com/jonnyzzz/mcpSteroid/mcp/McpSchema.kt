@@ -109,6 +109,19 @@ fun InputSchemaElement<Nothing>.stringArray() = InputSchemaElement(
     }
 )
 
+/** Declares an array of arbitrary objects whose item schema is built by [items]. */
+fun InputSchemaElement<Nothing>.array(items: JsonObjectBuilder.() -> Unit) = InputSchemaElement(
+    spec = spec.copy(
+        type = "array",
+        extra = { putJsonObject("items", items) },
+    ),
+    parser = object : InputSchemaParamParser<JsonArray?> {
+        override fun parseParameter(context: ToolCallContext): JsonArray? {
+            return context.params.arguments[spec.name] as? JsonArray
+        }
+    }
+)
+
 fun <R : Any> InputSchemaElement<R?>.required(): InputSchemaElement<R> {
     val that = this
     return InputSchemaElement(
