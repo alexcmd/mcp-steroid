@@ -7,11 +7,11 @@ This document is a concise architecture map. For authoritative details, see `AGE
 - Session management: `McpSessionManager` for session tracking and recovery.
 - Tool registry: tool discovery and dispatch (`McpToolRegistry`).
 - Execution pipeline: script compilation and execution with output collection.
-- Resources: resource registry with `resources/list` and `resources/read`.
+- Prompt articles: served via the dedicated `steroid_fetch_resource` MCP tool (NOT via `resources/list` / `prompts/list` — the tool requires `project_name` for IDE-conditional rendering).
 - Vision tools: screenshot/input tooling with artifact storage.
 - OCR helper: external `ocr-tesseract` app invoked via process client.
 - Kotlinc helper: bundled Kotlin compiler invoked via process client.
-- Storage & review: execution logs/artifacts and review workflow.
+- Storage: execution logs/artifacts (append-only, under `.idea/mcp-steroid/`).
 - **devrig CLI** (`npx-kt/`): stateless stdio MCP server + `backend` /
   `project` CLI that discovers IntelliJ instances on the host and
   routes tool calls to them. Project / IDE naming is governed by the

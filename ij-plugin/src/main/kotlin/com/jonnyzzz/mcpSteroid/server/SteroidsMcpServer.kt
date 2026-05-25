@@ -61,15 +61,13 @@ class SteroidsMcpServer(
         instructions = McpSteroidInfoPrompt().readPrompt(),
         capabilities = ServerCapabilities(
             tools = ToolsCapability(listChanged = true),
-            // Empty Prompts/Resources advertisement: McpServerCore still handles
-            // prompts/list + resources/list (returning empty lists). Spec-compliant
-            // clients check capabilities before dispatching, so advertising the
-            // empty handlers keeps the surface unambiguous and avoids spurious
-            // 'Method not found' errors. mcp-steroid:// articles still live behind
-            // the steroid_fetch_resource tool because it requires project_name
-            // for IDE-conditional rendering.
-            prompts = PromptsCapability(listChanged = false),
-            resources = ResourcesCapability(subscribe = false, listChanged = false),
+            // No Prompts/Resources capability is advertised: mcp-steroid:// articles
+            // are reachable only via the steroid_fetch_resource MCP tool (it requires
+            // project_name for correct IDE-conditional rendering, which the generic
+            // resources/prompts protocol methods can't carry). McpServerCore still
+            // routes prompts/list + resources/list to empty registries if a client
+            // calls them anyway, so misbehaving clients get a clean empty result
+            // rather than a method-not-found error.
         )
     )
 
