@@ -5,11 +5,11 @@ Locate, excerpt, unique-occurrence check, apply, verify — the four-step recipe
 # When to use this recipe
 
 You are about to mutate an existing file by literal-text replacement —
-via the `steroid_apply_patch` MCP tool, the `applyPatch { hunk(...) }` DSL
-inside `steroid_execute_code`, or a manual `content.replace(OLD, NEW)`
-shape. The patch will be rejected if the `old_string` you ship isn't
-present **exactly once** in the file. This page is the four-step
-pre-flight that makes the patch land on the first attempt.
+via the `applyPatch { hunk(...) }` DSL inside `steroid_execute_code` or a
+manual `content.replace(OLD, NEW)` shape. The patch will be rejected if
+the `old_string` you ship isn't present **exactly once** in the file.
+This page is the four-step pre-flight that makes the patch land on the
+first attempt.
 
 ## Step 1 — Locate the file via the index, not a hand-typed path
 
@@ -93,10 +93,9 @@ same way as the first.
 
 ## Step 4 — Apply, then verify
 
-Apply the patch via `steroid_apply_patch` (multi-hunk, dedicated MCP
-tool) or via the `applyPatch { hunk(...) }` DSL inside the same
-`steroid_execute_code` script (one or many hunks). Then re-read the
-file and assert the new text is present — the patch engine guarantees
+Apply the patch via the `applyPatch { hunk(...) }` DSL inside
+`steroid_execute_code` (one or many hunks). Then re-read the file and
+assert the new text is present — the patch engine guarantees
 atomicity but does not guarantee semantic correctness:
 
 ```kotlin
@@ -125,7 +124,7 @@ Inside" example in
 
 # See also
 
-- [Apply Patch Tool](mcp-steroid://skill/apply-patch-tool-description)
+- [Apply Patch — Atomic Multi-Site Edit](mcp-steroid://ide/apply-patch)
 - [McpScriptContext API Reference](mcp-steroid://skill/coding-with-intellij-context-api)
 - [Threading and Read/Write Actions](mcp-steroid://skill/coding-with-intellij-threading)
 - [VFS access](mcp-steroid://skill/coding-with-intellij-vfs)

@@ -5,23 +5,28 @@ MCP tool description for the steroid_execute_code tool.
 ###_NO_AUTO_TOC_###
 Execute Kotlin code directly in IntelliJ's runtime with full API access — builds, tests, refactoring, inspections, debugging, navigation.
 
-## 🛑 STOP before the 2nd native `Edit` — use `steroid_apply_patch`
+## 🛑 STOP before the 2nd native `Edit` — use the `applyPatch { }` DSL
 
-If you are about to make similar edits across **two or more files** (same pattern, different paths), **do not chain `Edit` calls**. Use the dedicated `steroid_apply_patch` MCP tool instead of wrapping the patch in `steroid_execute_code`:
+If you are about to make similar edits across **two or more files** (same pattern, different paths), **do not chain `Edit` calls**. Wrap them in a single `steroid_execute_code` call that uses the script-context `applyPatch { hunk(...); hunk(...) }` DSL:
 
-Required shape: `project_name`, `task_id`, optional `reason`, and `hunks`, where each hunk has `file_path`, `old_string`, and `new_string`. Use absolute file paths. A 3-hunk call is three hunk objects, not three native `Edit` calls.
+```kotlin
+applyPatch {
+    hunk(filePath = "/abs/path/A.java", oldString = "oldA", newString = "newA")
+    hunk(filePath = "/abs/path/B.java", oldString = "oldB", newString = "newB")
+}
+```
 
-The dedicated tool uses the same atomic patch engine as the script-context `applyPatch` DSL, but it bypasses kotlinc compilation. Large multi-file patches complete in tens of ms instead of spending a full `steroid_execute_code` compile cycle.
+Pre-flight validates every `old_string` is present exactly once before any edit lands; all hunks land as a single undoable IDE command; PSI is committed in-place; the surrounding `McpEditingGuard` schedules a VFS refresh AFTER the script returns. Native `Edit` chains bypass the VFS, leave PSI stale, and cost one tool call per site. See `mcp-steroid://ide/apply-patch` for the full recipe.
 
-Pre-flight catches missing or non-unique anchors before any edit lands, so keep `old_string` to the shortest unique signature (30–60 chars usually — no need for the full 300-char safety block). Native `Edit` chains bypass the VFS, leave PSI stale, and cost one tool call per site.
+Keep `old_string` to the shortest unique signature (30–60 chars usually — no need for the full 300-char safety block).
 
-**Heuristic**: before the 2nd `Edit` in the same task, stop and ask: "Am I applying the same or similar change to 2+ sites?" If yes, use `steroid_apply_patch`. Use the older script-context `applyPatch` DSL only when the patch must run inside the same `steroid_execute_code` script as surrounding IntelliJ API work.
+**Heuristic**: before the 2nd `Edit` in the same task, stop and ask: "Am I applying the same or similar change to 2+ sites?" If yes, batch into one `applyPatch { }` call inside `steroid_execute_code`.
 
 ## Decision tree — pick the IDE path before reaching for a native tool
 
 | Task shape | One-line IDE call |
 |---|---|
-| **Two or more literal-text edits, same or different files** | `steroid_apply_patch` — atomic undo, pre-flight validation, PSI commit, no kotlinc compile cycle. Use whenever an `Edit`/`Edit`/`Edit` chain is tempting. |
+| **Two or more literal-text edits, same or different files** | `steroid_execute_code` with the `applyPatch { }` DSL — atomic undo, pre-flight validation, PSI commit, VFS refreshed after the script. See `mcp-steroid://ide/apply-patch`. |
 | **One literal-text edit, single file** | `val vf = findProjectFile(p)!!; writeAction { VfsUtil.saveText(vf, String(vf.contentsToByteArray(), vf.charset).replace(OLD, NEW)) }` |
 | **Find files by extension** | `readAction { FilenameIndex.getAllFilesByExt(project, "java", projectScope()) }` — not `Bash find … -name "*.java"` |
 | **Find files by exact name** | `readAction { FilenameIndex.getVirtualFilesByName("UserService.java", projectScope()) }` |
@@ -162,9 +167,7 @@ writeAction { VfsUtil.saveText(vf, updated) }               // write + VFS refre
 
 For exactly-one-occurrence replace: `.replace(OLD, NEW).also { check(… == 1 occurrence) }`. For regex: `Regex(pattern).replace(content, replacement)`. Do NOT pre-Read the file via the native tool before using this recipe — the `vf.contentsToByteArray()` read already covers that.
 
-**Two or more edits in one or more files**: use the dedicated `steroid_apply_patch` MCP tool. It applies N literal-text substitutions as one undoable command with all-or-nothing pre-flight validation and PSI commit, without compiling a Kotlin script. Read `mcp-steroid://skill/apply-patch-tool-description` for the JSON schema and semantics.
-
-The older script-context `applyPatch` DSL inside `steroid_execute_code` is a fallback only when you need the patch to run in the same script as surrounding IntelliJ API operations.
+**Two or more edits in one or more files**: wrap them in one `steroid_execute_code` call that uses the `applyPatch { }` DSL. It applies N literal-text substitutions as one undoable command with all-or-nothing pre-flight validation and PSI commit. Read `mcp-steroid://ide/apply-patch` for the full recipe.
 
 **VFS refresh before and after every call.** MCP Steroid schedules two refreshes for you:
 - **Before** kotlinc compiles your script, the plugin **awaits** a `VfsUtil.markDirtyAndRefresh` on the project root so the compiler sees every on-disk change made by a peer process or the previous call. Blocking, capped at 30 s.

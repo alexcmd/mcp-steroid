@@ -124,12 +124,11 @@ better recipes are. The full canonical statement lives in
 [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) and is mirrored at runtime
 as `mcp-steroid://skill/design-philosophy`.
 
-### 10 MCP Tools
+### 9 MCP Tools
 
 | Tool | Description |
 |------|-------------|
 | **Execute Code** (`steroid_execute_code`) | Run Kotlin code inside the IDE's JVM with full API access |
-| **Apply Patch** (`steroid_apply_patch`) | Atomic multi-site literal-text edits across one or more files (data-only; no kotlinc compile cycle) |
 | **Execute Feedback** (`steroid_execute_feedback`) | Provide execution ratings back to agents |
 | **Fetch Resource** (`steroid_fetch_resource`) | Fetch any `mcp-steroid://` skill guide / recipe by URI |
 | **Vision Screenshot** (`steroid_take_screenshot`) | Capture IDE screenshots with component metadata |
