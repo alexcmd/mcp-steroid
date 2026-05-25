@@ -1,10 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.openapi.application.readAction
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
-import com.intellij.openapi.project.ProjectManager.getInstance
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.jonnyzzz.mcpSteroid.execution.ApplyPatchException
 import com.jonnyzzz.mcpSteroid.execution.McpEditingGuardException
@@ -19,18 +17,11 @@ import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 
-class ApplyPatchToolHandlerIJ: ApplyPatchToolHandler {
+class ApplyPatchToolHandlerIJ : ProjectScopedToolHandler(), ApplyPatchToolHandler {
     private val log = thisLogger()
 
     override suspend fun applyPatch(projectName: String, applyPatchRequest: ApplyPatchRequest): ToolCallResult {
-        val openProjects = readAction { getInstance().openProjects.toList() }
-        val project = openProjects.find { it.name == projectName }
-
-        if (project == null) {
-            val availableNames = openProjects.map { it.name }
-            return ToolCallResult.errorResult("Project not found: \"$projectName\". Available projects: $availableNames")
-        }
-
+        val project = resolveProject(projectName)
         val hunks = applyPatchRequest.hunks
         val dryRun = applyPatchRequest.dryRun
 
