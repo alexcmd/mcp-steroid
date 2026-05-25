@@ -154,8 +154,6 @@ debugger, tests, VCS, and more</li>
 <li><b>Vision Capabilities:</b> AI agents can see your IDE with screenshots and OCR</li>
 <li><b>Deep Integration:</b> Access PSI, inspections, refactorings, and full \
 IntelliJ Platform API</li>
-<li><b>Human Oversight:</b> Review and approve code execution with configurable \
-safety controls</li>
 </ul>
 <p>Compatible with all IntelliJ Platform-based IDEs: IntelliJ IDEA, PyCharm, \
 WebStorm, GoLand, CLion, Rider, and more.</p>

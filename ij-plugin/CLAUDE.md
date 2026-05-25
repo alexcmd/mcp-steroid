@@ -21,7 +21,6 @@ src/main/kotlin/com/jonnyzzz/mcpSteroid/
 ├── server/      # MCP server, tool handlers, skills
 ├── mcp/         # Core MCP protocol, tool registry
 ├── execution/   # ExecutionManager, CodeEvalManager, ScriptExecutor, McpScriptContext
-├── review/      # Human review workflow
 ├── storage/     # Append-only file storage
 ├── vision/      # Screenshot, input dispatch
 ├── demo/        # Demo mode overlay
@@ -295,9 +294,8 @@ rm -rf ij-plugin/build/idea-sandbox/                            # corrupted inde
 
 ## Configuration
 
-Registry keys: `mcp.steroid.server.port`, `.host`, `.review.mode` (ALWAYS/TRUSTED/NEVER), `.review.timeout`,
-`.execution.timeout`, `.dialog.killer.enabled`, `.demo.enabled`, `.storage.path`, `.kotlinc.parameters`,
-`.kotlinc.home`.
+Registry keys: `mcp.steroid.server.port`, `.host`, `.execution.timeout`, `.dialog.killer.enabled`,
+`.demo.enabled`, `.storage.path`, `.kotlinc.parameters`, `.kotlinc.home`.
 
 ### Kotlinc version-mismatch workaround
 

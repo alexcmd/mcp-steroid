@@ -40,7 +40,6 @@ MCP Steroid is the **only MCP server** offering ALL of:
 - **UI automation** — Control the IDE like a human developer
 - **Native IntelliJ APIs** — PSI, inspections, refactorings, and more
 - **Kotlin scripting** — Full platform access at runtime
-- **Human-in-the-loop safety** — Review modes (ALWAYS / TRUSTED / NEVER)
 - **Standard MCP protocol** — Works with ANY MCP-compatible AI agent
 
 ### Benchmarks
@@ -177,7 +176,6 @@ MCP Steroid can be configured via IntelliJ's Registry (`Help > Find Action > Reg
 |--------------|---------|-------------|
 | `mcp.steroid.server.port` | 6315 | MCP server port (0 for auto-assign) |
 | `mcp.steroid.server.host` | 127.0.0.1 | Bind address (use 0.0.0.0 for Docker) |
-| `mcp.steroid.review.mode` | ALWAYS | Review mode: ALWAYS, TRUSTED, or NEVER |
 | `mcp.steroid.storage.path` | (empty) | Custom storage path (default: .idea/mcp-steroid/) |
 
 See the full [Configuration Documentation](https://mcp-steroid.jonnyzzz.com/docs/configuration/) on the website.

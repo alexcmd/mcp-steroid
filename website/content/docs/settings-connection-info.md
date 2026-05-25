@@ -80,4 +80,4 @@ See [Configuration](/docs/configuration/) for the full list of server settings.
 ## Related
 
 - [Getting Started](/docs/getting-started/) — initial plugin setup and first connection
-- [Configuration](/docs/configuration/) — registry keys for port, host, and review mode
+- [Configuration](/docs/configuration/) — registry keys for port and host

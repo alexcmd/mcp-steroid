@@ -116,34 +116,10 @@ Because the code runs inside the IDE's JVM, it is not limited to what MCP Steroi
 
 ---
 
-## Human oversight
-
-Before any submitted code runs, MCP Steroid opens it in the editor and shows a review banner:
-
-> **Review** — Edit code to add comments, then Approve or Reject
-
-Three actions are available:
-
-- **Always Approve** — run this code and auto-approve all future executions for this project
-- **Approve** — run this code once
-- **Reject (send edits to LLM)** — cancel execution and return any edits you made as feedback to the agent
-
-The agent receives a structured rejection response including the original code, your edited version, and a unified diff — so it can correct course and try again.
-
-Review can be disabled per-project (Settings → Tools → MCP Steroid) or globally via the `mcp.steroid.review.mode` registry key.
-
----
-
 ## End-to-end flow
 
 ```
 Agent calls steroid_execute_code(project="my-app", code="...", reason="...")
-    │
-    ▼
-MCP Steroid opens code in editor
-    │
-    ▼
-You review and click Approve  ──────────────► Rejection returned to agent
     │
     ▼
 Kotlin script engine compiles the code
