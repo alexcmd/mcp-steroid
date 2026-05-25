@@ -15,7 +15,6 @@ Don't propose new `steroid_*` tools. The current set is intentional and intentio
 - `steroid_open_project`
 - `steroid_execute_code`
 - `steroid_execute_feedback`
-- `steroid_action_discovery`
 - `steroid_take_screenshot`
 - `steroid_input`
 - `steroid_fetch_resource`

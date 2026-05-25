@@ -124,7 +124,7 @@ better recipes are. The full canonical statement lives in
 [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) and is mirrored at runtime
 as `mcp-steroid://skill/design-philosophy`.
 
-### 9 MCP Tools
+### 8 MCP Tools
 
 | Tool | Description |
 |------|-------------|
@@ -133,7 +133,6 @@ as `mcp-steroid://skill/design-philosophy`.
 | **Fetch Resource** (`steroid_fetch_resource`) | Fetch any `mcp-steroid://` skill guide / recipe by URI |
 | **Vision Screenshot** (`steroid_take_screenshot`) | Capture IDE screenshots with component metadata |
 | **Vision Input** (`steroid_input`) | Send keyboard/mouse events to the IDE via a sequence-string DSL |
-| **Action Discovery** (`steroid_action_discovery`) | Find and invoke IDE actions and quick-fixes at a caret position |
 | **List Projects** (`steroid_list_projects`) | Discover all open IntelliJ projects |
 | **List Windows** (`steroid_list_windows`) | Enumerate IDE windows and components |
 | **Open Project** (`steroid_open_project`) | Open projects programmatically |

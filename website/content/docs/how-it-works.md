@@ -68,7 +68,6 @@ MCP Steroid exposes nine tools. Most are supporting utilities — the core capab
 | `steroid_execute_code` | Run Kotlin code inside the IDE's JVM |
 | `steroid_take_screenshot` | Capture a screenshot of the IDE window with component metadata |
 | `steroid_input` | Send keyboard and mouse events to the IDE |
-| `steroid_action_discovery` | Discover available IDE actions and quick-fixes at a code location |
 | `steroid_list_projects` | List open projects and IDE version info |
 | `steroid_list_windows` | List open IDE windows and their positions |
 | `steroid_open_project` | Open a project directory in the IDE |

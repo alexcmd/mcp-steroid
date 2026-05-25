@@ -76,16 +76,6 @@ List all open projects. Returns IDE metadata and project names for use with `ste
 List open IDE windows and their associated projects. Some windows may not be tied to a project and a project can have multiple windows.
 Use this in multi-window setups to pick the correct `project_name` and `window_id` for screenshot/input tools.
 
-### `steroid_action_discovery`
-Discover available editor actions, quick-fixes, and gutter actions for a file and caret context.
-
-**Parameters:**
-- `project_name` (required): Target project name
-- `file_path` (required): Absolute or project-relative path to the file
-- `caret_offset` (optional): Caret offset within the file (default: 0)
-- `action_groups` (optional): Action group IDs to expand (default: editor popup + gutter)
-- `max_actions_per_group` (optional): Cap actions returned per group (default: 200)
-
 ### `steroid_take_screenshot`
 Capture a screenshot of the IDE frame and return image content.
 

@@ -20,14 +20,13 @@ A runtime mirror of this file lives at
 ## Tenet 1 — minimal MCP tool surface
 
 **Don't propose new `steroid_*` tools.** MCP Steroid intentionally maintains
-a small set of MCP tools. Today there are 9:
+a small set of MCP tools. Today there are 8:
 
 - `steroid_list_projects`
 - `steroid_list_windows`
 - `steroid_open_project`
 - `steroid_execute_code`
 - `steroid_execute_feedback`
-- `steroid_action_discovery`
 - `steroid_take_screenshot`
 - `steroid_input`
 - `steroid_fetch_resource`
