@@ -70,7 +70,7 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpToolBase
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 
-    val taskId = CommonToolParams.taskId("Your task identifier; reuse across related calls.").registerToSchema()
+    val taskId = CommonToolParams.taskId().registerToSchema()
 
     val reason = InputSchemaElement.param("reason")
         .description("One-line summary of what this patch changes.")

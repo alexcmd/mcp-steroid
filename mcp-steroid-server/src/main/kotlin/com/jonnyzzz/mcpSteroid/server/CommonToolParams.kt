@@ -13,16 +13,20 @@ import com.jonnyzzz.mcpSteroid.mcp.string
  */
 object CommonToolParams {
     /** Required `project_name` used to dispatch a tool call to an already-open IDE project. */
-    fun projectName(description: String = "Project name (from steroid_list_projects)") =
+    fun projectName() =
         InputSchemaElement.param("project_name")
-            .description(description)
+            .description("Project name (from steroid_list_projects)")
             .string()
             .required()
 
     /** Required `task_id` used to group related executions in audit logs. */
-    fun taskId(description: String = "Your task identifier to group related executions.") =
+    fun taskId() =
         InputSchemaElement.param("task_id")
-            .description(description)
+            .description(
+                "Your task identifier — reuse the same value across related tool calls " +
+                        "(e.g. between steroid_execute_code and steroid_execute_feedback) " +
+                        "to group them in audit logs."
+            )
             .string()
             .required()
 

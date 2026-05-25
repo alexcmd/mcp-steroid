@@ -47,7 +47,7 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
 
     val projectName = CommonToolParams.projectName().registerToSchema()
 
-    val taskId = CommonToolParams.taskId("The task_id you used when calling steroid_execute_code").registerToSchema()
+    val taskId = CommonToolParams.taskId().registerToSchema()
 
     val executionId = InputSchemaElement.param("execution_id")
         .description("The execution_id returned from the most recent steroid_execute_code call for this task")
