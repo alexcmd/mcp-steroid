@@ -45,17 +45,9 @@ class ExecuteFeedbackToolSpec(val handler: () -> ExecuteFeedbackToolHandler) : M
             Feedback helps track execution history and identify patterns for improvement.
         """.trimIndent()
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Project name (from steroid_list_projects)")
-        .string()
-        .required()
-        .registerToSchema()
+    val projectName = CommonToolParams.projectName().registerToSchema()
 
-    val taskId = InputSchemaElement.param("task_id")
-        .description("The task_id you used when calling steroid_execute_code")
-        .string()
-        .required()
-        .registerToSchema()
+    val taskId = CommonToolParams.taskId("The task_id you used when calling steroid_execute_code").registerToSchema()
 
     val executionId = InputSchemaElement.param("execution_id")
         .description("The execution_id returned from the most recent steroid_execute_code call for this task")
