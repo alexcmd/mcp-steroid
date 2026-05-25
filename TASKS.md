@@ -2925,3 +2925,14 @@ Progress log appended below as each task moves.
   in `bfaad8fc`: drop the empty Prompts/Resources capability advertisement
   entirely (cleaner intent signal) + fix stale `docs/ARCHITECTURE.md`
   lines (resources registry + review workflow).
+- 2026-05-26 — Iter 7 IMPROVEMENTS (Claude 73s / Codex 61s) converged on
+  one fix: the "Agent fast path" callout pointed to a recipe further
+  down the article, but the FIRST code block the agent saw was still
+  the inspection-based one — agents tend to copy what they see first.
+  Renamed sections in `find-duplicates.md`:
+    * `# The recipe (copy-paste)` → `# Cross-check recipe — warm-index inspection (broader clone types)`
+    * `# Fallback: PSI-based body comparison (no index needed)` → `# Primary recipe — PSI body comparison (no index needed)`
+    * "Agent fast path" callout rewritten to direct the reader to scroll
+      down to "Primary recipe" by section name.
+    * "When the inspection returns zero clusters" wording updated to
+      reference "Primary recipe" instead of "PSI fallback".

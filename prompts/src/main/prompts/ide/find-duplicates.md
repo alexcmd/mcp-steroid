@@ -8,7 +8,7 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 **Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
 
-**Agent fast path.** **Default to the PSI body-comparison fallback** (under "Fallback: PSI-based body comparison" below) for every find-duplicates request. It works in fresh sessions, CI, test environments, AND fully-indexed projects — no warm-index prerequisite, no second pass to verify. The inspection-based recipe further up the article is a cross-check option for warm-index projects when the user wants near-duplicate detection (the PSI fallback finds exact bodies only, not parameterized clones or renamed-variable clones). `CLUSTERS_FOUND: 0` from the inspection path is ambiguous — it is NOT evidence that no duplicates exist until the PSI fallback has also run.
+**Agent fast path.** **Scroll down to "## Primary recipe — PSI body comparison" and copy that block.** It works in fresh sessions, CI, test environments, AND fully-indexed projects — no warm-index prerequisite, no second pass to verify. The "## Cross-check recipe — warm-index inspection" block below it is an OPTIONAL second pass for projects with a known-good `HashFragmentIndex` when the user explicitly wants near-duplicate / parameterized-clone detection. `CLUSTERS_FOUND: 0` from the inspection path alone is ambiguous — it is NOT evidence that no duplicates exist until the PSI fallback has also run.
 
 **PSI fallback language coverage**: Kotlin (`KtNamedFunction`) + Java (`PsiMethod`) only. For Python / JavaScript / Groovy / Ruby projects, the warm-index inspection path is the right tool — the PSI fallback will return 0 clusters even if there are obvious duplicates.
 
@@ -30,7 +30,9 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 `steroid_execute_code` compiles your Kotlin against every loaded plugin's classloader files (`ScriptClassLoaderFactory.ideClasspath()` flattens `descriptor.pluginClassLoader.files` for every loaded plugin and its content modules). In IDEA Ultimate the duplicates-detector module (`intellij.platform.duplicatesDetector.jar`) is bundled, so `com.jetbrains.clones.DuplicateProblemDescriptor`, `com.jetbrains.clones.structures.TextClone`, and `com.jetbrains.clones.structures.TextFragment` are all on the script classpath. **Import them directly and cast.** Do **not** look the class up via `JavaPsiFacade` — that queries the *user project's* classpath, where the plugin classes never live, and a `null` result there is a known false negative that has historically led agents into reflection.
 
-# The recipe (copy-paste)
+# Cross-check recipe — warm-index inspection (broader clone types)
+
+**Read the "Agent fast path" callout above first.** This recipe is the cross-check option for warm-index projects, NOT the primary path. The Primary recipe (PSI body comparison) is further down the article. Use the inspection-based recipe only when the user explicitly wants near-duplicate / parameterized-clone detection, AND you've already established the project has a populated `HashFragmentIndex`.
 
 Submit this as a single `steroid_execute_code` call. Adjust `targetExtensions` to whatever your project uses. Everything else is fully self-contained.
 
@@ -234,13 +236,13 @@ If `DuplicateScopeExtension.findDuplicateScope(fileType)` returns `null` for the
 
 # When the inspection returns zero clusters
 
-If `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the recipe ran but the inspection emitted no `DuplicateProblemDescriptor`s. **Switch to the PSI body-comparison fallback below in the same round-trip — don't pivot to grep / Bash.** The most common root cause is an empty `HashFragmentIndex`; the per-file `checkFile` query returns no clones because no clones have been indexed yet.
+If `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the cross-check recipe ran but the inspection emitted no `DuplicateProblemDescriptor`s. **Switch to the Primary recipe (PSI body comparison) below in the same round-trip — don't pivot to grep / Bash.** The most common root cause is an empty `HashFragmentIndex`; the per-file `checkFile` query returns no clones because no clones have been indexed yet.
 
-Skip the index probe — the safer signal is **the recipe itself returning `CLUSTERS_FOUND: 0`**. If you saw zero, the index is either empty or the inspection path doesn't apply; either way the PSI fallback below is the next step. (Earlier guidance suggested probing `FileBasedIndex.getAllKeys(HashFragmentIndex.NAME, ...)` but the `HashFragmentIndex` package path is internal-only and changes across IDE versions — the class is not resolvable from the script classpath.)).
+Skip the index probe — the safer signal is **the cross-check recipe itself returning `CLUSTERS_FOUND: 0`**. If you saw zero, the index is either empty or the inspection path doesn't apply; either way the Primary recipe below is the next step. (Earlier guidance suggested probing `FileBasedIndex.getAllKeys(HashFragmentIndex.NAME, ...)` but the `HashFragmentIndex` package path is internal-only and changes across IDE versions — the class is not resolvable from the script classpath.)
 
-# Fallback: PSI-based body comparison (no index needed)
+# Primary recipe — PSI body comparison (no index needed)
 
-When the bundled `DuplicatedCode` inspection returns zero (empty index, Community edition, headless environment without the duplicates-detector module) and you still need an answer, collect Kotlin / Java functions, **extract just the body block** (NOT the full declaration — the most common duplicate pattern is copy-paste-rename where names differ but bodies are identical), normalize (strip whitespace + line endings), and group identical bodies. Covers intra-file clones (two methods in one class with the same body) AND cross-file clones; no inspection state required.
+**This is the recipe the "Agent fast path" callout points to.** Collect Kotlin / Java functions, **extract just the body block** (NOT the full declaration — the most common duplicate pattern is copy-paste-rename where names differ but bodies are identical), normalize (strip whitespace + line endings), and group identical bodies. Covers intra-file clones (two methods in one class with the same body) AND cross-file clones; works in fresh sessions, CI, test environments, AND fully-indexed projects with no warm-index prerequisite.
 
 ```kotlin[IU]
 import com.intellij.psi.PsiManager
