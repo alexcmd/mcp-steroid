@@ -102,3 +102,7 @@ fun InputSchemaElement.Companion.buildSchema(elements: List<InputSchemaElement<*
         }
     }
 }
+
+@Throws(ToolCallErrorException::class)
+operator fun <R> ToolCallContext.get(p: InputSchemaElement<R>) = p.parser.parseParameter(this)
+

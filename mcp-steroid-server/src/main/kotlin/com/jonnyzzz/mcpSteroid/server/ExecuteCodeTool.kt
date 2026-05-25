@@ -7,7 +7,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.boolean
 import com.jonnyzzz.mcpSteroid.mcp.buildSchema
 import com.jonnyzzz.mcpSteroid.mcp.description
-import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.int
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
@@ -16,10 +16,6 @@ import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeToolDescriptionPromptArticle
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
 data class ExecCodeParams(
@@ -72,7 +68,6 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpTool {
         .description("Override pre-execution dialog killer: true = force enable, false = force disable. Default: use registry setting (mcp.steroid.dialog.killer.enabled).")
         .boolean()
 
-
     override val inputSchema = InputSchemaElement.buildSchema(
         projectName,
         code,
@@ -83,23 +78,17 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpTool {
     )
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
-        val params = context.params
-        val args = params.arguments
-
-        val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
-        val code = args["code"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: code")
-        val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: task_id")
-        val reason = args["reason"]?.jsonPrimitive?.contentOrNull
-        val timeout = args["timeout"]?.jsonPrimitive?.intOrNull
-        val dialogKiller = args["dialog_killer"]?.jsonPrimitive?.booleanOrNull
+        val projectName = context[projectName]
+        val code = context[code]
+        val taskId = context[taskId]
+        val reason = context[reason]
+        val timeout = context[timeout]
+        val dialogKiller = context[dialogKiller]
 
         val execCodeParams = ExecCodeParams(
             taskId = taskId,
             code = code,
-            reason = reason ?: "No reason provided",
+            reason = reason,
             timeout = timeout,
             dialogKiller = dialogKiller,
         )
