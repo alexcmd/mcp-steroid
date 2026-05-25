@@ -61,11 +61,12 @@ class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : M
         val projectName = context[projectName]
         val filePath = context[filePath]
         val caretOffset = context[caretOffset] ?: 0
-        val actionGroups = context[actionGroups]
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-            .takeIf { context.params.arguments.containsKey("action_groups") }
+        val actionGroups = context.params.arguments["action_groups"]?.let {
+            context[actionGroups]
+                .map { entry -> entry.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+        }
         val maxActions = context[maxActionsPerGroup]?.coerceAtLeast(0) ?: 200
         val taskId = context[taskId]
 
