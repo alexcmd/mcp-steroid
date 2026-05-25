@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.get
 import com.jonnyzzz.mcpSteroid.mcp.param
-import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
 import kotlinx.serialization.Serializable
 
@@ -33,23 +32,11 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         After execution, call steroid_execute_feedback to log your feedback.
     """.trimIndent()
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Project name (from steroid_list_projects)")
-        .string()
-        .required()
-        .registerToSchema()
+    val projectName = CommonToolParams.projectName().registerToSchema()
 
-    val taskId = InputSchemaElement.param("task_id")
-        .description("Your task identifier to group related executions.")
-        .string()
-        .required()
-        .registerToSchema()
+    val taskId = CommonToolParams.taskId().registerToSchema()
 
-    val reason = InputSchemaElement.param("reason")
-        .description("Reason for taking the screenshot. Required for audit logs.")
-        .string()
-        .required()
-        .registerToSchema()
+    val reason = CommonToolParams.auditReason("taking the screenshot").registerToSchema()
 
     val windowId = InputSchemaElement.param("window_id")
         .description("Optional window id from steroid_list_windows to target a specific IDE window.")
