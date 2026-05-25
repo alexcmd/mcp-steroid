@@ -5,7 +5,16 @@ import org.junit.jupiter.api.Test
 
 class VisionInputToolSpecSchemaTest {
     @Test
-    fun `inputSchema is valid JSON Schema`() {
-        assertToolSpecHasValidJsonSchema(VisionInputToolSpec { unreachableHandler() })
+    fun `inputSchema`() {
+        val spec = VisionInputToolSpec { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertToolSpecHasValidJsonSchema(spec)
+        assertToolIdentity(spec, "steroid_input")
+        assertRequiredExactly(schema, "project_name", "task_id", "reason", "screenshot_execution_id", "sequence")
+        assertStringProperty(schema, "project_name")
+        assertStringProperty(schema, "task_id")
+        assertStringProperty(schema, "reason")
+        assertStringProperty(schema, "screenshot_execution_id")
+        assertStringProperty(schema, "sequence")
     }
 }
