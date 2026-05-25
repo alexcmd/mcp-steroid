@@ -558,10 +558,10 @@ class ApplyPatchTest : BasePlatformTestCase() {
     // -- dryRun (C4) --------------------------------------------------------
     //
     // The DSL on McpScriptContext deliberately does NOT expose dryRun — the
-    // flag belongs to the dedicated `steroid_apply_patch` MCP tool, where the
-    // agent is preflighting an external write. Tests below call the engine
-    // (`executeApplyPatch`) directly to exercise the dryRun path the tool
-    // handler relies on.
+    // flag was used by the removed `steroid_apply_patch` MCP tool to preflight
+    // an external write. Tests below call the engine (`executeApplyPatch`)
+    // directly to keep coverage on the dryRun code path in case a future
+    // recipe needs it.
 
     fun testDryRunDoesNotModifyFile(): Unit = timeoutRunBlocking(30.seconds) {
         val original = "class A { int x = 1; }\n"

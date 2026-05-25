@@ -14,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Wrap an MCP editing call ([steroid_execute_code], [steroid_apply_patch]) in
+ * Wrap an MCP editing call ([steroid_execute_code]) in
  * the canonical before/after flow that keeps the IDE in a deterministic state
  * while an agent drives it.
  *
