@@ -1,9 +1,12 @@
 package com.jonnyzzz.mcpSteroid.mcp
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -15,6 +18,8 @@ data class InputSchemaParamSpec(
     val type: String,
     val description: String,
     val required: Boolean,
+    /** Additional JSON keys merged into the property body (e.g. `minimum`, `maximum`, `items`). */
+    val extra: JsonObjectBuilder.() -> Unit = {},
 )
 
 data class InputSchemaElement<R>(
@@ -38,7 +43,7 @@ fun InputSchemaElement.Companion.param(name: String) = InputSchemaElement(
     }
 )
 
-fun <R> InputSchemaElement<R>.description(description: String) = InputSchemaElement<R>(
+fun <R> InputSchemaElement<R>.description(description: String) = InputSchemaElement(
     spec = spec.copy(description = description),
     parser
 )
@@ -70,6 +75,40 @@ fun InputSchemaElement<Nothing>.int() = InputSchemaElement(
     }
 )
 
+fun InputSchemaElement<Nothing>.number() = InputSchemaElement(
+    spec = spec.copy(type = "number"),
+    parser = object : InputSchemaParamParser<Double?> {
+        override fun parseParameter(context: ToolCallContext): Double? {
+            return context.params.arguments[spec.name]?.jsonPrimitive?.doubleOrNull
+        }
+    }
+)
+
+private fun <R> InputSchemaElement<R>.withExtra(block: JsonObjectBuilder.() -> Unit): InputSchemaElement<R> {
+    val previous = spec.extra
+    return copy(spec = spec.copy(extra = {
+        previous()
+        block()
+    }))
+}
+
+fun InputSchemaElement<Double?>.minimum(value: Double) = withExtra { put("minimum", value) }
+
+fun InputSchemaElement<Double?>.maximum(value: Double) = withExtra { put("maximum", value) }
+
+fun InputSchemaElement<Nothing>.stringArray() = InputSchemaElement(
+    spec = spec.copy(
+        type = "array",
+        extra = { putJsonObject("items") { put("type", "string") } },
+    ),
+    parser = object : InputSchemaParamParser<List<String>> {
+        override fun parseParameter(context: ToolCallContext): List<String> {
+            val raw = context.params.arguments[spec.name] as? JsonArray ?: return emptyList()
+            return raw.mapNotNull { it.jsonPrimitive.contentOrNull }
+        }
+    }
+)
+
 fun <R : Any> InputSchemaElement<R?>.required(): InputSchemaElement<R> {
     val that = this
     return InputSchemaElement(
@@ -83,8 +122,6 @@ fun <R : Any> InputSchemaElement<R?>.required(): InputSchemaElement<R> {
     )
 }
 
-fun InputSchemaElement.Companion.buildSchema(vararg elements: InputSchemaElement<*>) = buildSchema(elements.toList())
-
 fun InputSchemaElement.Companion.buildSchema(elements: List<InputSchemaElement<*>>) = buildJsonObject {
     put("type", "object")
     putJsonObject("properties") {
@@ -92,7 +129,7 @@ fun InputSchemaElement.Companion.buildSchema(elements: List<InputSchemaElement<*
             putJsonObject(element.name) {
                 put("type", element.type)
                 put("description", element.description)
-
+                element.extra(this)
             }
         }
     }
@@ -105,4 +142,3 @@ fun InputSchemaElement.Companion.buildSchema(elements: List<InputSchemaElement<*
 
 @Throws(ToolCallErrorException::class)
 operator fun <R> ToolCallContext.get(p: InputSchemaElement<R>) = p.parser.parseParameter(this)
-
