@@ -22,7 +22,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -164,25 +163,7 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpToolBase
             ApplyPatchHunk(filePath = filePath, oldString = oldString, newString = newString)
         }
 
-        // dry_run is optional and must be a JSON boolean. String-typed primitives
-        // are rejected explicitly — `JsonPrimitive.booleanOrNull` parses `.content`
-        // regardless of whether the original JSON token was a boolean or a
-        // quoted string, so without the `isString` guard `"dry_run": "true"`
-        // would silently flip behavior. A non-strict parser is too risky here:
-        // the flag gates whether the patch writes to disk.
-        val dryRun: Boolean = when (val raw = args["dry_run"]) {
-            null -> false
-            is JsonPrimitive -> {
-                if (raw.isString) {
-                    return ToolCallResult.errorResult(
-                        "dry_run must be a JSON boolean (true/false), got string: \"${raw.content}\""
-                    )
-                }
-                raw.booleanOrNull
-                    ?: return ToolCallResult.errorResult("dry_run must be a JSON boolean, got primitive: ${raw.content}")
-            }
-            else -> return ToolCallResult.errorResult("dry_run must be a JSON boolean, got ${raw::class.simpleName}")
-        }
+        val dryRun = context[dryRun] ?: false
 
         return handler().applyPatch(projectName, ApplyPatchRequest(hunks, dryRun = dryRun, taskId = taskId))
     }
