@@ -234,22 +234,7 @@ If `DuplicateScopeExtension.findDuplicateScope(fileType)` returns `null` for the
 
 If `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the recipe ran but the inspection emitted no `DuplicateProblemDescriptor`s. **Switch to the PSI body-comparison fallback below in the same round-trip — don't pivot to grep / Bash.** The most common root cause is an empty `HashFragmentIndex`; the per-file `checkFile` query returns no clones because no clones have been indexed yet.
 
-Optional diagnostic to confirm the index state (IN THE SAME `steroid_execute_code` call, BEFORE the inspection loop):
-
-```kotlin[IU]
-// Sanity-check the index BEFORE running the inspection. An empty key set
-// means the HashFragmentIndex hasn't been populated for this project; the
-// inspection will silently emit zero clusters.
-import com.intellij.util.indexing.FileBasedIndex
-import com.jetbrains.clones.index.indexEntries.HashFragmentIndex // package may vary; resolve via your IDE if needed
-
-val keys = smartReadAction(project) {
-    FileBasedIndex.getInstance().getAllKeys(HashFragmentIndex.NAME, project).size
-}
-println("HashFragmentIndex keys: $keys (0 → index empty, expect zero clusters; ≥ 1 → inspection should find existing clones)")
-```
-
-If `keys == 0`, the typed inspection path will not surface anything. Fall back to the PSI-based body comparison below (it doesn't depend on the index).
+Skip the index probe — the safer signal is **the recipe itself returning `CLUSTERS_FOUND: 0`**. If you saw zero, the index is either empty or the inspection path doesn't apply; either way the PSI fallback below is the next step. (Earlier guidance suggested probing `FileBasedIndex.getAllKeys(HashFragmentIndex.NAME, ...)` but the `HashFragmentIndex` package path is internal-only and changes across IDE versions — the class is not resolvable from the script classpath.)).
 
 # Fallback: PSI-based body comparison (no index needed)
 
