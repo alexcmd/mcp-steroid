@@ -5,7 +5,17 @@ import org.junit.jupiter.api.Test
 
 class ExecuteFeedbackToolSpecSchemaTest {
     @Test
-    fun `inputSchema is valid JSON Schema`() {
-        assertToolSpecHasValidJsonSchema(ExecuteFeedbackToolSpec { unreachableHandler() })
+    fun `inputSchema`() {
+        val spec = ExecuteFeedbackToolSpec { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertToolSpecHasValidJsonSchema(spec)
+        assertToolIdentity(spec, "steroid_execute_feedback")
+        assertRequiredExactly(schema, "project_name", "task_id", "success_rating", "explanation")
+        assertStringProperty(schema, "project_name")
+        assertStringProperty(schema, "task_id")
+        assertStringProperty(schema, "execution_id")
+        assertStringProperty(schema, "explanation")
+        assertStringProperty(schema, "code")
+        assertNumberProperty(schema, "success_rating", minimum = 0.0, maximum = 1.0)
     }
 }
