@@ -2915,4 +2915,13 @@ Progress log appended below as each task moves.
   comment in `ScriptExecutorTest.kt` documents the gap; modal-DialogWrapper
   coverage stays in `test-integration/DialogKillerIntegrationTest`
   (Docker+Xvfb).
-- Iter 3 kicked off after iter2 fixes landed.
+- Iter 3 (`bbf9137a`) and iter 4 (`bdf41d1c`) IMPROVEMENTS applied.
+  TL;DR moved to top of `find-duplicates`; expression-body Kotlin
+  added to fallback; FetchResourceToolHandler description hints at
+  PSI fallback; completeness-note + threshold rationale added.
+  Progression: Iter 1 Claude 505s/Codex 121s → Iter 4 Claude 99s/Codex 60s.
+- Iter 5 kicked off after iter4 fixes landed.
+- 2026-05-26 — final codex review found two more polish items addressed
+  in `bfaad8fc`: drop the empty Prompts/Resources capability advertisement
+  entirely (cleaner intent signal) + fix stale `docs/ARCHITECTURE.md`
+  lines (resources registry + review workflow).
