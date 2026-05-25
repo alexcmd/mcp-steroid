@@ -8,7 +8,7 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 **Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
 
-**TL;DR for agents.** **In fresh IDE sessions, CI, or test environments, skip straight to the PSI body-comparison fallback below** — the inspection-based path needs a populated `HashFragmentIndex` that won't exist yet, and silently returns 0 clusters. Only use the inspection path after you've confirmed `HashFragmentIndex keys > 0` with the diagnostic snippet. The two recipes are independent.
+**TL;DR for agents.** **In fresh IDE sessions, CI, or test environments: run the PSI body-comparison fallback recipe directly — do NOT attempt the inspection path first.** The inspection path requires a populated `HashFragmentIndex` that doesn't exist yet, and silently returns 0 clusters that look like "no duplicates" instead of "index-dependent false negative". `CLUSTERS_FOUND: 0` from the inspection path is ambiguous — it is NOT evidence that no duplicates exist until the PSI fallback has also run. The two recipes are independent; use the inspection only after confirming `HashFragmentIndex keys > 0`.
 
 **Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. **And the inspection emits the same logical cluster N times** (once per fragment-as-`main`), so a 2-fragment pair surfaces twice — the recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly N× too large.
 
@@ -319,6 +319,10 @@ clones.take(20).forEachIndexed { i, cluster ->
 ```
 
 **Why bodies, not whole declarations**: copy-paste-rename is the dominant real-world duplicate pattern — two functions with identical bodies but different names. Comparing `KtNamedFunction.bodyBlockExpression` / `PsiMethod.body` (instead of `PsiNamedElement.text`) catches those; comparing the full element text misses them entirely. Whole-file or whole-class text comparisons are NOT meaningful duplicate-code clusters — the recipe deliberately walks body-bearing declarations only.
+
+**Completeness note**: the PSI fallback finds **exact body duplicates only** (after whitespace normalization). It does NOT find near-duplicates, parameterized clones, or structurally similar code with different variable names. The bundled `DuplicatedCode` inspection (when the index is warm) catches a broader set of clone types. Tell the user explicitly what was scanned — if they asked about near-duplicates or fuzzy clones, the fallback alone is insufficient.
+
+**Body-length threshold (60 chars)** filters trivial getters/setters and one-liners that swamp results. Lower to ~40 for smaller codebases or if the user suspects short duplicate blocks; raise to ~120 for noisy monorepos.
 
 # When the direct import does not compile
 
