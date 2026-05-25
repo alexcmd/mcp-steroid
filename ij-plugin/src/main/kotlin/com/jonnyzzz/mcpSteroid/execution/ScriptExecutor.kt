@@ -75,6 +75,19 @@ class ScriptExecutor(
             val capturedBlocks = evalResult.result
             log.info("Running ${capturedBlocks.size} script block(s) for $executionId with timeout ${timeout}s")
 
+            // Wrap the user-script body in McpEditingGuard so every
+            // steroid_execute_code call gets the canonical pre/post-flight:
+            // dismiss stuck modals, commit PSI + save documents + await VFS
+            // refresh BEFORE the body, await a second VFS refresh AFTER. The
+            // dialog-killer-force flag honours the per-call `dialog_killer`
+            // parameter; the periodic killer below covers dialogs that
+            // appear *during* the body.
+            mcpEditingGuard().withEditingGuard(
+                project = project,
+                executionId = executionId,
+                logMessage = { resultBuilder.logMessage(it) },
+                dialogKillerForceEnabled = exec.dialogKiller,
+            ) {
             coroutineScope {
                 withContext(Dispatchers.IO) {
                     // Periodic dialog killer — replaces the old detect-and-cancel
@@ -147,6 +160,10 @@ class ScriptExecutor(
                     }
                 }
             }
+            }
+        } catch (e: McpEditingGuardException) {
+            log.warn("Editing guard rejected execution $executionId: ${e.message}")
+            resultBuilder.reportFailed(e.message ?: "MCP editing guard rejected the call")
         } catch (e: TimeoutCancellationException) {
             // Timeout - report as error (must be caught before CancellationException since it's a subclass)
             log.warn("Execution $executionId timed out: ${e.message}")

@@ -69,12 +69,13 @@ class ExecutionManager(
                 try {
                     builder.logMessage("execution_id: ${executionId.executionId}")
 
-                    // Run the script. The McpEditingGuard wrapping (dialog
-                    // killer, modality fail-fast, BEFORE/AFTER awaitRefresh)
-                    // lives inside ScriptExecutor so it surrounds only the
-                    // run-blocks phase — kotlinc itself runs outside the guard
-                    // because it doesn't touch the project tree and would
-                    // otherwise pin a write-intent across compile wall-time.
+                    // Run the script. ScriptExecutor wraps the user-script
+                    // body in McpEditingGuard (dialog killer, modality
+                    // fail-fast, BEFORE/AFTER awaitRefresh) so it surrounds
+                    // only the run-blocks phase — kotlinc itself runs
+                    // outside the guard because it doesn't touch the project
+                    // tree and would otherwise pin a write-intent across
+                    // compile wall-time.
                     project.scriptExecutor.executeWithProgress(
                         executionId,
                         exec,
