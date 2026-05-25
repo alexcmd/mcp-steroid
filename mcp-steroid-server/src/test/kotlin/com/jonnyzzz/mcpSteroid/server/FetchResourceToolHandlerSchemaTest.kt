@@ -3,15 +3,15 @@ package com.jonnyzzz.mcpSteroid.server
 
 import org.junit.jupiter.api.Test
 
-/**
- * `FetchResourceToolHandler` is the dual-role tool: it is itself an
- * `McpTool` (registered in `McpSteroidTools.registerAll` alongside the
- * `*ToolSpec` siblings) and the consumer of `PromptsContextHandler`.
- * The schema test is identical in shape to the rest of the suite.
- */
 class FetchResourceToolHandlerSchemaTest {
     @Test
-    fun `inputSchema is valid JSON Schema`() {
-        assertToolSpecHasValidJsonSchema(FetchResourceToolHandler { unreachableHandler() })
+    fun `inputSchema`() {
+        val spec = FetchResourceToolHandler { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertToolSpecHasValidJsonSchema(spec)
+        assertToolIdentity(spec, "steroid_fetch_resource")
+        assertRequiredExactly(schema, "uri", "project_name")
+        assertStringProperty(schema, "uri")
+        assertStringProperty(schema, "project_name")
     }
 }
