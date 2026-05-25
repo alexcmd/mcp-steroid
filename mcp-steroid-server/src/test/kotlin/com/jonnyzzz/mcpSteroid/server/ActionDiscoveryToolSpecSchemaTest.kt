@@ -5,7 +5,17 @@ import org.junit.jupiter.api.Test
 
 class ActionDiscoveryToolSpecSchemaTest {
     @Test
-    fun `inputSchema is valid JSON Schema`() {
-        assertToolSpecHasValidJsonSchema(ActionDiscoveryToolSpec { unreachableHandler() })
+    fun `inputSchema`() {
+        val spec = ActionDiscoveryToolSpec { unreachableHandler() }
+        val schema = spec.inputSchema
+        assertToolSpecHasValidJsonSchema(spec)
+        assertToolIdentity(spec, "steroid_action_discovery")
+        assertRequiredExactly(schema, "project_name", "file_path")
+        assertStringProperty(schema, "project_name")
+        assertStringProperty(schema, "file_path")
+        assertStringProperty(schema, "task_id")
+        assertIntegerProperty(schema, "caret_offset")
+        assertIntegerProperty(schema, "max_actions_per_group")
+        assertArrayProperty(schema, "action_groups")
     }
 }
