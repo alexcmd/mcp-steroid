@@ -47,15 +47,15 @@ tool handlers receive their project context across the IJ-plugin and devrig
 
 ## 1. Problem
 
-`McpSteroidTools.registerAll` registers 10 tool specs. Of those, **6** carry
+`McpSteroidTools.registerAll` registers 8 tool specs. Of those, **4** carry
 `projectName` as the first argument of their handler method
-(`ExecuteCodeToolHandler`, `ApplyPatchToolHandler`,
-`ExecuteFeedbackToolHandler`, `ActionDiscoveryToolHandler`,
+(`ExecuteCodeToolHandler`, `ExecuteFeedbackToolHandler`,
 `VisionScreenshotToolHandler`, `VisionInputToolHandler`).
 `FetchResourceToolHandler` is itself an `McpTool` that also requires
 `project_name` and routes through
 `PromptsContextHandler.buildPromptsContext(projectName)`, so it is the
-**7th** project-scoped tool.
+**5th** project-scoped tool. (`ApplyPatchToolHandler` and
+`ActionDiscoveryToolHandler` were removed in May 2026 — see TASKS.md C3 and C4.)
 
 Three tools stay project-free (`ListProjects`, `ListWindows`, `OpenProject`)
 and one helper interface stays app-level (`PromptsContextHandler` — keeps its
