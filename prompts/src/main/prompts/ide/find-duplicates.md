@@ -8,6 +8,8 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 **Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
 
+**Recommended order.** In fresh IDE sessions, CI, or any environment where the `HashFragmentIndex` may be empty, the typed `DuplicatedCode` inspection silently returns 0 clusters. If you can't guarantee the index is populated, **start with the PSI body-comparison fallback** (under "Fallback: PSI-based body comparison (no index needed)" below) for a single-round-trip answer, then optionally cross-check with the inspection path. The recipes are independent.
+
 **Clusters can be intra-file or cross-file.** Two methods inside one class with the same body are reported the same way as a method in file A duplicating a method in file B. **And the inspection emits the same logical cluster N times** (once per fragment-as-`main`), so a 2-fragment pair surfaces twice — the recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly N× too large.
 
 **Line numbers are 1-based.** `TextFragment.lines.first` and `TextFragment.lines.last` are 1-based and ready to show to a user (the IDE does `getLineNumber(offset) + 1` internally). `path:startLine-endLine` lines you print are clickable in IDE/editor consoles without conversion.
@@ -57,7 +59,9 @@ val targetExtensions = listOf("java", "kt", "py")
 val maxClustersToReport = 20
 // Sane default: skip generated trees that are usually full of noise. Widen to `{ true }`
 // for a full audit, or narrow to e.g. `{ "/src/main/" in it }` for production-only.
-val pathFilter: (String) -> Boolean = { "/build/" !in it && "/.gradle/" !in it && "/out/" !in it }
+val pathFilter: (String) -> Boolean = {
+    "/build/" !in it && "/.gradle/" !in it && "/out/" !in it && "/.idea/" !in it
+}
 
 val scope = GlobalSearchScope.projectScope(project)
 val files = readAction {
@@ -228,7 +232,9 @@ If `DuplicateScopeExtension.findDuplicateScope(fileType)` returns `null` for the
 
 # When the inspection returns zero clusters
 
-If `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the recipe ran but the inspection emitted no `DuplicateProblemDescriptor`s. The most common root cause is an empty `HashFragmentIndex` — the per-file `checkFile` query returns no clones because no clones have been indexed yet. Add this diagnostic block IN THE SAME `steroid_execute_code` call, BEFORE the inspection loop:
+If `CLUSTERS_FOUND: 0` on a project you know contains duplicates (or on the standard `DemoDuplicates.kt` fixture with two byte-identical method bodies), the recipe ran but the inspection emitted no `DuplicateProblemDescriptor`s. **Switch to the PSI body-comparison fallback below in the same round-trip — don't pivot to grep / Bash.** The most common root cause is an empty `HashFragmentIndex`; the per-file `checkFile` query returns no clones because no clones have been indexed yet.
+
+Optional diagnostic to confirm the index state (IN THE SAME `steroid_execute_code` call, BEFORE the inspection loop):
 
 ```kotlin[IU]
 // Sanity-check the index BEFORE running the inspection. An empty key set
@@ -247,27 +253,24 @@ If `keys == 0`, the typed inspection path will not surface anything. Fall back t
 
 # Fallback: PSI-based body comparison (no index needed)
 
-When the bundled `DuplicatedCode` inspection returns zero (empty index, Community edition, headless environment without the duplicates-detector module) and you still need an answer, collect named functions/methods via PSI, normalize the bodies (strip whitespace + line endings), and group identical bodies. Covers intra-file clones (two methods in one class with the same body) AND cross-file clones; no inspection state required.
+When the bundled `DuplicatedCode` inspection returns zero (empty index, Community edition, headless environment without the duplicates-detector module) and you still need an answer, collect Kotlin / Java functions, **extract just the body block** (NOT the full declaration — the most common duplicate pattern is copy-paste-rename where names differ but bodies are identical), normalize (strip whitespace + line endings), and group identical bodies. Covers intra-file clones (two methods in one class with the same body) AND cross-file clones; no inspection state required.
 
 ```kotlin[IU]
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiMethod
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
+import org.jetbrains.kotlin.psi.KtNamedFunction
 
 data class CloneRange(val path: String, val startLine: Int, val endLine: Int, val name: String)
 
 val targetExtensions = listOf("java", "kt")
-val pathFilter: (String) -> Boolean = { "/build/" !in it && "/.gradle/" !in it }
+val pathFilter: (String) -> Boolean = {
+    "/build/" !in it && "/.gradle/" !in it && "/.idea/" !in it && "/out/" !in it
+}
 val scope = GlobalSearchScope.projectScope(project)
 
-// Resolve PSI body-bearing classes by reflection-free FQN. We use
-// PsiNamedElement so this recipe covers both KtNamedFunction and PsiMethod
-// without importing language-specific modules.
 val clones = smartReadAction(project) {
     val files = targetExtensions.flatMap { ext ->
         FilenameIndex.getAllFilesByExt(project, ext, scope)
@@ -276,17 +279,30 @@ val clones = smartReadAction(project) {
     val byBody = mutableMapOf<String, MutableList<CloneRange>>()
     for (vf in files) {
         val psi = PsiManager.getInstance(project).findFile(vf) ?: continue
-        val candidates = PsiTreeUtil.collectElementsOfType(psi, PsiNamedElement::class.java)
-        for (el in candidates) {
-            val text = (el as PsiElement).text
-            // Skip declarations without bodies and trivial one-liners.
-            if (text.length < 60 || !text.contains("{")) continue
-            val normalized = text.replace(Regex("\\s+"), " ").trim()
-            val doc = psi.viewProvider.document ?: continue
-            val startLine = doc.getLineNumber(el.textRange.startOffset) + 1
-            val endLine = doc.getLineNumber(el.textRange.endOffset) + 1
+
+        // Kotlin: KtNamedFunction.bodyBlockExpression skips fun + name + params.
+        // Match copy-paste-rename patterns where the body matches but the name differs.
+        PsiTreeUtil.collectElementsOfType(psi, KtNamedFunction::class.java).forEach { fn ->
+            val body = fn.bodyBlockExpression?.text ?: return@forEach
+            if (body.length < 60) return@forEach
+            val normalized = body.replace(Regex("\\s+"), " ").trim()
+            val doc = psi.viewProvider.document ?: return@forEach
+            val startLine = doc.getLineNumber(fn.textRange.startOffset) + 1
+            val endLine = doc.getLineNumber(fn.textRange.endOffset) + 1
             byBody.getOrPut(normalized) { mutableListOf() }
-                .add(CloneRange(vf.path, startLine, endLine, el.name ?: "<anon>"))
+                .add(CloneRange(vf.path, startLine, endLine, fn.name ?: "<anon>"))
+        }
+
+        // Java: PsiMethod.body excludes signature + return type.
+        PsiTreeUtil.collectElementsOfType(psi, PsiMethod::class.java).forEach { m ->
+            val body = m.body?.text ?: return@forEach
+            if (body.length < 60) return@forEach
+            val normalized = body.replace(Regex("\\s+"), " ").trim()
+            val doc = psi.viewProvider.document ?: return@forEach
+            val startLine = doc.getLineNumber(m.textRange.startOffset) + 1
+            val endLine = doc.getLineNumber(m.textRange.endOffset) + 1
+            byBody.getOrPut(normalized) { mutableListOf() }
+                .add(CloneRange(vf.path, startLine, endLine, m.name))
         }
     }
     byBody.values.filter { it.size >= 2 }
@@ -299,7 +315,7 @@ clones.take(20).forEachIndexed { i, cluster ->
 }
 ```
 
-The fallback finds named declarations (functions/methods) with byte-identical post-normalization bodies. It misses anonymous duplicates and intra-method extract candidates, but covers the dominant case the inspection would have flagged.
+**Why bodies, not whole declarations**: copy-paste-rename is the dominant real-world duplicate pattern — two functions with identical bodies but different names. Comparing `KtNamedFunction.bodyBlockExpression` / `PsiMethod.body` (instead of `PsiNamedElement.text`) catches those; comparing the full element text misses them entirely. Whole-file or whole-class text comparisons are NOT meaningful duplicate-code clusters — the recipe deliberately walks body-bearing declarations only.
 
 # When the direct import does not compile
 
