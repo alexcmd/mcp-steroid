@@ -2929,10 +2929,57 @@ Progress log appended below as each task moves.
   one fix: the "Agent fast path" callout pointed to a recipe further
   down the article, but the FIRST code block the agent saw was still
   the inspection-based one — agents tend to copy what they see first.
-  Renamed sections in `find-duplicates.md`:
+  Renamed sections in `find-duplicates.md` (commit `26c57dbe`):
     * `# The recipe (copy-paste)` → `# Cross-check recipe — warm-index inspection (broader clone types)`
     * `# Fallback: PSI-based body comparison (no index needed)` → `# Primary recipe — PSI body comparison (no index needed)`
     * "Agent fast path" callout rewritten to direct the reader to scroll
       down to "Primary recipe" by section name.
     * "When the inspection returns zero clusters" wording updated to
       reference "Primary recipe" instead of "PSI fallback".
+- 2026-05-26 — Iter 7 post-rename reviewer pass (Claude + Codex) both
+  said: renaming headings was a step but the strongest lever is
+  PHYSICAL reorder — agents copy the first code block in document
+  order regardless of heading wording. Also flagged 4 residual
+  "fallback" mentions (article L11, L13, L303, L312) still framing
+  PSI as secondary. Applied as a single follow-up (this entry):
+    * Physically moved the entire Primary recipe section (heading +
+      kotlin block + supporting notes) to appear directly after the
+      header callouts — now the FIRST code block in document order.
+    * "Why direct typed access works" moved to be the preamble to the
+      Cross-check recipe (where it belongs — it talks about the
+      typed import of `DuplicateProblemDescriptor`).
+    * Sections "How it works" → "How the Cross-check recipe works";
+      "Language coverage" → "Language coverage for the Cross-check
+      recipe"; "When the inspection returns zero clusters" → "When
+      the Cross-check returns zero clusters"; "When the direct import
+      does not compile" → "When the Cross-check direct import does
+      not compile".
+    * "Cross-check returns zero" now says "Primary recipe (PSI body
+      comparison) is the answer — if you haven't run it yet, go back
+      and run it" (the recipe sits above the cross-check, so the
+      direction reverses).
+    * Scrubbed "fallback" → "Primary recipe" in 4 spots: the agent
+      fast-path callout, the "PSI fallback language coverage" header,
+      the kotlin block's `println("CLUSTERS_FOUND: …(PSI body
+      comparison)")` (was: `(PSI body-comparison fallback)` — emitted
+      "fallback" into agent output), and the "Completeness note"
+      paragraph.
+    * `FetchResourceToolHandler` tool description: rewrote the
+      find-duplicates hint to point at "Primary recipe — PSI body
+      comparison" by section name (was: "PSI fallback section").
+    * Pre-existing regression caught en route: `apply-patch.md`
+      description was 209 chars (>200 cap, introduced in commit
+      `90442714` during S4 rewording). Trimmed to 184 chars.
+  Tests green: `MarkdownArticleContractTest`,
+  `FindDuplicatesPromptTest`, `FindDuplicatesPromptArticleReadTest`,
+  `FindDuplicatesKtBlocksCompilationTest` (10 blocks × 2 IDEs).
+- 2026-05-26 — **S5 iter8 BLOCKED: Docker Desktop is unable to start
+  locally.** `docker version --format '{{.Server.Version}}'` returns
+  "Error response from daemon: Docker Desktop is unable to start"; the
+  `:test-integration:test` task failed in 1m 2s at the Docker image
+  build step ("500 Internal Server Error … on `_ping`" to
+  `~/.docker/run/docker.sock`). Iter 8-10 of the IMPROVEMENTS cycle
+  cannot run until Docker Desktop is restarted by the user. The
+  prompt-only improvements above (iter 7 + the post-rename physical
+  reorder) ship now; the convergence verification waits for
+  Docker.

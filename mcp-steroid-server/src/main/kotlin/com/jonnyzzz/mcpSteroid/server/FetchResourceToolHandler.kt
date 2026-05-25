@@ -45,7 +45,7 @@ class FetchResourceToolHandler(
         return "Fetch a mcp-steroid:// skill guide by URI. Returns markdown with copy-paste Kotlin code recipes for steroid_execute_code. " +
                 "Running tests? → $testSkillUri | " +
                 "Debugging? → $debuggerUri | " +
-                "Find duplicates / clones / copy-pasted code / DRY violations? → $findDuplicatesUri (in fresh sessions use ONLY the PSI fallback section — the inspection path silently returns 0 clusters) | " +
+                "Find duplicates / clones / copy-pasted code / DRY violations? → $findDuplicatesUri (copy ONLY the 'Primary recipe — PSI body comparison' block; the Cross-check inspection path silently returns 0 clusters in fresh sessions) | " +
                 "Run a named inspection + quick fix? → $inspectAndFixUri | " +
                 "Any IDE task? → $skillUri | " +
                 "Full reference? → $codingGuideUri"

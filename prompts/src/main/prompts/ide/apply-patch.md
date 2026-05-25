@@ -1,6 +1,6 @@
 IDE: Apply Patch — Atomic Multi-Site Edit
 
-Apply N literal-text substitutions across one or more files as a single atomic undoable command. PSI stays in sync; the editing guard inlined into `steroid_execute_code` refreshes VFS after the script returns.
+Apply N literal-text substitutions across one or more files atomically. PSI stays in sync; the editing guard inlined into `steroid_execute_code` refreshes VFS after the script returns.
 
 Default agent path for multi-site literal edits: a single `steroid_execute_code` call that uses the script-context `applyPatch { hunk(...) }` DSL documented below. There is no dedicated MCP patch tool — the recipe + DSL is the surface.
 
