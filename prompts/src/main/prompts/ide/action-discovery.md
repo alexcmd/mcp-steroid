@@ -1,6 +1,6 @@
 IDE: Discover IDE actions at caret
 
-List every IDE action available at a caret position — editor-popup actions, intentions, quick-fixes, gutter icons — without a dedicated MCP tool. Compose `DaemonCodeAnalyzer` + `ShowIntentionsPass` + `ActionManager` inside one `steroid_execute_code` call.
+List IDE actions, intentions, quick-fixes and gutters at a caret position inside one `steroid_execute_code` call — no dedicated MCP tool.
 
 # When to use this recipe
 
@@ -10,11 +10,14 @@ You need an action's ID to invoke it via `ActionManager.getInstance().getAction(
 
 ```kotlin
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
+import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.ShowIntentionsPass
-import com.intellij.codeInsight.intention.impl.IntentionActionWithTextCaching
 import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionUiKind
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -58,9 +61,9 @@ kotlinx.coroutines.delay(300)
 // 3. Collect intentions / quick-fixes / inspections / gutters at the caret.
 val intentions = readAction { ShowIntentionsPass.getActionsToShow(editor, psiFile) }
 
-fun describe(d: IntentionActionWithTextCaching): String {
+fun describe(d: HighlightInfo.IntentionActionDescriptor): String {
     val action = d.action
-    return "  text=\"${d.text}\" family=\"${action.familyName}\" class=${action.javaClass.simpleName}"
+    return "  text=\"${action.text}\" family=\"${action.familyName}\" class=${action.javaClass.simpleName}"
 }
 
 println("=== INTENTIONS (${intentions.intentionsToShow.size}) ===")
@@ -70,7 +73,7 @@ intentions.errorFixesToShow.forEach { println(describe(it)) }
 println("=== INSPECTION FIXES (${intentions.inspectionFixesToShow.size}) ===")
 intentions.inspectionFixesToShow.forEach { println(describe(it)) }
 println("=== GUTTERS (${intentions.guttersToShow.size}) ===")
-intentions.guttersToShow.forEach { g -> println("  ${g.javaClass.simpleName}: ${g.toString()}") }
+intentions.guttersToShow.forEach { g -> println("  ${g.javaClass.simpleName}: $g") }
 
 // 4. Optional: list editor-popup action ids (e.g. "EditorPopupMenu1", "EditorGutterPopupMenu").
 val groupIds = listOf("EditorPopupMenu1", "EditorGutterPopupMenu")
@@ -78,25 +81,19 @@ for (id in groupIds) {
     val action = ActionManager.getInstance().getAction(id)
     println("group $id: ${if (action is ActionGroup) "present" else "missing"}")
 }
-```
 
-## Acting on the result
-
-Each intention's `action.javaClass.simpleName` is enough to identify a registered quick-fix; the text + family name describe what it does. To invoke a specific action by its registered id (e.g. `RunClass`, `DebugClass`, a refactoring), use the standard pattern:
-
-```kotlin
-import com.intellij.ide.DataManager
-import com.intellij.openapi.actionSystem.ActionUiKind
-import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.ex.ActionUtil
-
-val action = ActionManager.getInstance().getAction("RunClass") ?: error("Action not registered")
+// 5. Acting on the result. Each intention's `action.javaClass.simpleName`
+//    is enough to identify a registered quick-fix; text + family name
+//    describe what it does. To invoke a registered action by id (RunClass,
+//    DebugClass, a refactoring), build a DataContext from the editor and
+//    use ActionUtil.performAction.
+val targetAction = ActionManager.getInstance().getAction("RunClass") ?: error("Action not registered")
 withContext(Dispatchers.EDT) {
     val dataContext = DataManager.getInstance().getDataContext(editor.contentComponent)
     val event = AnActionEvent.createEvent(
-        dataContext, action.templatePresentation.clone(), "EditorPopup", ActionUiKind.NONE, null,
+        dataContext, targetAction.templatePresentation.clone(), "EditorPopup", ActionUiKind.NONE, null,
     )
-    ActionUtil.performAction(action, event)
+    ActionUtil.performAction(targetAction, event)
 }
 ```
 

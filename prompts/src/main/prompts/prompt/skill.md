@@ -230,11 +230,15 @@ Built-in helpers available in every script (no imports needed):
 
 **Tabular output cheat sheet** — for find-references, call-hierarchy, project-search, document-symbols, or any flat array-of-records result. Signatures are different on purpose; `printCsv` takes parallel lists (positional), `printToon` takes a list of maps (keyed). Mixing them up is the #1 first-try compile error.
 
-```text
+```kotlin
 // CSV — printCsv(headers: List<String>, rows: Iterable<List<Any?>>, dictColumns: Set<String> = emptySet())
 // Best when one column has repeated long values (absolute paths, FQNs).
-// `dictColumns` emits a per-column @col: preamble and replaces each cell with a short ID (`p1`, `p2`, …).
-printCsv(headers = listOf("idx", "path", "line"), rows = …, dictColumns = setOf("path"))
+// `dictColumns` emits a per-column @col: preamble and replaces each cell with a short ID (`p1`, `p2`, ...).
+printCsv(
+    headers = listOf("idx", "path", "line"),
+    rows = emptyList<List<Any?>>(),
+    dictColumns = setOf("path"),
+)
 
 // TOON — Token-Oriented Object Notation; https://github.com/toon-format/toon.
 // printToon(value: Any?) — drop-in for printJson on uniform-shape lists.
@@ -245,8 +249,8 @@ printToon(listOf(mapOf("path" to "/abs/A.kt", "line" to 17), mapOf("path" to "/a
 
 **Same records, both formats** — most recipes finish by emitting one list of records twice:
 
-```text
-val records = …  // List<Triple<path, line, snippet>> built once
+```kotlin
+val records: List<Triple<String, Int, String>> = emptyList()  // built once
 printCsv(
     headers = listOf("idx", "path", "line", "snippet"),
     rows = records.mapIndexed { i, (p, l, s) -> listOf(i + 1, p, l, s) },

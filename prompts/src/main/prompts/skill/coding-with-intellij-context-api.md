@@ -104,25 +104,26 @@ inventories). Same data, two formats — pick by the heuristic below.
 
 **Same data, two formats** — a typical recipe finishes by emitting both:
 
-```text
+```kotlin
 // Round-trip the same 5 records through both emitters. The CSV form pays
 // the path tokens once in the preamble; the TOON form prints the JSON-like
-// header + comma rows.
-
-// CSV with dictColumns:
-@path:
-  p1=/abs/src/main/kotlin/A.kt
-  p2=/abs/src/main/kotlin/B.kt
-idx,path,line
-1,p1,17
-2,p2,42
-3,p1,180
-
-// TOON array-of-records:
-[3]{path,line}:
-  /abs/src/main/kotlin/A.kt,17
-  /abs/src/main/kotlin/B.kt,42
-  /abs/src/main/kotlin/A.kt,180
+// header + comma rows. Sample output below — keep as a code comment so
+// the article passes the no-non-kotlin-fences contract.
+//
+//   CSV with dictColumns:
+//     @path:
+//       p1=/abs/src/main/kotlin/A.kt
+//       p2=/abs/src/main/kotlin/B.kt
+//     idx,path,line
+//     1,p1,17
+//     2,p2,42
+//     3,p1,180
+//
+//   TOON array-of-records:
+//     [3]{path,line}:
+//       /abs/src/main/kotlin/A.kt,17
+//       /abs/src/main/kotlin/B.kt,42
+//       /abs/src/main/kotlin/A.kt,180
 ```
 
 The CSV preamble form is RFC 4180-compliant for the rows themselves — a
