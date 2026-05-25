@@ -25,10 +25,8 @@ class ActionDiscoveryToolSpec(val handler: () -> ActionDiscoveryToolHandler) : M
                 "Returns action IDs (pass to ActionManager.getAction(id) in exec_code), intention names, error fixes, and gutter icon actions. " +
                 "Workflow: (1) call this with file + caret offset, (2) pick action from results, (3) invoke via steroid_execute_code."
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Name of the project containing the file (from steroid_list_projects).")
-        .string()
-        .required()
+    val projectName = CommonToolParams
+        .projectName("Name of the project containing the file (from steroid_list_projects).")
         .registerToSchema()
 
     val filePath = InputSchemaElement.param("file_path")
