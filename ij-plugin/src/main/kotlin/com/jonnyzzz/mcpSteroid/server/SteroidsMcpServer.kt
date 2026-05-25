@@ -78,7 +78,7 @@ class SteroidsMcpServer(
             // Register all MCP tools, resources, and prompts explicitly (no extension point).
             service<McpSteroidToolsIJ>().registerAll(mcpServer)
             ResourceRegistrar { service<PromptsContextHandler>() }
-                .register(mcpServer.resourceRegistry, mcpServer.promptRegistry)
+                .register(mcpServer.promptRegistry)
 
             val configuredPort = Registry.intValue("mcp.steroid.server.port")
 

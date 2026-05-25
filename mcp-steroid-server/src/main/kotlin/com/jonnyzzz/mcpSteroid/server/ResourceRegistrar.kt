@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import com.jonnyzzz.mcpSteroid.mcp.McpPromptRegistrar
-import com.jonnyzzz.mcpSteroid.mcp.McpResourceRegistrar
 import com.jonnyzzz.mcpSteroid.mcp.Prompt
 import com.jonnyzzz.mcpSteroid.mcp.PromptContent
 import com.jonnyzzz.mcpSteroid.mcp.PromptGetResult
@@ -12,14 +11,16 @@ import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.ResourcesIndex
 
 /**
- * Registers all generated prompt articles as MCP resources and prompts.
+ * Registers generated prompt articles as MCP **prompts** for the `prompt/`
+ * folder. Articles are intentionally NOT registered as MCP `resources/` —
+ * the dedicated [FetchResourceToolHandler] tool (`steroid_fetch_resource`)
+ * is the single discovery surface. The tool requires `project_name` so
+ * rendering picks up the project's [PromptsContext] (IDE conditionals,
+ * fence filters), which `resources/read` cannot supply.
  *
- * Uses the generated [ResourcesIndex] to iterate over all folders and articles,
- * eliminating the need for generated registration code.
+ * Articles are filtered by their root `IdeFilter` unless context rendering is deferred.
  *
- * Articles are filtered by their root [IdeFilter] unless context rendering is deferred.
- *
- * Content is rendered via [ArticleBase.readPayload] which handles per-part
+ * Content is rendered via `ArticleBase.readPayload` which handles per-part
  * filtering and see-also filtering internally.
  */
 class ResourceRegistrar(
@@ -32,33 +33,13 @@ class ResourceRegistrar(
         const val ROOT_RESOURCE_URI: String = "mcp-steroid://"
     }
 
-    fun register(resources: McpResourceRegistrar, prompts: McpPromptRegistrar) {
+    fun register(prompts: McpPromptRegistrar) {
         val resourcesIndex = ResourcesIndex()
         val context = handler().buildPromptsContext()
 
         for ((folder, index) in resourcesIndex.roots) {
-            registerArticleResources(resources, index, context)
             if (folder == "prompt") {
                 registerSkillPrompts(prompts, index, context)
-            }
-        }
-    }
-
-    private fun registerArticleResources(
-        resources: McpResourceRegistrar,
-        index: PromptIndexBase,
-        context: PromptsContext,
-    ) {
-        for ((_, article) in index.articles) {
-            if (!deferContext && !article.filter.matches(context)) continue
-
-            resources.registerResource(
-                uri = article.uri,
-                name = article.title.readPrompt(),
-                description = article.description.readPrompt(),
-                mimeType = "text/markdown",
-            ) {
-                article.readPayload(renderContext(context))
             }
         }
     }
