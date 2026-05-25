@@ -311,8 +311,11 @@ The MCP server runs inside IntelliJ. To verify:
 - `/mcp` - MCP protocol endpoint for tool calls
 - `/.well-known/mcp.json` - MCP server discovery
 
-### MCP Resources (Preferred)
-Use MCP `resources/list` and `resources/read` instead of HTTP fetching when possible.
+### Fetching mcp-steroid:// articles (preferred)
+Use the `steroid_fetch_resource` MCP tool (it requires `project_name`
+for correct IDE-conditional rendering) instead of HTTP fetching or
+`ReadMcpResourceTool`. The articles are NOT exposed via `resources/list`
+or `prompts/list` — the tool is the canonical discovery surface.
 
 ### Common Issues
 - **"Project not found"** - Run `steroid_list_projects` first to get exact project names

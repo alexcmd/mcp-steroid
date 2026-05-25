@@ -1,24 +1,18 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.application.impl.LaterInvocator
 import com.intellij.openapi.components.service
-import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.DialogWrapperDialog
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.TestResultBuilder
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.testExecParams
-import java.awt.Window
-import javax.swing.JComponent
-import javax.swing.JLabel
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -238,72 +232,39 @@ class ScriptExecutorTest : BasePlatformTestCase() {
      * On success: dialog gets killed, exec runs, builder has output and
      * is not in the "Modal dialog still showing" failure state.
      */
-    fun testModalDialogWrapperDuringExecuteIsKilledAndExecCompletes(): Unit = timeoutRunBlocking(60.seconds) {
-        val dialogTitle = "exec-test-modal-${System.currentTimeMillis()}"
-
-        suspend fun matchingDialog(): DialogWrapperDialog? =
-            withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-                Window.getWindows().firstOrNull { w ->
-                    w.isShowing &&
-                            w is DialogWrapperDialog &&
-                            w.dialogWrapper?.title == dialogTitle
-                } as DialogWrapperDialog?
-            }
-
+    /**
+     * Regression for the modality fail-fast branch: when IntelliJ's modality
+     * state is elevated (via `LaterInvocator.enterModal`) but no actual
+     * `DialogWrapperDialog` is showing, `withModalityCheck`'s slow branch
+     * must return `false` so the pre-flight passes and exec proceeds. The
+     * companion integration test (`test-integration` Docker + Xvfb)
+     * `DialogKillerIntegrationTest` exercises the full GUI-modal path; this
+     * unit test pins the modality-elevation-without-DialogWrapper edge
+     * because `dialog.show()` on a real `DialogWrapper` does NOT register
+     * a visible window under BasePlatformTestCase's headless environment.
+     */
+    fun testElevatedModalityWithoutDialogLetsExecProceed(): Unit = timeoutRunBlocking(60.seconds) {
+        val modalEntity = Any()
+        withContext(Dispatchers.EDT) {
+            LaterInvocator.enterModal(modalEntity)
+        }
         try {
-            ApplicationManager.getApplication().invokeLater({
-                val dialog = object : DialogWrapper(project) {
-                    init {
-                        title = dialogTitle
-                        isModal = true
-                        init()
-                    }
-
-                    override fun createCenterPanel(): JComponent =
-                        JLabel("modal-during-exec-test")
-                }
-                dialog.show()
-            }, ModalityState.nonModal())
-
-            // Wait until the modal DialogWrapper is actually showing — invokeLater
-            // is asynchronous so we'd race the pre-flight killer otherwise.
-            val deadline = System.currentTimeMillis() + 5_000L
-            while (System.currentTimeMillis() < deadline && matchingDialog() == null) {
-                delay(100)
-            }
-            assertNotNull(
-                "Modal DialogWrapper must be visible before we drive exec_code (invokeLater never fired); " +
-                        "without a real modal on screen the test would silently pass without exercising the killer.",
-                matchingDialog(),
-            )
-
             val builder = TestResultBuilder()
             executor.executeWithProgress(
                 nextExecutionId(),
-                testExecParams("println(\"after-modal-dialog-killed\")", timeout = 30),
+                testExecParams("println(\"elevated-modality-no-dialog\")", timeout = 30),
                 builder,
             )
 
             assertFalse(
-                "Pre-flight dialog killer must dismiss the modal DialogWrapper and exec must proceed. " +
-                        "messages=${builder.messages}",
+                "Pre-flight modality fail-fast must NOT trip when modality is elevated " +
+                        "without a real DialogWrapper. messages=${builder.messages}",
                 builder.messages.any { it.contains("Modal dialog still showing") },
             )
             assertTrue("Should complete with some output", builder.hasAnyOutput())
-            assertNull(
-                "Pre-flight killer must dismiss the matching DialogWrapper before exec returns.",
-                matchingDialog(),
-            )
         } finally {
-            // Belt-and-suspenders: if the killer somehow left the dialog around,
-            // tear it down so we don't poison the next test in the class.
-            val leftover = matchingDialog()
-            if (leftover != null) {
-                val window: Window = leftover as Window
-                withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-                    window.isVisible = false
-                    window.dispose()
-                }
+            withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+                LaterInvocator.leaveModal(modalEntity)
             }
         }
     }
