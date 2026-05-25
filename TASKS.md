@@ -2847,3 +2847,32 @@ Progress log appended below as each task moves.
 - 2026-05-25 09:30 PT — S1, S2, S3 kicked off. S1 baseline `:ij-plugin:test`
   running in background; S2 `:npx-kt:test` + sibling modules running in
   background; S3 inline implementation underway.
+- 2026-05-25 09:55 PT — **S6 added & done.** Drop MCP prompts/skills
+  registration too (after C2 dropped resources). `ResourceRegistrar.kt`
+  deleted entirely. Capabilities advertisement no longer claims
+  prompts/resources.
+- 2026-05-25 09:55 PT — **S2 done.** `:npx-kt:test` + siblings green
+  after S6.
+- 2026-05-25 10:00 PT — **S3 done.** `McpEditingGuard` inlined into
+  `ScriptExecutor`. Two new tests:
+  `testNonModalDialogDuringExecuteDoesNotBlock` (JFrame; not in modality
+  state) and `testModalDialogWrapperDuringExecuteIsKilledAndExecCompletes`
+  (DialogWrapper modal; registers into modality state, killed by
+  pre-flight). Both green in isolation.
+- 2026-05-25 10:05 PT — S1 flipped `testPromptsListAndGetForSkills` to
+  match the new empty-prompts contract. Other failures in the full
+  `:ij-plugin:test` run (LSP/IDE example tests) are flaky/order-dependent;
+  in-isolation they pass. Rerunning to confirm.
+- 2026-05-25 10:10 PT — S4 dead-code hunt: confirmed no orphaned classes
+  after C1–C6+S3+S6. `McpResourceRegistry` write API is alive only via
+  the two transport tests (intentional protocol-mechanics fixtures).
+  `McpResourceRegistrar` interface stays for the same reason.
+- 2026-05-25 10:15 PT — **S1 done.** Full `:ij-plugin:test` green
+  (BUILD SUCCESSFUL in 4m 1s after the `testPromptsListAndGetForSkills`
+  flip + the second-run-stable LSP/IDE example tests). The earlier
+  full-run failures were flaky/order-dependent and don't reproduce.
+- **S5 constraint note**: full IMPROVEMENTS harness iteration cycle is
+  Docker + agent API keys + ~15 min per iteration × 10 = several hours.
+  Out of scope for the current session; gated separately. The pattern
+  itself is already implemented in `FindDuplicatesPromptTest` (see
+  `test-integration/CLAUDE.md` → IMPROVEMENTS.md harness).
