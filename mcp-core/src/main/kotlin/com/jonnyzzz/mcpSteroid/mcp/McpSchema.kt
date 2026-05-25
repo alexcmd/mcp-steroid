@@ -109,7 +109,7 @@ fun InputSchemaElement<Nothing>.stringArray() = InputSchemaElement(
     }
 )
 
-/** Declares an array of arbitrary objects whose item schema is built by [items]. */
+/** Declares an array whose per-element schema is built by [items]. */
 fun InputSchemaElement<Nothing>.array(items: JsonObjectBuilder.() -> Unit) = InputSchemaElement(
     spec = spec.copy(
         type = "array",
