@@ -2871,6 +2871,21 @@ Progress log appended below as each task moves.
   (BUILD SUCCESSFUL in 4m 1s after the `testPromptsListAndGetForSkills`
   flip + the second-run-stable LSP/IDE example tests). The earlier
   full-run failures were flaky/order-dependent and don't reproduce.
+- 2026-05-25 10:25 PT — Codex review surfaced four real findings:
+  (1) modal-DialogWrapper test was under-asserted; (2) drop of
+  Prompts/Resources capability advertisement risked spec drift; (3)
+  stale `build.gradle.kts` comment + `ExecutionSuggestionService` tip;
+  (4) `McpEditingGuard` still referenced in three live prompts. All
+  four addressed in `1a50ebdf`, `90442714`, `90765311`.
+- 2026-05-25 10:30 PT — `testModalDialogWrapperDuringExecuteIsKilledAndExecCompletes`
+  reshaped: BasePlatformTestCase headless can't render a real
+  `DialogWrapper` (the dialog never registers in `Window.getWindows()`),
+  so the test now uses `LaterInvocator.enterModal` to elevate IntelliJ's
+  modality state without a real GUI window — pinning the slow-branch
+  path of `DialogWindowsLookup.withModalityCheck` (which returns false
+  because no `DialogWrapperDialog` is showing). Full GUI-modal kill
+  coverage remains in `test-integration/DialogKillerIntegrationTest`
+  (Docker + Xvfb).
 - **S5 constraint note**: full IMPROVEMENTS harness iteration cycle is
   Docker + agent API keys + ~15 min per iteration × 10 = several hours.
   Out of scope for the current session; gated separately. The pattern
