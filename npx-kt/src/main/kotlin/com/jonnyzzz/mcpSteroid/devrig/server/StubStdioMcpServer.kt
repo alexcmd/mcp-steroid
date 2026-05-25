@@ -3,14 +3,11 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
 import com.jonnyzzz.mcpSteroid.mcp.McpStdioServer
-import com.jonnyzzz.mcpSteroid.mcp.PromptsCapability
-import com.jonnyzzz.mcpSteroid.mcp.ResourcesCapability
 import com.jonnyzzz.mcpSteroid.mcp.ServerCapabilities
 import com.jonnyzzz.mcpSteroid.mcp.ServerInfo
 import com.jonnyzzz.mcpSteroid.mcp.ToolsCapability
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
-import com.jonnyzzz.mcpSteroid.server.ResourceRegistrar
 
 /**
  * Boot a real MCP stdio server inside the devrig CLI process.
@@ -37,15 +34,11 @@ suspend fun runStubStdioMcpServer(services: DevrigServices) {
         ),
         capabilities = ServerCapabilities(
             tools = ToolsCapability(listChanged = true),
-            prompts = PromptsCapability(listChanged = true),
-            resources = ResourcesCapability(subscribe = false, listChanged = true),
         ),
     )
 
     val tools = StubMcpSteroidTools(services)
     tools.registerAll(server)
-    ResourceRegistrar(deferContext = true) { tools.promptsContext }
-        .register(server.resourceRegistry, server.promptRegistry)
 
     McpStdioServer(server, input = services.mcpStdin, output = services.mcpStdout).run()
 }

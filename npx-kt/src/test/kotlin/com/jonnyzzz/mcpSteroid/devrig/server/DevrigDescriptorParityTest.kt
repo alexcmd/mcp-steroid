@@ -12,7 +12,6 @@ import com.jonnyzzz.mcpSteroid.devrig.HomePaths
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
-import com.jonnyzzz.mcpSteroid.server.ResourceRegistrar
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -50,27 +49,21 @@ class DevrigDescriptorParityTest {
 
     private fun directIdeServer(context: PromptsContext): McpServerCore =
         newServer().also { server ->
-            val tools = DirectDescriptorTools(context)
-            tools.registerAll(server)
-            ResourceRegistrar { tools.promptsContextHandler }
-                .register(server.resourceRegistry, server.promptRegistry)
+            DirectDescriptorTools(context).registerAll(server)
         }
 
     private fun devrigServer(tempDir: Path): McpServerCore {
         val lifetime = CloseableStackHost()
         return try {
             newServer().also { server ->
-                val tools = StubMcpSteroidTools(
+                StubMcpSteroidTools(
                     DevrigServices(
                         lifetime = lifetime,
                         homePaths = HomePaths(tempDir.resolve("devrig-home")).also { it.mkdirsAll() },
                         mcpStdin = ByteArrayInputStream(ByteArray(0)),
                         mcpStdout = PrintStream(ByteArrayOutputStream(), true, Charsets.UTF_8),
                     )
-                )
-                tools.registerAll(server)
-                ResourceRegistrar(deferContext = true) { tools.promptsContext }
-                    .register(server.resourceRegistry, server.promptRegistry)
+                ).registerAll(server)
             }
         } finally {
             lifetime.closeAllStacks()

@@ -143,7 +143,7 @@ class NpxBuiltInWebServerRpcHandler : HttpRequestHandler() {
             return HandlerResponse.json(ResourceReadResult.serializer(), payload)
         }
 
-        return if (uri.startsWith(ResourceRegistrar.ROOT_RESOURCE_URI)) {
+        return if (uri.startsWith("mcp-steroid://")) {
             HandlerResponse.text(
                 HttpResponseStatus.NOT_FOUND,
                 "Detailed MCP Steroid resources are available through steroid_fetch_resource with project_name and uri, not resources/read: $uri",

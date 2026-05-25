@@ -61,8 +61,6 @@ class SteroidsMcpServer(
         instructions = McpSteroidInfoPrompt().readPrompt(),
         capabilities = ServerCapabilities(
             tools = ToolsCapability(listChanged = true),
-            prompts = PromptsCapability(listChanged = true),
-            resources = ResourcesCapability(subscribe = false, listChanged = true)
         )
     )
 
@@ -75,10 +73,11 @@ class SteroidsMcpServer(
             // Double-check after acquiring lock
             if (port > 0) return
 
-            // Register all MCP tools, resources, and prompts explicitly (no extension point).
+            // Register all MCP tools explicitly (no extension point).
+            // mcp-steroid:// articles are NOT exposed via resources/list or
+            // prompts/list — the steroid_fetch_resource tool is the only path
+            // because it requires project_name for correct IDE-conditional rendering.
             service<McpSteroidToolsIJ>().registerAll(mcpServer)
-            ResourceRegistrar { service<PromptsContextHandler>() }
-                .register(mcpServer.promptRegistry)
 
             val configuredPort = Registry.intValue("mcp.steroid.server.port")
 
