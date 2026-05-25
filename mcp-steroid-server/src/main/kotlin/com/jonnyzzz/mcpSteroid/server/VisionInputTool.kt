@@ -42,23 +42,11 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
         The input is delivered to the window captured by steroid_take_screenshot (window_id from metadata) and the focus is forced to that window.
     """.trimIndent()
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Project name (from steroid_list_projects)")
-        .string()
-        .required()
-        .registerToSchema()
+    val projectName = CommonToolParams.projectName().registerToSchema()
 
-    val taskId = InputSchemaElement.param("task_id")
-        .description("Your task identifier to group related executions.")
-        .string()
-        .required()
-        .registerToSchema()
+    val taskId = CommonToolParams.taskId().registerToSchema()
 
-    val reason = InputSchemaElement.param("reason")
-        .description("Reason for sending input. Required for audit logs.")
-        .string()
-        .required()
-        .registerToSchema()
+    val reason = CommonToolParams.auditReason("sending input").registerToSchema()
 
     //TODO: just use window_id and make sure it's still around.
     val screenshotExecutionId = InputSchemaElement.param("screenshot_execution_id")
