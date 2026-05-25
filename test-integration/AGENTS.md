@@ -339,13 +339,13 @@ curl -s -X POST http://localhost:<PORT>/mcp \
   -H "Content-Type: application/json" \
   -d @/tmp/mcp-request.json | python3 -m json.tool
 
-# Discover actions at a file location
+# Discover actions at a file location — there is no dedicated MCP tool;
+# fetch the recipe and run it inside steroid_execute_code instead.
 curl -s -X POST http://localhost:<PORT>/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"steroid_action_discovery","arguments":{
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"steroid_fetch_resource","arguments":{
     "project_name":"DemoRider",
-    "file_path":"DemoRider.Tests/LeaderboardTests.cs",
-    "caret_offset":660
+    "uri":"mcp-steroid://ide/action-discovery"
   }}}' | python3 -m json.tool
 
 # Take a screenshot
@@ -411,23 +411,14 @@ Waited for `session-info.txt` to appear with the MCP URL.
 
 ### Step 3: Discover Available Actions
 
-Used `steroid_action_discovery` with the caret on the test class declaration:
-
-```bash
-curl -s -X POST http://localhost:55929/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-    "name":"steroid_action_discovery",
-    "arguments":{
-      "project_name":"DemoRider",
-      "file_path":"DemoRider.Tests/LeaderboardTests.cs",
-      "caret_offset":660
-    }
-  }}'
-```
-
-Result confirmed `RiderUnitTestRunContextAction` and `RiderUnitTestDebugContextAction`
-are present and enabled in the editor popup menu at offset 660 (`class LeaderboardTests`).
+The dedicated `steroid_action_discovery` MCP tool was removed (May 2026).
+The `mcp-steroid://ide/action-discovery` recipe documents the equivalent
+`DaemonCodeAnalyzer.restart` + `ShowIntentionsPass.getActionsToShow`
+pattern to run inside `steroid_execute_code`. At the time of this
+investigation, running the tool with the caret on `class LeaderboardTests`
+at offset 660 confirmed that `RiderUnitTestRunContextAction` and
+`RiderUnitTestDebugContextAction` are present and enabled in the editor
+popup menu — the same shape the recipe surfaces today.
 
 ### Step 4: Execute Run Action
 

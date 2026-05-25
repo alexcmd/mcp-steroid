@@ -109,8 +109,8 @@ git log --oneline --grep="onFinalTasksFinished\|JDK 24\|Gradle abort"
 git log --oneline -- prompts/src/main/prompts/skill/execute-code-gradle.md
 git log --oneline -- test-experiments/src/test/kotlin/com/jonnyzzz/mcpSteroid/integration/arena/ArenaTestRunner.kt
 
-# Apply-patch persistence — steroid_apply_patch saves every touched document.
-git log --oneline --grep="apply.patch\|ApplyPatchToolIntegrationTest"
+# Apply-patch DSL persistence — applyPatch { } inside steroid_execute_code saves every touched document.
+git log --oneline --grep="apply.patch\|ApplyPatch"
 
 # Aborted-build result-boundary guidance — ExecuteCodeToolHandler appends REQUIRED ACTION hint
 # (uses ExecuteCodeGradlePromptArticle().uri / ExecuteCodeMavenPromptArticle().uri).

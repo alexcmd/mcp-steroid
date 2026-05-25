@@ -825,9 +825,9 @@ devrig does not silently pick a backend when the id is omitted.
 There is no "use the only IDE that happens to be running"
 shortcut, no fuzzy match, no most-recently-used fallback.
 Project-targeted MCP tool calls (`steroid_execute_code`,
-`steroid_apply_patch`, `steroid_open_project`,
-`steroid_take_screenshot`, `steroid_action_discovery`,
-`steroid_execute_feedback`, `steroid_list_windows`) require
+`steroid_open_project`, `steroid_take_screenshot`,
+`steroid_execute_feedback`, `steroid_list_windows`,
+`steroid_fetch_resource`) require
 `project_name`. Backend-targeted CLI commands
 (`devrig backend start`, `stop`, `download`, `provision`) require
 the positional id (the list-mode invocation with no id is a

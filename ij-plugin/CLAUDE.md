@@ -156,10 +156,11 @@ If the gates pass, the wiring itself is two lines:
 
 Same gate applies to **adding methods on `McpScriptContext`** (Tenet 3 in
 PHILOSOPHY.md): the IntelliJ API is the extension point; context methods
-are last-resort. The `applyPatch { }` DSL stayed in the context class but
-production guidance routes agents to the dedicated `steroid_apply_patch`
-MCP tool first — new context methods must arrive with a similar fallback
-story from day one.
+are last-resort. The `applyPatch { }` DSL on the context class is the
+canonical example — it earned its place because composing multi-site
+literal edits with surrounding PSI / inspections work in one read/write
+cycle is genuinely worth the surface. New context methods must clear
+the same bar.
 
 ## IDE control via execute_code
 
