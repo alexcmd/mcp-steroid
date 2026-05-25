@@ -2768,3 +2768,82 @@ link still resolves.
 
 Each task waits on a fresh agent review (`run-agent.sh claude` +
 `run-agent.sh codex`) of its plan section before implementation starts.
+
+---
+
+# Stabilization round (2026-05-25)
+
+Autonomous follow-up tasks after C1–C6 land. The plugin is now leaner
+(8 MCP tools); this round shakes out regressions, dead code, and an
+overdue inline-and-simplify.
+
+## Status legend
+
+- 🟦 `planned` — todo
+- 🟧 `in-progress`
+- 🟩 `done`
+- 🟥 `blocked` — surfacing failure, needs decision
+
+## S1 — Run `:ij-plugin:test` full suite, fix every failure 🟧
+
+Foreground baseline pass: `./gradlew :ij-plugin:test --rerun-tasks`
+(13–14 min). For each failure: read the report, classify (regression
+from C1–C6 vs pre-existing), fix or delete the test, re-run scoped.
+Log surface area + fix per failure in this section.
+
+## S2 — Run `:npx-kt:test` + sibling modules, fix every failure 🟧
+
+`:npx-kt:test :mcp-core:test :mcp-steroid-server:test :execution-storage:test :mcp-http:test :mcp-stdio:test :agent-output-filter:test --rerun-tasks`
+Same fix-it-or-explain-it discipline as S1.
+
+## S3 — Inline `McpEditingGuard` into `ScriptExecutor` + non-modal-during-exec test 🟧
+
+`McpEditingGuard.withEditingGuard` has exactly one caller now —
+`ScriptExecutor.executeWithProgress` (after C3-2 wired it). Inline the
+helper, drop the indirection class, keep the steps inline with comments.
+
+Add a regression test: open a non-modal dialog while `steroid_execute_code`
+is running; confirm the script finishes (does not hang waiting for the
+dialog to close) and the dialog killer dismisses the dialog.
+
+## S4 — Hunt for dead code repo-wide 🟦
+
+After C1–C6 and S3, sweep the codebase. Targets:
+
+- Orphaned classes / functions / data classes / interfaces.
+- Unused imports across edited files.
+- `McpResourceRegistry` write API — production has no callers; tests do.
+  Decide: keep (test-only), or drop both and adapt tests.
+- `McpResourceRegistrar` interface.
+- Stale KDoc / comments referencing removed tools.
+
+Use MCP Steroid's `mcp-steroid://ide/inspect-and-fix` recipe for
+inspection-driven sweeps.
+
+## S5 — IMPROVEMENTS.md harness for `test-integration` (10 iterations) 🟦
+
+Apply the `FindDuplicatesPromptTest` IMPROVEMENTS pattern to a chosen
+`:test-integration` prompt-quality test. Each iteration:
+1. Run the test.
+2. Read the produced `IMPROVEMENTS-*.md` blocks.
+3. Apply prompt-only fixes (skill articles, tool descriptions, system
+   prompt text — no new tools, no new context methods).
+4. Re-run. Compare regressions.
+
+Hard cap: 10 iterations. Document each iteration's findings + diff
+under this section as we go.
+
+## Sequencing
+
+S1 and S2 run in parallel (different modules). S3 lands as soon as the
+inline + new test pass. S4 happens after S1–S3. S5 is the longest tail —
+run it concurrently with S4 because IMPROVEMENTS turnaround per
+iteration is several minutes.
+
+Progress log appended below as each task moves.
+
+### Progress
+
+- 2026-05-25 09:30 PT — S1, S2, S3 kicked off. S1 baseline `:ij-plugin:test`
+  running in background; S2 `:npx-kt:test` + sibling modules running in
+  background; S3 inline implementation underway.
