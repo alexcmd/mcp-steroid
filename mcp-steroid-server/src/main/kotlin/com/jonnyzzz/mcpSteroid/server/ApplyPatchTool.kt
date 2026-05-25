@@ -68,17 +68,9 @@ class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpToolBase
     override val name = "steroid_apply_patch"
     override val description get() = ApplyPatchToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Project name (from steroid_list_projects)")
-        .string()
-        .required()
-        .registerToSchema()
+    val projectName = CommonToolParams.projectName().registerToSchema()
 
-    val taskId = InputSchemaElement.param("task_id")
-        .description("Your task identifier; reuse across related calls.")
-        .string()
-        .required()
-        .registerToSchema()
+    val taskId = CommonToolParams.taskId("Your task identifier; reuse across related calls.").registerToSchema()
 
     val reason = InputSchemaElement.param("reason")
         .description("One-line summary of what this patch changes.")
