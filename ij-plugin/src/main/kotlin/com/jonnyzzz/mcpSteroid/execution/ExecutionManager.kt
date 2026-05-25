@@ -9,7 +9,6 @@ import com.intellij.openapi.project.Project
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
-import com.jonnyzzz.mcpSteroid.review.ReviewManager
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
@@ -69,14 +68,6 @@ class ExecutionManager(
                 val builder = responseBuilder(this, executionId, mcpProgressReporter)
                 try {
                     builder.logMessage("execution_id: ${executionId.executionId}")
-
-                    val finalResult = project.service<ReviewManager>().requestReview(executionId, exec, builder)
-                    if (!finalResult) {
-                        yield()
-                    }
-
-                    log.info("Review result for $executionId: $finalResult")
-                    yield()
 
                     // Run the script. The McpEditingGuard wrapping (dialog
                     // killer, modality fail-fast, BEFORE/AFTER awaitRefresh)

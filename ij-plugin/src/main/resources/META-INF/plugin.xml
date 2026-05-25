@@ -16,7 +16,6 @@
         <li><b>80+ MCP Resources:</b> Comprehensive guides covering LSP, IDE operations, debugger, tests, VCS, and more</li>
         <li><b>Vision Capabilities:</b> AI agents can see your IDE with screenshots and OCR (unique to MCP Steroid)</li>
         <li><b>Deep Integration:</b> Access PSI, inspections, refactorings, and full IntelliJ Platform API</li>
-        <li><b>Human Oversight:</b> Review and approve code execution with configurable safety controls</li>
     </ul>
 
     <h3>Why MCP Steroid?</h3>
@@ -103,23 +102,7 @@
         <notificationGroup id="jonnyzzz.mcp.steroid.updates"
                            displayType="BALLOON"/>
 
-        <!-- Per-project settings page under Tools > MCP Steroid -->
-        <projectConfigurable parentId="tools"
-            id="com.jonnyzzz.mcp-steroid.settings"
-            displayName="MCP Steroid"
-            instance="com.jonnyzzz.mcpSteroid.review.McpSteroidProjectConfigurable"/>
-
-        <!-- Review panel notification -->
-        <editorNotificationProvider
-            implementation="com.jonnyzzz.mcpSteroid.review.McpReviewNotificationProvider"/>
-
         <!-- Registry keys for configuration -->
-        <registryKey key="mcp.steroid.review.mode" defaultValue="ALWAYS"
-            description="Code review mode: ALWAYS (default, requires manual review), NEVER (skip review, auto-approve all executions)"/>
-
-        <registryKey key="mcp.steroid.review.timeout" defaultValue="600"
-            description="Review timeout in seconds"/>
-
         <registryKey key="mcp.steroid.execution.timeout" defaultValue="600"
             description="Script execution timeout in seconds"/>
 
