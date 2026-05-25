@@ -2888,6 +2888,14 @@ Progress log appended below as each task moves.
   (Docker + Xvfb).
 - **S5 constraint note**: full IMPROVEMENTS harness iteration cycle is
   Docker + agent API keys + ~15 min per iteration × 10 = several hours.
-  Out of scope for the current session; gated separately. The pattern
-  itself is already implemented in `FindDuplicatesPromptTest` (see
-  `test-integration/CLAUDE.md` → IMPROVEMENTS.md harness).
+  Iter 1 completed locally (Docker + ~/.anthropic + ~/.openai keys; gemini
+  skipped, no GEMINI_API_KEY). Both Claude and Codex converged on the
+  same finding: `mcp-steroid://ide/find-duplicates` returns
+  `CLUSTERS_FOUND: 0` with no diagnostic path when `HashFragmentIndex`
+  is empty. Applied prompt-only fixes in `1e6fef87`:
+  - "When the inspection returns zero clusters" diagnostic section
+    (pre-flight sanity check on the index)
+  - "Fallback: PSI-based body comparison (no index needed)" recipe
+  - Fully-qualified `com.intellij.platform.ide.observation.Observation.awaitConfiguration`
+    (claude flagged the unqualified name as unresolved)
+- Iter 2 kicked off in background after the prompt fixes landed.
