@@ -1341,10 +1341,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     }
 
     /**
-     * Tests that MCP resources are properly listed and can be read.
-     * Verifies the "IntelliJ API Power User Guide" resource is available.
+     * Tests that prompt articles are intentionally NOT exposed via MCP resources/list.
+     * The dedicated `steroid_fetch_resource` tool is the only discovery path because it
+     * requires `project_name` and so can render IDE-conditional content correctly.
      */
-    fun testResourcesListAndRead(): Unit = timeoutRunBlocking(30.seconds) {
+    fun testResourcesListIsEmptyAfterFetchResourcePromotion(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
 
@@ -1369,41 +1370,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         assertNull("resources/list should succeed", listRpc.error)
 
         val resourcesList = McpJson.decodeFromJsonElement<ResourcesListResult>(listRpc.result!!)
-        assertTrue("Should have at least one resource", resourcesList.resources.isNotEmpty())
-
-        val skillResource = resourcesList.resources.find { it.name.contains("Power User Guide") }
-        assertNotNull("Should have IntelliJ API Power User Guide resource", skillResource)
-        assertEquals("text/markdown", skillResource!!.mimeType)
-        assertTrue("Resource should have catchy description", skillResource.description?.contains("RECOMMENDED") == true)
-
-        // Read the resource
-        val readResponse = client.post(server.mcpUrl) {
-            contentType(ContentType.Application.Json)
-            accept(ContentType.Application.Json)
-            header(McpHttpTransport.SESSION_HEADER, sessionId)
-            setBody(buildJsonObject {
-                put("jsonrpc", "2.0")
-                put("id", "resources-read")
-                put("method", "resources/read")
-                putJsonObject("params") {
-                    put("uri", skillResource.uri)
-                }
-            }.toString())
-        }
-
-        assertEquals(HttpStatusCode.OK, readResponse.status)
-        val readRpc = McpJson.decodeFromString<JsonRpcResponse>(readResponse.bodyAsText())
-        assertNull("resources/read should succeed", readRpc.error)
-
-        val readResult = McpJson.decodeFromJsonElement<ResourceReadResult>(readRpc.result!!)
-        assertTrue("Should have at least one content item", readResult.contents.isNotEmpty())
-
-        val content = readResult.contents.first()
-        assertEquals(skillResource.uri, content.uri)
-        assertEquals("text/markdown", content.mimeType)
-        assertNotNull("Resource should have text content", content.text)
-        assertTrue("Content should contain SKILL.md content", content.text!!.contains("MCP Steroid"))
-        assertTrue("Content should contain quickstart", content.text!!.contains("Quickstart"))
+        val steroidEntries = resourcesList.resources.filter { it.uri.startsWith("mcp-steroid://") }
+        assertTrue(
+            "mcp-steroid:// articles must not appear in resources/list — they are reached via steroid_fetch_resource. Got: ${steroidEntries.map { it.uri }}",
+            steroidEntries.isEmpty(),
+        )
     }
 
     /**

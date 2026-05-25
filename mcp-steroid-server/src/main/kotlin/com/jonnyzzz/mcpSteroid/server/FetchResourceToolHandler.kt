@@ -20,9 +20,12 @@ import com.jonnyzzz.mcpSteroid.prompts.generated.skill.CodingWithIntelliJPromptA
 import com.jonnyzzz.mcpSteroid.thisLogger
 
 /**
- * Simple tool that fetches any MCP Steroid resource by URI and returns its Markdown content.
- * Agents can call this instead of ReadMcpResourceTool — it's a purpose-built MCP tool
- * visible in the tool list, making resource discovery more natural.
+ * Fetches any MCP Steroid resource by URI and returns its Markdown content.
+ *
+ * This is the **only** discovery surface for `mcp-steroid://` articles — prompt
+ * articles are no longer registered as MCP `resources/`, so `ListMcpResourcesTool`
+ * and `ReadMcpResourceTool` cannot see them. Going through this tool is required
+ * because [project_name] is needed to render IDE-conditional content correctly.
  */
 class FetchResourceToolHandler(
     private val handler: () -> PromptsContextHandler,
@@ -49,7 +52,7 @@ class FetchResourceToolHandler(
     }
 
     val uri = InputSchemaElement.param("uri")
-        .description("The resource URI to fetch (from ListMcpResourcesTool or MCP server instructions)")
+        .description("The mcp-steroid:// URI to fetch (see the tool description for the canonical entry points, or fetch mcp-steroid://prompt/skill for the index)")
         .string()
         .required()
         .registerToSchema()
