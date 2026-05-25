@@ -20,13 +20,12 @@ A runtime mirror of this file lives at
 ## Tenet 1 — minimal MCP tool surface
 
 **Don't propose new `steroid_*` tools.** MCP Steroid intentionally maintains
-a small set of MCP tools. Today there are 10:
+a small set of MCP tools. Today there are 9:
 
 - `steroid_list_projects`
 - `steroid_list_windows`
 - `steroid_open_project`
 - `steroid_execute_code`
-- `steroid_apply_patch`
 - `steroid_execute_feedback`
 - `steroid_action_discovery`
 - `steroid_take_screenshot`
@@ -47,6 +46,14 @@ A new tool may be added only when **all** of these are true:
    agree the tool is justified, after reading this file.
 
 Anything short of that — propose a recipe instead.
+
+**Worked example — `steroid_apply_patch` removed.** A dedicated patch tool
+duplicated what `steroid_execute_code` + the in-script `applyPatch { }` DSL
++ `mcp-steroid://ide/apply-patch` already deliver: data-only multi-site
+edits, atomicity, VFS refresh. The tool added schema surface and a forked
+recipe corpus without enabling anything the recipe couldn't. Removing it
+is what Tenet 1 looks like in practice — unlock IDE depth rather than
+optimize a generic edit path.
 
 ## Tenet 2 — power lives in prompts and direct IntelliJ API usage
 
@@ -154,12 +161,14 @@ preference.
 3. The new method must teach an idiom that's reusable across many tasks,
    not specialised to one DPAIA scenario.
 
-**`applyPatch { }` is the canonical example of why we are strict here.**
-The script-context DSL exists, but production guidance routes agents to
-the dedicated `steroid_apply_patch` MCP tool first; the DSL is the
-fallback, not the lead. `mcp-steroid://ide/apply-patch` reflects that
-ordering. New context methods must come with a similar fallback story
-from day one.
+**`applyPatch { }` is the canonical example of how we earn a script-context
+method.** The DSL lives on `McpScriptContext` because composing
+multi-site literal edits with surrounding IntelliJ API work (PSI walk →
+patch → inspections in one read/write cycle) is genuinely worth the
+surface. Production guidance routes agents to the
+`mcp-steroid://ide/apply-patch` recipe inside `steroid_execute_code` —
+there is no dedicated MCP tool wrapping it. New context methods must
+clear the same bar.
 
 ---
 

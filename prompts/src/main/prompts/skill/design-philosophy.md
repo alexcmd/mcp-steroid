@@ -14,7 +14,6 @@ Don't propose new `steroid_*` tools. The current set is intentional and intentio
 - `steroid_list_windows`
 - `steroid_open_project`
 - `steroid_execute_code`
-- `steroid_apply_patch`
 - `steroid_execute_feedback`
 - `steroid_action_discovery`
 - `steroid_take_screenshot`
@@ -68,7 +67,7 @@ A new context method requires:
 2. Three-reviewer consensus across `run-agent.sh codex` / `claude` / `gemini`. **One reviewer disagreeing kills the proposal** — propose a recipe instead.
 3. The new method teaches an idiom reusable across many tasks, not one specific scenario.
 
-`applyPatch { }` is the canonical example: the script-context DSL exists, but `mcp-steroid://ide/apply-patch` routes you to the dedicated `steroid_apply_patch` tool first. The DSL is the fallback. New context methods must arrive with a similar fallback story.
+`applyPatch { }` is the canonical example: the script-context DSL lives on `McpScriptContext` because composing multi-site literal edits with surrounding IntelliJ API work in one read/write cycle is genuinely worth the surface. The `mcp-steroid://ide/apply-patch` recipe drives it inside `steroid_execute_code` — there is no dedicated MCP tool wrapping it.
 
 # In practice
 
