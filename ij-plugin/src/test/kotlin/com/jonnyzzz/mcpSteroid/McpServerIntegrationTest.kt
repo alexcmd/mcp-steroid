@@ -1378,9 +1378,12 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     }
 
     /**
-     * Tests that MCP prompts expose Agent Skills and can be retrieved.
+     * After S6 dropped MCP prompt registration, prompts/list returns an
+     * empty list — the steroid_fetch_resource tool is the only discovery
+     * surface (it requires project_name for correct IDE-conditional
+     * rendering, which prompts/get cannot supply).
      */
-    fun testPromptsListAndGetForSkills(): Unit = timeoutRunBlocking(30.seconds) {
+    fun testPromptsListIsEmptyAfterFetchResourcePromotion(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
 
@@ -1404,36 +1407,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         assertNull("prompts/list should succeed", listRpc.error)
 
         val promptsList = McpJson.decodeFromJsonElement<PromptsListResult>(listRpc.result!!)
-        val skillUri = SkillPromptArticle().uri
-        val mainPrompt = promptsList.prompts.find { it.name == skillUri }
-        assertNotNull("Should expose main skill prompt", mainPrompt)
-        assertEquals("IntelliJ API Power User Guide", mainPrompt!!.title)
-
-        val getResponse = client.post(server.mcpUrl) {
-            contentType(ContentType.Application.Json)
-            accept(ContentType.Application.Json)
-            header(McpHttpTransport.SESSION_HEADER, sessionId)
-            setBody(buildJsonObject {
-                put("jsonrpc", "2.0")
-                put("id", "prompts-get")
-                put("method", "prompts/get")
-                putJsonObject("params") {
-                    put("name", skillUri)
-                }
-            }.toString())
-        }
-
-        assertEquals(HttpStatusCode.OK, getResponse.status)
-        val getRpc = McpJson.decodeFromString<JsonRpcResponse>(getResponse.bodyAsText())
-        assertNull("prompts/get should succeed", getRpc.error)
-
-        val getResult = McpJson.decodeFromJsonElement<PromptGetResult>(getRpc.result!!)
-        assertEquals(1, getResult.messages.size)
-        val message = getResult.messages.first()
-        assertEquals("user", message.role)
-        val content = message.content as PromptContent.Text
-        assertTrue(content.text.contains("MCP Steroid"))
-        assertFalse(content.text.trimStart().startsWith("---"))
+        val steroidEntries = promptsList.prompts.filter { it.name.startsWith("mcp-steroid://") }
+        assertTrue(
+            "mcp-steroid:// articles must not appear in prompts/list — they are reached via steroid_fetch_resource. Got: ${steroidEntries.map { it.name }}",
+            steroidEntries.isEmpty(),
+        )
     }
 
     /**
