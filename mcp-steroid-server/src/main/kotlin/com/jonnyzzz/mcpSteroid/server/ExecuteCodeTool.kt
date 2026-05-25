@@ -37,11 +37,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
     override val name = "steroid_execute_code"
     override val description get() = ExecuteCodeToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Project name (from steroid_list_projects)")
-        .string()
-        .required()
-        .registerToSchema()
+    val projectName = CommonToolParams.projectName().registerToSchema()
 
     val code = InputSchemaElement.param("code")
         .description("Kotlin suspend method body")
@@ -49,11 +45,9 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .required()
         .registerToSchema()
 
-    val taskId = InputSchemaElement.param("task_id")
-        .description("Your task identifier to group related executions. Use the same task_id for all execute_code calls that are part of the same task, and when providing feedback via steroid_execute_feedback.")
-        .string()
-        .required()
-        .registerToSchema()
+    val taskId = CommonToolParams.taskId(
+        "Your task identifier to group related executions. Use the same task_id for all execute_code calls that are part of the same task, and when providing feedback via steroid_execute_feedback."
+    ).registerToSchema()
 
     val reason = InputSchemaElement.param("reason")
         .description("IMPORTANT: On your FIRST call, provide the FULL TASK DESCRIPTION from the user - what they originally asked you to do. On subsequent calls, describe what this specific execution aims to achieve. This helps track progress and understand context.")
