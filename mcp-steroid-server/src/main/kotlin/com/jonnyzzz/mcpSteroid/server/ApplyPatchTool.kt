@@ -1,10 +1,18 @@
 package com.jonnyzzz.mcpSteroid.server
 
+import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
-import com.jonnyzzz.mcpSteroid.mcp.McpTool
+import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.mcp.array
+import com.jonnyzzz.mcpSteroid.mcp.boolean
+import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.mcp.get
+import com.jonnyzzz.mcpSteroid.mcp.param
+import com.jonnyzzz.mcpSteroid.mcp.required
+import com.jonnyzzz.mcpSteroid.mcp.string
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ApplyPatchToolDescriptionPromptArticle
@@ -15,7 +23,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -58,70 +65,67 @@ data class ApplyPatchHunk(val filePath: String, val oldString: String, val newSt
  * all edits land as a single undoable [WriteCommandAction], PSI committed in
  * the same action, VFS async-refreshed on completion.
  */
-class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpTool {
+class ApplyPatchToolSpec(val handler: () -> ApplyPatchToolHandler) : McpToolBase() {
     override val name = "steroid_apply_patch"
     override val description get() = ApplyPatchToolDescriptionPromptArticle().readPayload(PromptsContext.Generic)
-    override val inputSchema = buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            putJsonObject("project_name") {
-                put("type", "string")
-                put("description", "Project name (from steroid_list_projects)")
-            }
-            putJsonObject("task_id") {
-                put("type", "string")
-                put("description", "Your task identifier; reuse across related calls.")
-            }
-            putJsonObject("reason") {
-                put("type", "string")
-                put("description", "One-line summary of what this patch changes.")
-            }
-            putJsonObject("dry_run") {
-                put("type", "boolean")
-                put("description", "If true, run preflight only — resolve files, validate every anchor (exactly-once), and return the resolved-position audit trail without writing any files. On preflight failure the same structured `file not found` / `old_string not found` / `occurs more than once` diagnostics are returned as on a live call. Defaults to false.")
-            }
-            putJsonObject("hunks") {
-                put("type", "array")
-                put("description", "Literal-text hunks. Each hunk's old_string must occur exactly once in its file.")
-                putJsonObject("items") {
-                    put("type", "object")
-                    putJsonObject("properties") {
-                        putJsonObject("file_path") {
-                            put("type", "string")
-                            put("description", "Absolute filesystem path. Matches Claude Code `Edit`'s `file_path` field.")
-                        }
-                        putJsonObject("old_string") {
-                            put("type", "string")
-                            put("description", "Literal text to replace (must occur exactly once).")
-                        }
-                        putJsonObject("new_string") {
-                            put("type", "string")
-                            put("description", "Replacement text.")
-                        }
-                    }
-                    putJsonArray("required") {
-                        add("file_path")
-                        add("old_string")
-                        add("new_string")
-                    }
+
+    val projectName = InputSchemaElement.param("project_name")
+        .description("Project name (from steroid_list_projects)")
+        .string()
+        .required()
+        .registerToSchema()
+
+    val taskId = InputSchemaElement.param("task_id")
+        .description("Your task identifier; reuse across related calls.")
+        .string()
+        .required()
+        .registerToSchema()
+
+    val reason = InputSchemaElement.param("reason")
+        .description("One-line summary of what this patch changes.")
+        .string()
+        .registerToSchema()
+
+    val dryRun = InputSchemaElement.param("dry_run")
+        .description("If true, run preflight only — resolve files, validate every anchor (exactly-once), and return the resolved-position audit trail without writing any files. On preflight failure the same structured `file not found` / `old_string not found` / `occurs more than once` diagnostics are returned as on a live call. Defaults to false.")
+        .boolean()
+        .registerToSchema()
+
+    val hunks = InputSchemaElement.param("hunks")
+        .description("Literal-text hunks. Each hunk's old_string must occur exactly once in its file.")
+        .array {
+            put("type", "object")
+            putJsonObject("properties") {
+                putJsonObject("file_path") {
+                    put("type", "string")
+                    put("description", "Absolute filesystem path. Matches Claude Code `Edit`'s `file_path` field.")
+                }
+                putJsonObject("old_string") {
+                    put("type", "string")
+                    put("description", "Literal text to replace (must occur exactly once).")
+                }
+                putJsonObject("new_string") {
+                    put("type", "string")
+                    put("description", "Replacement text.")
                 }
             }
+            putJsonArray("required") {
+                add("file_path")
+                add("old_string")
+                add("new_string")
+            }
         }
-        putJsonArray("required") {
-            add("project_name")
-            add("task_id")
-            add("hunks")
-        }
-    }
+        .required()
+        .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val args = context.params.arguments
 
-        val projectName = args["project_name"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: project_name")
-        val taskId = args["task_id"]?.jsonPrimitive?.contentOrNull
-            ?: return ToolCallResult.errorResult("Missing required parameter: task_id")
+        val projectName = context[projectName]
+        val taskId = context[taskId]
 
+        // Hunks: the DSL declares the schema; parsing handles a Claude-Code quirk
+        // (string-encoded JSON array) so the bare context[hunks] cast wouldn't catch it.
         val rawHunks = args["hunks"]
             ?: return ToolCallResult.errorResult("Missing required parameter: hunks (array)")
         // Some MCP clients (Claude Code's tool-call envelope under certain
