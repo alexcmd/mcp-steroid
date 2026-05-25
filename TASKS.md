@@ -2522,3 +2522,249 @@ placeholder takes over.
 Validation: `./gradlew :prompts:generatePrompts` + `:prompts:compileKotlin`
 both green; the new tip text round-trips through the prompt-generator
 and compiles into the generated payload class.
+
+---
+
+# Cleanup & simplification round (2026-05-25)
+
+Six-task plan to shrink the MCP tool surface and clean up downstream
+references. Each task is independently sequenced and gated on agent review
+(`run-agent.sh claude` + `run-agent.sh codex`) of its plan before any code
+changes land. Each implemented bullet ships as a **dedicated commit**.
+
+**Working principles** (apply to every task in this round):
+
+- Use MCP Steroid for file edits (`steroid_apply_patch` for multi-site
+  changes; `steroid_execute_code` for IDE-driven refactorings — rename,
+  find-usages, optimize-imports, inspections).
+- After each change: compile, run scoped tests, verify IDE inspections green.
+- Never weaken a test. If a test pins a removed feature, delete it as part
+  of the same commit.
+- Focused commit messages: `subsystem: change` style.
+
+## Status legend
+
+- 🟦 `planned` — plan drafted, awaiting agent review
+- 🟨 `reviewed` — both `claude` and `codex` approved
+- 🟧 `in-progress` — implementation underway
+- 🟩 `done` — landed on `main`
+- 🟥 `blocked` — issue raised; needs decision
+
+---
+
+## C1 — Drop exec-code review functionality 🟦
+
+**Goal.** Remove the human-in-the-loop review gate on `steroid_execute_code`.
+Every incoming script executes immediately; no per-project approve/reject
+UX, no settings page, no editor banner.
+
+**Surface area.**
+
+- `ij-plugin/.../review/` — entire package (4 files, ~470 lines):
+  - `ReviewManager.kt` — `@Service(PROJECT)`, `requestReview(...)`, `approve`/`reject`
+  - `McpReviewNotificationProvider.kt` — editor-notification banner with approve/reject buttons
+  - `McpSteroidProjectSettings.kt` — per-project mode (ALWAYS/TRUSTED/NEVER)
+  - `McpSteroidProjectConfigurable.kt` — settings UI
+- `ij-plugin/.../execution/ExecutionManager.kt:73` — drops the
+  `requestReview(...)` call (the only caller).
+- `ij-plugin/src/main/resources/META-INF/plugin.xml` — strip the four EP
+  registrations.
+- Registry key `mcp.steroid.review.mode` becomes orphaned.
+
+**Implementation outline.**
+
+1. Inline-delete the `requestReview` block from `ExecutionManager.executeWithProgress`.
+2. Delete the four files under `review/`.
+3. Strip the four `<extensions>` entries from `plugin.xml`.
+4. `git grep -n "ReviewManager\|McpSteroidProjectSettings\|review.mode"` —
+   confirm zero hits outside removed files.
+5. `./gradlew :ij-plugin:test --rerun-tasks` — fix or delete review tests.
+
+**Risks.** Persisted `<component>` entries in `.idea/` are silently ignored
+by IntelliJ; no migration needed.
+
+---
+
+## C2 — Promote `steroid_fetch_resource` over MCP-resources listing 🟦
+
+**Goal.** Stop registering every prompt article as an MCP **resource**. Keep
+the `steroid_fetch_resource` MCP **tool** as the single discovery surface;
+it already requires `project_name` so rendering picks up the project's
+`PromptsContext` (IDE conditionals).
+
+**Surface area.**
+
+- `mcp-steroid-server/.../ResourceRegistrar.kt` — stop calling
+  `resources.registerResource(...)` on every article.
+- `mcp-core/.../McpResourceRegistry.kt` and `McpResourceRegistrar` — audit;
+  if no one registers anything anymore, prune the write API.
+- `SteroidsMcpServer.kt:80` — drop the `ResourceRegistrar` wiring (or keep
+  for prompts-only).
+- `NpxBuiltInWebServerRpcHandler.kt:146` — confirm it reads through the
+  index, not the registry.
+- `steroid_fetch_resource` tool description — tweak to claim discovery role.
+- Index article (`mcp-steroid://prompt/skill`) — instruct agents to call
+  `steroid_fetch_resource` rather than browse `ListMcpResourcesTool`.
+
+**Implementation outline.**
+
+1. Delete or no-op `ResourceRegistrar.register()`'s article-loop.
+2. Drop unused `resources` parameter if it becomes vestigial.
+3. Audit `McpResourceRegistry` — delete the write side if no callers.
+4. Update tool description text.
+5. Update index articles' "Related" sections.
+6. Add or update an integration test asserting `resources/list` returns an
+   empty/minimal payload.
+
+**Risks.** Clients that pre-cached steroid URIs against `ReadMcpResourceTool`
+get "not found" — `steroid_fetch_resource` is the new path.
+
+---
+
+## C3 — Drop `steroid_apply_patch`; reinforce deep IDE features 🟦
+
+**Goal.** Remove the `steroid_apply_patch` MCP tool. Replace its function
+with recipes (existing `mcp-steroid://ide/apply-patch` + the
+`McpScriptContext.applyPatch { }` DSL) and ensure file changes made through
+`steroid_execute_code` refresh VFS/PSI so subsequent semantic operations
+see the new content. Add a tenet to `docs/PHILOSOPHY.md` ("deep IDE
+features over patch utilities") with this removal as the worked example.
+
+**Surface area.**
+
+- `mcp-steroid-server/.../ApplyPatchTool.kt` — delete the spec + tests.
+- `ij-plugin/.../server/ApplyPatchToolHandler.kt` — delete the IJ impl.
+- `ij-plugin/.../execution/executeApplyPatch.kt` — evaluate: keep only if
+  the in-script `McpScriptContext.applyPatch { }` DSL still references it.
+- `SteroidsMcpServer.kt` — drop the registration.
+- `plugin.xml` — strip the two `<applicationService>` entries.
+- `prompts/src/main/prompts/skill/apply-patch-tool-description.md` — delete.
+- `prompts/src/main/prompts/ide/apply-patch.md` — keep, reframe as a
+  `steroid_execute_code` recipe (it already includes the DSL pattern).
+- Schema test + integration test — delete.
+- `docs/PHILOSOPHY.md` — add the new tenet.
+- **VFS-refresh guarantee**: after any `applyPatch { }` invocation inside
+  `steroid_execute_code`, ensure `VirtualFileManager.syncRefresh()` or
+  equivalent so the next read picks up disk state. Audit
+  `McpEditingGuard.kt` BEFORE/AFTER awaitRefresh — should already cover
+  this; if not, add it unconditionally for `steroid_execute_code`.
+
+**Implementation outline.**
+
+1. Update `docs/PHILOSOPHY.md` (own commit).
+2. Delete `ApplyPatchToolSpec` + schema test (own commit).
+3. Delete `ApplyPatchToolHandler` + IJ impl + plugin.xml entries (own commit).
+4. Verify in-script `McpScriptContext.applyPatch { }` DSL still resolves.
+5. Rewrite or trim `prompts/.../ide/apply-patch.md` as exclusively a
+   `steroid_execute_code`-driven recipe.
+6. Delete `prompts/.../skill/apply-patch-tool-description.md`.
+7. Update `ResourcesIndex` references; rerun `:prompts:test`.
+8. Audit `McpEditingGuard` BEFORE/AFTER awaitRefresh for execute-code path.
+
+**Risks.** Any IDE skill that programmatically calls `applyPatch { }` inside
+`execute_code` must keep working; ensure `McpEditingGuard`-driven refresh
+isn't gated on the patch tool path.
+
+---
+
+## C4 — Drop `steroid_action_discovery`; replace with recipe 🟦
+
+**Goal.** Remove the tool. Salvage its action-listing logic
+(editor-popup + gutter + intentions at caret) into a
+`steroid_execute_code` recipe so capability is preserved without dedicated
+tool surface.
+
+**Surface area.**
+
+- `mcp-steroid-server/.../ActionDiscoveryTool.kt` — delete the spec.
+- `ij-plugin/.../server/ActionDiscoveryToolHandler.kt` — delete the IJ impl.
+- `SteroidsMcpServer.kt` — drop registration.
+- `plugin.xml` — strip the two `<applicationService>` entries.
+- `prompts/.../skill/action-discovery-tool-description.md` — delete.
+- **New recipe**: `prompts/src/main/prompts/ide/action-discovery.md`
+  reproducing the action-listing logic (ActionManager + DataManager +
+  ShowIntentionsPass + DaemonCodeAnalyzer.restart). Wait-for-highlights
+  pattern matches existing inspections recipes.
+- Schema/integration tests — delete.
+
+**Implementation outline.**
+
+1. Salvage the action-listing logic from `ActionDiscoveryToolHandlerIJ`
+   into the new recipe article.
+2. Delete the tool spec + handler + tool-description prompt.
+3. Drop the registration + plugin.xml entries.
+4. Cross-reference from `skill/coding-with-intellij` and `ide/overview`.
+5. `./gradlew :prompts:test :ij-plugin:test --rerun-tasks`.
+
+**Risks.** Recipe must include the "wait for highlights" idiom; copy from
+existing inspections recipes.
+
+---
+
+## C5 — Repo-wide cleanup and simplification 🟦
+
+**Goal.** Walk the codebase looking for clutter introduced or left over by
+the four removals. Simplify without changing semantics. Each cleanup goes
+as its own commit.
+
+**Candidates.**
+
+- `McpResourceRegistry` write API — delete if Task C2 leaves no callers.
+- `McpResourceRegistrar` interface — same.
+- `executeApplyPatch.kt` — delete if both removals (C3) leave no callers.
+- `McpEditingGuard.kt` — keep, but drop `steroid_apply_patch` from KDoc.
+- `analyticsBeacon.capture(event = "apply_patch", ...)` callsites — remove.
+- Any new `runCatching { }` left over (banned pattern).
+- `TODO*` files in repo root — grep for now-obsolete entries.
+- `CommonToolParams.taskId()` — re-read description after removals.
+- `ProjectScopedToolHandler` — confirm remaining handlers still use it.
+- `prompts/.../skill/coding-with-intellij.md` — update after tool removals.
+- Unused imports across modified files.
+
+**Implementation outline.**
+
+1. After C1–C4 land: `git grep -i "apply_patch\|action_discovery\|reviewMode\|ReviewManager"`.
+2. For each finding: delete, rewrite, or move to a recipe.
+3. `./gradlew :ij-plugin:test :mcp-core:test :mcp-steroid-server:test :prompts:test --rerun-tasks`.
+4. Optional: `mcp-steroid://ide/inspect-and-fix` pass to catch
+   unused-symbol / redundant-code warnings.
+
+---
+
+## C6 — Audit `prompts/` corpus for stale references 🟦
+
+**Goal.** Walk every prompt under `prompts/src/main/prompts/` and remove or
+rewrite references to deleted entities. Confirm every `mcp-steroid://...`
+link still resolves.
+
+**Surface area.**
+
+- `prompts/src/main/prompts/**.md` — entire corpus.
+- Generated `ResourcesIndex` — verified by `:prompts:test`.
+- "See also" cross-reference lists at the bottom of each article.
+
+**Implementation outline.**
+
+1. Build the list of removed URIs:
+   `mcp-steroid://skill/apply-patch-tool-description`,
+   `mcp-steroid://skill/action-discovery-tool-description`, …
+2. `grep -rln "apply-patch\|action-discovery\|reviewMode\|ReviewManager" prompts/`.
+3. For each match: delete the link, swap for the new recipe URI, or
+   rewrite the surrounding paragraph.
+4. `./gradlew :prompts:test` — KtBlocks + MarkdownArticleContract.
+5. Final pass to verify article line-2 IDE filter (`[IU,RD]` etc.).
+
+---
+
+## Sequencing
+
+1. **C1** (review removal) — independent. Land first.
+2. **C3** (apply_patch removal) — needs PHILOSOPHY update first; rest follows.
+3. **C4** (action_discovery removal) — independent.
+4. **C2** (MCP-resources promotion) — touches the fetch tool which stays;
+   do after C3+C4 so the resource list shrinks naturally first.
+5. **C5** (cleanup pass) — after C1–C4.
+6. **C6** (prompts audit) — after C1–C5.
+
+Each task waits on a fresh agent review (`run-agent.sh claude` +
+`run-agent.sh codex`) of its plan section before implementation starts.
