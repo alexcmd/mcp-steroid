@@ -2898,4 +2898,21 @@ Progress log appended below as each task moves.
   - "Fallback: PSI-based body comparison (no index needed)" recipe
   - Fully-qualified `com.intellij.platform.ide.observation.Observation.awaitConfiguration`
     (claude flagged the unqualified name as unresolved)
-- Iter 2 kicked off in background after the prompt fixes landed.
+- Iter 2 ran with iter1 fixes: Claude 505s → 185s, Codex 121s → 96s.
+  Both agents converged on second wave: (a) PSI fallback compared
+  whole `PsiNamedElement.text` and missed copy-paste-rename pattern;
+  (b) `/.idea/mcp-steroid/` scripts polluted results; (c) recipe should
+  recommend body-only PSI fallback first in fresh IDE sessions / CI.
+  Applied in commit `784a36b5` (bundled with S3 deadlock fix):
+  - Switch fallback to `KtNamedFunction.bodyBlockExpression` /
+    `PsiMethod.body` (body-only, catches copy-paste-rename pattern)
+  - Add `/.idea/` to default `pathFilter` everywhere
+  - "Recommended order" note at the top
+  - "When the inspection returns zero clusters" jumps directly to fallback
+- S3 deadlock: `testElevatedModalityWithoutDialogLetsExecProceed` was
+  rolled back because `LaterInvocator.enterModal` + plain `Dispatchers.EDT`
+  in `commitAndSaveAllDocuments` deadlock (verified: 24-min hang). NOTE
+  comment in `ScriptExecutorTest.kt` documents the gap; modal-DialogWrapper
+  coverage stays in `test-integration/DialogKillerIntegrationTest`
+  (Docker+Xvfb).
+- Iter 3 kicked off after iter2 fixes landed.
