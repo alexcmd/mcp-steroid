@@ -17,7 +17,6 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -100,13 +99,11 @@ data class GutterIconInfo(
 )
 
 
-class ActionDiscoveryToolHandlerIJ : ActionDiscoveryToolHandler {
+class ActionDiscoveryToolHandlerIJ : ProjectScopedToolHandler(), ActionDiscoveryToolHandler {
     private val json = Json { encodeDefaults = true }
 
     override suspend fun discoverActions(projectName: String, actionDiscoveryParams: ActionDiscoveryParams): ToolCallResult {
-        val project = readAction {
-            ProjectManager.getInstance().openProjects.find { it.name == projectName }
-        } ?: return ToolCallResult.errorResult("Project not found: $projectName")
+        val project = resolveProject(projectName)
 
         val groups = actionDiscoveryParams.actionGroups ?: listOf(IdeActions.GROUP_EDITOR_POPUP, IdeActions.GROUP_EDITOR_GUTTER)
 
