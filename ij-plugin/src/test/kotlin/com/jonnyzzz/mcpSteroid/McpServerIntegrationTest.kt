@@ -1935,7 +1935,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
      * re-issues the same tools/call (same session, same task_id, fresh JSON-RPC id).
      * The CliClaudeIntegrationTest hangs were traced to four parallel `steroid_execute_code`
      * requests piling up on a single ExecutionManager and contending on the VFS write-intent
-     * lock inside McpEditingGuard.awaitRefresh.
+     * lock inside ScriptExecutor's pre-flight awaitRefresh.
      *
      * This test fires N=4 concurrent tools/call requests on a single session and asserts:
      *  - every JSON-RPC id round-trips back unchanged (no cross-talk between requests),

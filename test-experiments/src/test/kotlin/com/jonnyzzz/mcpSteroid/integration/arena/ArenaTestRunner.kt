@@ -206,7 +206,7 @@ class ArenaTestRunner(
             appendLine("      hunk(filePath = \"/abs/path/B.java\", oldString = \"oldB\",  newString = \"newB\")")
             appendLine("  }")
             appendLine("  ```")
-            appendLine("  Atomic undo, pre-flight single-occurrence validation, PSI-consistent, VFS refreshed AFTER the script body via `McpEditingGuard`. Shortest unique anchor (30–60 chars) is enough. Native `Edit` remains valid ONLY for a single literal substitution in a single file. See `mcp-steroid://ide/apply-patch` for the full recipe.")
+            appendLine("  Atomic undo, pre-flight single-occurrence validation, PSI-consistent, VFS refreshed AFTER the script body. Shortest unique anchor (30–60 chars) is enough. Native `Edit` remains valid ONLY for a single literal substitution in a single file. See `mcp-steroid://ide/apply-patch` for the full recipe.")
             appendLine("- **Use native Read/Grep/Glob tools for simple file reads after the first steroid call.** Additional `steroid_execute_code` calls are for PSI queries, cross-file reference search, VFS writes, or test execution — not filename lookups. Follow the hard read budget below.")
             appendLine("- **If `steroid_execute_code` returns an error**: read the error message and retry with corrected code. Do NOT fall back to native Write/Bash tools after a single exec_code failure. Common fixes:")
             appendLine("  - `suspension functions can only be called within coroutine body` → mark your helper as `suspend fun readFile(...)` instead of `fun readFile(...)`")
