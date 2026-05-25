@@ -1,15 +1,24 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.execution
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.service
+import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.ui.DialogWrapperDialog
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.TestResultBuilder
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.testExecParams
+import java.awt.Window
+import javax.swing.JComponent
+import javax.swing.JLabel
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -214,6 +223,66 @@ class ScriptExecutorTest : BasePlatformTestCase() {
                 nonModalFrame.dispose()
             }
         }
+    }
+
+    /**
+     * Regression test for S3: a modal IntelliJ `DialogWrapper` shown via
+     * `invokeLater` registers into the IDE modality state (visible to
+     * `DialogWindowsLookup.withModalityCheck`). When `steroid_execute_code`
+     * runs against that state, the pre-flight dialog killer must dismiss
+     * the dialog and the modality fail-fast must let the script proceed.
+     *
+     * The first `invokeLater` puts the dialog on the EDT (`dialog.show()`
+     * blocks the dispatch lambda, not the test coroutine). We poll until
+     * the dialog is actually showing, then drive `executeWithProgress`.
+     * On success: dialog gets killed, exec runs, builder has output and
+     * is not in the "Modal dialog still showing" failure state.
+     */
+    fun testModalDialogWrapperDuringExecuteIsKilledAndExecCompletes(): Unit = timeoutRunBlocking(60.seconds) {
+        val dialogTitle = "exec-test-modal-${System.currentTimeMillis()}"
+
+        ApplicationManager.getApplication().invokeLater({
+            val dialog = object : DialogWrapper(project) {
+                init {
+                    title = dialogTitle
+                    isModal = true
+                    init()
+                }
+
+                override fun createCenterPanel(): JComponent =
+                    JLabel("modal-during-exec-test")
+            }
+            dialog.show()
+        }, ModalityState.nonModal())
+
+        // Wait until the modal DialogWrapper is actually showing — invokeLater
+        // is asynchronous so we'd race the pre-flight killer otherwise.
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (System.currentTimeMillis() < deadline) {
+            val visible = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+                Window.getWindows().any { w ->
+                    w.isShowing &&
+                            w is DialogWrapperDialog &&
+                            w.dialogWrapper?.title == dialogTitle
+                }
+            }
+            if (visible) break
+            delay(100)
+        }
+
+        val builder = TestResultBuilder()
+        executor.executeWithProgress(
+            nextExecutionId(),
+            testExecParams("println(\"after-modal-dialog-killed\")", timeout = 30),
+            builder,
+        )
+
+        assertFalse(
+            "Pre-flight dialog killer must dismiss the modal DialogWrapper and exec must proceed. " +
+                    "messages=${builder.messages}",
+            builder.messages.any { it.contains("Modal dialog still showing") },
+        )
+        assertTrue("Should complete with some output", builder.hasAnyOutput())
     }
 
     /**
