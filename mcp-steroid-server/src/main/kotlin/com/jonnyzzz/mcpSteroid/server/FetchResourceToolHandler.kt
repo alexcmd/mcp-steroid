@@ -54,11 +54,7 @@ class FetchResourceToolHandler(
         .required()
         .registerToSchema()
 
-    val projectName = InputSchemaElement.param("project_name")
-        .description("Project name (from steroid_list_projects)")
-        .string()
-        .required()
-        .registerToSchema()
+    val projectName = CommonToolParams.projectName().registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val uri = context[uri]
