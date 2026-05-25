@@ -241,48 +241,71 @@ class ScriptExecutorTest : BasePlatformTestCase() {
     fun testModalDialogWrapperDuringExecuteIsKilledAndExecCompletes(): Unit = timeoutRunBlocking(60.seconds) {
         val dialogTitle = "exec-test-modal-${System.currentTimeMillis()}"
 
-        ApplicationManager.getApplication().invokeLater({
-            val dialog = object : DialogWrapper(project) {
-                init {
-                    title = dialogTitle
-                    isModal = true
-                    init()
-                }
-
-                override fun createCenterPanel(): JComponent =
-                    JLabel("modal-during-exec-test")
-            }
-            dialog.show()
-        }, ModalityState.nonModal())
-
-        // Wait until the modal DialogWrapper is actually showing — invokeLater
-        // is asynchronous so we'd race the pre-flight killer otherwise.
-        val deadline = System.currentTimeMillis() + 5_000L
-        while (System.currentTimeMillis() < deadline) {
-            val visible = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-                Window.getWindows().any { w ->
+        suspend fun matchingDialog(): DialogWrapperDialog? =
+            withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+                Window.getWindows().firstOrNull { w ->
                     w.isShowing &&
                             w is DialogWrapperDialog &&
                             w.dialogWrapper?.title == dialogTitle
+                } as DialogWrapperDialog?
+            }
+
+        try {
+            ApplicationManager.getApplication().invokeLater({
+                val dialog = object : DialogWrapper(project) {
+                    init {
+                        title = dialogTitle
+                        isModal = true
+                        init()
+                    }
+
+                    override fun createCenterPanel(): JComponent =
+                        JLabel("modal-during-exec-test")
+                }
+                dialog.show()
+            }, ModalityState.nonModal())
+
+            // Wait until the modal DialogWrapper is actually showing — invokeLater
+            // is asynchronous so we'd race the pre-flight killer otherwise.
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (System.currentTimeMillis() < deadline && matchingDialog() == null) {
+                delay(100)
+            }
+            assertNotNull(
+                "Modal DialogWrapper must be visible before we drive exec_code (invokeLater never fired); " +
+                        "without a real modal on screen the test would silently pass without exercising the killer.",
+                matchingDialog(),
+            )
+
+            val builder = TestResultBuilder()
+            executor.executeWithProgress(
+                nextExecutionId(),
+                testExecParams("println(\"after-modal-dialog-killed\")", timeout = 30),
+                builder,
+            )
+
+            assertFalse(
+                "Pre-flight dialog killer must dismiss the modal DialogWrapper and exec must proceed. " +
+                        "messages=${builder.messages}",
+                builder.messages.any { it.contains("Modal dialog still showing") },
+            )
+            assertTrue("Should complete with some output", builder.hasAnyOutput())
+            assertNull(
+                "Pre-flight killer must dismiss the matching DialogWrapper before exec returns.",
+                matchingDialog(),
+            )
+        } finally {
+            // Belt-and-suspenders: if the killer somehow left the dialog around,
+            // tear it down so we don't poison the next test in the class.
+            val leftover = matchingDialog()
+            if (leftover != null) {
+                val window: Window = leftover as Window
+                withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+                    window.isVisible = false
+                    window.dispose()
                 }
             }
-            if (visible) break
-            delay(100)
         }
-
-        val builder = TestResultBuilder()
-        executor.executeWithProgress(
-            nextExecutionId(),
-            testExecParams("println(\"after-modal-dialog-killed\")", timeout = 30),
-            builder,
-        )
-
-        assertFalse(
-            "Pre-flight dialog killer must dismiss the modal DialogWrapper and exec must proceed. " +
-                    "messages=${builder.messages}",
-            builder.messages.any { it.contains("Modal dialog still showing") },
-        )
-        assertTrue("Should complete with some output", builder.hasAnyOutput())
     }
 
     /**
