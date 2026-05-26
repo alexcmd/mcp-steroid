@@ -34,6 +34,16 @@ kotlin {
     jvmToolchain(21)
 }
 
+// `src/buildsrc-shared/kotlin/` carries the IDE compatibility matrix
+// (`McpSteroidIdeTargets`). The same path is added as a source dir in
+// `buildSrc/build.gradle.kts`, so Gradle scripts and the downloader CLI
+// compile the same .kt file independently — one source of truth, two
+// compiled copies (different classloaders). Keep this folder tiny and
+// dependency-free (stdlib only) so buildSrc can compile it.
+sourceSets.main {
+    kotlin.srcDir("src/buildsrc-shared/kotlin")
+}
+
 repositories {
     mavenCentral()
 }

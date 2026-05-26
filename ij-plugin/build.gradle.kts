@@ -1,6 +1,7 @@
 @file:Suppress("HasPlatformType")
 
 import com.jonnyzzz.mcpSteroid.gradle.*
+import com.jonnyzzz.mcpSteroid.ideDownloader.McpSteroidIdeTargets
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -27,7 +28,12 @@ val releaseNotesVersion = providers.gradleProperty("mcp.release.notes.version")
 val releaseNotesFile = rootProject.layout.projectDirectory.file("release/notes/$releaseNotesVersion.md")
 
 val targetIdeProductRaw = providers.gradleProperty("mcp.platform.product").orElse("idea").get()
-val targetIdeVersion = providers.gradleProperty("mcp.platform.version").orElse("2025.3").get()
+// Default flows from the single source of truth in :intellij-downloader
+// (`McpSteroidIdeTargets.buildTarget.version`). The Gradle property override
+// lets CI build against a specific version (e.g. on the 262 verifier path).
+val targetIdeVersion = providers.gradleProperty("mcp.platform.version")
+    .orElse(McpSteroidIdeTargets.buildTarget.version)
+    .get()
 val targetIdeProduct = when (targetIdeProductRaw.trim().lowercase()) {
     "idea", "iiu", "intellij", "intellijidea", "intellijideaultimate" -> JetBrainsIdeProduct.IntelliJIdeaUltimate
     "pycharm", "pcp", "python" -> JetBrainsIdeProduct.PyCharm
@@ -196,9 +202,16 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            create(IntelliJPlatformType.IntellijIdeaUltimate, "2025.3") { useInstaller = true }
-            create(IntelliJPlatformType.IntellijIdeaUltimate, "2026.1") { useInstaller = true }
-            //TODO: Setup 262 tests
+            // Per-major IDE entries come from the shared matrix
+            // (`McpSteroidIdeTargets.verifierTargets`) so a future addition
+            // (e.g. 263 EAP) is a single-place edit covered by
+            // `McpSteroidIdeTargetsTest`. `useInstaller = true` stays here
+            // until commit 4 of the 262 EAP plan switches to `local(file)`.
+            McpSteroidIdeTargets.verifierTargets.forEach { target ->
+                create(IntelliJPlatformType.IntellijIdeaUltimate, target.version) {
+                    useInstaller = true
+                }
+            }
         }
     }
 }
