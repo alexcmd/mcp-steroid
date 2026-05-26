@@ -93,40 +93,33 @@ followup below.
 
 ## Follow-ups logged during execution
 
-- **Prod-minimal-deps verification (PyCharm + vanilla IDEA).** Today
-  `bundledPlugin("com.intellij.java")` + `bundledPlugin("org.jetbrains.kotlin")`
-  remain in the **main** `intellijPlatform` dependencies block (per user:
-  "keep as it was before — Java plugin was present"). Tests need them;
-  the production `plugin.xml` doesn't `<depends>` on them, so the runtime
-  is still minimal. Improvement: migrate these two entries into the
-  `intellijPlatformTesting { testIde { … plugins { … } } }` block so the
-  compile-time surface of the production plugin is genuinely vanilla,
-  and validate via `:test-integration` against a vanilla PyCharm
-  Docker image (no Java plugin available) that the plugin still loads.
-- **Bump Gradle daemon JDK 21 → 25.** IntelliJ 261 bundles JBR 25; the
-  `KotlincCommandLineBuilderIntegrationTest` failure during the 262 EAP
-  work was traced to `java.specification.version=25` in the test sandbox
-  (assertion hardcoded `"21"`). Switching the daemon to JDK 25 aligns
-  the dev/build environment with the runtime. Update
-  `gradle/gradle-daemon-jvm.properties` + every `kotlin { jvmToolchain(N) }`
-  block from 21 → 25, and reverify the per-module test matrix.
-- **Defer IDE provisioning to Gradle Provider / task action.** Today
-  `ij-plugin/build.gradle.kts` calls `resolveAndUnpackLocally` at
-  script-eval, which triggers 3 products-API GETs and an archive
-  SHA verification on every Gradle invocation — even `./gradlew help`
-  / `./gradlew tasks`. Cost is small but real (~600 ms cold; up to
-  3 × 15 s on slow network). Cleaner shape: wrap the provisioner in
-  a `Provider<File>` fed to IPGP's `local()`, or skip eager resolve
-  when `gradle.startParameter.taskNames` contains none of
-  `buildPlugin / runIde / verifyPlugin / test / integrationTest`.
-- **Explicit channel override for exact EAP build pins.** When the user
-  pins `-Pmcp.platform.version=262.6228.19`, `inferChannel` returns
-  STABLE (no `-SNAPSHOT` / `EAP` substring), but 262 EAP builds only
-  exist on the EAP channel. Today's error is misleading
-  ("no release matches"). Fix: add `-Pmcp.platform.channel=eap` /
-  `stable` override, OR have `LocalIdeProvisioner` retry the other
-  channel for exact build-number pins. Not a real problem until
-  someone tries this; matrix entries never use exact pins.
+- ~~**Prod-minimal-deps verification (PyCharm + vanilla IDEA).**~~
+  Resolved by commit `7cb9b6d6` — `PluginRuntimeCompatibilityTest`
+  now covers vanilla PyCharm stable + EAP alongside IntelliJ Idea
+  stable + EAP. PyCharm doesn't ship `com.intellij.java` or
+  `org.jetbrains.kotlin`, so a regression that drags either plugin
+  into a runtime-required path fails the test. The
+  `bundledPlugin("com.intellij.java" / "org.jetbrains.kotlin")`
+  entries stay in `ij-plugin/build.gradle.kts`'s main
+  `intellijPlatform` block per user instruction; production
+  `plugin.xml` remains minimal (only `com.intellij.modules.platform`
+  + optional `com.intellij.mcpServer`).
+- ~~**Bump Gradle daemon JDK 21 → 25.**~~ Resolved by commit
+  `c0d9112b`. `gradle/gradle-daemon-jvm.properties` is now
+  `toolchainVersion=25`; 23 module `build.gradle.kts` files moved
+  to `jvmToolchain(25)`. Daemon JVM confirmed via `./gradlew --version`
+  ("Daemon JVM: Compatible with Java 25"). Per-module tests green.
+- ~~**Defer IDE provisioning to Gradle Provider / task action.**~~
+  Resolved by commit `6f669e38`. `ideRootProviderFor(target)`
+  wraps a `providers.provider { ideRootFor(target) }`, fed to IPGP
+  `local()`. `./gradlew help` cold daemon is now 8s with zero
+  products-API calls (was 30s+ with 3 GETs).
+- ~~**Explicit channel override for exact EAP build pins.**~~
+  Resolved by commit `b9f403a7`. `resolveTargetArchive` auto-retries
+  the other channel when the inferred channel misses AND the version
+  is an exact `NNN.X.Y(.Z)?` build number. Matrix tag + version-string
+  lookups stay on their inferred channel (their misses are not
+  channel-mismatch cases).
 - ~~**Register `intellij-downloader/src/buildsrc-shared/kotlin` as a
   source root in the IntelliJ module config.**~~ Resolved: the
   `sourceSets.main.kotlin.srcDir(...)` calls in `intellij-downloader/build.gradle.kts`
@@ -143,33 +136,32 @@ followup below.
   may only update one side; `:intellij-downloader:test` only
   exercises one compiled copy. The clean fix is to move the shared
   code to a small Gradle project (e.g. `:ide-matrix`) and have
-  `buildSrc` depend on it via `includeBuild`. Overkill for now; keep
-  the dep lists in lockstep manually and treat this as a deferred
-  refactor.
-- **Expand `KotlinxRuntimeProbe` coverage.** Codex + Gemini both flagged
-  in the c6+c7 review that the probe only exercises
-  `Json.encodeToString` + `runBlocking { delay(1) }`. Real production
-  paths also use `Json.decodeFromString`, `JsonObject`, `Flow`,
-  `Channel`, `StateFlow`, `CompletableDeferred`, `withContext`, plus
-  `kotlinx-io` Buffer (the most volatile dep across IDE versions per
-  the gemini round-3 callout). Extend the probe to a representative
-  cross-section so a real bytecode-incompat would actually be caught.
-- **Consolidate the 6 module-level kotlinx pins into `gradle.properties`.**
-  Today `kotlinx-coroutines-core: 1.10.2` and
-  `kotlinx-serialization-{core,json}: 1.9.0` are hard-coded in six
-  module `build.gradle.kts` files. A single source of truth (e.g.
-  `gradle.properties` entries read in every module) makes the next
-  paired bump a one-line edit instead of six. The binary-equality
-  test already reads the expected value via Gradle `systemProperty`
-  (commit 8a), so once gradle.properties is in place the test wires
-  through it directly.
-- **Flake-hunt `IdeMonitorServiceTest`.** Post-coroutines-1.10.2 bump,
-  `monitor follows multiple snapshot envelopes from the IDE(Path)` flaked
-  once under the full `:npx-kt:test` suite with
-  `JobCancellationException: LazyStandaloneCoroutine is cancelling`.
-  Passes in isolation and on rerun. Likely a concurrency-timing change
-  in `LazyStandaloneCoroutine` cancellation. Stabilize with explicit
-  cancellation handling or a tightened test scope.
+  `buildSrc` depend on it via `includeBuild`. **Status: deferred.**
+  After ~30 commits of activity the lockstep dep lists haven't
+  drifted; followup #10 also moved the kotlinx pins to
+  `gradle.properties` (single source of truth for those). Revisit
+  only if drift is observed.
+- ~~**Expand `KotlinxRuntimeProbe` coverage.**~~ Resolved by commit
+  `860e38c6`. The probe now exercises encode + decode round-trip,
+  Json tree API + buildJsonObject DSL, withContext, Channel,
+  MutableStateFlow, Flow + fold, CompletableDeferred. `kotlinx-io`
+  intentionally NOT exercised — the repo doesn't directly depend
+  on it (transitively through ktor only); revisit when production
+  code starts using kotlinx-io Buffer / Source / Sink directly.
+- ~~**Consolidate the 6 module-level kotlinx pins into `gradle.properties`.**~~
+  Resolved by commit `27979989`. `gradle.properties` now carries
+  `mcp.kotlinx.coroutines.version=1.10.2` +
+  `mcp.kotlinx.serialization.version=1.9.0`. Each module reads via
+  `providers.gradleProperty(...).get()`; the ij-plugin test's
+  `systemProperty` reads from the same source so a future bump is
+  one line in one file.
+- ~~**Flake-hunt `IdeMonitorServiceTest`.**~~ Resolved by commit
+  `7dc9f8a8` (defensive timeout bump 10s → 30s). 7/7 green runs
+  after the bump (5 isolated + 2 full `:npx-kt:test`). The race
+  isn't deterministically reproducible on this hardware, but the
+  larger timeout gives slow CI runners enough slack for the
+  200ms scanInterval + 200ms reconnectBackoff + httpClient/server
+  warmup + three snapshots-in-order emit.
 
 ---
 
