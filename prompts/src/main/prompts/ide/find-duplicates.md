@@ -8,7 +8,7 @@ Whenever an agent is asked to "find and refactor duplicate code", "extract a com
 
 **Pick println vs printJson before you start.** The base recipe ends with `println` for human-readable cluster reports. If you're an agent piping the result into a follow-up step (count check, file-hit assertion, summary generation), jump straight to the **Structured output (printJson)** section below — same dedup, machine-readable shape, no second exec_code pass to reshape verbose output.
 
-**Agent fast path.** **The very next code block below is the Primary recipe (PSI body comparison) — copy that.** It works in fresh sessions, CI, test environments, AND fully-indexed projects — no warm-index prerequisite, no second pass to verify. The "Cross-check recipe — warm-index inspection" further down the article is an OPTIONAL second pass for projects with a known-good `HashFragmentIndex` when the user explicitly wants near-duplicate / parameterized-clone detection. `CLUSTERS_FOUND: 0` from the cross-check path alone is ambiguous — it is NOT evidence that no duplicates exist until the Primary recipe has also run.
+**Agent fast path.** **For Kotlin / Java, run the Primary recipe (PSI body comparison) below FIRST. Do NOT start with the warm-index Cross-check inspection path — it can legitimately return zero in fresh sessions.** The Primary recipe is the very next code block below; copy that. It works in fresh sessions, CI, test environments, AND fully-indexed projects — no warm-index prerequisite, no second pass to verify. The "Cross-check recipe — warm-index inspection" further down the article is OPTIONAL — only when the user explicitly wants near-duplicate / parameterized-clone detection AND the project's `HashFragmentIndex` is known to be warm. `CLUSTERS_FOUND: 0` from the cross-check path alone is ambiguous — it is NOT evidence that no duplicates exist until the Primary recipe has also run.
 
 **Primary recipe language coverage**: Kotlin (`KtNamedFunction`) + Java (`PsiMethod`) only. For Python / JavaScript / Groovy / Ruby projects, the warm-index Cross-check recipe is the right tool — the Primary recipe will return 0 clusters even if there are obvious duplicates.
 
@@ -135,7 +135,9 @@ printJson(payload)
 
 # Cross-check recipe — warm-index inspection (broader clone types)
 
-**Read the "Agent fast path" callout above first.** This recipe is the cross-check option for warm-index projects, NOT the primary path. The Primary recipe (PSI body comparison) is above. Use the inspection-based recipe only when the user explicitly wants near-duplicate / parameterized-clone detection, AND you've already established the project has a populated `HashFragmentIndex`.
+> **Skip this section unless the Primary recipe has already run AND the user explicitly wants near-duplicate / parameterized-clone detection.** This is the OPTIONAL second pass; it is NOT the default. In fresh sessions / CI / test environments the `HashFragmentIndex` is empty and this recipe returns `CLUSTERS_FOUND: 0` even when duplicates exist — that zero is ambiguous, not authoritative. The Primary recipe (PSI body comparison) above is what you should reach for first.
+
+Use the inspection-based recipe only when the user explicitly wants near-duplicate / parameterized-clone detection, AND you've already established the project has a populated `HashFragmentIndex`.
 
 Submit this as a single `steroid_execute_code` call. Adjust `targetExtensions` to whatever your project uses. Everything else is fully self-contained.
 

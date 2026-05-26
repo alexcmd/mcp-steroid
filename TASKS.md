@@ -3021,3 +3021,52 @@ Progress log appended below as each task moves.
       unambiguous.
     * Codex: push the find-duplicates special case higher in the
       `steroid_execute_code` tool description.
+- 2026-05-26 — **Iter 9 ran (Claude PASSED 87s, Codex PASSED 56s,
+  Gemini FAILED 44s — but at a different assertion).** Gemini's
+  signal check (iter8's fix) now passes for the Primary recipe path;
+  this iteration's failure was at the reflection-check
+  (`FindDuplicatesPromptTest:107-109`) — `No steroid_execute_code
+  calls captured in NDJSON. The recipe was never run.` This is the
+  documented `readAgentExecCodeBodies` follow-up in
+  `test-integration/AGENTS.md` ("`FindDuplicatesPromptTest.readAgentExecCodeBodies`
+  is the older copy and only handles the Claude + Codex shapes").
+  Gemini's NDJSON shape (`type=tool_use` at root, `tool_name`,
+  `parameters.code`) wasn't being parsed.
+    * Test fix: extended `readAgentExecCodeBodies` to handle Gemini's
+      shape, mirroring the reference impl in
+      `PrintCsvPrintToonPromptTest.readAgentExecCodeBodies`.
+    * AGENTS.md / CLAUDE.md: closed the "follow-up open to extend it
+      to Gemini" doc note.
+  Iter 9 IMPROVEMENTS converged on three prompt-level fixes (also
+  applied this commit):
+    * **Article — Agent fast path made more blunt.** Per Codex:
+      "For Kotlin/Java, run the Primary recipe FIRST. Do NOT start
+      with the warm-index Cross-check inspection path — it can
+      legitimately return zero in fresh sessions."
+    * **Article — Cross-check section opens with a blockquote
+      warning.** Per Claude + Codex: "Skip this section unless the
+      Primary recipe has already run AND the user explicitly wants
+      near-duplicate / parameterized-clone detection." The previous
+      warning was prose inside the section; now it is a blockquote at
+      the very top of the heading so an agent that jumps directly to
+      this heading hits the gate immediately.
+    * **`mcp-steroid://skill/execute-code-tool-description`** (drives
+      the `steroid_execute_code` MCP tool description): rewrote the
+      duplicates row to lead with "duplicate-code detection is an
+      IDE/PSI task, not a text-search task" (Codex), name the Primary
+      recipe by name as the default (per the article reorder), and
+      mark the Cross-check as OPTIONAL with the warm-index caveat.
+  Iter 9 IMPROVEMENTS that did NOT make it in (low-value or out of
+  scope):
+    * Claude: parallel-batch `list_projects` + `fetch_resource` — that
+      is multi-tool architecture, not a prompt change.
+    * Claude: define "smaller codebases" quantitatively for the
+      body-length threshold — minor; the current text already
+      conveys the trade-off.
+    * Codex: add a language-split table at the very top — the
+      article already has the language coverage table later, and
+      adding a duplicate near the top would push the Primary recipe
+      down, undoing iter7's reorder.
+    * Codex: one sentence on intra-file vs cross-file results — the
+      Primary recipe already covers both equally, no agent action
+      change.

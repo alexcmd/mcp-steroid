@@ -255,6 +255,17 @@ class FindDuplicatesPromptTest {
                         if (!code.isNullOrEmpty()) codes += code
                     }
                 }
+                // Gemini format: ROOT object with type=tool_use, tool_name, parameters.
+                // Tool name shape is `mcp_<server-slug>_<tool-name>` with a SINGLE
+                // underscore between the prefix and the server slug (Claude uses
+                // `mcp__<server>__<tool>`), so a simple `endsWith` check matches.
+                if (obj["type"]?.jsonPrimitive?.contentOrNull == "tool_use") {
+                    val toolName = obj["tool_name"]?.jsonPrimitive?.contentOrNull
+                    if (toolName != null && toolName.endsWith("steroid_execute_code")) {
+                        val code = obj["parameters"]?.jsonObject?.get("code")?.jsonPrimitive?.contentOrNull
+                        if (!code.isNullOrEmpty()) codes += code
+                    }
+                }
             }
         }
         return codes

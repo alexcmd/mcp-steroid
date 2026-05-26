@@ -728,11 +728,13 @@ prefixings. Reference implementation: `PrintCsvPrintToonPromptTest.readAgentExec
 (`test-integration/src/test/.../tests/PrintCsvPrintToonPromptTest.kt`) — copy
 into new harness tests verbatim.
 
-`FindDuplicatesPromptTest.readAgentExecCodeBodies` is the older copy and only
-handles the Claude + Codex shapes. A follow-up is open to extend it to
-Gemini (the third branch above) — it's not a blocker because that test
-asserts behavior that's also visible in Claude/Codex outputs, but the
-inconsistency is worth resolving the next time someone touches the file.
+Both `PrintCsvPrintToonPromptTest.readAgentExecCodeBodies` and
+`FindDuplicatesPromptTest.readAgentExecCodeBodies` now handle all
+three shapes (Claude, Codex, Gemini). The latter was extended during
+S5 iter9 of the find-duplicates IMPROVEMENTS harness — Gemini failed
+with `No steroid_execute_code calls captured in NDJSON` because its
+NDJSON shape (`type=tool_use` at root, `tool_name`, `parameters.code`)
+wasn't being parsed.
 
 ### `ClaudeOutputFilter`
 
