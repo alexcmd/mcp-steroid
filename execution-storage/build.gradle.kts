@@ -14,9 +14,11 @@ repositories {
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
+    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:$kotlinxSerialization")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
     // ExecCodeParams / FeedbackParams — the parameter records that drive the
     // execute_code and execute_feedback storage flows. Pulled from the

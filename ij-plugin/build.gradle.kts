@@ -302,10 +302,18 @@ tasks {
         testClassesDirs = sourceSets["test"].output.classesDirs
 
         // Feed the project-resolved kotlinx pins to KotlinxBundledVersionTest so
-        // the test compares the IDE-bundled versions to ACTUAL project pins
+        // the test compares the IDE-bundled versions to the ACTUAL project pins
         // (not to hardcoded constants that could silently drift out of sync).
-        systemProperty("mcp.steroid.test.expected.kotlinxCoroutinesVersion", "1.10.2")
-        systemProperty("mcp.steroid.test.expected.kotlinxSerializationVersion", "1.9.0")
+        // Values come from root gradle.properties (mcp.kotlinx.*.version), so
+        // a paired bump is a one-line edit shared by all six implementation modules.
+        systemProperty(
+            "mcp.steroid.test.expected.kotlinxCoroutinesVersion",
+            providers.gradleProperty("mcp.kotlinx.coroutines.version").get(),
+        )
+        systemProperty(
+            "mcp.steroid.test.expected.kotlinxSerializationVersion",
+            providers.gradleProperty("mcp.kotlinx.serialization.version").get(),
+        )
     }
 
     patchPluginXml {

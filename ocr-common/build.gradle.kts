@@ -8,7 +8,8 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
 }
 
 kotlin {

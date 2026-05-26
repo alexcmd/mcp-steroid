@@ -14,9 +14,11 @@ repositories {
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
+    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:$kotlinxSerialization")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
 
     implementation("org.slf4j:slf4j-api:2.0.13")
 
