@@ -44,6 +44,17 @@ fun resolveAndUnpackLocally(
     product: IdeProduct = IdeProduct.IntelliJIdea,
 ): File {
     val resolution = resolveTargetArchive(target, product, os, arch)
+    val unpackDir = File(unpackBaseDir, ideRootFolderName(resolution.build, os, arch, product))
+    return finalizeLocalIde(target, product, resolution, downloadDir, unpackDir)
+}
+
+private fun finalizeLocalIde(
+    target: IdeTarget,
+    product: IdeProduct,
+    resolution: IdeArchiveResolution,
+    downloadDir: File,
+    unpackDir: File,
+): File {
 
     // Single network round-trip: feed the resolved URL to FromUrl so the
     // download path doesn't re-resolve via the products API.
@@ -52,15 +63,14 @@ fun resolveAndUnpackLocally(
         url = resolution.url,
         checksumUrl = resolution.checksumUrl,
     )
-    val archive = distribution.resolveAndDownload(downloadDir, os)
-
-    val unpackDir = File(unpackBaseDir, ideRootFolderName(resolution.build, os, arch))
+    val archive = distribution.resolveAndDownload(downloadDir, resolveHostOs())
     unpackIdeArchive(archive, unpackDir)
 
     val ideRoot = findIdeRoot(unpackDir)
     localIdeProvisionerLog.info(
-        "[LOCAL-IDE] {} ({}) -> {}",
+        "[LOCAL-IDE] {} [{}] ({}) -> {}",
         target,
+        product.installedProductCode,
         resolution.build,
         ideRoot,
     )
@@ -169,20 +179,26 @@ internal fun inferChannel(version: String): IdeChannel {
 }
 
 /**
- * Conventional folder name: `IU-<full-build>-<os>-<arch>`. Both [os] and
- * [arch] are included so the same `<unpackBaseDir>` can host parallel
- * mac/linux/win and ARM/x86 trees without collision — which lets a single
- * working copy be shared across hosts on networked storage.
+ * Conventional folder name: `<product>-<full-build>-<os>-<arch>` where
+ * `<product>` is the IDE's installed product code (e.g. `IU` for IntelliJ
+ * IDEA Ultimate, `PY` for PyCharm Professional). [os] and [arch] are
+ * included so the same `<unpackBaseDir>` can host parallel mac / linux /
+ * win and ARM / x86 trees without collision — which lets a single working
+ * copy be shared across hosts on networked storage.
  */
-internal fun ideRootFolderName(buildNumber: String, os: HostOs, arch: HostArchitecture): String {
+internal fun ideRootFolderName(
+    buildNumber: String,
+    os: HostOs,
+    arch: HostArchitecture,
+    product: IdeProduct = IdeProduct.IntelliJIdea,
+): String {
     val osTag = when (os) {
         HostOs.LINUX -> "linux"
         HostOs.MAC -> "mac"
         HostOs.WINDOWS -> "windows"
     }
     val archTag = if (arch.isArmArch) "aarch64" else "x86_64"
-    // Product code is fixed to IU for IntelliJIdea targets; expand when we add other products.
-    return "IU-$buildNumber-$osTag-$archTag"
+    return "${product.installedProductCode}-$buildNumber-$osTag-$archTag"
 }
 
 /**

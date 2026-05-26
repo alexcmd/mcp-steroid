@@ -1,6 +1,7 @@
 @file:Suppress("HasPlatformType")
 
 import com.jonnyzzz.mcpSteroid.gradle.*
+import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeTarget
 import com.jonnyzzz.mcpSteroid.ideDownloader.McpSteroidIdeTargets
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndUnpackLocally
@@ -83,15 +84,20 @@ val buildIdeTarget: IdeTarget = run {
     }
 }
 
-// Memoized provisioner cache: the build IDE and the first verifier entry are
-// usually the same target (commit 3's matrix invariant). Resolving twice
-// means hitting the products API + checksum endpoint twice for the same IDE.
-val localIdeCache = mutableMapOf<IdeTarget, java.io.File>()
-fun ideRootFor(target: IdeTarget): java.io.File = localIdeCache.getOrPut(target) {
+// Memoized provisioner cache keyed by (target, product). The build IDE and
+// the first verifier entry are usually the same target (commit 3's matrix
+// invariant); the cache prevents duplicate products-API + checksum lookups.
+data class LocalIdeKey(val target: IdeTarget, val product: IdeProduct)
+val localIdeCache = mutableMapOf<LocalIdeKey, java.io.File>()
+fun ideRootFor(
+    target: IdeTarget,
+    product: IdeProduct = IdeProduct.IntelliJIdea,
+): java.io.File = localIdeCache.getOrPut(LocalIdeKey(target, product)) {
     resolveAndUnpackLocally(
         target = target,
         downloadDir = ideArchivesDir,
         unpackBaseDir = localIdesBaseDir,
+        product = product,
     )
 }
 
@@ -107,8 +113,11 @@ fun ideRootFor(target: IdeTarget): java.io.File = localIdeCache.getOrPut(target)
  * so the build IDE and the matching verifier entry still resolve
  * exactly once per build.
  */
-fun ideRootProviderFor(target: IdeTarget): Provider<java.io.File> =
-    providers.provider { ideRootFor(target) }
+fun ideRootProviderFor(
+    target: IdeTarget,
+    product: IdeProduct = IdeProduct.IntelliJIdea,
+): Provider<java.io.File> =
+    providers.provider { ideRootFor(target, product) }
 
 // Consume kotlinc distribution from kotlin-cli subproject
 val kotlincDist by configurations.creating {
@@ -127,9 +136,10 @@ dependencies {
             // and the unpacked IDE root is fed to IPGP's `local(file)` selector.
             // `useInstaller = true` is no longer applicable (we own the archive).
             JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(ideRootProviderFor(buildIdeTarget))
-            // PyCharm path stays on IPGP for now; see TASKS.md follow-up to
-            // extend `intellij-downloader` to cover PyCharm build targets.
-            JetBrainsIdeProduct.PyCharm -> pycharm(targetIdeVersion)
+            // PyCharm Professional also routes through intellij-downloader.
+            // Folder name becomes PY-<build>-<os>-<arch>; the resolver hits
+            // the same products API on the PCP product code.
+            JetBrainsIdeProduct.PyCharm -> local(ideRootProviderFor(buildIdeTarget, IdeProduct.PyCharm))
             JetBrainsIdeProduct.GoLand,
             JetBrainsIdeProduct.WebStorm,
             -> error("Plugin build targets IntelliJ IDEA or PyCharm only. GoLand/WebStorm are for integration tests.")
