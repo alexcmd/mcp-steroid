@@ -3070,3 +3070,56 @@ Progress log appended below as each task moves.
     * Codex: one sentence on intra-file vs cross-file results — the
       Primary recipe already covers both equally, no agent action
       change.
+- 2026-05-26 — **Iter 10 attempt 1 hit an infrastructure hang (NOT
+  prompt regression).** Claude ran the Primary recipe correctly,
+  identified `calculateInvoiceTotal`/`calculateOrderTotal` as the
+  clone cluster, but then hung mid-final-summary for 35 minutes
+  before SIGKILL (exit 137). The dead container blocked Codex +
+  Gemini's MCP-server registration → 3/3 cascade failure. No
+  IMPROVEMENTS files emitted. Retried fresh (no Docker prune was
+  needed — no zombie containers, plenty of RAM/disk after the
+  earlier 462 GB reclaim).
+- 2026-05-26 — **Iter 10 retry: ALL 3 PASS.** Claude 60s, Codex 49s,
+  Gemini 53s. Build 13m 19s total. This is the convergence target:
+  every agent completes the task end-to-end in under 60s using the
+  Primary recipe, emits both required markers (`DUPLICATES_FOUND: 1`
+  + `DEMO_DUPLICATES_HIT: yes`), and produces a clean IMPROVEMENTS
+  reflection. Progression baseline → iter 10:
+    * Claude: 505 s (iter 1) → **60 s (iter 10)** — 8.4× faster
+    * Codex:  121 s (iter 1) → **49 s (iter 10)** — 2.5× faster
+    * Gemini: BLOCKED by stale test contract until iter 8;
+      now **53 s** with full convergence
+  Iter 10 IMPROVEMENTS were polish only (article has converged).
+  Both reviewers asked for a shorter TL;DR / fast-path block at the
+  very top of the article so an agent reading top-to-bottom can stop
+  early; Claude also wanted the language-coverage note inlined into
+  the recipe's code comment (impossible to miss). Applied:
+    * `find-duplicates.md`: new "TL;DR for agents" section at the
+      very top — 1 paragraph, names the Primary recipe by section
+      heading, names the output markers, points Python/JS/Groovy/Ruby
+      readers at the Cross-check, says "the rest of this article is
+      reference material." Sits BEFORE the existing "When to use
+      this" preamble so it is the first non-header content an agent
+      sees.
+    * `find-duplicates.md`: Primary recipe kotlin block gains a 3-line
+      `// Language coverage: …` comment right next to `targetExtensions`.
+      Mirrors the prose at the top of the article but sits inside the
+      code an agent is about to paste, so it cannot be skimmed past.
+  Iter 10 IMPROVEMENTS that did NOT make it in (still polish, not
+  blockers):
+    * Claude: split the article into "agent-only" + "reference /
+      troubleshooting" sections. Would require restructuring the
+      Cross-check + edge-case content — too invasive for a polish
+      iteration after convergence.
+    * Codex: add a "source-files-only" variant with `/src/` filter
+      already applied. The existing `pathFilter` comment lists this
+      as one of three common variants; adding a fourth duplicated
+      block would bloat the article without changing agent action.
+    * Codex: explicit "exact body duplicates only" outcome line in
+      the `steroid_execute_code` description. Already conveyed by
+      the "Primary recipe" name + the "Cross-check is OPTIONAL"
+      framing iter9 introduced.
+- 2026-05-26 — **S5 IMPROVEMENTS harness complete: 10 / 10 iterations
+  done.** Article + test + tool description have converged. All
+  three agents complete the task in <60s with clean signal. Closing
+  task #19.

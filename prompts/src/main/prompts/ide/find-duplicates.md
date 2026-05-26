@@ -2,6 +2,10 @@ IDE: Find Duplicate Code
 [IU]
 Run the bundled `DuplicatedCode` inspection across the project and walk each clone cluster (main + duplicates) with typed access — no reflection, no `setAccessible(true)`.
 
+# TL;DR for agents
+
+If the task is "find / refactor / scan for duplicate code" on a Kotlin/Java project: **scroll to "Primary recipe — PSI body comparison" below, copy the kotlin block into one `steroid_execute_code` call, done.** Output is `CLUSTERS_FOUND: <n>` plus a `path:startLine-endLine` line per fragment. For Python / JavaScript / Groovy / Ruby, the Cross-check (`DuplicatedCode` inspection) is the right tool instead. The rest of this article is reference material — read it only if the Primary recipe returns unexpected results or the user asks for near-duplicate / parameterized clone detection.
+
 # When to use this
 
 Whenever an agent is asked to "find and refactor duplicate code", "extract a common helper for repeated logic", or "scan for clones". The `DuplicatedCode` inspection is the right tool: it is bundled in IntelliJ IDEA Ultimate, runs on Java, Kotlin, Python, Groovy, JavaScript, Ruby, and other supported languages via the same `DuplicateProblemDescriptor` payload, and the descriptor exposes a public `getTextClone()` getter so a script can enumerate every clone cluster typed.
@@ -40,6 +44,9 @@ import org.jetbrains.kotlin.psi.KtNamedFunction
 
 data class CloneRange(val path: String, val startLine: Int, val endLine: Int, val name: String)
 
+// Language coverage: this recipe walks `KtNamedFunction` (Kotlin) and `PsiMethod` (Java) only.
+// For Python / JavaScript / Groovy / Ruby use the Cross-check recipe instead — this one will
+// return 0 clusters on those languages even when obvious duplicates exist.
 val targetExtensions = listOf("java", "kt")
 val pathFilter: (String) -> Boolean = {
     "/build/" !in it && "/.gradle/" !in it && "/.idea/" !in it && "/out/" !in it
