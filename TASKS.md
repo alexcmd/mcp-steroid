@@ -1,4 +1,80 @@
 
+# Active focus — 262 EAP support (2026-05-26)
+
+Plan and findings: [docs/262-EAP-PLAN.md](docs/262-EAP-PLAN.md).
+
+Goal: move the plugin build/test surface to IntelliJ Platform **261 as
+the primary** target and add **262 EAP** as a secondary verification
+target, deprecating **253 entirely**. No Kotlin compiler bump (stay
+on 2.2.20). The plugin .zip continues NOT to bundle `kotlinx-*` jars —
+they resolve from the IDE classloader at runtime.
+
+## Locked-in constraints
+
+1. Keep root Kotlin **2.2.20**.
+2. Deprecate **253** entirely. Build target = 261. Tests/verifier = 261 + 262.
+3. Replace `useInstaller = true` with `local(file)` selectors fed by
+   the in-repo `intellij-downloader` module.
+4. Per-major EAP selector: **`262-EAP-SNAPSHOT`** (matrix label — see plan
+   doc for the IPGP-vs-products-API resolution path).
+5. Pin Kotlin-adjacent libs to the public Maven Central versions
+   closest to what 261 bundles: `kotlinx-coroutines-core: 1.10.2`,
+   `kotlinx-serialization-{core,json}: 1.9.0`.
+6. Binary-side **version-equality test** (parse IDE `lib/intellij.libraries.kotlinx.*.jar`
+   manifests, compare to resolved deps).
+7. Runtime **classloader check** (JVM with `-cp <IDE lib/*.jar>`,
+   exercise serialization + coroutines + io, fail on `LinkageError`).
+8. Unpacked-IDE folder naming: `build/local-ides/IU-<full-build>-<os>-<arch>/`.
+9. **Keep `deployPluginLocallyTo253` task as-is.** Local-use hardcoded
+   folder.
+10. `sinceBuild = "261"` consolidated across the three places.
+
+## 8-commit plan
+
+Each commit independently revertible. Strict sequential — each gate
+depends on prior commits.
+
+1. **Pin Kotlin-adjacent libs across ij-plugin-linked modules**:
+   bump coroutines `1.10.1`→`1.10.2`, serialization `1.8.1`/`1.7.3`→`1.9.0`
+   in `:mcp-core`, `:mcp-stdio`, `:mcp-http`, `:execution-storage`,
+   `:mcp-steroid-server`, `:ocr-common`. Keep existing
+   `exclude(group = "org.jetbrains.kotlinx")` in `ij-plugin/build.gradle.kts:53-58`.
+2. **Kotlinc classpath filter**: drop the 6 known
+   `plugins/Kotlin/lib/kotlinc.*-compiler-plugin.jar` files (metadata
+   version 2.4.0, breaks kotlinc 2.2.20) from
+   `KotlinCompile.libraries` via `doFirst { libraries.setFrom(...) }`.
+3. **`buildSrc/.../IdeCompatibilityMatrix.kt` + test**: single source
+   of truth for `buildTarget` (261) and `verifierTargets` (261, 262).
+4. **Route IDE artifacts through `intellij-downloader`**: new
+   `prepareLocalIdes` Gradle task; `ij-plugin/build.gradle.kts` switches
+   `intellijIdeaUltimate(...)` and `pluginVerification.ides { }` to
+   `local(file)`; remove `useInstaller = true`.
+5. **Move `sinceBuild` + `MANAGED_BACKEND_MIN_SUPPORTED_BUILD` to
+   `"261"`** in the three consolidated places.
+6. **`VerifyBundledKotlinxRuntimeTask`** in buildSrc — runtime
+   classloader check against the local IDE from commit 4.
+7. **Binary-side version-equality test** in `:ij-plugin:test`.
+8. **Cleanup**: delete 253 entries from `PluginBuildCompatibilityTest`
+   / `PluginVerificationTest`; remove obsolete 262 patches
+   (`KOTLIN_2_4_PATCHES`, `SNAPSHOT_262_PATCHES`, IPGP 2.14.0 bump);
+   sweep `2025.3` / `"253"` / `253\.` refs.
+   **Keep `deployPluginLocallyTo253`** per user.
+
+## Quorum trail
+
+- Round 1 (claude + codex, gemini key missing): initial plan.
+- Round 2 + 2b (claude session-limited, codex round-2b retry): plan
+  sharpened, agreed on `local(file)` + matrix object, surfaced the
+  Pair-direction regression in `PluginRuntimeCompatibilityTest`.
+- Round 3 (gemini with `~/.vertex` key, codex silent retry): final
+  validation; gemini confirmed `262-EAP-SNAPSHOT` is matrix-only
+  (Maven uses bare `262-SNAPSHOT`) and flagged kotlinx-io volatility.
+
+Author email for commits in this work stream: `eugene.petrenko@jetbrains.com`.
+No AI co-author.
+
+---
+
 # Current devrig state — rename / cleanup checkpoint (2026-05-19)
 
 This is the current source of truth after the devrig cleanup commit
