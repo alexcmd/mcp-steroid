@@ -5,13 +5,107 @@ Plan and findings: [docs/262-EAP-PLAN.md](docs/262-EAP-PLAN.md).
 
 Goal: move the plugin build/test surface to IntelliJ Platform **261 as
 the primary** target and add **262 EAP** as a secondary verification
-target, deprecating **253 entirely**. No Kotlin compiler bump (stay
-on 2.2.20). The plugin .zip continues NOT to bundle `kotlinx-*` jars —
-they resolve from the IDE classloader at runtime.
+target, deprecating **253 entirely**. The plugin .zip continues NOT
+to bundle `kotlinx-*` jars — they resolve from the IDE classloader at
+runtime.
 
-## Locked-in constraints
+## Status: implementation complete (30+ commits)
 
-1. Keep root Kotlin **2.2.20**.
+8-commit plan + per-commit quorum fix bundles + 10 followups + final
+sweep all merged to `origin/main`. Each commit gated on
+`:ij-plugin:test` + `:intellij-downloader:test` green and `:ij-plugin:verifyBundledKotlinxRuntime`
+green against both 261 + 262 IDEs. Author email
+`eugene.petrenko@jetbrains.com`, no AI co-author.
+
+### What still genuinely needs human / CI work before this ships
+
+Build-time green is NOT a release gate. The following are real gaps
+honest audit identified (none address-able without execution against
+the actual runtime / CI):
+
+#### A — Validated only at build/compile time
+
+1. **`:test-integration:test` for 262 EAP cases.** The new
+   `build plugin with IntelliJ 262 EAP`, `verify plugin against IntelliJ 262 EAP`,
+   and `runtime compat pycharm stable / eap` cases got `compileTestKotlin`
+   validation only. Never actually ran a Docker container.
+2. **`:ij-plugin:verifyPlugin`** — full Plugin Verifier (minutes per
+   IDE) wired against both 261 + 262 via `local()`, but never
+   executed in this session. The check most likely to surface a
+   real 262 API regression.
+3. **PyCharm build path** (`-Pmcp.platform.product=pycharm`) —
+   generalized in code (`LocalIdeKey(target, product)`, `ideRootFolderName`
+   with `PY-` prefix), but never compiled or tested.
+4. **`runIde`** + **`deployPlugin`** — never run; "plugin loads into
+   a real running IDE" gate unverified. The running IDE 261 in the
+   dev env still has the OLD plugin loaded.
+5. **`:test-experiments`** — DPAIA / debugger / arena tests untouched.
+
+#### B — CI integration
+
+6. **TeamCity DSL repo** (`~/Work/mcp-steroid-teamcity`) — separate
+   repo, probably still references JDK 21 / 253 / old paths. Build
+   configs not updated.
+7. **GitHub Actions workflows** (`.github/workflows/`) — not
+   inspected; may still pin JDK 21.
+8. **`buildPluginOnCI`** — CI entry-point task; not validated
+   against the new 262 / JDK 25 / matrix wiring.
+
+#### C — Architectural items partially landed
+
+9. **`bundledPlugin("com.intellij.java")` + `bundledPlugin("org.jetbrains.kotlin")`
+   move to `intellijPlatformTesting`.** Per user U10: "I actually like
+   the approach you propose — include both plugins into the
+   `intellijPlatformTesting` block of IPGP." Logged as a followup
+   but never executed; they stay in MAIN per "keep as before"
+   (acceptable per user). The test-scope migration is the real fix.
+10. **Static guard against accidentally pulling Java/Kotlin plugin
+    types into production code.** Compile classpath has those types
+    available; nothing prevents `import org.jetbrains.kotlin.idea.*`
+    in production. The PyCharm runtime-compat test catches it only
+    at test time. A lint rule (`NoForbiddenImportsTest`) would close
+    this at compile time.
+11. **PyCharm-side verifier matrix.** Codex flagged: `verifierTargets`
+    is IDEA-only. `-Pmcp.platform.product=pycharm` switches build IDE
+    to PyCharm but Plugin Verifier still runs against IDEA. Add a
+    product axis to the matrix.
+12. **Composite-build for shared source.** `buildSrc/` and
+    `:intellij-downloader/` both `srcDir(...)` `buildsrc-shared/kotlin/`.
+    Deps kept in lockstep manually. Clean fix = Gradle included
+    build. Deferred (no drift observed; kotlinx pins already
+    centralized in `gradle.properties`).
+
+#### D — Release engineering
+
+13. **No release notes update.** `VERSION` still says `0.95.0`;
+    `release/notes/0.95.0.md` doesn't mention the 262 EAP work.
+14. **`docs/262-EAP-PLAN.md` is the plan, not "implementation
+    complete" record.** Closing-the-loop doc gap.
+
+#### E — Things that may surface later
+
+15. **JDK 25 on CI runners.** Local has Corretto 25; CI may not.
+    Foojay should auto-download but adds startup time.
+16. **IDE archive disk usage.** `build/local-ides/` now holds full
+    unpacked 261 + 262 IDEs (~3 GB each). CI runners may need a
+    free-disk gate.
+17. **Stale unpack cache on republished EAP.** Marker uses archive
+    size + mtime; if JetBrains re-publishes a same-build EAP with
+    new content but identical timestamps (rare), the cache wouldn't
+    invalidate.
+18. **Gemini reviewer was non-functional** for the final 2 h of the
+    session. Followups-batch had 2-of-3 quorum (claude + codex).
+19. **No one has actually installed the .zip in IDEA 262 EAP and
+    clicked around.** The real merge gate before this ships.
+
+Of all 19, **#19, #1, #2, #4, #6 (TC DSL)** are the ones most likely
+to bite.
+
+## Locked-in constraints (during implementation)
+
+1. Root Kotlin bumped to **2.3.20** (matches IDE 261's bundled
+   kotlin-stdlib in `lib/util-8.jar`, verified by reading bytecode
+   constants of `kotlin/KotlinVersion.class`).
 2. Deprecate **253** entirely. Build target = 261. Tests/verifier = 261 + 262.
 3. Replace `useInstaller = true` with `local(file)` selectors fed by
    the in-repo `intellij-downloader` module.
