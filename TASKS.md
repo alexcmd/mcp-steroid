@@ -143,6 +143,23 @@ followup below.
   `buildSrc` depend on it via `includeBuild`. Overkill for now; keep
   the dep lists in lockstep manually and treat this as a deferred
   refactor.
+- **Expand `KotlinxRuntimeProbe` coverage.** Codex + Gemini both flagged
+  in the c6+c7 review that the probe only exercises
+  `Json.encodeToString` + `runBlocking { delay(1) }`. Real production
+  paths also use `Json.decodeFromString`, `JsonObject`, `Flow`,
+  `Channel`, `StateFlow`, `CompletableDeferred`, `withContext`, plus
+  `kotlinx-io` Buffer (the most volatile dep across IDE versions per
+  the gemini round-3 callout). Extend the probe to a representative
+  cross-section so a real bytecode-incompat would actually be caught.
+- **Consolidate the 6 module-level kotlinx pins into `gradle.properties`.**
+  Today `kotlinx-coroutines-core: 1.10.2` and
+  `kotlinx-serialization-{core,json}: 1.9.0` are hard-coded in six
+  module `build.gradle.kts` files. A single source of truth (e.g.
+  `gradle.properties` entries read in every module) makes the next
+  paired bump a one-line edit instead of six. The binary-equality
+  test already reads the expected value via Gradle `systemProperty`
+  (commit 8a), so once gradle.properties is in place the test wires
+  through it directly.
 - **Flake-hunt `IdeMonitorServiceTest`.** Post-coroutines-1.10.2 bump,
   `monitor follows multiple snapshot envelopes from the IDE(Path)` flaked
   once under the full `:npx-kt:test` suite with
