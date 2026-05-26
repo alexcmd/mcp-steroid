@@ -167,105 +167,39 @@ depends on prior commits.
 Author email for commits in this work stream: `eugene.petrenko@jetbrains.com`.
 No AI co-author.
 
-## Quorum review of commits 3 + 4 (2026-05-26)
+## Quorum trail (compressed)
 
-Codex + Claude + Gemini reviewed the matrix and `local()` routing. Three-way
-consensus on the two HIGH findings (concurrent unpack / partial-unpack
-detection, and stale unpack cache after archive re-publish). Both addressed
-inline in commit 4a via a per-target `FileLock` plus a `.mcp-steroid-unpack-complete`
-marker keyed on the archive's filename + size + mtime.
+Codex + Claude + Gemini reviewed the work in 4 rounds (initial plan,
+per-commit, followups-batch). All consensus-HIGH findings were
+folded into fix-bundle commits inline. Resolved items removed from
+this doc to keep the file scannable; `git log --grep="review"`
+surfaces the review-driven commits.
 
-Codex+Claude additionally flagged HIGH the script-eval network cost (3
-products-API GETs on every Gradle invocation, including `help`/`tasks`).
-Deferred; see followups below.
+## Deferred (long-term)
 
-MCP Steroid inspection sweep on the new files surfaced one real issue (an
-unused `IntelliJPlatformType` import in `ij-plugin/build.gradle.kts`,
-fixed in commit 4a) and many false positives from the buildsrc-shared
-source dir not being registered as an IntelliJ source root — see
-followup below.
-
-## Follow-ups logged during execution
-
-- ~~**Prod-minimal-deps verification (PyCharm + vanilla IDEA).**~~
-  Resolved by commit `7cb9b6d6` — `PluginRuntimeCompatibilityTest`
-  now covers vanilla PyCharm stable + EAP alongside IntelliJ Idea
-  stable + EAP. PyCharm doesn't ship `com.intellij.java` or
-  `org.jetbrains.kotlin`, so a regression that drags either plugin
-  into a runtime-required path fails the test. The
-  `bundledPlugin("com.intellij.java" / "org.jetbrains.kotlin")`
-  entries stay in `ij-plugin/build.gradle.kts`'s main
-  `intellijPlatform` block per user instruction; production
-  `plugin.xml` remains minimal (only `com.intellij.modules.platform`
-  + optional `com.intellij.mcpServer`).
-- ~~**Bump Gradle daemon JDK 21 → 25.**~~ Resolved by commit
-  `c0d9112b`. `gradle/gradle-daemon-jvm.properties` is now
-  `toolchainVersion=25`; 23 module `build.gradle.kts` files moved
-  to `jvmToolchain(25)`. Daemon JVM confirmed via `./gradlew --version`
-  ("Daemon JVM: Compatible with Java 25"). Per-module tests green.
-- ~~**Defer IDE provisioning to Gradle Provider / task action.**~~
-  Resolved by commit `6f669e38`. `ideRootProviderFor(target)`
-  wraps a `providers.provider { ideRootFor(target) }`, fed to IPGP
-  `local()`. `./gradlew help` cold daemon is now 8s with zero
-  products-API calls (was 30s+ with 3 GETs).
-- ~~**Explicit channel override for exact EAP build pins.**~~
-  Resolved by commit `b9f403a7`. `resolveTargetArchive` auto-retries
-  the other channel when the inferred channel misses AND the version
-  is an exact `NNN.X.Y(.Z)?` build number. Matrix tag + version-string
-  lookups stay on their inferred channel (their misses are not
-  channel-mismatch cases).
-- ~~**Register `intellij-downloader/src/buildsrc-shared/kotlin` as a
-  source root in the IntelliJ module config.**~~ Resolved: the
-  `sourceSets.main.kotlin.srcDir(...)` calls in `intellij-downloader/build.gradle.kts`
-  + `buildSrc/build.gradle.kts` already register it. The
-  PackageDirectoryMismatch / UnusedSymbol warnings were stale-import
-  artifacts. Future devs need a Gradle re-import (Refresh Gradle
-  Project) after pulling commit `ea13b1c1`+ to clear the warnings.
-  Re-import confirmed clean; commit `<this>` also removed the dead
-  `resolveArchiveUrl` function that the cleaner inspection surfaced.
-- **PyCharm-side verifier matrix.** Codex flagged in the
-  followups-batch review that `McpSteroidIdeTargets.verifierTargets`
-  is IDEA-only. When `-Pmcp.platform.product=pycharm` is set, the
+- **PyCharm-side verifier matrix.** `McpSteroidIdeTargets.verifierTargets`
+  is IDEA-only. When `-Pmcp.platform.product=pycharm` is set the
   build IDE switches to PyCharm but `pluginVerification.ides` still
   iterates IDEA targets. The runtime-compat test (commit
   `7cb9b6d6`) catches plugin-load regressions on PyCharm, but the
   Plugin Verifier itself doesn't run against PyCharm. Add a product
-  axis to the matrix and a `verifierTargets` per product, or split
-  into `verifierTargetsIdea` + `verifierTargetsPyCharm`. Defer
-  until someone needs PyCharm-side Plugin Verifier coverage.
-- **Composite-build for the shared source.** Currently buildSrc and
-  `:intellij-downloader` both `srcDir` the same `buildsrc-shared/kotlin`
-  and compile independently. Risks: silent drift if the two
-  build files' transitive dep versions diverge; refactoring tool
-  may only update one side; `:intellij-downloader:test` only
-  exercises one compiled copy. The clean fix is to move the shared
-  code to a small Gradle project (e.g. `:ide-matrix`) and have
-  `buildSrc` depend on it via `includeBuild`. **Status: deferred.**
-  After ~30 commits of activity the lockstep dep lists haven't
-  drifted; followup #10 also moved the kotlinx pins to
-  `gradle.properties` (single source of truth for those). Revisit
-  only if drift is observed.
-- ~~**Expand `KotlinxRuntimeProbe` coverage.**~~ Resolved by commit
-  `860e38c6`. The probe now exercises encode + decode round-trip,
-  Json tree API + buildJsonObject DSL, withContext, Channel,
-  MutableStateFlow, Flow + fold, CompletableDeferred. `kotlinx-io`
-  intentionally NOT exercised — the repo doesn't directly depend
-  on it (transitively through ktor only); revisit when production
-  code starts using kotlinx-io Buffer / Source / Sink directly.
-- ~~**Consolidate the 6 module-level kotlinx pins into `gradle.properties`.**~~
-  Resolved by commit `27979989`. `gradle.properties` now carries
-  `mcp.kotlinx.coroutines.version=1.10.2` +
-  `mcp.kotlinx.serialization.version=1.9.0`. Each module reads via
-  `providers.gradleProperty(...).get()`; the ij-plugin test's
-  `systemProperty` reads from the same source so a future bump is
-  one line in one file.
-- ~~**Flake-hunt `IdeMonitorServiceTest`.**~~ Resolved by commit
-  `7dc9f8a8` (defensive timeout bump 10s → 30s). 7/7 green runs
-  after the bump (5 isolated + 2 full `:npx-kt:test`). The race
-  isn't deterministically reproducible on this hardware, but the
-  larger timeout gives slow CI runners enough slack for the
-  200ms scanInterval + 200ms reconnectBackoff + httpClient/server
-  warmup + three snapshots-in-order emit.
+  axis to the matrix when someone needs PyCharm Plugin Verifier
+  coverage.
+- **Composite-build for the shared source.** `buildSrc/` and
+  `:intellij-downloader/` both `srcDir(...)` the same
+  `buildsrc-shared/kotlin/`. Deps kept in lockstep manually + via
+  the `gradle.properties` consolidation. Clean refactor is a Gradle
+  included build (`:ide-matrix`). Revisit only if drift is observed.
+- **Static guard against accidentally pulling Java/Kotlin plugin
+  types into production code.** Compile classpath has those types
+  available; nothing prevents `import org.jetbrains.kotlin.idea.*`
+  in production. The PyCharm runtime-compat test catches it only at
+  test time. A lint rule (`NoForbiddenImportsTest`) would close this
+  at compile time.
+- **Move `bundledPlugin("com.intellij.java")` + `bundledPlugin("org.jetbrains.kotlin")`
+  into `intellijPlatformTesting`** (per user U10). Compile-time
+  access is currently in the MAIN block per "keep as before";
+  test-scope-only is the architecturally cleaner end state.
 
 ---
 
