@@ -22,7 +22,7 @@ dependencies {
     api(project(":mcp-core"))
 
     // Ktor server — the HTTP transport that speaks MCP Streamable HTTP
-    val ktorVersion = "3.1.0"
+    val ktorVersion = "3.3.2"
     api("io.ktor:ktor-server-core:$ktorVersion")
     api("io.ktor:ktor-server-cio:$ktorVersion")
     api("io.ktor:ktor-server-sse:$ktorVersion")

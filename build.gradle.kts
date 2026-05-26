@@ -4,8 +4,8 @@ plugins {
     id("de.undercouch.download") version "5.6.0" apply false
     id("org.jetbrains.intellij.platform") version "2.13.1" apply false
     id("com.github.node-gradle.node") version "7.1.0" apply false
-    kotlin("jvm") version "2.2.20" apply false
-    kotlin("plugin.serialization") version "2.2.20" apply false
+    kotlin("jvm") version "2.3.20" apply false
+    kotlin("plugin.serialization") version "2.3.20" apply false
 }
 
 group = "com.jonnyzzz.intellij"

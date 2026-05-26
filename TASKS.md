@@ -73,6 +73,33 @@ depends on prior commits.
 Author email for commits in this work stream: `eugene.petrenko@jetbrains.com`.
 No AI co-author.
 
+## Follow-ups logged during execution
+
+- **Prod-minimal-deps verification (PyCharm + vanilla IDEA).** Today
+  `bundledPlugin("com.intellij.java")` + `bundledPlugin("org.jetbrains.kotlin")`
+  remain in the **main** `intellijPlatform` dependencies block (per user:
+  "keep as it was before — Java plugin was present"). Tests need them;
+  the production `plugin.xml` doesn't `<depends>` on them, so the runtime
+  is still minimal. Improvement: migrate these two entries into the
+  `intellijPlatformTesting { testIde { … plugins { … } } }` block so the
+  compile-time surface of the production plugin is genuinely vanilla,
+  and validate via `:test-integration` against a vanilla PyCharm
+  Docker image (no Java plugin available) that the plugin still loads.
+- **Bump Gradle daemon JDK 21 → 25.** IntelliJ 261 bundles JBR 25; the
+  `KotlincCommandLineBuilderIntegrationTest` failure during the 262 EAP
+  work was traced to `java.specification.version=25` in the test sandbox
+  (assertion hardcoded `"21"`). Switching the daemon to JDK 25 aligns
+  the dev/build environment with the runtime. Update
+  `gradle/gradle-daemon-jvm.properties` + every `kotlin { jvmToolchain(N) }`
+  block from 21 → 25, and reverify the per-module test matrix.
+- **Flake-hunt `IdeMonitorServiceTest`.** Post-coroutines-1.10.2 bump,
+  `monitor follows multiple snapshot envelopes from the IDE(Path)` flaked
+  once under the full `:npx-kt:test` suite with
+  `JobCancellationException: LazyStandaloneCoroutine is cancelling`.
+  Passes in isolation and on rerun. Likely a concurrency-timing change
+  in `LazyStandaloneCoroutine` cancellation. Stabilize with explicit
+  cancellation handling or a tightened test scope.
+
 ---
 
 # Current devrig state — rename / cleanup checkpoint (2026-05-19)

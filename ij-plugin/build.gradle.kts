@@ -124,7 +124,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers")
 
     // Ktor client for MCP SSE transport tests
-    val ktorVersion = "3.1.0"
+    val ktorVersion = "3.3.2"
     testImplementation("io.ktor:ktor-client-core:$ktorVersion")
     testImplementation("io.ktor:ktor-client-cio:$ktorVersion")
     testImplementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
@@ -428,22 +428,22 @@ val verifyBundledLibraries by tasks.registering {
             "lib/prompts-$pluginVersion.jar",
 
             //libraries
-            "lib/config-1.4.3.jar",
+            "lib/config-1.4.5.jar",
             "lib/gson-2.10.1.jar",
-            "lib/jansi-2.4.1.jar",
+            "lib/jansi-2.4.2.jar",
 
-            "lib/ktor-events-jvm-3.1.0.jar",
-            "lib/ktor-http-cio-jvm-3.1.0.jar",
-            "lib/ktor-http-jvm-3.1.0.jar",
-            "lib/ktor-io-jvm-3.1.0.jar",
-            "lib/ktor-network-jvm-3.1.0.jar",
-            "lib/ktor-serialization-jvm-3.1.0.jar",
-            "lib/ktor-server-cio-jvm-3.1.0.jar",
-            "lib/ktor-server-core-jvm-3.1.0.jar",
-            "lib/ktor-server-sse-jvm-3.1.0.jar",
-            "lib/ktor-sse-jvm-3.1.0.jar",
-            "lib/ktor-utils-jvm-3.1.0.jar",
-            "lib/ktor-websockets-jvm-3.1.0.jar",
+            "lib/ktor-events-jvm-3.3.2.jar",
+            "lib/ktor-http-cio-jvm-3.3.2.jar",
+            "lib/ktor-http-jvm-3.3.2.jar",
+            "lib/ktor-io-jvm-3.3.2.jar",
+            "lib/ktor-network-jvm-3.3.2.jar",
+            "lib/ktor-serialization-jvm-3.3.2.jar",
+            "lib/ktor-server-cio-jvm-3.3.2.jar",
+            "lib/ktor-server-core-jvm-3.3.2.jar",
+            "lib/ktor-server-sse-jvm-3.3.2.jar",
+            "lib/ktor-sse-jvm-3.3.2.jar",
+            "lib/ktor-utils-jvm-3.3.2.jar",
+            "lib/ktor-websockets-jvm-3.3.2.jar",
 
             "lib/okhttp-4.11.0.jar",
             "lib/okio-jvm-3.2.0.jar",
