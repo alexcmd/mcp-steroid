@@ -31,7 +31,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 // `src/buildsrc-shared/kotlin/` carries the IDE compatibility matrix

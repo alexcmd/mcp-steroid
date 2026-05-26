@@ -233,7 +233,7 @@ tasks.test {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 // `project.version` rendered as a String once so both the metadata generator

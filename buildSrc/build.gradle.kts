@@ -3,7 +3,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 // Pull in the shared IDE compatibility matrix from `:intellij-downloader`

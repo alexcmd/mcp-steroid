@@ -194,7 +194,7 @@ configurations["integrationTestImplementation"].extendsFrom(configurations["test
 configurations["integrationTestRuntimeOnly"].extendsFrom(configurations["testRuntimeOnly"])
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
 }
 
 val generatedSourcesPath = layout.buildDirectory.dir("generated/kotlin")
