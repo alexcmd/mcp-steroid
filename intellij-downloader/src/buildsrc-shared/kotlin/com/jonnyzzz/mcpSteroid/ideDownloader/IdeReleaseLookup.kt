@@ -65,12 +65,14 @@ fun resolveArchive(
     os: HostOs = resolveHostOs(),
     architecture: HostArchitecture = resolveHostArchitecture(),
     version: String? = null,
+    buildPrefix: String? = null,
 ): IdeArchiveResolution = resolveArchiveWithUrlReader(
     product = product,
     channel = channel,
     os = os,
     architecture = architecture,
     version = version,
+    buildPrefix = buildPrefix,
     productsApiReader = { url -> readUrlText(url) },
     androidStudioReader = { url -> readUrlText(url, accept = "text/html,*/*") },
 )
@@ -81,6 +83,7 @@ internal fun resolveArchiveWithUrlReader(
     os: HostOs = resolveHostOs(),
     architecture: HostArchitecture = resolveHostArchitecture(),
     version: String? = null,
+    buildPrefix: String? = null,
     urlReader: (String) -> String,
 ): IdeArchiveResolution = resolveArchiveWithUrlReader(
     product = product,
@@ -88,6 +91,7 @@ internal fun resolveArchiveWithUrlReader(
     os = os,
     architecture = architecture,
     version = version,
+    buildPrefix = buildPrefix,
     productsApiReader = urlReader,
     androidStudioReader = urlReader,
 )
@@ -98,6 +102,7 @@ private fun resolveArchiveWithUrlReader(
     os: HostOs,
     architecture: HostArchitecture,
     version: String?,
+    buildPrefix: String?,
     productsApiReader: (String) -> String,
     androidStudioReader: (String) -> String,
 ): IdeArchiveResolution {
@@ -118,6 +123,7 @@ private fun resolveArchiveWithUrlReader(
         os = os,
         architecture = architecture,
         version = version,
+        buildPrefix = buildPrefix,
         productsApiUrl = url,
         payload = payload,
     )
@@ -129,6 +135,7 @@ internal fun resolveArchiveFromProductsApiPayload(
     os: HostOs,
     architecture: HostArchitecture,
     version: String? = null,
+    buildPrefix: String? = null,
     productsApiUrl: String,
     payload: String,
 ): IdeArchiveResolution {
@@ -153,6 +160,7 @@ internal fun resolveArchiveFromProductsApiPayload(
         if (!type.equals(channel.apiValue, ignoreCase = true)) continue
         if (releaseVersion.isNullOrBlank() || build.isNullOrBlank()) continue
         if (wantedVersion != null && wantedVersion != releaseVersion && wantedVersion != build) continue
+        if (buildPrefix != null && !build.startsWith(buildPrefix)) continue
 
         val downloads = release["downloads"] as? JsonObject ?: continue
         val platformDownload = downloads[downloadKey] as? JsonObject ?: continue

@@ -23,6 +23,14 @@ repositories {
 dependencies {
     implementation(gradleApi())
     implementation("com.squareup:kotlinpoet:2.2.0")
+    // The buildsrc-shared/kotlin srcDir we pull from :intellij-downloader carries
+    // the full IDE-resolution / download / unpack library (the matrix + the
+    // LocalIdeProvisioner used by ij-plugin/build.gradle.kts). The transitive
+    // deps below mirror :intellij-downloader/build.gradle.kts; both compilations
+    // load the same source files but each maintains its own classpath.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.slf4j:slf4j-api:2.0.17")
+    implementation("org.tukaani:xz:1.10")
     testImplementation(kotlin("test"))
 }

@@ -1,7 +1,9 @@
 @file:Suppress("HasPlatformType")
 
 import com.jonnyzzz.mcpSteroid.gradle.*
+import com.jonnyzzz.mcpSteroid.ideDownloader.IdeTarget
 import com.jonnyzzz.mcpSteroid.ideDownloader.McpSteroidIdeTargets
+import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndUnpackLocally
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -59,6 +61,19 @@ configurations.named("implementation") {
     exclude(group = "org.slf4j")
 }
 
+// IDE archive download + unpack staging dirs, shared between the main build IDE
+// and the verifier IDEs. The unpacked tree is keyed by full build + os + arch
+// (see `LocalIdeProvisioner.ideRootFolderName`) so multiple host platforms can
+// share the same on-disk cache without colliding.
+val localIdesBaseDir = rootProject.layout.buildDirectory.dir("local-ides").get().asFile
+val ideArchivesDir = rootProject.layout.buildDirectory.dir("ide-archives").get().asFile
+
+// Build target: matrix default, or a synthetic IdeTarget when CI overrides
+// `-Pmcp.platform.version=…` with a one-off version (e.g. an exact 262 build).
+val buildIdeTarget: IdeTarget =
+    if (targetIdeVersion == McpSteroidIdeTargets.buildTarget.version) McpSteroidIdeTargets.buildTarget
+    else IdeTarget(major = "override", version = targetIdeVersion)
+
 // Consume kotlinc distribution from kotlin-cli subproject
 val kotlincDist by configurations.creating {
     isCanBeConsumed = false
@@ -71,7 +86,19 @@ val kotlincDist by configurations.creating {
 dependencies {
     intellijPlatform {
         when (targetIdeProduct) {
-            JetBrainsIdeProduct.IntelliJIdeaUltimate -> intellijIdeaUltimate(targetIdeVersion)
+            // IntelliJ Ultimate goes through the in-repo `intellij-downloader`:
+            // archive resolution + download + unpack happen at script-eval time
+            // and the unpacked IDE root is fed to IPGP's `local(file)` selector.
+            // `useInstaller = true` is no longer applicable (we own the archive).
+            JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(
+                resolveAndUnpackLocally(
+                    target = buildIdeTarget,
+                    downloadDir = ideArchivesDir,
+                    unpackBaseDir = localIdesBaseDir,
+                )
+            )
+            // PyCharm path stays on IPGP for now; see TASKS.md follow-up to
+            // extend `intellij-downloader` to cover PyCharm build targets.
             JetBrainsIdeProduct.PyCharm -> pycharm(targetIdeVersion)
             JetBrainsIdeProduct.GoLand,
             JetBrainsIdeProduct.WebStorm,
@@ -202,15 +229,18 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            // Per-major IDE entries come from the shared matrix
-            // (`McpSteroidIdeTargets.verifierTargets`) so a future addition
-            // (e.g. 263 EAP) is a single-place edit covered by
-            // `McpSteroidIdeTargetsTest`. `useInstaller = true` stays here
-            // until commit 4 of the 262 EAP plan switches to `local(file)`.
+            // Verifier IDEs go through `intellij-downloader` too. Each entry is
+            // downloaded + unpacked into `build/local-ides/IU-<build>-<os>-<arch>/`
+            // and fed to IPGP via `local(file)`. The per-major matrix lives in
+            // `McpSteroidIdeTargets.verifierTargets` so adding 263 EAP later is
+            // a single-place edit covered by `McpSteroidIdeTargetsTest`.
             McpSteroidIdeTargets.verifierTargets.forEach { target ->
-                create(IntelliJPlatformType.IntellijIdeaUltimate, target.version) {
-                    useInstaller = true
-                }
+                val root = resolveAndUnpackLocally(
+                    target = target,
+                    downloadDir = ideArchivesDir,
+                    unpackBaseDir = localIdesBaseDir,
+                )
+                local(root)
             }
         }
     }
