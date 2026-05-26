@@ -43,19 +43,7 @@ fun resolveAndUnpackLocally(
     arch: HostArchitecture = resolveHostArchitecture(),
     product: IdeProduct = IdeProduct.IntelliJIdea,
 ): File {
-    val channel = inferChannel(target.version)
-    val namedMajorTag = parseNamedMajorEapTag(target.version)
-    val resolution = resolveArchive(
-        product = product,
-        channel = channel,
-        os = os,
-        architecture = arch,
-        // Named per-major tags (e.g. "262-EAP-SNAPSHOT") don't equal any
-        // public version/build, so we route through the buildPrefix filter
-        // instead and let the products API pick the latest matching the major.
-        version = if (namedMajorTag != null) null else target.version,
-        buildPrefix = namedMajorTag?.let { "$it." },
-    )
+    val resolution = resolveTargetArchive(target, product, os, arch)
 
     // Single network round-trip: feed the resolved URL to FromUrl so the
     // download path doesn't re-resolve via the products API.
@@ -95,6 +83,76 @@ internal fun parseNamedMajorEapTag(version: String): String? {
     val match = Regex("^(\\d+)-EAP-SNAPSHOT$").matchEntire(version) ?: return null
     return match.groupValues[1]
 }
+
+/**
+ * Resolves [target] via the products API, with a fallback for exact build
+ * numbers: `inferChannel("262.6228.19")` returns STABLE (no -SNAPSHOT / EAP
+ * substring), but the products API only carries that build on the EAP
+ * channel. When the inferred channel fails AND the version looks like an
+ * exact `NNN.X.Y` build, retry the other channel before propagating the
+ * failure. Matrix tags ([parseNamedMajorEapTag]) are not retried — they go
+ * through the buildPrefix filter on their canonical EAP channel directly.
+ */
+internal fun resolveTargetArchive(
+    target: IdeTarget,
+    product: IdeProduct,
+    os: HostOs,
+    arch: HostArchitecture,
+): IdeArchiveResolution {
+    val namedMajorTag = parseNamedMajorEapTag(target.version)
+    val inferred = inferChannel(target.version)
+
+    return try {
+        resolveArchive(
+            product = product,
+            channel = inferred,
+            os = os,
+            architecture = arch,
+            // Named per-major tags (e.g. "262-EAP-SNAPSHOT") don't equal any
+            // public version/build, so we route through the buildPrefix filter
+            // instead and let the products API pick the latest matching the major.
+            version = if (namedMajorTag != null) null else target.version,
+            buildPrefix = namedMajorTag?.let { "$it." },
+        )
+    } catch (first: Exception) {
+        // Auto-retry only for exact build numbers; matrix-tag or version-string
+        // lookups can fail for legitimate reasons (no public release yet) and
+        // shouldn't silently switch channels.
+        if (namedMajorTag != null || !isExactBuildNumber(target.version)) throw first
+        val fallback = when (inferred) {
+            IdeChannel.STABLE -> IdeChannel.EAP
+            IdeChannel.EAP -> IdeChannel.STABLE
+        }
+        try {
+            resolveArchive(
+                product = product,
+                channel = fallback,
+                os = os,
+                architecture = arch,
+                version = target.version,
+            ).also {
+                localIdeProvisionerLog.warn(
+                    "[LOCAL-IDE] exact build {} resolved on {} channel after {} miss " +
+                        "(inferred channel was wrong for an EAP-only build); consider " +
+                        "the named tag instead",
+                    target.version, fallback, inferred,
+                )
+            }
+        } catch (_: Exception) {
+            throw first
+        }
+    }
+}
+
+/**
+ * `true` for strings shaped like `NNN.X.Y` or `NNN.X.Y.Z` (typical full
+ * IntelliJ build number). The 3-digit major (252, 253, 261, 262, …)
+ * distinguishes build numbers from 4-digit-year public version strings
+ * (2025.x, 2026.x) which would otherwise also match a looser regex.
+ * Matches what the products API exposes as `build`.
+ */
+internal fun isExactBuildNumber(version: String): Boolean =
+    Regex("^\\d{3}\\.\\d+\\.\\d+(\\.\\d+)?$").matchEntire(version) != null
 
 /**
  * Infers the products-API channel from a [version] string. Snapshot or EAP tags
