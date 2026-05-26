@@ -169,10 +169,15 @@ dependencies {
             JetBrainsIdeProduct.WebStorm,
             -> error("Plugin build targets IntelliJ IDEA or PyCharm only. GoLand/WebStorm are for integration tests.")
         }
-        // Required for IdeExamplesExecutionTest (Java refactoring APIs) and
-        // LanguageSupportExecutionTest (Java/Kotlin language support actions)
-        bundledPlugin("com.intellij.java")
-        bundledPlugin("org.jetbrains.kotlin")
+        // Java + Kotlin plugins are TEST-ONLY. Two safety nets keep
+        // production code free of either plugin's types:
+        // `NoForbiddenPluginImportsTest` (compile-time) and
+        // `PluginRuntimeCompatibilityTest.runtime compat pycharm*` (PyCharm
+        // doesn't ship them; the .zip still loads). `testBundledPlugin`
+        // puts the jars on the test classpath via
+        // `intellijPlatformTestBundledPlugins`, never the main IDE classpath.
+        testBundledPlugin("com.intellij.java")
+        testBundledPlugin("org.jetbrains.kotlin")
         // Direct (compile-time) access to IntelliJ's bundled MCP server plugin so
         // `IntelliJMcpServerProbe` can call McpServerService.getInstance() without
         // reflection. The plugin is bundled in IDEA 2025.3+ but the **user can
