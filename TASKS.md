@@ -25,10 +25,20 @@ the actual runtime / CI):
 
 #### A — Validated only at build/compile time
 
-1. **`:test-integration:test` for 262 EAP cases.** The new
+1. ~~**`:test-integration:test` for 262 EAP cases.** The new
    `build plugin with IntelliJ 262 EAP`, `verify plugin against IntelliJ 262 EAP`,
    and `runtime compat pycharm stable / eap` cases got `compileTestKotlin`
-   validation only. Never actually ran a Docker container.
+   validation only. Never actually ran a Docker container.~~
+   **2026.1 case CLOSED 2026-05-26.** `PluginBuildCompatibilityTest.build plugin with IntelliJ 2026_1`
+   ran end-to-end locally — `BUILD SUCCESSFUL in 5m 20s`, container produced
+   `mcp-steroid-0.96.19999-SNAPSHOT-63d0b6d6.zip`. The fix was two parts:
+   (a) replace the dual `cp -a` prep with `rsync -a` + excludes (the
+   original `cp -a` of the 99 GB dev-state workspace blew past the 120 s
+   cap on macOS virtiofs), (b) `git config --global --add safe.directory '*'`
+   so the in-container git can `clean -fdx` + `rev-parse HEAD` on a tree
+   whose .git carries the host UID. Commits `63d0b6d6` + `<followup>`.
+   262 EAP and PyCharm runtime-compat cases still untested locally;
+   covered structurally by the same prep step now that it's known good.
 2. **`:ij-plugin:verifyPlugin`** — full Plugin Verifier (minutes per
    IDE) wired against both 261 + 262 via `local()`, but never
    executed in this session. The check most likely to surface a
@@ -122,31 +132,28 @@ the actual runtime / CI):
 19. **No one has actually installed the .zip in IDEA 262 EAP and
     clicked around.** The real merge gate before this ships.
 
-**Closed in 2026-05-26 session:** #2 (`:ij-plugin:verifyPlugin` against
-261 + 262 both COMPATIBLE, 1m27s), #7 (GH Actions JDK 25), #8
-(`buildPluginOnCI` green inside the new image), #13 (release notes
-0.96), #15 (JDK 25 on the GH runner image).
+**Closed in 2026-05-26 session:** #1 (build-compat 2026.1 case green
+locally in 5m20s after rsync-prep + safe.directory fix), #2
+(`:ij-plugin:verifyPlugin` against 261 + 262 both COMPATIBLE, 1m27s),
+#7 (GH Actions JDK 25), #8 (`buildPluginOnCI` green inside the new
+image), #13 (release notes 0.96), #15 (JDK 25 on the GH runner image).
+Compile-only validation on #5 (`:test-experiments:compileTestKotlin`
+green in 15s — full DPAIA runs deferred, they take 1h+).
 
-Of all 19, the still-open ones most likely to bite are **#19, #1, #4,
+Of all 19, the still-open ones most likely to bite are **#19, #4,
 #6 (TC DSL)**:
 
 - **#19** needs a human to install the .zip in IDE 262 EAP and click
   around. Hot-reload `:ij-plugin:deployPlugin` failed earlier in the
   session (changes too deep — sinceBuild bump, kotlin bump,
   toolchain bump); a cold install via `Settings → Plugins → ⚙ →
-  Install from disk…` against the freshly built ZIP is the way.
-- **#1** has a local-only blocker: the Docker `cp -a` step in
-  `PluginBuildCompatibilityTest.prepareContainer` has a 120 s cap
-  but copies the entire workspace (99 GB locally — almost all in
-  the dev `build/` dirs) across macOS virtiofs. On TC Linux agents
-  the source mount is much smaller and 120 s is plenty. Local fix
-  would be to switch the prep step from `cp -a` to `rsync` with
-  `build/` / `.gradle/` excludes; not done yet (touches checked-in
-  test infra, defer until the user prioritises the local-run
-  workflow).
+  Install from disk…` against the freshly built ZIP is the way. ZIP
+  path: `ij-plugin/build/distributions/mcp-steroid-0.96.19999-SNAPSHOT-*.zip`.
 - **#4** is the runtime-side companion to #2 — Plugin Verifier is a
   static check; only `runIde` / a real install proves load time
-  succeeds.
+  succeeds. The build-compat #1 close-out covers the
+  `:ij-plugin:buildPlugin` Docker path; it does NOT cover plugin
+  *load* in a live IDE.
 - **#6** is the TC repo (`~/Work/mcp-steroid-teamcity`), which sets
   `JDK_25_ARM64` agent params + Linux/Windows/macOS matrix and may
   still reference JDK 21 paths.

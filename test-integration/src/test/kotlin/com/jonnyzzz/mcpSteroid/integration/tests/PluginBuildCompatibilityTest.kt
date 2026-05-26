@@ -202,6 +202,7 @@ private object BuildCompatInfra {
                       --exclude=.idea/workspace.xml
                       --exclude=*.iml
                       $SRC_GUEST/ $PREBUILD_GUEST/ &&
+                    git config --global --add safe.directory '*' &&
                     cd $PREBUILD_GUEST &&
                     git clean -fdx &&
                     cp -a $PREBUILD_GUEST $BUILD_GUEST &&
