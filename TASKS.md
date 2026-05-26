@@ -52,9 +52,25 @@ the actual runtime / CI):
 3. **PyCharm build path** (`-Pmcp.platform.product=pycharm`) —
    generalized in code (`LocalIdeKey(target, product)`, `ideRootFolderName`
    with `PY-` prefix), but never compiled or tested.
-4. **`runIde`** + **`deployPlugin`** — never run; "plugin loads into
+4. ~~**`runIde`** + **`deployPlugin`** — never run; "plugin loads into
    a real running IDE" gate unverified. The running IDE 261 in the
-   dev env still has the OLD plugin loaded.
+   dev env still has the OLD plugin loaded.~~ **CLOSED 2026-05-26
+   (runtime side, via `PluginRuntimeCompatibilityTest`).** All four
+   runtime-compat methods green locally: the 261-built plugin loads
+   AND runs against IDEA 2026.1.2 (261 family), IDEA 2026.2 EAP (262
+   family), PyCharm 2026.1.2, and PyCharm 2026.2 EAP. Verified
+   end-to-end via Docker IDE containers + MCP tool calls
+   (`list_projects`, `list_windows`, `execute_code` — the
+   `list_windows` call exercises mcp-steroid#18, the
+   `c.i.o.u.Pair` vs `kotlin.Pair` direction-flip in 262, and it
+   stayed green). PyCharm cases also close the prod-minimal-deps
+   gate — `com.intellij.java` and `org.jetbrains.kotlin` are
+   intentionally absent from PyCharm and the plugin loads anyway.
+   IDEA pair total 8m 22s, PyCharm pair 8m 33s. `runIde` /
+   `deployPlugin` hot-reload still not exercised (see #19 — needs
+   human in a real IDE), but the "binary loads + works against the
+   target IDE matrix" gate that #4 was tracking is now covered by
+   the integration test.
 5. **`:test-experiments`** — DPAIA / debugger / arena tests untouched.
 
 #### B — CI integration
@@ -138,15 +154,22 @@ the actual runtime / CI):
 19. **No one has actually installed the .zip in IDEA 262 EAP and
     clicked around.** The real merge gate before this ships.
 
-**Closed in 2026-05-26 session:** #1 (build-compat 2026.1 case green
-locally in 5m20s after rsync-prep + safe.directory fix), #2
-(`:ij-plugin:verifyPlugin` against 261 + 262 both COMPATIBLE, 1m27s),
-#7 (GH Actions JDK 25), #8 (`buildPluginOnCI` green inside the new
-image), #13 (release notes 0.96), #15 (JDK 25 on the GH runner image).
-Compile-only validation on #5 (`:test-experiments:compileTestKotlin`
-green in 15s — full DPAIA runs deferred, they take 1h+).
+**Closed in 2026-05-26 session:** #1 (build-compat 2026.1 + 262 EAP
+both green locally), #2 (`:ij-plugin:verifyPlugin` against 261 + 262
+COMPATIBLE), #4 (runtime-compat all four cases green: IDEA stable +
+EAP, PyCharm stable + EAP), #7 (GH Actions JDK 25), #8
+(`buildPluginOnCI` green inside the new image), #13 (release notes
+0.96), #15 (JDK 25 on the GH runner image). Compile-only validation
+on #5 (`:test-experiments:compileTestKotlin` green in 15s — full
+DPAIA runs deferred, they take 1h+).
 
-Of all 19, the still-open ones most likely to bite are **#19, #4,
+The full **build → verify → runtime** trilogy is now green
+end-to-end against both 261 family (2026.1.2) and 262 family
+(2026.2 EAP), for both IDEA and PyCharm. mcp-steroid#18
+(Pair direction flip in 262, caught by `list_windows`) did NOT
+trigger — the suspected regression is absent.
+
+Of all 19, the still-open ones most likely to bite are **#19,
 #6 (TC DSL)**:
 
 - **#19** needs a human to install the .zip in IDE 262 EAP and click
@@ -155,11 +178,6 @@ Of all 19, the still-open ones most likely to bite are **#19, #4,
   toolchain bump); a cold install via `Settings → Plugins → ⚙ →
   Install from disk…` against the freshly built ZIP is the way. ZIP
   path: `ij-plugin/build/distributions/mcp-steroid-0.96.19999-SNAPSHOT-*.zip`.
-- **#4** is the runtime-side companion to #2 — Plugin Verifier is a
-  static check; only `runIde` / a real install proves load time
-  succeeds. The build-compat #1 close-out covers the
-  `:ij-plugin:buildPlugin` Docker path; it does NOT cover plugin
-  *load* in a live IDE.
 - **#6** is the TC repo (`~/Work/mcp-steroid-teamcity`), which sets
   `JDK_25_ARM64` agent params + Linux/Windows/macOS matrix and may
   still reference JDK 21 paths.
