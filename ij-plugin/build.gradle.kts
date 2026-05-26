@@ -330,6 +330,22 @@ val verifyBundledKotlinCompatibility by tasks.registering(VerifyBundledKotlinCom
     reportFile.set(layout.buildDirectory.file("reports/kotlin-version-compatibility.txt"))
 }
 
+// Runtime classloader probe: launches a JVM with classpath = IDE 261's lib/*.jar
+// PLUS the :intellij-downloader jar (which carries KotlinxRuntimeProbe.main +
+// @Serializable companions). NOTHING ELSE — the kotlinx-coroutines /
+// kotlinx-serialization runtime MUST come from the IDE bundle. A LinkageError
+// in the forked JVM fails the build at `:verifyPlugin` time.
+val verifyBundledKotlinxRuntime by tasks.registering(VerifyBundledKotlinxRuntimeTask::class) {
+    group = "verification"
+    description = "Run KotlinxRuntimeProbe against IDE 261's lib/ to validate kotlinx-coroutines/serialization link compat"
+
+    ideRoot.set(layout.dir(provider { ideRootFor(buildIdeTarget) }))
+    probeClasspath.from(project(":intellij-downloader").tasks.named("jar"))
+    probeMainClass.set("com.jonnyzzz.mcpSteroid.ideDownloader.KotlinxRuntimeProbe")
+    probeArgs.set(listOf(buildIdeTarget.major, buildIdeTarget.version))
+    reportFile.set(layout.buildDirectory.file("reports/kotlinx-runtime-probe.txt"))
+}
+
 val ocrToolDist by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -540,6 +556,7 @@ tasks.buildPlugin {
 
 tasks.verifyPlugin {
     dependsOn(verifyBundledKotlinCompatibility)
+    dependsOn(verifyBundledKotlinxRuntime)
     dependsOn(verifyBundledLibraries)
 }
 

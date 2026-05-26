@@ -57,6 +57,11 @@ application {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    // kotlinx-coroutines: needed by KotlinxRuntimeProbe.main (the runtime check
+    // launched by ij-plugin's verifyBundledKotlinxRuntime). At runtime the probe
+    // resolves both serialization + coroutines from IDE 261's lib/ — these
+    // implementation lines are compile-time only.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.slf4j:slf4j-api:2.0.17")
     // Runtime xz support for IdeUnpacker fallback paths that might handle .tar.xz directly.
