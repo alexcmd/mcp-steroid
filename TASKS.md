@@ -37,8 +37,14 @@ the actual runtime / CI):
    cap on macOS virtiofs), (b) `git config --global --add safe.directory '*'`
    so the in-container git can `clean -fdx` + `rev-parse HEAD` on a tree
    whose .git carries the host UID. Commits `63d0b6d6` + `<followup>`.
-   262 EAP and PyCharm runtime-compat cases still untested locally;
-   covered structurally by the same prep step now that it's known good.
+   262 EAP case also CLOSED 2026-05-26 (same session): the
+   `*build plugin with IntelliJ 262 EAP*` case ran end-to-end locally
+   on the same rsync + safe.directory prep, **BUILD SUCCESSFUL in
+   5m 8s**, container produced
+   `mcp-steroid-0.96.19999-SNAPSHOT-a6b55783.zip` against
+   IDE 262 EAP. PyCharm runtime-compat cases still untested locally;
+   covered structurally by the same prep step now that it's known
+   good for both IDEA targets.
 2. **`:ij-plugin:verifyPlugin`** — full Plugin Verifier (minutes per
    IDE) wired against both 261 + 262 via `local()`, but never
    executed in this session. The check most likely to surface a
