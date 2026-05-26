@@ -1,5 +1,13 @@
 # 262 EAP support — plan and findings (2026-05-26)
 
+**Status: implementation complete, on `origin/main`.** 30+ commits across
+8 plan items + per-commit quorum fix bundles + 10 followups + final sweep.
+GH Actions [run 26457342481](https://github.com/jonnyzzz/mcp-steroid/actions/runs/26457342481)
+green on the JDK 25 build image. Plugin Verifier green against both
+`IU-261.22158.277` and `IU-262.6228.19`. Remaining gaps tracked in
+`TASKS.md` (#1 local-only `cp -a` perf, #4 / #19 needs human smoke,
+#6 TC DSL repo).
+
 Reference plan for moving the plugin build/test surface to IntelliJ Platform
 **261 as the primary** and adding **262 EAP as a secondary** verification
 target, while deprecating **253**.
@@ -9,7 +17,11 @@ Cross-referenced from `TASKS.md` → "Active focus — 262 EAP support
 
 ## Constraints (locked-in)
 
-1. **Keep root Kotlin 2.2.20.** Do not bump.
+1. ~~**Keep root Kotlin 2.2.20.** Do not bump.~~ Updated mid-stream after
+   reading the platform stdlib: `lib/util-8.jar` ships
+   `kotlin/KotlinVersion.class` with `CURRENT = 2.3.20`. Root Kotlin
+   bumped to **2.3.20** to match (the deprecated 2.2.20 path would have
+   conflicted with the 2.3-only stdlib symbols available at runtime).
 2. **Deprecate 253 entirely.** Plugin builds against 261. Tests/verifier
    cover 261 + 262.
 3. **Replace `useInstaller = true`** in `pluginVerification.ides { }` with
