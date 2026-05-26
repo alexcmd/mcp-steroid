@@ -129,6 +129,16 @@ followup below.
   Project) after pulling commit `ea13b1c1`+ to clear the warnings.
   Re-import confirmed clean; commit `<this>` also removed the dead
   `resolveArchiveUrl` function that the cleaner inspection surfaced.
+- **PyCharm-side verifier matrix.** Codex flagged in the
+  followups-batch review that `McpSteroidIdeTargets.verifierTargets`
+  is IDEA-only. When `-Pmcp.platform.product=pycharm` is set, the
+  build IDE switches to PyCharm but `pluginVerification.ides` still
+  iterates IDEA targets. The runtime-compat test (commit
+  `7cb9b6d6`) catches plugin-load regressions on PyCharm, but the
+  Plugin Verifier itself doesn't run against PyCharm. Add a product
+  axis to the matrix and a `verifierTargets` per product, or split
+  into `verifierTargetsIdea` + `verifierTargetsPyCharm`. Defer
+  until someone needs PyCharm-side Plugin Verifier coverage.
 - **Composite-build for the shared source.** Currently buildSrc and
   `:intellij-downloader` both `srcDir` the same `buildsrc-shared/kotlin`
   and compile independently. Risks: silent drift if the two

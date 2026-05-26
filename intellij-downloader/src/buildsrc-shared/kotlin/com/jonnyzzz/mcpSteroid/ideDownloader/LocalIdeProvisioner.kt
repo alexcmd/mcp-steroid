@@ -124,10 +124,12 @@ internal fun resolveTargetArchive(
             version = if (namedMajorTag != null) null else target.version,
             buildPrefix = namedMajorTag?.let { "$it." },
         )
-    } catch (first: Exception) {
-        // Auto-retry only for exact build numbers; matrix-tag or version-string
-        // lookups can fail for legitimate reasons (no public release yet) and
-        // shouldn't silently switch channels.
+    } catch (first: IllegalStateException) {
+        // Auto-retry only for exact build numbers when the FIRST attempt was a
+        // clean "no release matches" (IllegalStateException raised at the end
+        // of resolveArchiveFromProductsApiPayload's loop). Real infrastructure
+        // errors — IOException, network timeouts, 5xx — must NOT trigger the
+        // double round-trip; they propagate to the caller untouched.
         if (namedMajorTag != null || !isExactBuildNumber(target.version)) throw first
         val fallback = when (inferred) {
             IdeChannel.STABLE -> IdeChannel.EAP
@@ -148,7 +150,16 @@ internal fun resolveTargetArchive(
                     target.version, fallback, inferred,
                 )
             }
-        } catch (_: Exception) {
+        } catch (fallbackError: Exception) {
+            // Don't silently swallow the fallback failure — it carries the
+            // genuine reason the second channel also missed (e.g. a DNS
+            // hiccup on the retry). Log at warn so diagnostics survive, then
+            // re-throw the FIRST error so the user-facing message still names
+            // the channel they asked for.
+            localIdeProvisionerLog.warn(
+                "[LOCAL-IDE] fallback to {} channel also failed for {}: {}",
+                fallback, target.version, fallbackError.message,
+            )
             throw first
         }
     }

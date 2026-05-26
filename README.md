@@ -182,7 +182,7 @@ See the full [Configuration Documentation](https://mcp-steroid.jonnyzzz.com/docs
 
 ## Architecture
 
-- **Technology:** Kotlin 2.2.21 on Java 21
+- **Technology:** Kotlin 2.3.20 on Java 25
 - **HTTP Server:** Ktor 3.1.0 (Streamable HTTP + SSE)
 - **Protocol:** Model Context Protocol (MCP)
 - **Default Port:** 6315

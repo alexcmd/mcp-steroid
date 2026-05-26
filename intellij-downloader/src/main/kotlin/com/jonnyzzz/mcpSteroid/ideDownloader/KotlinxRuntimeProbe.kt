@@ -127,7 +127,8 @@ object KotlinxRuntimeProbe {
                     deferredSum.complete(sum)
                 }
             }
-            check(deferredSum.await() == 6) { "channel sum should be 6, got ${deferredSum.await()}" }
+            val channelSum = deferredSum.await()
+            check(channelSum == 6) { "channel sum should be 6, got $channelSum" }
             println("RUNTIME_PROBE_COROUTINES_CHANNEL_OK")
 
             val stateFlow = MutableStateFlow(0)

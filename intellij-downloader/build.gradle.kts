@@ -56,12 +56,14 @@ application {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    // kotlinx-coroutines: needed by KotlinxRuntimeProbe.main (the runtime check
-    // launched by ij-plugin's verifyBundledKotlinxRuntime). At runtime the probe
-    // resolves both serialization + coroutines from IDE 261's lib/ — these
-    // implementation lines are compile-time only.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    // kotlinx pins read from root gradle.properties so KotlinxRuntimeProbe is
+    // compiled against the SAME versions production modules link against;
+    // otherwise a paired bump there could leave the probe shipping stale
+    // bytecode and miss the very drift it's meant to catch.
+    val kotlinxSerialization = providers.gradleProperty("mcp.kotlinx.serialization.version").get()
+    val kotlinxCoroutines = providers.gradleProperty("mcp.kotlinx.coroutines.version").get()
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$kotlinxSerialization")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinxCoroutines")
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.slf4j:slf4j-api:2.0.17")
     // Runtime xz support for IdeUnpacker fallback paths that might handle .tar.xz directly.

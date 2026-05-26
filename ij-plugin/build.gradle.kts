@@ -3,6 +3,7 @@
 import com.jonnyzzz.mcpSteroid.gradle.*
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeProduct
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeTarget
+import java.util.concurrent.ConcurrentHashMap
 import com.jonnyzzz.mcpSteroid.ideDownloader.McpSteroidIdeTargets
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndUnpackLocally
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
@@ -87,17 +88,23 @@ val buildIdeTarget: IdeTarget = run {
 // Memoized provisioner cache keyed by (target, product). The build IDE and
 // the first verifier entry are usually the same target (commit 3's matrix
 // invariant); the cache prevents duplicate products-API + checksum lookups.
+//
+// ConcurrentHashMap.computeIfAbsent is required — since commit 6f669e38 the
+// Provider-deferred local() resolution may fire from multiple Gradle worker
+// threads concurrently (one per verifierTargets entry + the build IDE +
+// each verifyBundledKotlinxRuntime sub-task). A vanilla HashMap getOrPut
+// races at that point.
 data class LocalIdeKey(val target: IdeTarget, val product: IdeProduct)
-val localIdeCache = mutableMapOf<LocalIdeKey, java.io.File>()
+val localIdeCache = ConcurrentHashMap<LocalIdeKey, java.io.File>()
 fun ideRootFor(
     target: IdeTarget,
     product: IdeProduct = IdeProduct.IntelliJIdea,
-): java.io.File = localIdeCache.getOrPut(LocalIdeKey(target, product)) {
+): java.io.File = localIdeCache.computeIfAbsent(LocalIdeKey(target, product)) { key ->
     resolveAndUnpackLocally(
-        target = target,
+        target = key.target,
         downloadDir = ideArchivesDir,
         unpackBaseDir = localIdesBaseDir,
-        product = product,
+        product = key.product,
     )
 }
 
