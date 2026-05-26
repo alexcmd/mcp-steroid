@@ -75,9 +75,24 @@ the actual runtime / CI):
 
 #### B — CI integration
 
-6. **TeamCity DSL repo** (`~/Work/mcp-steroid-teamcity`) — separate
+6. ~~**TeamCity DSL repo** (`~/Work/mcp-steroid-teamcity`) — separate
    repo, probably still references JDK 21 / 253 / old paths. Build
-   configs not updated.
+   configs not updated.~~ **CLOSED 2026-05-26.** Switched all six
+   Gradle build-step `jdkHome = "%env.JDK_21_0%"` references to
+   `%env.JDK_25_0%` (builder.kt, _06_test_integration.kt,
+   _10_dpaia_arena_tests.kt, _11_debugger_demo_tests.kt,
+   _12_bright_scenario_tests.kt, _13_youtrackdb_tests.kt). DSL
+   regenerated cleanly under the documented JDK 21 Maven invocation
+   (Byte Buddy / `teamcity-configs-maven-plugin:generate` constraint);
+   XML diff = 20 build-type XMLs each with one-line `target.jdk.home`
+   swap. `_02_settings_test.kt` keeps `maven:3.9-eclipse-temurin-21`
+   per the same Byte Buddy constraint. Commit `cf786b9` on
+   JetBrains/mcp-steroid-teamcity. `origin/main` of this repo also
+   merged into `jb/main` via `jb-merge` procedure (commit `2eb12f01`
+   on jb/main) so TC pulls the 261/262 + JDK 25 source state. Agent
+   precondition: `JDK_25_0` env var must be exposed on every TC agent
+   matching the test matrix; a missing var errors at gradle-step
+   launch and is recoverable by provisioning the JDK or reverting.
 7. ~~**GitHub Actions workflows** (`.github/workflows/`) — not
    inspected; may still pin JDK 21.~~ **CLOSED 2026-05-26.** Audited;
    workflows themselves use no `setup-java` — the JDK source is the
@@ -157,11 +172,13 @@ the actual runtime / CI):
 **Closed in 2026-05-26 session:** #1 (build-compat 2026.1 + 262 EAP
 both green locally), #2 (`:ij-plugin:verifyPlugin` against 261 + 262
 COMPATIBLE), #4 (runtime-compat all four cases green: IDEA stable +
-EAP, PyCharm stable + EAP), #7 (GH Actions JDK 25), #8
-(`buildPluginOnCI` green inside the new image), #13 (release notes
-0.96), #15 (JDK 25 on the GH runner image). Compile-only validation
-on #5 (`:test-experiments:compileTestKotlin` green in 15s — full
-DPAIA runs deferred, they take 1h+).
+EAP, PyCharm stable + EAP), #6 (TC DSL repo `JDK_21_0` → `JDK_25_0`;
+`origin/main` merged to `jb/main` `2eb12f01`; TC repo commit
+`cf786b9` pushed to JetBrains/mcp-steroid-teamcity), #7 (GH Actions
+JDK 25), #8 (`buildPluginOnCI` green inside the new image), #13
+(release notes 0.96), #15 (JDK 25 on the GH runner image).
+Compile-only validation on #5 (`:test-experiments:compileTestKotlin`
+green in 15s — full DPAIA runs deferred, they take 1h+).
 
 The full **build → verify → runtime** trilogy is now green
 end-to-end against both 261 family (2026.1.2) and 262 family
@@ -169,8 +186,8 @@ end-to-end against both 261 family (2026.1.2) and 262 family
 (Pair direction flip in 262, caught by `list_windows`) did NOT
 trigger — the suspected regression is absent.
 
-Of all 19, the still-open ones most likely to bite are **#19,
-#6 (TC DSL)**:
+Of all 19, the only still-open one most likely to bite is **#19**
+(human-driven cold install + smoke):
 
 - **#19** needs a human to install the .zip in IDE 262 EAP and click
   around. Hot-reload `:ij-plugin:deployPlugin` failed earlier in the
@@ -178,9 +195,6 @@ Of all 19, the still-open ones most likely to bite are **#19,
   toolchain bump); a cold install via `Settings → Plugins → ⚙ →
   Install from disk…` against the freshly built ZIP is the way. ZIP
   path: `ij-plugin/build/distributions/mcp-steroid-0.96.19999-SNAPSHOT-*.zip`.
-- **#6** is the TC repo (`~/Work/mcp-steroid-teamcity`), which sets
-  `JDK_25_ARM64` agent params + Linux/Windows/macOS matrix and may
-  still reference JDK 21 paths.
 to bite.
 
 ## Locked-in constraints (during implementation)
