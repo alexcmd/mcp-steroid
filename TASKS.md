@@ -118,16 +118,34 @@ the actual runtime / CI):
    `intellijPlatformTesting` block of IPGP." Logged as a followup
    but never executed; they stay in MAIN per "keep as before"
    (acceptable per user). The test-scope migration is the real fix.
-10. **Static guard against accidentally pulling Java/Kotlin plugin
+10. ~~**Static guard against accidentally pulling Java/Kotlin plugin
     types into production code.** Compile classpath has those types
     available; nothing prevents `import org.jetbrains.kotlin.idea.*`
     in production. The PyCharm runtime-compat test catches it only
     at test time. A lint rule (`NoForbiddenImportsTest`) would close
-    this at compile time.
-11. **PyCharm-side verifier matrix.** Codex flagged: `verifierTargets`
+    this at compile time.~~ **CLOSED 2026-05-26.** Added
+    `NoForbiddenPluginImportsTest` (`ij-plugin/src/test/kotlin/`) that
+    walks every production Kotlin source root and fails fast on any
+    `import org.jetbrains.kotlin.idea.*`, `org.jetbrains.kotlin.psi.*`,
+    or `com.intellij.lang.java.*`. Surgical pattern list (only
+    packages whose every class comes from an optional plugin —
+    platform-side `PsiElement` / `PsiFile` / `JavaTokenType` are
+    deliberately not banned). Audit shows zero baseline violations,
+    so this is a pure regression gate. Commit `5bee657d`.
+11. ~~**PyCharm-side verifier matrix.** Codex flagged: `verifierTargets`
     is IDEA-only. `-Pmcp.platform.product=pycharm` switches build IDE
     to PyCharm but Plugin Verifier still runs against IDEA. Add a
-    product axis to the matrix.
+    product axis to the matrix.~~ **CLOSED 2026-05-26.** Added
+    `verifierIdeProduct: IdeProduct` next to `targetIdeProduct` in
+    `ij-plugin/build.gradle.kts`, mapping
+    `JetBrainsIdeProduct.IntelliJIdeaUltimate → IdeProduct.IntelliJIdea`
+    and `JetBrainsIdeProduct.PyCharm → IdeProduct.PyCharm`. The
+    `pluginVerification.ides { }` loop now threads
+    `ideRootProviderFor(target, verifierIdeProduct)`. Default IDEA
+    path is identical to before (`IdeProduct.IntelliJIdea` was the
+    function's default); PyCharm builds now opt into PyCharm
+    verifier IDEs via `-Pmcp.platform.product=pycharm` without
+    further wiring. Commit `634d2ca9`.
 12. **Composite-build for shared source.** `buildSrc/` and
     `:intellij-downloader/` both `srcDir(...)` `buildsrc-shared/kotlin/`.
     Deps kept in lockstep manually. Clean fix = Gradle included
@@ -157,28 +175,39 @@ the actual runtime / CI):
     `Detected by: Current JVM` — no foojay download path is taken.
     TeamCity status is item #6 (separate repo, separate agents); foojay
     is the fallback there.
-16. **IDE archive disk usage.** `build/local-ides/` now holds full
+16. ~~**IDE archive disk usage.** `build/local-ides/` now holds full
     unpacked 261 + 262 IDEs (~3 GB each). CI runners may need a
-    free-disk gate.
+    free-disk gate.~~ **CLOSED 2026-05-26.** `IdeUnpacker.kt` now
+    calls `warnIfLowFreeDiskSpace` at the unpack site (after the
+    cached-marker fast-path). Conservative `4 × archiveSize` estimate;
+    WARN-only so a slightly-over-budget estimate doesn't fail a
+    build that would actually fit. Replaces the previous failure
+    mode of cryptic mid-extract `IOException: No space left on
+    device` deep inside Apache Commons Compress. Commit `42cdaa2a`.
 17. **Stale unpack cache on republished EAP.** Marker uses archive
     size + mtime; if JetBrains re-publishes a same-build EAP with
     new content but identical timestamps (rare), the cache wouldn't
-    invalidate.
+    invalidate. **Deferred-with-rationale:** sha256 marker would
+    cost 5-10 s on every Gradle config-phase eval; the size+mtime
+    identity check matches what `make`/`gradle` use for incremental
+    builds and the failure mode (an EAP republish with identical
+    size + mtime + filename) is sufficiently rare that adding the
+    overhead isn't justified. Manual recovery is `rm -rf
+    build/local-ides/<entry>/` if a stale-cache symptom is ever
+    suspected.
 18. **Gemini reviewer was non-functional** for the final 2 h of the
     session. Followups-batch had 2-of-3 quorum (claude + codex).
+    **Historical note only.** No code or process change pending —
+    quorum reviews happen out-of-band when needed.
 19. **No one has actually installed the .zip in IDEA 262 EAP and
     clicked around.** The real merge gate before this ships.
 
-**Closed in 2026-05-26 session:** #1 (build-compat 2026.1 + 262 EAP
-both green locally), #2 (`:ij-plugin:verifyPlugin` against 261 + 262
-COMPATIBLE), #4 (runtime-compat all four cases green: IDEA stable +
-EAP, PyCharm stable + EAP), #6 (TC DSL repo `JDK_21_0` → `JDK_25_0`;
-`origin/main` merged to `jb/main` `2eb12f01`; TC repo commit
-`cf786b9` pushed to JetBrains/mcp-steroid-teamcity), #7 (GH Actions
-JDK 25), #8 (`buildPluginOnCI` green inside the new image), #13
-(release notes 0.96), #15 (JDK 25 on the GH runner image).
-Compile-only validation on #5 (`:test-experiments:compileTestKotlin`
-green in 15s — full DPAIA runs deferred, they take 1h+).
+**Closed in 2026-05-26 session:** #1, #2, #4, #6, #7, #8, #10, #11,
+#13, #14, #15, #16. Plus compile-only validation on #5
+(`:test-experiments:compileTestKotlin` green in 15s — full DPAIA
+runs deferred, they take 1h+). #17 and #18 explicitly
+deferred-with-rationale (sha256 marker cost vs. rare-failure
+likelihood; reviewer availability is historical).
 
 The full **build → verify → runtime** trilogy is now green
 end-to-end against both 261 family (2026.1.2) and 262 family
@@ -186,7 +215,7 @@ end-to-end against both 261 family (2026.1.2) and 262 family
 (Pair direction flip in 262, caught by `list_windows`) did NOT
 trigger — the suspected regression is absent.
 
-Of all 19, the only still-open one most likely to bite is **#19**
+Of all 19, the only still-open one needing action is **#19**
 (human-driven cold install + smoke):
 
 - **#19** needs a human to install the .zip in IDE 262 EAP and click
@@ -195,7 +224,14 @@ Of all 19, the only still-open one most likely to bite is **#19**
   toolchain bump); a cold install via `Settings → Plugins → ⚙ →
   Install from disk…` against the freshly built ZIP is the way. ZIP
   path: `ij-plugin/build/distributions/mcp-steroid-0.96.19999-SNAPSHOT-*.zip`.
-to bite.
+  The runtime-compat IDEA-EAP integration test (#4) is the closest
+  automated proxy and was green, so this is a smoke-only step rather
+  than a regression-hunt.
+
+Items #9 (move bundled Java/Kotlin to `intellijPlatformTesting`) and
+#12 (composite-build) remain in the **deferred (long-term)** section
+per the user's "keep as before" direction — both are architecturally
+cleaner end-states without immediate-failure consequences.
 
 ## Locked-in constraints (during implementation)
 
