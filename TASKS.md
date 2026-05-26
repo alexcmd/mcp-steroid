@@ -2983,3 +2983,41 @@ Progress log appended below as each task moves.
   prompt-only improvements above (iter 7 + the post-rename physical
   reorder) ship now; the convergence verification waits for
   Docker.
+- 2026-05-26 — Docker is back; cleaned up stale resources before iter 8:
+  pruned 2 stopped containers + 382 dangling images (26.5 GB) +
+  build cache (143 GB), trimmed test-integration/build/test-logs/test/
+  to newest 2 of each kind (4.8 GB freed). Total reclaimed ~462 GB.
+  Kept `mcp-steroid-base` and `mcp-steroid-reaper` intact.
+- 2026-05-26 — **Iter 8 ran (Claude 85s PASSED, Codex 71s PASSED,
+  Gemini 39s FAILED on a stale assertion, not a real regression).**
+  Gemini correctly fetched the article, used the Primary recipe (PSI
+  body comparison), got `DUPLICATES_FOUND: 1` + `DEMO_DUPLICATES_HIT:
+  yes`, but `FindDuplicatesPromptTest:78-95` only accepted the
+  Cross-check signals (`DuplicateInspection`, `DuplicateProblemDescriptor`,
+  `DuplicatedCode`, `com.jetbrains.clones`). Test contract was written
+  before iter 7's reorder made Primary the "Agent fast path" default.
+    * Test fix (`FindDuplicatesPromptTest.kt:75-100`): accept either set
+      of signals (Cross-check OR Primary). Primary signals are
+      `KtNamedFunction`, `bodyBlockExpression`, `PsiMethod`,
+      `PsiTreeUtil.collectElementsOfType`. Issue #33's intent (block
+      grep/Bash) is preserved — agent must still use one of the two
+      IDE recipes.
+    * Article fix: added a Primary-recipe `printJson` block. Gemini's
+      IMPROVEMENTS feedback flagged that pasting the existing
+      `Structured output (printJson)` block (which assumes Cross-check
+      data shape `CloneCluster(main, duplicates)`) at the end of the
+      Primary recipe causes a compile error — the Primary returns
+      `List<List<CloneRange>>` from `byBody.values`. New block sits
+      directly after the Primary recipe with the correct data shape,
+      and a "do NOT paste the Cross-check `printJson` here" warning.
+  Iter 8 IMPROVEMENTS that did NOT make it into this iteration's
+  fixes (deferred to iter 9 / iter 10 if reviewers agree they
+  matter):
+    * Claude: add a brief TL;DR / "5-10 line Agent fast path block" at
+      the top of the article so agents reading top-to-bottom can stop
+      early.
+    * Codex: spell out a default interpretation of "source files"
+      (e.g. `"/src/" in path`) in one sentence so the scope choice is
+      unambiguous.
+    * Codex: push the find-duplicates special case higher in the
+      `steroid_execute_code` tool description.

@@ -99,6 +99,36 @@ clones.take(20).forEachIndexed { i, cluster ->
 
 **Body-length threshold (60 chars)** filters trivial getters/setters and one-liners that swamp results. Lower to ~40 for smaller codebases or if the user suspects short duplicate blocks; raise to ~120 for noisy monorepos.
 
+## Structured output for the Primary recipe (printJson)
+
+The Primary recipe above returns `clones: List<List<CloneRange>>` (every inner list is one duplicate cluster; each `CloneRange` carries `path`, `startLine`, `endLine`, `name`). For pipelines or follow-up code that consumes the result programmatically, replace the trailing `println` loop with `printJson`. **The data shape is different from the Cross-check recipe's `printJson` block further down — do NOT paste that block here; it will not compile against `List<List<CloneRange>>`.**
+
+```kotlin[IU]
+// Drop-in replacement for the Primary recipe's trailing println loop.
+// `clones` comes from the Primary recipe above — the data class + val stubs
+// here exist only so this block stands alone for KtBlock compilation.
+data class CloneRange(val path: String, val startLine: Int, val endLine: Int, val name: String)
+val clones: List<List<CloneRange>> = emptyList()  // populated by the Primary recipe
+
+val payload: Map<String, Any> = mapOf(
+    "clusterCount" to clones.size,
+    "clusters" to clones.map { cluster ->
+        mapOf(
+            "occurrences" to cluster.size,
+            "fragments" to cluster.map { r ->
+                mapOf(
+                    "path" to r.path,
+                    "startLine" to r.startLine,
+                    "endLine" to r.endLine,
+                    "name" to r.name,
+                )
+            },
+        )
+    },
+)
+printJson(payload)
+```
+
 # Why direct typed access works (no reflection needed) — for the Cross-check recipe
 
 `steroid_execute_code` compiles your Kotlin against every loaded plugin's classloader files (`ScriptClassLoaderFactory.ideClasspath()` flattens `descriptor.pluginClassLoader.files` for every loaded plugin and its content modules). In IDEA Ultimate the duplicates-detector module (`intellij.platform.duplicatesDetector.jar`) is bundled, so `com.jetbrains.clones.DuplicateProblemDescriptor`, `com.jetbrains.clones.structures.TextClone`, and `com.jetbrains.clones.structures.TextFragment` are all on the script classpath. **Import them directly and cast.** Do **not** look the class up via `JavaPsiFacade` — that queries the *user project's* classpath, where the plugin classes never live, and a `null` result there is a known false negative that has historically led agents into reflection.
