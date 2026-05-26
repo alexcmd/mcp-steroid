@@ -36,7 +36,7 @@ improving tests, or enhancing documentation, your help makes the project better 
 
 - **JDK 21** or later
 - **Gradle 8.11.1** (wrapper included)
-- **IntelliJ IDEA 2025.3+** recommended for development
+- **IntelliJ IDEA 2026.1+** recommended for development
 - **Docker** required for integration tests
 
 Key Gradle tasks:

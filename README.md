@@ -61,7 +61,7 @@ Tasks requiring semantic understanding show the largest speed gains. Simple text
 
 ## Install
 
-**Requirements:** IntelliJ IDEA 2025.3+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, CLion, etc.)
+**Requirements:** IntelliJ IDEA 2026.1+ (or any IntelliJ-based IDE: Rider, Android Studio, GoLand, WebStorm, PyCharm, CLion, etc.)
 
 ### JetBrains Marketplace
 
