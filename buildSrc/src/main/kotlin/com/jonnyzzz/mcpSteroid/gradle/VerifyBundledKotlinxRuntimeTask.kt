@@ -90,18 +90,15 @@ abstract class VerifyBundledKotlinxRuntimeTask
         }
 
         // Defense-in-depth: refuse to run if the probe classpath itself
-        // carries any kotlinx-coroutines or kotlinx-serialization jar, since
-        // the whole point of this probe is to validate against the IDE's
-        // bundled versions — a stowaway jar would silently shadow them.
-        val stowaway = probeJars.filter { jar ->
-            val n = jar.name
-            n.startsWith("kotlinx-coroutines-") ||
-                n.startsWith("kotlinx-serialization-") ||
-                n.startsWith("kotlinx-io-")
-        }
+        // carries any external `kotlinx-*` jar. IDE 261/262 bundle several
+        // kotlinx families (coroutines, serialization-{core,json,cbor,protobuf},
+        // io, html, datetime, collections-immutable). ANY of them on the probe
+        // classpath would silently shadow the IDE-bundled copy and defeat the
+        // purpose of the probe — reject the whole family.
+        val stowaway = probeJars.filter { jar -> jar.name.startsWith("kotlinx-") }
         require(stowaway.isEmpty()) {
-            "probeClasspath must not carry its own kotlinx jars; would shadow the IDE bundle. " +
-                "Found: ${stowaway.joinToString { it.name }}"
+            "probeClasspath must not carry external kotlinx-* jars; would shadow " +
+                "the IDE bundle. Found: ${stowaway.joinToString { it.name }}"
         }
 
         val fullClasspath = (ideLibJars + probeJars).joinToString(File.pathSeparator) { it.absolutePath }

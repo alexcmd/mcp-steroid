@@ -300,6 +300,12 @@ tasks {
         // tests to run during the regular :ij-plugin:test task where they fail due
         // to missing API keys.
         testClassesDirs = sourceSets["test"].output.classesDirs
+
+        // Feed the project-resolved kotlinx pins to KotlinxBundledVersionTest so
+        // the test compares the IDE-bundled versions to ACTUAL project pins
+        // (not to hardcoded constants that could silently drift out of sync).
+        systemProperty("mcp.steroid.test.expected.kotlinxCoroutinesVersion", "1.10.2")
+        systemProperty("mcp.steroid.test.expected.kotlinxSerializationVersion", "1.9.0")
     }
 
     patchPluginXml {
@@ -330,20 +336,35 @@ val verifyBundledKotlinCompatibility by tasks.registering(VerifyBundledKotlinCom
     reportFile.set(layout.buildDirectory.file("reports/kotlin-version-compatibility.txt"))
 }
 
-// Runtime classloader probe: launches a JVM with classpath = IDE 261's lib/*.jar
-// PLUS the :intellij-downloader jar (which carries KotlinxRuntimeProbe.main +
-// @Serializable companions). NOTHING ELSE — the kotlinx-coroutines /
-// kotlinx-serialization runtime MUST come from the IDE bundle. A LinkageError
-// in the forked JVM fails the build at `:verifyPlugin` time.
-val verifyBundledKotlinxRuntime by tasks.registering(VerifyBundledKotlinxRuntimeTask::class) {
-    group = "verification"
-    description = "Run KotlinxRuntimeProbe against IDE 261's lib/ to validate kotlinx-coroutines/serialization link compat"
+// Runtime classloader probe: launches a JVM with classpath = IDE lib jars +
+// the :intellij-downloader jar (KotlinxRuntimeProbe.main + @Serializable
+// companions). The stowaway-jar guard inside the task rejects any external
+// `kotlinx-*` on the probe classpath — the kotlinx-coroutines /
+// kotlinx-serialization / kotlinx-io / etc. runtime MUST come from the IDE
+// bundle. A LinkageError in the forked JVM fails the build at :check time
+// (wired below) and at :verifyPlugin time.
+//
+// One sub-task per verifierTargets entry, so 262 EAP is exercised alongside 261.
+val verifyBundledKotlinxRuntimeTasks = McpSteroidIdeTargets.verifierTargets.map { target ->
+    tasks.register("verifyBundledKotlinxRuntime${target.major}", VerifyBundledKotlinxRuntimeTask::class) {
+        group = "verification"
+        description = "Run KotlinxRuntimeProbe against IDE ${target.major} (${target.version}) " +
+            "to validate kotlinx-coroutines / serialization / io link compat"
 
-    ideRoot.set(layout.dir(provider { ideRootFor(buildIdeTarget) }))
-    probeClasspath.from(project(":intellij-downloader").tasks.named("jar"))
-    probeMainClass.set("com.jonnyzzz.mcpSteroid.ideDownloader.KotlinxRuntimeProbe")
-    probeArgs.set(listOf(buildIdeTarget.major, buildIdeTarget.version))
-    reportFile.set(layout.buildDirectory.file("reports/kotlinx-runtime-probe.txt"))
+        ideRoot.set(layout.dir(provider { ideRootFor(target) }))
+        probeClasspath.from(project(":intellij-downloader").tasks.named("jar"))
+        probeMainClass.set("com.jonnyzzz.mcpSteroid.ideDownloader.KotlinxRuntimeProbe")
+        probeArgs.set(listOf(target.major, target.version))
+        reportFile.set(layout.buildDirectory.file("reports/kotlinx-runtime-probe-${target.major}.txt"))
+    }
+}
+
+// Umbrella so other tasks depend on "all verifier targets verified" with a single
+// reference. Required by tasks.check + tasks.verifyPlugin below.
+val verifyBundledKotlinxRuntime by tasks.registering {
+    group = "verification"
+    description = "Run KotlinxRuntimeProbe against every IDE in McpSteroidIdeTargets.verifierTargets"
+    dependsOn(verifyBundledKotlinxRuntimeTasks)
 }
 
 val ocrToolDist by configurations.creating {
@@ -548,6 +569,12 @@ val verifyBundledLibraries by tasks.registering {
 
 tasks.test {
     dependsOn(verifyBundledLibraries)
+}
+
+// Wire the kotlinx runtime probe into :check so local `./gradlew :ij-plugin:check`
+// catches drift; :verifyPlugin keeps the dependency too for the full CI path.
+tasks.check {
+    dependsOn(verifyBundledKotlinxRuntime)
 }
 
 tasks.buildPlugin {
