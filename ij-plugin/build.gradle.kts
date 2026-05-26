@@ -236,8 +236,10 @@ intellijPlatform {
         ideaVersion {
             // KEEP IN SYNC with `MANAGED_BACKEND_MIN_SUPPORTED_BUILD` in
             // intellij-downloader/.../CompatibilityFloor.kt — enforced by
-            // PluginCompatibilityFloorTest.
-            sinceBuild = "252"
+            // PluginCompatibilityFloorTest. 252 + 253 are deprecated;
+            // the plugin builds against and supports 261 onward (see
+            // docs/262-EAP-PLAN.md, commit 5).
+            sinceBuild = "261"
             untilBuild = null
         }
     }
