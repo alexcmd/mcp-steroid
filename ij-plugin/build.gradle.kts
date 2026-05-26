@@ -95,6 +95,21 @@ fun ideRootFor(target: IdeTarget): java.io.File = localIdeCache.getOrPut(target)
     )
 }
 
+/**
+ * Lazy `Provider<File>` form of [ideRootFor] for the IPGP `local(...)`
+ * selector. IPGP only calls `.get()` when the dependency graph actually
+ * needs the IDE — i.e. during real task execution (compileKotlin,
+ * prepareSandbox, verifyPlugin, runIde), not at every Gradle
+ * invocation. `./gradlew help` and `./gradlew tasks` skip the
+ * products-API GET + SHA verification entirely.
+ *
+ * The shared [localIdeCache] keeps the memoization across providers,
+ * so the build IDE and the matching verifier entry still resolve
+ * exactly once per build.
+ */
+fun ideRootProviderFor(target: IdeTarget): Provider<java.io.File> =
+    providers.provider { ideRootFor(target) }
+
 // Consume kotlinc distribution from kotlin-cli subproject
 val kotlincDist by configurations.creating {
     isCanBeConsumed = false
@@ -111,7 +126,7 @@ dependencies {
             // archive resolution + download + unpack happen at script-eval time
             // and the unpacked IDE root is fed to IPGP's `local(file)` selector.
             // `useInstaller = true` is no longer applicable (we own the archive).
-            JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(ideRootFor(buildIdeTarget))
+            JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(ideRootProviderFor(buildIdeTarget))
             // PyCharm path stays on IPGP for now; see TASKS.md follow-up to
             // extend `intellij-downloader` to cover PyCharm build targets.
             JetBrainsIdeProduct.PyCharm -> pycharm(targetIdeVersion)
@@ -252,7 +267,7 @@ intellijPlatform {
             // `McpSteroidIdeTargets.verifierTargets` so adding 263 EAP later is
             // a single-place edit covered by `McpSteroidIdeTargetsTest`.
             McpSteroidIdeTargets.verifierTargets.forEach { target ->
-                local(ideRootFor(target))
+                local(ideRootProviderFor(target))
             }
         }
     }
