@@ -127,12 +127,15 @@ followup below.
   `stable` override, OR have `LocalIdeProvisioner` retry the other
   channel for exact build-number pins. Not a real problem until
   someone tries this; matrix entries never use exact pins.
-- **Register `intellij-downloader/src/buildsrc-shared/kotlin` as a
-  source root in the IntelliJ module config.** Today the IDE shows
-  `PackageDirectoryMismatch` on every file under that folder and
-  reports the matrix + provisioner symbols as "never used"
-  (cross-classloader usages are invisible). Module .iml registration
-  fixes both.
+- ~~**Register `intellij-downloader/src/buildsrc-shared/kotlin` as a
+  source root in the IntelliJ module config.**~~ Resolved: the
+  `sourceSets.main.kotlin.srcDir(...)` calls in `intellij-downloader/build.gradle.kts`
+  + `buildSrc/build.gradle.kts` already register it. The
+  PackageDirectoryMismatch / UnusedSymbol warnings were stale-import
+  artifacts. Future devs need a Gradle re-import (Refresh Gradle
+  Project) after pulling commit `ea13b1c1`+ to clear the warnings.
+  Re-import confirmed clean; commit `<this>` also removed the dead
+  `resolveArchiveUrl` function that the cleaner inspection surfaced.
 - **Composite-build for the shared source.** Currently buildSrc and
   `:intellij-downloader` both `srcDir` the same `buildsrc-shared/kotlin`
   and compile independently. Risks: silent drift if the two

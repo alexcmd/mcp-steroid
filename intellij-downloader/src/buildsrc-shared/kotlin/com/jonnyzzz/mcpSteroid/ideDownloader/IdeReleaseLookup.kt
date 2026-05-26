@@ -41,24 +41,6 @@ fun resolveDownloadKey(
     HostOs.WINDOWS -> if (architecture.isArmArch) "windowsARM64" else "windows"
 }
 
-/**
- * Resolves the download URL for the latest IDE archive from the public products API.
- *
- * @param product the IDE product to look up
- * @param channel the release channel (stable or EAP)
- * @param os the target operating system (default: auto-detected)
- * @param architecture the host architecture for platform-specific archive selection
- * @return the direct download URL for the archive
- */
-fun resolveArchiveUrl(
-    product: IdeProduct,
-    channel: IdeChannel,
-    os: HostOs = resolveHostOs(),
-    architecture: HostArchitecture = resolveHostArchitecture(),
-): String {
-    return resolveArchive(product, channel, os, architecture).url
-}
-
 fun resolveArchive(
     product: IdeProduct,
     channel: IdeChannel,
