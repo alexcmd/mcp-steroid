@@ -46,10 +46,22 @@ the actual runtime / CI):
 6. **TeamCity DSL repo** (`~/Work/mcp-steroid-teamcity`) — separate
    repo, probably still references JDK 21 / 253 / old paths. Build
    configs not updated.
-7. **GitHub Actions workflows** (`.github/workflows/`) — not
-   inspected; may still pin JDK 21.
-8. **`buildPluginOnCI`** — CI entry-point task; not validated
-   against the new 262 / JDK 25 / matrix wiring.
+7. ~~**GitHub Actions workflows** (`.github/workflows/`) — not
+   inspected; may still pin JDK 21.~~ **CLOSED 2026-05-26.** Audited;
+   workflows themselves use no `setup-java` — the JDK source is the
+   `docker/build/Dockerfile` image they run gradle inside. Image
+   bumped `temurin-21-jdk` → `temurin-25-jdk` and the four CLI
+   integration-test images bumped `temurin-21-jre` → `temurin-25-jre`
+   (commit `287c26e9`). Verified end-to-end by GH Actions run
+   [`26457342481`](https://github.com/jonnyzzz/mcp-steroid/actions/runs/26457342481)
+   — `build plugin` job green in 4m43s.
+8. ~~**`buildPluginOnCI`** — CI entry-point task; not validated
+   against the new 262 / JDK 25 / matrix wiring.~~ **CLOSED 2026-05-26.**
+   `buildPluginOnCI` ran green inside `mcp-steroid-build:ci` (the
+   GH Actions image, post-bump) — `BUILD_NUMBER=0.96.999-gh-510d3cd6`,
+   3m33s cold / 31s warm, output `mcp-steroid-0.96.999-gh-510d3cd6.zip`
+   (199 MB). Same run subsequently confirmed green on the real GH
+   runner (see #7).
 
 #### C — Architectural items partially landed
 
@@ -77,15 +89,27 @@ the actual runtime / CI):
 
 #### D — Release engineering
 
-13. **No release notes update.** `VERSION` still says `0.95.0`;
-    `release/notes/0.95.0.md` doesn't mention the 262 EAP work.
+13. ~~**No release notes update.** `VERSION` still says `0.95.0`;
+    `release/notes/0.95.0.md` doesn't mention the 262 EAP work.~~
+    **CLOSED 2026-05-26.** `VERSION` bumped `0.95.0` → `0.96`;
+    `release/notes/0.96.md` summarises the 262 EAP work: 261-primary
+    target, 262 EAP secondary verifier, kotlinx pins to IDE-bundled,
+    `intellij-downloader`, JDK 25 daemon + toolchain. (Commit
+    `287c26e9` for VERSION bump + this release notes file follow-up.)
 14. **`docs/262-EAP-PLAN.md` is the plan, not "implementation
     complete" record.** Closing-the-loop doc gap.
 
 #### E — Things that may surface later
 
-15. **JDK 25 on CI runners.** Local has Corretto 25; CI may not.
-    Foojay should auto-download but adds startup time.
+15. ~~**JDK 25 on CI runners.** Local has Corretto 25; CI may not.
+    Foojay should auto-download but adds startup time.~~ **CLOSED 2026-05-26
+    (for GH Actions).** GH Actions runs everything inside the
+    `mcp-steroid-build:ci` Docker image which now ships Temurin 25.0.3
+    pre-installed at `/usr/lib/jvm/temurin-25-jdk-arm64`. Gradle's
+    `javaToolchains` task inside that image reports the JDK as
+    `Detected by: Current JVM` — no foojay download path is taken.
+    TeamCity status is item #6 (separate repo, separate agents); foojay
+    is the fallback there.
 16. **IDE archive disk usage.** `build/local-ides/` now holds full
     unpacked 261 + 262 IDEs (~3 GB each). CI runners may need a
     free-disk gate.
@@ -98,7 +122,34 @@ the actual runtime / CI):
 19. **No one has actually installed the .zip in IDEA 262 EAP and
     clicked around.** The real merge gate before this ships.
 
-Of all 19, **#19, #1, #2, #4, #6 (TC DSL)** are the ones most likely
+**Closed in 2026-05-26 session:** #2 (`:ij-plugin:verifyPlugin` against
+261 + 262 both COMPATIBLE, 1m27s), #7 (GH Actions JDK 25), #8
+(`buildPluginOnCI` green inside the new image), #13 (release notes
+0.96), #15 (JDK 25 on the GH runner image).
+
+Of all 19, the still-open ones most likely to bite are **#19, #1, #4,
+#6 (TC DSL)**:
+
+- **#19** needs a human to install the .zip in IDE 262 EAP and click
+  around. Hot-reload `:ij-plugin:deployPlugin` failed earlier in the
+  session (changes too deep — sinceBuild bump, kotlin bump,
+  toolchain bump); a cold install via `Settings → Plugins → ⚙ →
+  Install from disk…` against the freshly built ZIP is the way.
+- **#1** has a local-only blocker: the Docker `cp -a` step in
+  `PluginBuildCompatibilityTest.prepareContainer` has a 120 s cap
+  but copies the entire workspace (99 GB locally — almost all in
+  the dev `build/` dirs) across macOS virtiofs. On TC Linux agents
+  the source mount is much smaller and 120 s is plenty. Local fix
+  would be to switch the prep step from `cp -a` to `rsync` with
+  `build/` / `.gradle/` excludes; not done yet (touches checked-in
+  test infra, defer until the user prioritises the local-run
+  workflow).
+- **#4** is the runtime-side companion to #2 — Plugin Verifier is a
+  static check; only `runIde` / a real install proves load time
+  succeeds.
+- **#6** is the TC repo (`~/Work/mcp-steroid-teamcity`), which sets
+  `JDK_25_ARM64` agent params + Linux/Windows/macOS matrix and may
+  still reference JDK 21 paths.
 to bite.
 
 ## Locked-in constraints (during implementation)
