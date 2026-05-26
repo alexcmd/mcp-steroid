@@ -15,8 +15,8 @@ dependencies {
     implementation(kotlin("stdlib-jdk8"))
     implementation("org.slf4j:slf4j-api:2.0.13")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.9.0")
 
     // MCP protocol types, session manager, registries
     api(project(":mcp-core"))
