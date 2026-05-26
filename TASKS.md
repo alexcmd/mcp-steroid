@@ -73,6 +73,24 @@ depends on prior commits.
 Author email for commits in this work stream: `eugene.petrenko@jetbrains.com`.
 No AI co-author.
 
+## Quorum review of commits 3 + 4 (2026-05-26)
+
+Codex + Claude + Gemini reviewed the matrix and `local()` routing. Three-way
+consensus on the two HIGH findings (concurrent unpack / partial-unpack
+detection, and stale unpack cache after archive re-publish). Both addressed
+inline in commit 4a via a per-target `FileLock` plus a `.mcp-steroid-unpack-complete`
+marker keyed on the archive's filename + size + mtime.
+
+Codex+Claude additionally flagged HIGH the script-eval network cost (3
+products-API GETs on every Gradle invocation, including `help`/`tasks`).
+Deferred; see followups below.
+
+MCP Steroid inspection sweep on the new files surfaced one real issue (an
+unused `IntelliJPlatformType` import in `ij-plugin/build.gradle.kts`,
+fixed in commit 4a) and many false positives from the buildsrc-shared
+source dir not being registered as an IntelliJ source root — see
+followup below.
+
 ## Follow-ups logged during execution
 
 - **Prod-minimal-deps verification (PyCharm + vanilla IDEA).** Today
@@ -92,6 +110,39 @@ No AI co-author.
   the dev/build environment with the runtime. Update
   `gradle/gradle-daemon-jvm.properties` + every `kotlin { jvmToolchain(N) }`
   block from 21 → 25, and reverify the per-module test matrix.
+- **Defer IDE provisioning to Gradle Provider / task action.** Today
+  `ij-plugin/build.gradle.kts` calls `resolveAndUnpackLocally` at
+  script-eval, which triggers 3 products-API GETs and an archive
+  SHA verification on every Gradle invocation — even `./gradlew help`
+  / `./gradlew tasks`. Cost is small but real (~600 ms cold; up to
+  3 × 15 s on slow network). Cleaner shape: wrap the provisioner in
+  a `Provider<File>` fed to IPGP's `local()`, or skip eager resolve
+  when `gradle.startParameter.taskNames` contains none of
+  `buildPlugin / runIde / verifyPlugin / test / integrationTest`.
+- **Explicit channel override for exact EAP build pins.** When the user
+  pins `-Pmcp.platform.version=262.6228.19`, `inferChannel` returns
+  STABLE (no `-SNAPSHOT` / `EAP` substring), but 262 EAP builds only
+  exist on the EAP channel. Today's error is misleading
+  ("no release matches"). Fix: add `-Pmcp.platform.channel=eap` /
+  `stable` override, OR have `LocalIdeProvisioner` retry the other
+  channel for exact build-number pins. Not a real problem until
+  someone tries this; matrix entries never use exact pins.
+- **Register `intellij-downloader/src/buildsrc-shared/kotlin` as a
+  source root in the IntelliJ module config.** Today the IDE shows
+  `PackageDirectoryMismatch` on every file under that folder and
+  reports the matrix + provisioner symbols as "never used"
+  (cross-classloader usages are invisible). Module .iml registration
+  fixes both.
+- **Composite-build for the shared source.** Currently buildSrc and
+  `:intellij-downloader` both `srcDir` the same `buildsrc-shared/kotlin`
+  and compile independently. Risks: silent drift if the two
+  build files' transitive dep versions diverge; refactoring tool
+  may only update one side; `:intellij-downloader:test` only
+  exercises one compiled copy. The clean fix is to move the shared
+  code to a small Gradle project (e.g. `:ide-matrix`) and have
+  `buildSrc` depend on it via `includeBuild`. Overkill for now; keep
+  the dep lists in lockstep manually and treat this as a deferred
+  refactor.
 - **Flake-hunt `IdeMonitorServiceTest`.** Post-coroutines-1.10.2 bump,
   `monitor follows multiple snapshot envelopes from the IDE(Path)` flaked
   once under the full `:npx-kt:test` suite with

@@ -4,7 +4,6 @@ import com.jonnyzzz.mcpSteroid.gradle.*
 import com.jonnyzzz.mcpSteroid.ideDownloader.IdeTarget
 import com.jonnyzzz.mcpSteroid.ideDownloader.McpSteroidIdeTargets
 import com.jonnyzzz.mcpSteroid.ideDownloader.resolveAndUnpackLocally
-import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.net.HttpURLConnection
@@ -70,9 +69,31 @@ val ideArchivesDir = rootProject.layout.buildDirectory.dir("ide-archives").get()
 
 // Build target: matrix default, or a synthetic IdeTarget when CI overrides
 // `-Pmcp.platform.version=…` with a one-off version (e.g. an exact 262 build).
-val buildIdeTarget: IdeTarget =
-    if (targetIdeVersion == McpSteroidIdeTargets.buildTarget.version) McpSteroidIdeTargets.buildTarget
-    else IdeTarget(major = "override", version = targetIdeVersion)
+// Rolling cross-major tags (LATEST-*) are rejected here so an override can't
+// reintroduce the silent-slide behaviour the matrix forbids.
+val buildIdeTarget: IdeTarget = run {
+    if (targetIdeVersion == McpSteroidIdeTargets.buildTarget.version) {
+        McpSteroidIdeTargets.buildTarget
+    } else {
+        require(!targetIdeVersion.contains("LATEST")) {
+            "mcp.platform.version='$targetIdeVersion' looks like a rolling tag. " +
+                "Use a named per-major spelling (e.g. '262-EAP-SNAPSHOT') or an exact build number."
+        }
+        IdeTarget(major = "override", version = targetIdeVersion)
+    }
+}
+
+// Memoized provisioner cache: the build IDE and the first verifier entry are
+// usually the same target (commit 3's matrix invariant). Resolving twice
+// means hitting the products API + checksum endpoint twice for the same IDE.
+val localIdeCache = mutableMapOf<IdeTarget, java.io.File>()
+fun ideRootFor(target: IdeTarget): java.io.File = localIdeCache.getOrPut(target) {
+    resolveAndUnpackLocally(
+        target = target,
+        downloadDir = ideArchivesDir,
+        unpackBaseDir = localIdesBaseDir,
+    )
+}
 
 // Consume kotlinc distribution from kotlin-cli subproject
 val kotlincDist by configurations.creating {
@@ -90,13 +111,7 @@ dependencies {
             // archive resolution + download + unpack happen at script-eval time
             // and the unpacked IDE root is fed to IPGP's `local(file)` selector.
             // `useInstaller = true` is no longer applicable (we own the archive).
-            JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(
-                resolveAndUnpackLocally(
-                    target = buildIdeTarget,
-                    downloadDir = ideArchivesDir,
-                    unpackBaseDir = localIdesBaseDir,
-                )
-            )
+            JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(ideRootFor(buildIdeTarget))
             // PyCharm path stays on IPGP for now; see TASKS.md follow-up to
             // extend `intellij-downloader` to cover PyCharm build targets.
             JetBrainsIdeProduct.PyCharm -> pycharm(targetIdeVersion)
@@ -235,12 +250,7 @@ intellijPlatform {
             // `McpSteroidIdeTargets.verifierTargets` so adding 263 EAP later is
             // a single-place edit covered by `McpSteroidIdeTargetsTest`.
             McpSteroidIdeTargets.verifierTargets.forEach { target ->
-                val root = resolveAndUnpackLocally(
-                    target = target,
-                    downloadDir = ideArchivesDir,
-                    unpackBaseDir = localIdesBaseDir,
-                )
-                local(root)
+                local(ideRootFor(target))
             }
         }
     }

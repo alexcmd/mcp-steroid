@@ -184,7 +184,7 @@ internal fun resolveArchiveFromProductsApiPayload(
         )
     }
 
-    error(resolveArchiveFailureMessage(product, channel, wantedVersion, downloadKey, productsApiUrl, skippedWrongFilename))
+    error(resolveArchiveFailureMessage(product, channel, wantedVersion, buildPrefix, downloadKey, productsApiUrl, skippedWrongFilename))
 }
 
 internal fun IdeProduct.acceptsDownloadFilename(filename: String): Boolean {
@@ -199,11 +199,14 @@ private fun resolveArchiveFailureMessage(
     product: IdeProduct,
     channel: IdeChannel,
     wantedVersion: String?,
+    buildPrefix: String?,
     downloadKey: String,
     productsApiUrl: String,
     skippedWrongFilename: List<String>,
 ): String {
-    val versionMessage = if (wantedVersion == null) "latest" else "version '$wantedVersion'"
+    val baseSelector = if (wantedVersion == null) "latest" else "version '$wantedVersion'"
+    val versionMessage = if (buildPrefix == null) baseSelector
+        else "$baseSelector (filtered to builds starting with '$buildPrefix')"
     val tokens = product.urlFilenameTokens
     if (tokens.isEmpty()) {
         return "Unable to resolve $versionMessage '${channel.apiValue}' release for product '${product.code}' " +

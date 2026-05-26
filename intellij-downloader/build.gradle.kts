@@ -35,11 +35,14 @@ kotlin {
 }
 
 // `src/buildsrc-shared/kotlin/` carries the IDE compatibility matrix
-// (`McpSteroidIdeTargets`). The same path is added as a source dir in
-// `buildSrc/build.gradle.kts`, so Gradle scripts and the downloader CLI
-// compile the same .kt file independently — one source of truth, two
-// compiled copies (different classloaders). Keep this folder tiny and
-// dependency-free (stdlib only) so buildSrc can compile it.
+// (`McpSteroidIdeTargets`), the resolver, the downloader, the unpacker,
+// and the LocalIdeProvisioner that ij-plugin/build.gradle.kts calls at
+// script-evaluation time. The same path is added as a source dir in
+// `buildSrc/build.gradle.kts`, so Gradle scripts and this module's CLI
+// compile the same .kt files independently — one source of truth, two
+// compiled copies (different classloaders, different Kotlin versions).
+// Transitive deps used by the shared code (kotlinx-serialization, slf4j,
+// commons-compress, xz) must stay in lockstep with `buildSrc/build.gradle.kts`.
 sourceSets.main {
     kotlin.srcDir("src/buildsrc-shared/kotlin")
 }

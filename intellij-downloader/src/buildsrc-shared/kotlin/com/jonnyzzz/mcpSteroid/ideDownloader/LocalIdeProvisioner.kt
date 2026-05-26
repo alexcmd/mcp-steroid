@@ -80,13 +80,19 @@ fun resolveAndUnpackLocally(
 }
 
 /**
- * If [version] is a named per-major snapshot tag (e.g. `"262-EAP-SNAPSHOT"`
- * or `"262-SNAPSHOT"`), returns the major prefix (e.g. `"262"`). Returns
+ * If [version] is the canonical per-major EAP-snapshot tag (e.g.
+ * `"262-EAP-SNAPSHOT"`), returns the major prefix (e.g. `"262"`). Returns
  * null for stable version strings and exact build numbers — those flow
  * through [resolveArchive]'s exact `version` filter instead.
+ *
+ * The accepted shape is intentionally narrow: bare `"262-SNAPSHOT"` and
+ * intermediate spellings like `"261-EAP1-SNAPSHOT"` are rejected here so
+ * the matrix in [McpSteroidIdeTargets] enforces a single tag convention.
+ * Adding more shapes requires a deliberate edit of this regex plus the
+ * matrix-shape test.
  */
 internal fun parseNamedMajorEapTag(version: String): String? {
-    val match = Regex("^(\\d{3})-(EAP-)?SNAPSHOT$").matchEntire(version) ?: return null
+    val match = Regex("^(\\d+)-EAP-SNAPSHOT$").matchEntire(version) ?: return null
     return match.groupValues[1]
 }
 
