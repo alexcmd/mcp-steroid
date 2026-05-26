@@ -191,7 +191,17 @@ private object BuildCompatInfra {
                 .args(
                     "bash", "-c",
                     """
-                    cp -a $SRC_GUEST $PREBUILD_GUEST &&
+                    mkdir -p $PREBUILD_GUEST &&
+                    rsync -a --delete
+                      --exclude=build/
+                      --exclude=.gradle/
+                      --exclude=.intellijPlatform/
+                      --exclude=node_modules/
+                      --exclude=out/
+                      --exclude=build-compat/
+                      --exclude=.idea/workspace.xml
+                      --exclude=*.iml
+                      $SRC_GUEST/ $PREBUILD_GUEST/ &&
                     cd $PREBUILD_GUEST &&
                     git clean -fdx &&
                     cp -a $PREBUILD_GUEST $BUILD_GUEST &&
@@ -199,7 +209,7 @@ private object BuildCompatInfra {
                     """.trimIndent().replace('\n', ' '),
                 )
                 .description("Prepare clean build tree")
-                .timeoutSeconds(120)
+                .timeoutSeconds(300)
         }.assertExitCode(0) { "Failed to prepare build tree: $stderr" }
         return container
     }
