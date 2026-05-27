@@ -184,7 +184,12 @@ dependencies {
         // disable it at runtime**, so the probe still gates every call site behind
         // `PluginManagerCore.getPluginSet().enabledPlugins`.
         bundledPlugin("com.intellij.mcpServer")
+        // Platform: BasePlatformTestCase + UsefulTestCase — still needed until
+        // every test extending BasePlatformTestCase migrates. JUnit5 does NOT
+        // transitively bring it in (verified — compile fails with just JUnit5).
+        // Drop once nothing extends BasePlatformTestCase.
         testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.JUnit5)
     }
 
     implementation(project(":mcp-core"))
@@ -217,7 +222,17 @@ dependencies {
     // PostHog analytics
     implementation("com.posthog:posthog-server:2.3.0")
 
-    // Testing
+    // Testing — JUnit Platform runs both Jupiter (JUnit 5) and Vintage (JUnit 3/4)
+    // engines side by side so the JUnit 3 BasePlatformTestCase tests keep running
+    // while the suite is migrated file-by-file. junit:junit:4.13.2 stays on the
+    // *compile* classpath because BasePlatformTestCase -> UsefulTestCase ->
+    // junit.framework.TestCase still drives unmigrated tests.
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("org.opentest4j:opentest4j:1.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation(project(":intellij-downloader"))
     testImplementation(project(":test-helper"))
@@ -326,12 +341,13 @@ intellijPlatformTesting {
             // configuration with opentest4j + IntelliJ test framework JARs. Without this
             // the test JVM hits NoClassDefFoundError on org.opentest4j.AssertionFailedError.
             testFramework(TestFrameworkType.Platform)
+            testFramework(TestFrameworkType.JUnit5)
 
             task {
                 group = "verification"
                 description = "Runs Docker-based CLI integration tests (Claude/Codex/Gemini). " +
                         "Requires Docker and API keys. Not run by default `:ij-plugin:test`."
-                useJUnit()
+                useJUnitPlatform()
 
                 // Replace (not append) testClassesDirs: the TestIdeTask default includes
                 // the plugin's instrumented default-test-set classes — keeping them would
@@ -350,7 +366,7 @@ intellijPlatformTesting {
 
 tasks {
     test {
-        useJUnit()
+        useJUnitPlatform()
 
         // Explicitly restrict to the main 'test' source set. Without this, the
         // IntelliJ Platform plugin's TestIdeTask includes instrumented classes from
