@@ -50,24 +50,6 @@ class AnalyticsBeacon(
     private val log = thisLogger()
 
     private val posthog: PostHogInterface? by lazy {
-        // PostHog brings in OkHttp 4.11.0, which on macOS JBR initialises a TLS
-        // TrustManager that opens the user's Keychain via Apple's Security
-        // framework. In headless environments (host-side test JVMs — every
-        // `Test` task in the root build.gradle.kts sets `java.awt.headless=true`)
-        // there is no GUI session to dismiss the "Keychain Not Found" dialog
-        // and macOS still shows it on the display, blocking any human at the
-        // machine. Production runs of the plugin happen inside a graphical
-        // IDE (headless=false) — that path is unaffected.
-        //
-        // This is the only headless-aware gate; do NOT switch to
-        // `ApplicationManager.getApplication().isUnitTestMode` (banned by
-        // root CLAUDE.md). `java.awt.headless` is a legitimate runtime
-        // environment signal — headless production runs would never want
-        // to pop a Keychain dialog anyway.
-        if (java.awt.GraphicsEnvironment.isHeadless()) {
-            log.debug("PostHog init skipped — headless environment (no Keychain UI)")
-            return@lazy null
-        }
         try {
             val config = PostHogConfig
                 .builder("phc_IPtbjwwy9YIGg0YNHNxYBePijvTvHEcKAjohah6obYW")
