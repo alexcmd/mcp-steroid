@@ -9,6 +9,7 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
 private val ideUnpackerLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.ideDownloader.IdeUnpacker")
@@ -25,13 +26,17 @@ private val ideUnpackerLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.id
  * | `.tar.gz`, `.tgz` | streaming Apache Commons | any |
  * | `.zip` | streaming Apache Commons | any |
  * | `.dmg` | `hdiutil attach -readonly` + recursive copy | macOS only — produces a runnable IDE |
- * | `.exe` | bundled `7z.exe` via [SevenZipLocator] | Windows only |
+ * | `.exe` | shells out to [sevenZipBinary] (NSIS extractor) | Windows only |
+ *
+ * [sevenZipBinary] is required only when [archiveFile] is `.exe`. Callers from the
+ * `devrig` runtime supply `com.jonnyzzz.mcpSteroid.devrig.DevrigRoot.sevenZipBinary()`;
+ * tests / CLI paths that only handle `.tar.gz` / `.zip` / `.dmg` may pass `null`.
  *
  * Pure-Java DMG extraction (catacombae) is intentionally NOT used here because the
  * resulting `.app` loses symlinks / xattrs / code-sign metadata and cannot launch.
  * For introspection without launching, see [DmgIntrospection] (TODO).
  */
-fun unpackIdeArchive(archiveFile: File, unpackDir: File) {
+fun unpackIdeArchive(archiveFile: File, unpackDir: File, sevenZipBinary: Path? = null) {
     require(archiveFile.exists()) { "Archive file does not exist: $archiveFile" }
 
     // Concurrency/partial-unpack guard: use an interprocess file lock and a
@@ -59,7 +64,13 @@ fun unpackIdeArchive(archiveFile: File, unpackDir: File) {
             name.endsWith(".tar.gz") || name.endsWith(".tgz") -> unpackTarGz(archiveFile, unpackDir)
             name.endsWith(".zip") -> unpackZip(archiveFile, unpackDir)
             name.endsWith(".dmg") -> unpackDmgViaMount(archiveFile, unpackDir)
-            name.endsWith(".exe") -> unpackExeWith7z(archiveFile, unpackDir)
+            name.endsWith(".exe") -> {
+                val bin = requireNotNull(sevenZipBinary) {
+                    "unpackIdeArchive(${archiveFile.name}): sevenZipBinary is required for .exe archives. " +
+                        "Pass com.jonnyzzz.mcpSteroid.devrig.DevrigRoot.sevenZipBinary() from devrig callers."
+                }
+                unpackExeWith7z(archiveFile, unpackDir, bin)
+            }
             else -> error(
                 "Unsupported archive format: ${archiveFile.name}. " +
                     "Expected one of: .tar.gz, .tgz, .zip, .dmg, .exe"
@@ -371,15 +382,16 @@ private fun resolveDmgPayloadDir(mountPoint: File): File {
 }
 
 /**
- * Extracts a Windows `.exe` IDE installer (NSIS-packaged) using the bundled `7z.exe`
- * located via [SevenZipLocator]. The resulting directory is a runnable Windows IDE
- * install (NSIS bundles flat files; 7zip extracts them verbatim).
+ * Extracts a Windows `.exe` IDE installer (NSIS-packaged) using the explicit
+ * [sevenZipBinary] (the bundled `<devrig-root>/7z/7z.exe`). The resulting directory
+ * is a runnable Windows IDE install (NSIS bundles flat files; 7zip extracts them
+ * verbatim).
  *
- * **Windows-only.** The bundled `7z.exe` is shipped only for Windows targets — on
- * other platforms [SevenZipLocator.locate] returns `null` and this function fails
- * with a clear error. NSIS unpacking is not supported on non-Windows hosts.
+ * **Windows-only.** Bundled `7z.exe` is shipped only for Windows targets; on other
+ * hosts the upfront host check fails with a clear error. NSIS unpacking is not
+ * supported on non-Windows hosts.
  */
-fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
+fun unpackExeWith7z(archiveFile: File, unpackDir: File, sevenZipBinary: Path) {
     require(archiveFile.exists()) { "Archive file does not exist: $archiveFile" }
     require(archiveFile.name.lowercase().endsWith(".exe")) {
         "unpackExeWith7z called with non-exe archive: ${archiveFile.name}"
@@ -388,16 +400,17 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     val hostOs = resolveHostOs()
     require(hostOs == HostOs.WINDOWS) {
         "NSIS .exe unpacking requires a Windows host (got $hostOs). " +
-            "The bundled 7z.exe resource set is Windows-only; on other hosts " +
+            "The bundled 7z.exe is Windows-only; on other hosts " +
             "download the .tar.gz / .dmg variant instead."
     }
 
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
-    val sevenZip = SevenZipLocator.locate() ?: error(
-        "Bundled 7z.exe is missing from the classpath for ${archiveFile.name}. " +
-            "Was intellij-downloader built on a Windows host?"
-    )
+    require(Files.isRegularFile(sevenZipBinary)) {
+        "Bundled 7z.exe not found at $sevenZipBinary. " +
+            "Was the devrig distribution built on a Windows host?"
+    }
+    val sevenZip = sevenZipBinary.toAbsolutePath().toString()
 
     // NSIS extracts files flat — wrap them in a per-archive subdirectory so the
     // installed layout matches Linux (tar.gz) and macOS (.app from .dmg), both of

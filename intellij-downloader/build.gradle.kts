@@ -265,19 +265,9 @@ artifacts {
     }
 }
 
-// The bundled 7z resources only exist on Windows-host builds. Wiring them into
-// `processResources` on non-Windows hosts would force-fail every build there
-// (extractSevenZipResources's `check(isWindowsHost)` would trip). Tests on
-// Linux/macOS don't need the bundle (SevenZipLocatorTest is excluded above),
-// and the release plugin .zip MUST be built on Windows to ship a complete bundle.
-if (isWindowsHost) {
-    sourceSets.named("main") {
-        resources.srcDir(extractSevenZipResources)
-    }
-    tasks.named("processResources") {
-        dependsOn(extractSevenZipResources)
-        doFirst {
-            delete(layout.buildDirectory.dir("resources/main/7z"))
-        }
-    }
-}
+// The bundled 7z payload is NOT exposed via the classpath. :npx-kt's distZip
+// consumes the `sevenZipBinariesElements` configuration above (via the
+// "seven-zip-binaries" Usage attribute) and places `7z.exe` + `7z.dll` +
+// `License.txt` under <devrig-root>/7z/. Runtime code resolves the absolute
+// path via `com.jonnyzzz.mcpSteroid.devrig.DevrigRoot.sevenZipBinary()` and
+// passes it explicitly to `unpackIdeArchive(..., sevenZipBinary = ...)`.

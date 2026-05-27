@@ -46,9 +46,18 @@ class IdeUnpackerDispatchTest {
             return
         }
         val archive = tmp.newFile("idea.exe").apply { writeBytes(byteArrayOf(0)) }
-        val ex = expectError { unpackExeWith7z(archive, tmp.newFolder("out")) }
+        val fakeSevenZip = tmp.newFile("7z.exe").apply { writeBytes(byteArrayOf(0)) }.toPath()
+        val ex = expectError { unpackExeWith7z(archive, tmp.newFolder("out"), fakeSevenZip) }
         assertTrue("expected windows-host error, got: ${ex.message}",
             ex.message!!.contains("requires a Windows host"))
+    }
+
+    @Test
+    fun `dispatcher requires sevenZipBinary for exe archives`() {
+        val archive = tmp.newFile("idea.exe").apply { writeBytes(byteArrayOf(0)) }
+        val ex = expectError { unpackIdeArchive(archive, tmp.newFolder("out")) }
+        assertTrue("expected missing-binary error, got: ${ex.message}",
+            ex.message!!.contains("sevenZipBinary is required"))
     }
 
     private inline fun expectError(block: () -> Unit): Throwable {
