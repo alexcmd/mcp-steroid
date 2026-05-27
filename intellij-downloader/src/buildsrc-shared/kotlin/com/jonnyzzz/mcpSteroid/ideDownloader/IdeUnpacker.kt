@@ -25,7 +25,7 @@ private val ideUnpackerLog = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.id
  * | `.tar.gz`, `.tgz` | streaming Apache Commons | any |
  * | `.zip` | streaming Apache Commons | any |
  * | `.dmg` | `hdiutil attach -readonly` + recursive copy | macOS only — produces a runnable IDE |
- * | `.exe` | `7z` from `PATH` | any — see [unpackExeWith7z] for the runtime requirement |
+ * | `.exe` | bundled `7z.exe` via [SevenZipLocator] | Windows only |
  *
  * Pure-Java DMG extraction (catacombae) is intentionally NOT used here because the
  * resulting `.app` loses symlinks / xattrs / code-sign metadata and cannot launch.
@@ -371,13 +371,13 @@ private fun resolveDmgPayloadDir(mountPoint: File): File {
 }
 
 /**
- * Extracts a Windows `.exe` IDE installer (NSIS-packaged) using `7zz` / `7z` located
- * via [SevenZipLocator]. The resulting directory is a runnable Windows IDE install
- * (NSIS bundles flat files; 7zip extracts them verbatim).
+ * Extracts a Windows `.exe` IDE installer (NSIS-packaged) using the bundled `7z.exe`
+ * located via [SevenZipLocator]. The resulting directory is a runnable Windows IDE
+ * install (NSIS bundles flat files; 7zip extracts them verbatim).
  *
- * The bundled `7z` binary is used automatically when the devrig distribution ships one
- * for the host. Otherwise the locator falls back to `7z` / `7za` on `PATH`; if neither
- * is available a clear error is raised.
+ * **Windows-only.** The bundled `7z.exe` is shipped only for Windows targets — on
+ * other platforms [SevenZipLocator.locate] returns `null` and this function fails
+ * with a clear error. NSIS unpacking is not supported on non-Windows hosts.
  */
 fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
     require(archiveFile.exists()) { "Archive file does not exist: $archiveFile" }
@@ -385,12 +385,18 @@ fun unpackExeWith7z(archiveFile: File, unpackDir: File) {
         "unpackExeWith7z called with non-exe archive: ${archiveFile.name}"
     }
 
+    val hostOs = resolveHostOs()
+    require(hostOs == HostOs.WINDOWS) {
+        "NSIS .exe unpacking requires a Windows host (got $hostOs). " +
+            "The bundled 7z.exe resource set is Windows-only; on other hosts " +
+            "download the .tar.gz / .dmg variant instead."
+    }
+
     if (unpackDirAlreadyPopulated(unpackDir)) return
 
     val sevenZip = SevenZipLocator.locate() ?: error(
-        "No 7z binary available to extract Windows installer ${archiveFile.name}. " +
-            "On Linux/Mac the bundled 7zz binary is expected; " +
-            "on Windows install 7-Zip or use the devrig distribution with bundled 7z."
+        "Bundled 7z.exe is missing from the classpath for ${archiveFile.name}. " +
+            "Was intellij-downloader built on a Windows host?"
     )
 
     // NSIS extracts files flat — wrap them in a per-archive subdirectory so the

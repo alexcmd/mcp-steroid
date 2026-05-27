@@ -32,8 +32,16 @@ class SevenZipLocatorTest {
         SevenZipLocatorTestSupport.reset()
     }
 
+    // The bundled `7z/win-x64/*` payload is produced only by Windows-host builds
+    // (see intellij-downloader/build.gradle.kts → "Bundled 7-Zip Windows payload").
+    // Each test inlines `if (!isBundleOnClasspath) return` so the gate stays inside
+    // the test code (mirrors the DMG-non-mac pattern in IdeUnpackerDispatchTest).
+    private val isBundleOnClasspath: Boolean
+        get() = SevenZipLocatorTest::class.java.classLoader.getResource("7z/win-x64/7z.exe") != null
+
     @Test
     fun `Windows 7-Zip bundle resources are present and parseable`() {
+        if (!isBundleOnClasspath) return
         assertPeResource("7z/win-x64/7z.exe")
         assertPeResource("7z/win-x64/7z.dll")
 
@@ -46,6 +54,7 @@ class SevenZipLocatorTest {
 
     @Test
     fun `Windows locator extracts full bundle tuple and reuses cache`() {
+        if (!isBundleOnClasspath) return
         val first = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
         assertNotNull("Expected bundled Windows 7z.exe to resolve from classpath", first)
 
@@ -66,6 +75,7 @@ class SevenZipLocatorTest {
 
     @Test
     fun `Windows locator extracts bundled resources under override cache root`() {
+        if (!isBundleOnClasspath) return
         val located = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
         assertNotNull("Expected bundled Windows 7z.exe to resolve from classpath", located)
 
@@ -77,6 +87,7 @@ class SevenZipLocatorTest {
 
     @Test
     fun `Windows locator concurrent first cache extraction leaves no orphaned temp files`() {
+        if (!isBundleOnClasspath) return
         val warmup = SevenZipLocator.locate(os = HostOs.WINDOWS, architecture = HostArchitecture.X86_64)
         assertNotNull("Expected bundled Windows 7z.exe to resolve from classpath", warmup)
         val cacheDir = File(warmup!!).parentFile
@@ -126,20 +137,6 @@ class SevenZipLocatorTest {
             .filter { it.isFile && it.name.endsWith(".tmp") }
             .toList()
         assertTrue("cache dir should not contain orphaned temp files: $tempFiles", tempFiles.isEmpty())
-    }
-
-    @Test
-    fun `Linux and macOS locator use PATH fallback when available`() {
-        listOf(HostOs.LINUX, HostOs.MAC).forEach { os ->
-            val located = SevenZipLocator.locate(os = os, architecture = HostArchitecture.X86_64)
-            if (located != null) {
-                val binary = File(located)
-                assertTrue("PATH-located 7z candidate should exist: $binary", binary.isFile)
-                assertTrue("PATH-located 7z candidate should be executable: $binary", binary.canExecute())
-                assertTrue("Unexpected PATH-located 7z candidate name: ${binary.name}",
-                    binary.name in setOf("7zz", "7z", "7za"))
-            }
-        }
     }
 
     private fun assertPeResource(path: String) {

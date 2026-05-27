@@ -40,18 +40,15 @@ class IdeUnpackerDispatchTest {
     }
 
     @Test
-    fun `EXE unpack reports clearly when 7z is absent`() {
+    fun `EXE unpack refuses on non-windows hosts`() {
+        if (resolveHostOs() == HostOs.WINDOWS) {
+            // On Windows this path would actually call the bundled 7z.exe; skip this test there.
+            return
+        }
         val archive = tmp.newFile("idea.exe").apply { writeBytes(byteArrayOf(0)) }
-        // PATH-less environments can't have 7z; force PATH to empty for this process check.
-        // We can't mutate environment here, so we just assert the error wording is intelligible
-        // when 7z IS missing on PATH. If 7z happens to be on the developer's machine, the call
-        // will instead fail because the file is not a real .exe — which is also acceptable.
         val ex = expectError { unpackExeWith7z(archive, tmp.newFolder("out")) }
-        val msg = ex.message.orEmpty()
-        assertTrue(
-            "expected either '7z not found' or '7z failed' message, got: $msg",
-            msg.contains("No 7z binary on PATH") || msg.contains("exited") || msg.contains("7z")
-        )
+        assertTrue("expected windows-host error, got: ${ex.message}",
+            ex.message!!.contains("requires a Windows host"))
     }
 
     private inline fun expectError(block: () -> Unit): Throwable {

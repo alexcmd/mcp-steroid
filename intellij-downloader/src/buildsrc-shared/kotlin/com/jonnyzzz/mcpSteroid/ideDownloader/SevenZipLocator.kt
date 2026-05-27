@@ -2,41 +2,28 @@
 package com.jonnyzzz.mcpSteroid.ideDownloader
 
 import java.io.File
-import java.lang.reflect.InvocationTargetException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
-// Bundled Windows 7-Zip files are preferred when present. PATH lookup covers
-// Linux, macOS, and the Windows fallback. The bundled 7-Zip 23.01 `7z.dll`
-// contains NSIS and LZMA2 support; no separate plugin files are shipped.
+/**
+ * Locates the bundled 7-Zip executable on Windows.
+ *
+ * **Bundled-only, no host fallback.** The bundled `7z/win-x64/{7z.exe,7z.dll,License.txt}`
+ * tuple is shipped inside the classpath JAR and extracted to a per-user cache directory
+ * on first use. Any other platform — or a Windows host where the bundle is missing from
+ * the classpath — returns `null`; callers surface a clear error.
+ *
+ * NSIS unpacking is only ever needed at runtime on Windows targets (Linux/macOS IDE
+ * distributions are handled in pure Java by IdeUnpacker), so the locator is intentionally
+ * Windows-only. The host's PATH is never consulted.
+ */
 object SevenZipLocator {
-    private data class BundledPayload(
-        val primaryName: String,
-        val fileNames: List<String>,
-        val executableNames: Set<String>,
-    )
-
-    private data class CacheTarget(
-        val dir: File,
-        val binary: File,
-        val isComplete: Boolean,
-    )
-
-    private val windowsPayload = BundledPayload(
+    private val payload = BundledPayload(
         primaryName = "7z.exe",
         fileNames = listOf("7z.exe", "7z.dll", "License.txt"),
         executableNames = setOf("7z.exe"),
-    )
-
-    // For compatibility with unpacked devrig trees and existing tests, current builds
-    // no longer ship this payload; Linux/macOS hosts use PATH unless such a legacy tree
-    // is supplied explicitly by the embedding distribution.
-    private val legacyUnixPayload = BundledPayload(
-        primaryName = "7zz",
-        fileNames = listOf("7zz", "License.txt"),
-        executableNames = setOf("7zz"),
     )
 
     @Volatile
@@ -51,50 +38,33 @@ object SevenZipLocator {
     }
 
     /**
-     * Returns an absolute path to a runnable `7z` executable that supports NSIS, or `null`
-     * when no candidate is available on this host (the caller surfaces a clear error).
+     * Returns an absolute path to the cached `7z.exe`, or `null` on non-Windows hosts
+     * or when the bundled resources are absent from the classpath.
      */
     fun locate(
         os: HostOs = resolveHostOs(),
-        architecture: HostArchitecture = resolveHostArchitecture(),
+        @Suppress("UNUSED_PARAMETER") architecture: HostArchitecture = resolveHostArchitecture(),
     ): String? {
-        // 1) Bundled binaries are preferred when present.
-        extractBundled(os, architecture)?.let { return it.absolutePath }
-
-        // 2) PATH lookup — primary on Linux/macOS and fallback on Windows.
-        return locateOnPath(os)
+        if (os != HostOs.WINDOWS) return null
+        return extractBundledResource()?.absolutePath
     }
 
-    private fun extractBundled(os: HostOs, architecture: HostArchitecture): File? {
-        val sevenZipDir = devrigSevenZipDirOrNull()
-        if (sevenZipDir != null) {
-            val source = bundledFilePath(sevenZipDir, os, architecture)
-            if (source != null) {
-                copyBundledFileToCache(source, payloadForPrimary(source.fileName.toString()))?.let { return it }
-            }
+    private fun extractBundledResource(): File? {
+        val classLoader = SevenZipLocator::class.java.classLoader
+        val resourceBytes = payload.fileNames.associateWith { fileName ->
+            classLoader.getResourceAsStream("7z/win-x64/$fileName")?.use { it.readBytes() } ?: return null
         }
 
-        return extractBundledResource(os, architecture)
-    }
-
-    private fun copyBundledFileToCache(source: Path, payload: BundledPayload): File? {
-        if (!Files.isRegularFile(source)) return null
-        val sourceDir = source.parent ?: return null
-        val sourceFiles = payload.fileNames.associateWith { fileName ->
-            sourceDir.resolve(fileName).takeIf { Files.isRegularFile(it) } ?: return null
-        }
-        val primaryBytes = Files.readAllBytes(sourceFiles.getValue(payload.primaryName))
-        val target = cacheTarget(payload, primaryBytes)
-        if (target.isComplete) {
-            return target.binary
-        }
+        val primaryBytes = resourceBytes.getValue(payload.primaryName)
+        val target = cacheTarget(primaryBytes)
+        if (target.isComplete) return target.binary
 
         target.dir.mkdirs()
-        sourceFiles.forEach { (fileName, sourceFile) ->
+        resourceBytes.forEach { (fileName, bytes) ->
             val targetFile = target.dir.toPath().resolve(fileName)
             val tmpFile = Files.createTempFile(target.dir.toPath(), fileName, ".tmp")
             try {
-                Files.copy(sourceFile, tmpFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+                Files.write(tmpFile, bytes)
                 Files.move(tmpFile, targetFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
                 if (fileName in payload.executableNames) {
                     targetFile.toFile().setExecutable(true, false)
@@ -108,52 +78,29 @@ object SevenZipLocator {
         return target.binary
     }
 
-    private fun extractBundledResource(os: HostOs, architecture: HostArchitecture): File? {
-        val resourcePath = bundledResourcePath(os, architecture) ?: return null
-        val resourceDir = resourcePath.substringBeforeLast('/')
-        val classLoader = SevenZipLocator::class.java.classLoader
-        val resourceBytes = windowsPayload.fileNames.associateWith { fileName ->
-            classLoader.getResourceAsStream("$resourceDir/$fileName")?.use { it.readBytes() } ?: return null
-        }
+    private data class BundledPayload(
+        val primaryName: String,
+        val fileNames: List<String>,
+        val executableNames: Set<String>,
+    )
 
-        val primaryBytes = resourceBytes.getValue(windowsPayload.primaryName)
-        val target = cacheTarget(windowsPayload, primaryBytes)
-        if (target.isComplete) {
-            return target.binary
-        }
+    private data class CacheTarget(val dir: File, val binary: File, val isComplete: Boolean)
 
-        target.dir.mkdirs()
-        resourceBytes.forEach { (fileName, bytes) ->
-            val targetFile = target.dir.toPath().resolve(fileName)
-            val tmpFile = Files.createTempFile(target.dir.toPath(), fileName, ".tmp")
-            try {
-                Files.write(tmpFile, bytes)
-                Files.move(
-                    tmpFile,
-                    targetFile,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE,
-                )
-                if (fileName in windowsPayload.executableNames) {
-                    targetFile.toFile().setExecutable(true, false)
-                }
-            } catch (e: Exception) {
-                deleteTempFileOnFailure(tmpFile, e)
-                throw e
-            }
-        }
-
-        return target.binary
-    }
-
-    private fun cacheTarget(payload: BundledPayload, primaryBytes: ByteArray): CacheTarget {
-        val digest = sha256(primaryBytes).take(16) // 16 hex chars is enough to namespace cached copies
+    private fun cacheTarget(primaryBytes: ByteArray): CacheTarget {
+        val digest = sha256(primaryBytes).take(16)
         val targetDir = File(cacheRoot, digest)
         return CacheTarget(
             dir = targetDir,
             binary = File(targetDir, payload.primaryName),
-            isComplete = isCompleteCachedPayload(targetDir, payload, primaryBytes.size),
+            isComplete = isCompleteCachedPayload(targetDir, primaryBytes.size),
         )
+    }
+
+    private fun isCompleteCachedPayload(targetDir: File, primarySize: Int): Boolean {
+        val targetBinary = File(targetDir, payload.primaryName)
+        if (!targetBinary.isFile || targetBinary.length() != primarySize.toLong()) return false
+        if (!targetBinary.canExecute()) return false
+        return payload.fileNames.all { fileName -> File(targetDir, fileName).isFile }
     }
 
     private fun deleteTempFileOnFailure(tmpFile: Path, cause: Exception) {
@@ -162,65 +109,6 @@ object SevenZipLocator {
         } catch (deleteError: Exception) {
             cause.addSuppressed(deleteError)
         }
-    }
-
-    private fun isCompleteCachedPayload(targetDir: File, payload: BundledPayload, primarySize: Int): Boolean {
-        val targetBinary = File(targetDir, payload.primaryName)
-        if (!targetBinary.isFile || targetBinary.length() != primarySize.toLong()) return false
-        if (payload.primaryName in payload.executableNames && !targetBinary.canExecute()) return false
-        return payload.fileNames.all { fileName -> File(targetDir, fileName).isFile }
-    }
-
-    private fun bundledFilePath(sevenZipDir: Path, os: HostOs, architecture: HostArchitecture): Path? = when (os) {
-        HostOs.LINUX -> sevenZipDir.resolve(if (architecture.isArmArch) "linux-arm64/7zz" else "linux-x64/7zz")
-        HostOs.MAC -> sevenZipDir.resolve("mac/7zz")
-        HostOs.WINDOWS -> sevenZipDir.resolve("win-x64/7z.exe")
-    }
-
-    private fun payloadForPrimary(primaryName: String): BundledPayload = when (primaryName) {
-        windowsPayload.primaryName -> windowsPayload
-        legacyUnixPayload.primaryName -> legacyUnixPayload
-        else -> BundledPayload(primaryName, listOf(primaryName), setOf(primaryName))
-    }
-
-    private fun bundledResourcePath(os: HostOs, architecture: HostArchitecture): String? = when (os) {
-        HostOs.WINDOWS -> "7z/win-x64/7z.exe"
-        HostOs.LINUX,
-        HostOs.MAC -> null
-    }
-
-    private fun devrigSevenZipDirOrNull(): Path? {
-        val rootClass = try {
-            Class.forName("com.jonnyzzz.mcpSteroid.devrig.DevrigRoot")
-        } catch (e: ClassNotFoundException) {
-            return null
-        }
-
-        val instance = rootClass.getField("INSTANCE").get(null)
-        return try {
-            rootClass.getMethod("sevenZipDir").invoke(instance) as Path
-        } catch (e: InvocationTargetException) {
-            when (val cause = e.cause) {
-                is RuntimeException -> throw cause
-                is Error -> throw cause
-                else -> throw IllegalStateException("Cannot resolve devrig 7z directory", cause)
-            }
-        } catch (e: ReflectiveOperationException) {
-            throw IllegalStateException("Cannot invoke com.jonnyzzz.mcpSteroid.devrig.DevrigRoot.sevenZipDir()", e)
-        }
-    }
-
-    private fun locateOnPath(os: HostOs): String? {
-        val path = System.getenv("PATH") ?: return null
-        val sep = if (os == HostOs.WINDOWS) ';' else ':'
-        val candidates = if (os == HostOs.WINDOWS) listOf("7z.exe", "7za.exe", "7zz.exe") else listOf("7zz", "7z", "7za")
-        for (dir in path.split(sep)) {
-            for (name in candidates) {
-                val candidate = File(dir, name)
-                if (candidate.isFile && candidate.canExecute()) return candidate.absolutePath
-            }
-        }
-        return null
     }
 
     private fun sha256(bytes: ByteArray): String {
