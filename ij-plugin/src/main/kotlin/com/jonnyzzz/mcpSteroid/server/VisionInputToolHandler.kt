@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
@@ -9,12 +10,11 @@ import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.serialization.json.*
 
-class VisionInputToolHandlerIJ : ProjectScopedToolHandler(), VisionInputToolHandler {
-    private val log = thisLogger()
+class VisionInputToolHandlerIJ : VisionInputToolHandler {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult {
-        val project = resolveProject(projectName)
+        val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
 
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_input",

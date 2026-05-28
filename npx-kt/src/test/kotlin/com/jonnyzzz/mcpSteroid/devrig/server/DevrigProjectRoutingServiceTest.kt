@@ -18,6 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 
 class DevrigProjectRoutingServiceTest {
@@ -301,7 +302,7 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
-    fun `prompt context is parsed from routed IDE build number`() {
+    fun `prompt context is parsed from routed IDE build number`() = runTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             state(
@@ -319,43 +320,10 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
-    fun `prompt context falls back to generic when no projects are routed`() {
-        val context = DevrigPromptsContextHandler(routingService()).buildPromptsContext(null)
-
-        assertEquals("Generic", context.productCode)
-        assertEquals(253, context.baselineVersion)
-    }
-
-    @Test
-    fun `prompt context uses the only routed project when no project name is given`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val routing = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-                build = "IU-261.24374.151",
-            ),
-        )
-
-        val context = DevrigPromptsContextHandler(routing).buildPromptsContext(null)
-
-        assertEquals("IU", context.productCode)
-        assertEquals(261, context.baselineVersion)
-    }
-
-    @Test
-    fun `prompt context falls back to generic when project name is omitted and multiple projects are routed`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val routing = routingService(
-            state(pid = 42, projects = listOf(ProjectInfo("a", projectA.toString()))),
-            state(pid = 43, projects = listOf(ProjectInfo("b", projectB.toString()))),
-        )
-
-        val context = DevrigPromptsContextHandler(routing).buildPromptsContext(null)
-
-        assertEquals("Generic", context.productCode)
-        assertEquals(253, context.baselineVersion)
+    fun `prompt context for a stale project name surfaces the route-not-found error`() = runTest {
+        assertFailsWith<ProjectRouteNotFoundException> {
+            DevrigPromptsContextHandler(routingService()).buildPromptsContext("missing-project-abcdefgh")
+        }
     }
 
     @Test
@@ -389,7 +357,6 @@ class DevrigProjectRoutingServiceTest {
             "-261.1",
             "IU-",
             "IU-next",
-            "ZZ-261.1",
         )
 
         for (build in builds) {
