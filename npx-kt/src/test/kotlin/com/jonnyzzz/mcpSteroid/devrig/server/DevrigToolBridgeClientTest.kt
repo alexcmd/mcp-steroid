@@ -18,7 +18,6 @@ import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
-import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -236,7 +235,7 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `input bridge handler forwards original window id when it belongs to the same ide`(
+    fun `input bridge handler resolves ide by project name and forwards window id unchanged`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val projectA = Files.createDirectories(tempDir.resolve("project-a"))
@@ -254,7 +253,6 @@ class DevrigToolBridgeClientTest {
             ),
         )
         val route = routing.routes().values.single { it.idePid == 43L }
-        val exposedWindow = routing.rewriteWindow(43, windowInfo("project-b", projectB, "frame-b"))
         val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(routing, httpClient))
 
         val result = handler.handleInputSequence(
@@ -262,7 +260,7 @@ class DevrigToolBridgeClientTest {
             inputParams = InputParams(
                 taskId = "input-task",
                 reason = "press key",
-                windowId = exposedWindow.windowId,
+                windowId = "frame-b",
                 sequence = emptyList(),
                 rawSequence = "press:ENTER",
             ),
@@ -277,46 +275,6 @@ class DevrigToolBridgeClientTest {
         assertEquals("press key", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals("frame-b", arguments["window_id"]?.jsonPrimitive?.content)
         assertEquals("press:ENTER", arguments["sequence"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `input bridge handler rejects window id from another ide`(
-        @TempDir tempDir: Path,
-    ) = runBlocking {
-        val projectA = Files.createDirectories(tempDir.resolve("project-a"))
-        val projectB = Files.createDirectories(tempDir.resolve("project-b"))
-        val routing = routingService(
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectA),
-                status = IdeMonitorStatus.CONNECTED,
-                lastSnapshot = listOf(ProjectInfo("project-a", projectA.toString())),
-            ),
-            IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = projectB),
-                status = IdeMonitorStatus.CONNECTED,
-                lastSnapshot = listOf(ProjectInfo("project-b", projectB.toString())),
-            ),
-        )
-        val inputRoute = routing.routes().values.single { it.idePid == 43L }
-        val exposedWindow = routing.rewriteWindow(42, windowInfo("project-a", projectA, "frame-a"))
-        val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(routing, httpClient))
-
-        val result = handler.handleInputSequence(
-            projectName = inputRoute.exposedProjectName,
-            inputParams = InputParams(
-                taskId = "input-task",
-                reason = "press key",
-                windowId = exposedWindow.windowId,
-                sequence = emptyList(),
-                rawSequence = "press:ENTER",
-            ),
-        )
-
-        assertEquals(true, result.isError)
-        assertTrue(result.errorText().contains("belongs to another IDE"))
-        assertTrue(result.errorText().contains("call steroid_list_windows again"))
-        assertEquals(null, receivedAuth)
-        assertEquals(null, receivedBody)
     }
 
     @Test
@@ -625,17 +583,6 @@ class DevrigToolBridgeClientTest {
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
 
-    private fun windowInfo(projectName: String, projectHome: Path, windowId: String): WindowInfo =
-        WindowInfo(
-            projectName = projectName,
-            projectPath = projectHome.toString(),
-            title = projectName,
-            isActive = true,
-            isVisible = true,
-            bounds = null,
-            windowId = windowId,
-        )
-
     private fun discoveredIde(pid: Long, projectHome: Path): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
@@ -666,7 +613,7 @@ class DevrigToolBridgeClientTest {
             exposedProjectName = "original-project-abcdefgh",
             projectPath = tempDir.toString(),
             realProjectHome = tempDir.toRealPath(),
-            hash8 = "abcdefgh",
+            projectHash = "abcdefgh",
             ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
             plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
         )

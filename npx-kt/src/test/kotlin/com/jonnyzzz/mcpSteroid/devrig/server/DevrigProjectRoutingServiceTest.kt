@@ -27,15 +27,16 @@ class DevrigProjectRoutingServiceTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `hash is stable and exactly eight base64url chars`() {
+    fun `hash is stable, eight alphanumeric chars, and never ends with a dash`() {
         val projectHome = Files.createDirectories(tempDir.resolve("project")).toRealPath()
 
-        val first = DevrigProjectRoutingService.hash8(projectHome, 1234)
-        val second = DevrigProjectRoutingService.hash8(projectHome, 1234)
+        val first = DevrigProjectRoutingService.projectHash(projectHome, 1234)
+        val second = DevrigProjectRoutingService.projectHash(projectHome, 1234)
 
         assertEquals(first, second)
         assertEquals(8, first.length)
-        assertEquals(first, first.filter { it.isLetterOrDigit() || it == '-' || it == '_' })
+        assertEquals(first, first.filter { it in '0'..'9' || it in 'a'..'z' || it in 'A'..'Z' })
+        assertNotEquals('-', first.last())
     }
 
     @Test
@@ -43,8 +44,8 @@ class DevrigProjectRoutingServiceTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project")).toRealPath()
 
         assertNotEquals(
-            DevrigProjectRoutingService.hash8(projectHome, 1234),
-            DevrigProjectRoutingService.hash8(projectHome, 5678),
+            DevrigProjectRoutingService.projectHash(projectHome, 1234),
+            DevrigProjectRoutingService.projectHash(projectHome, 5678),
         )
     }
 
@@ -54,8 +55,8 @@ class DevrigProjectRoutingServiceTest {
         val projectB = Files.createDirectories(tempDir.resolve("project-b")).toRealPath()
 
         assertNotEquals(
-            DevrigProjectRoutingService.hash8(projectA, 1234),
-            DevrigProjectRoutingService.hash8(projectB, 1234),
+            DevrigProjectRoutingService.projectHash(projectA, 1234),
+            DevrigProjectRoutingService.projectHash(projectB, 1234),
         )
     }
 
@@ -83,7 +84,7 @@ class DevrigProjectRoutingServiceTest {
 
         val route = service.routes().values.single()
 
-        assertEquals("mcp-steroid-${route.hash8}", route.exposedProjectName)
+        assertEquals("mcp-steroid-${route.projectHash}", route.exposedProjectName)
         assertEquals("mcp-steroid", route.originalProjectName)
         assertEquals("http://127.0.0.1:4343", route.bridgeBaseUrl)
         assertEquals(mapOf("Authorization" to "Bearer secret-42"), route.headers)
@@ -131,7 +132,7 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
-    fun `window project name and window id use the same project hash suffix`() {
+    fun `window project name is rewritten and window id is preserved`() {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val service = routingService(
             state(
@@ -154,8 +155,7 @@ class DevrigProjectRoutingServiceTest {
         val route = service.routes().values.single()
 
         assertEquals(route.exposedProjectName, rewritten.projectName)
-        assertEquals("frame-1-${route.hash8}", rewritten.windowId)
-        assertEquals("frame-1", service.routeWindow(rewritten.windowId)?.originalWindowId)
+        assertEquals("frame-1", rewritten.windowId)
     }
 
     @Test
@@ -190,18 +190,13 @@ class DevrigProjectRoutingServiceTest {
         )
         val sharedRealProject = sharedProject.toRealPath()
         val otherRealProject = otherProject.toRealPath()
-        val otherPidRoute = service.routes().values.single { it.idePid == 42L && it.realProjectHome == sharedRealProject }
         val samePidOtherRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == otherRealProject }
         val samePidPathRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == sharedRealProject }
-        val windowRoute = service.routeWindow(rewritten.windowId) ?: error("missing window route")
 
+        // The window resolves to the same-pid route whose path matches; window id is preserved.
         assertEquals(samePidPathRoute.exposedProjectName, rewritten.projectName)
-        assertEquals("frame-1-${samePidPathRoute.hash8}", rewritten.windowId)
-        assertNotEquals("frame-1-${samePidOtherRoute.hash8}", rewritten.windowId)
-        assertNotEquals("frame-1-${otherPidRoute.hash8}", rewritten.windowId)
-        assertEquals(43L, windowRoute.idePid)
-        assertEquals("frame-1", windowRoute.originalWindowId)
-        assertEquals(samePidPathRoute, windowRoute.projectRoute)
+        assertNotEquals(samePidOtherRoute.exposedProjectName, rewritten.projectName)
+        assertEquals("frame-1", rewritten.windowId)
     }
 
     @Test
@@ -226,7 +221,6 @@ class DevrigProjectRoutingServiceTest {
         val rewritten = service.rewriteWindow(42, window)
 
         assertEquals(window, rewritten)
-        assertEquals(null, service.routeWindow("welcome-frame"))
     }
 
     @Test

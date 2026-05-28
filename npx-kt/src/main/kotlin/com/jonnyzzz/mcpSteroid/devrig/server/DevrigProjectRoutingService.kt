@@ -11,15 +11,11 @@ import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
 
 class DevrigProjectRoutingService(
     private val stateProvider: () -> Map<Long, IdeMonitorState>,
 ) {
     constructor(ideMonitor: IdeMonitorService) : this({ ideMonitor.states.value })
-
-    private val windowRoutes = ConcurrentHashMap<String, WindowRoute>()
 
     fun routes(): Map<String, ProjectRoute> {
         val routes = linkedMapOf<String, ProjectRoute>()
@@ -39,18 +35,15 @@ class DevrigProjectRoutingService(
         routeProject(exposedProjectName)
             ?: throw ProjectRouteNotFoundException(exposedProjectName)
 
+    /**
+     * Rewrites only the project name to its exposed form. The window id is left untouched:
+     * it is unique within a single IDE and always travels together with project_name, so the
+     * IDE is resolved via project_name and the original window_id is forwarded as-is.
+     */
     fun rewriteWindow(idePid: Long, window: WindowInfo): WindowInfo {
         val route = routeForWindow(idePid, window) ?: return window
-        val exposedWindowId = "${window.windowId}-${route.hash8}"
-        windowRoutes[exposedWindowId] = WindowRoute(
-            idePid = idePid,
-            exposedWindowId = exposedWindowId,
-            originalWindowId = window.windowId,
-            projectRoute = route,
-        )
         return window.copy(
             projectName = window.projectName?.let { route.exposedProjectName },
-            windowId = exposedWindowId,
         )
     }
 
@@ -61,9 +54,6 @@ class DevrigProjectRoutingService(
         } ?: return task
         return task.copy(projectName = route.exposedProjectName)
     }
-
-    fun routeWindow(exposedWindowId: String): WindowRoute? =
-        windowRoutes[exposedWindowId]
 
     fun singleRouteOrNull(): ProjectRoute? {
         val routes = routes().values.toList()
@@ -77,16 +67,16 @@ class DevrigProjectRoutingService(
 
     private fun projectRoute(idePid: Long, ide: DiscoveredIde, project: ProjectInfo): ProjectRoute {
         val realHome = canonicalProjectHome(project.path)
-        val hash8 = hash8(realHome, idePid)
+        val projectHash = projectHash(realHome, idePid)
         return ProjectRoute(
             idePid = idePid,
             bridgeBaseUrl = bridgeBaseUrl(ide.mcpUrl),
             headers = ide.marker.mcpSteroidServer.headers,
             originalProjectName = project.name,
-            exposedProjectName = "${project.name}-$hash8",
+            exposedProjectName = "${project.name}-$projectHash",
             projectPath = project.path,
             realProjectHome = realHome,
-            hash8 = hash8,
+            projectHash = projectHash,
             ide = ide.marker.ide,
             plugin = ide.marker.plugin,
         )
@@ -107,13 +97,25 @@ class DevrigProjectRoutingService(
         fun canonicalProjectHome(projectHome: String): Path =
             Path.of(projectHome).toRealPath()
 
-        fun hash8(realProjectHome: Path, idePid: Long): String {
+        private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+        fun projectHash(realProjectHome: Path, idePid: Long): String {
             val digest = MessageDigest.getInstance("SHA-256")
             digest.update(realProjectHome.toString().encodeToByteArray())
             digest.update(0.toByte())
             digest.update(idePid.toString().encodeToByteArray())
-            val firstSix = digest.digest().copyOfRange(0, 6)
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(firstSix)
+            // base62 (alphanumeric) over the full digest, first 8 chars. Unlike URL-safe
+            // Base64 the alphabet has no '-'/'_', so the suffix can never contain or end
+            // with '-'; the whole 256-bit digest feeds the result, nothing is truncated first.
+            var value = java.math.BigInteger(1, digest.digest())
+            val base = java.math.BigInteger.valueOf(62L)
+            val sb = StringBuilder(8)
+            repeat(8) {
+                val (q, r) = value.divideAndRemainder(base)
+                sb.append(BASE62[r.toInt()])
+                value = q
+            }
+            return sb.toString()
         }
 
         fun bridgeBaseUrl(mcpUrl: String): String =
@@ -129,16 +131,9 @@ data class ProjectRoute(
     val exposedProjectName: String,
     val projectPath: String,
     val realProjectHome: Path,
-    val hash8: String,
+    val projectHash: String,
     val ide: IdeInfo,
     val plugin: PluginInfo,
-)
-
-data class WindowRoute(
-    val idePid: Long,
-    val exposedWindowId: String,
-    val originalWindowId: String,
-    val projectRoute: ProjectRoute,
 )
 
 class ProjectRouteNotFoundException(projectName: String) : IllegalArgumentException(

@@ -125,16 +125,13 @@ class DevrigVisionScreenshotToolHandler(
         mcpProgressReporter: McpProgressReporter,
     ): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
-        val result = bridge.callTool(route, "steroid_take_screenshot", mcpProgressReporter) {
+        return bridge.callTool(route, "steroid_take_screenshot", mcpProgressReporter) {
             put("project_name", route.originalProjectName)
             put("task_id", screenshotParams.taskId)
             put("reason", screenshotParams.reason)
-            screenshotParams.windowId?.let { exposedWindowId ->
-                val originalWindowId = bridge.routing.routeWindow(exposedWindowId)?.originalWindowId ?: exposedWindowId
-                put("window_id", originalWindowId)
-            }
+            // window_id is unique within the IDE resolved by project_name; forward it as-is.
+            screenshotParams.windowId?.let { put("window_id", it) }
         }
-        return result
     }
 }
 
@@ -142,21 +139,15 @@ class DevrigVisionInputToolHandler(
     private val bridge: DevrigToolBridgeClient,
 ) : VisionInputToolHandler {
     override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult {
-        val windowRoute = bridge.routing.routeWindow(inputParams.windowId)
         val route = bridge.routing.requireProject(projectName)
-        if (windowRoute != null && windowRoute.idePid != route.idePid) {
-            return ToolCallResult.errorResult(
-                "window_id '${inputParams.windowId}' belongs to another IDE; call steroid_list_windows again for project_name '$projectName'"
-            )
-        }
-        val originalWindowId = windowRoute?.originalWindowId ?: inputParams.windowId
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
         return bridge.callTool(route, "steroid_input") {
             put("project_name", route.originalProjectName)
             put("task_id", inputParams.taskId)
             put("reason", inputParams.reason)
-            put("window_id", originalWindowId)
+            // window_id is unique within the IDE resolved by project_name; forward it as-is.
+            put("window_id", inputParams.windowId)
             put("sequence", rawSequence)
         }
     }
@@ -178,7 +169,7 @@ class DevrigOpenProjectToolHandler(
             exposedProjectName = "",
             projectPath = "",
             realProjectHome = java.nio.file.Path.of(".").toAbsolutePath().normalize(),
-            hash8 = "",
+            projectHash = "",
             ide = ide.marker.ide,
             plugin = ide.marker.plugin,
         )
