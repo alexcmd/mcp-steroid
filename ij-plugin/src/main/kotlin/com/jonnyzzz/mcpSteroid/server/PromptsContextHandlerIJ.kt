@@ -5,11 +5,15 @@ import com.intellij.openapi.application.ApplicationInfo
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 
 class PromptsContextHandlerIJ : PromptsContextHandler {
-    override fun buildPromptsContext(projectName: String?): PromptsContext {
-        val buildInfo = ApplicationInfo.getInstance().build
-        return PromptsContext(
-            productCode = buildInfo.productCode,
-            baselineVersion = buildInfo.baselineVersion,
-        )
+    override fun buildPromptsContext(projectName: String): PromptsContext {
+        return idePromptsContext()
     }
+}
+
+fun idePromptsContext(): PromptsContext {
+    val buildInfo = ApplicationInfo.getInstance().build
+    return PromptsContext(
+        productCode = buildInfo.productCode,
+        baselineVersion = buildInfo.baselineVersion,
+    )
 }
