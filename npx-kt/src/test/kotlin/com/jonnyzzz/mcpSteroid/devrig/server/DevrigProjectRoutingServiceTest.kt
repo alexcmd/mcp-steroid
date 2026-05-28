@@ -256,22 +256,6 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
-    fun `screenshot execution id remembers owning ide pid`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-        val route = service.routes().values.single()
-
-        service.rememberScreenshotExecution("eid_1", route)
-
-        assertEquals(42, service.routeScreenshotExecution("eid_1"))
-    }
-
-    @Test
     fun `single ide policy returns null when no ides are routable`() {
         val service = routingService()
 

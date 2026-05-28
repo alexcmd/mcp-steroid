@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
@@ -135,18 +134,7 @@ class DevrigVisionScreenshotToolHandler(
                 put("window_id", originalWindowId)
             }
         }
-        rememberScreenshotExecutions(result, route)
         return result
-    }
-
-    private fun rememberScreenshotExecutions(result: ToolCallResult, route: ProjectRoute) {
-        val regex = Regex("""eid_[A-Za-z0-9T_\-]+""")
-        for (content in result.content) {
-            val text = (content as? ContentItem.Text)?.text ?: continue
-            for (match in regex.findAll(text)) {
-                bridge.routing.rememberScreenshotExecution(match.value, route)
-            }
-        }
     }
 }
 
@@ -154,20 +142,21 @@ class DevrigVisionInputToolHandler(
     private val bridge: DevrigToolBridgeClient,
 ) : VisionInputToolHandler {
     override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult {
-        val screenshotPid = bridge.routing.routeScreenshotExecution(inputParams.screenshotExecutionId)
+        val windowRoute = bridge.routing.routeWindow(inputParams.windowId)
         val route = bridge.routing.requireProject(projectName)
-        if (screenshotPid != null && screenshotPid != route.idePid) {
+        if (windowRoute != null && windowRoute.idePid != route.idePid) {
             return ToolCallResult.errorResult(
-                "screenshot_execution_id '${inputParams.screenshotExecutionId}' belongs to another IDE; call steroid_take_screenshot again for project_name '$projectName'"
+                "window_id '${inputParams.windowId}' belongs to another IDE; call steroid_list_windows again for project_name '$projectName'"
             )
         }
+        val originalWindowId = windowRoute?.originalWindowId ?: inputParams.windowId
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
         return bridge.callTool(route, "steroid_input") {
             put("project_name", route.originalProjectName)
             put("task_id", inputParams.taskId)
             put("reason", inputParams.reason)
-            put("screenshot_execution_id", inputParams.screenshotExecutionId)
+            put("window_id", originalWindowId)
             put("sequence", rawSequence)
         }
     }

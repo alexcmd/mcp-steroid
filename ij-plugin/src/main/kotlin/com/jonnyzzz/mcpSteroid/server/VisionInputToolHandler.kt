@@ -5,7 +5,6 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
-import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlinx.serialization.json.*
@@ -29,23 +28,14 @@ class VisionInputToolHandlerIJ : VisionInputToolHandler {
             project.executionStorage.appendExecutionEvent(executionId, message)
         }
 
-        val screenshotExecutionId = inputParams.screenshotExecutionId
+        val windowId = inputParams.windowId
 
         try {
             log("execution_id: ${executionId.executionId}")
             log("WARNING: Heavy endpoint. Prefer steroid_execute_code for regular automation.")
-            log("Using screenshot execution: $screenshotExecutionId")
+            log("Using window_id: $windowId")
 
-            val meta = VisionService.loadScreenshotMeta(project, ExecutionId(screenshotExecutionId))
-            if (meta.system != "swing") {
-                throw IllegalStateException("Unsupported capture system '${meta.system}'. Only swing is supported.")
-            }
-            if (meta.windowId.isNullOrBlank()) {
-                throw IllegalStateException("Screenshot metadata missing windowId; re-capture with the latest version.")
-            }
-            log("Using window_id: ${meta.windowId}")
-
-            VisionService.executeInput(meta, inputParams.sequence)
+            VisionService.executeInput(windowId, inputParams.sequence)
             log("Input sequence executed successfully.")
         } catch (e: Exception) {
             val message = "Input execution failed: ${e.message}"

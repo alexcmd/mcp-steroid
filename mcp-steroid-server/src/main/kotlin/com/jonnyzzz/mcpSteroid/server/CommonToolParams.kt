@@ -29,6 +29,16 @@ object CommonToolParams {
             .string()
             .required()
 
+    /**
+     * `window_id` identifying a specific IDE window (from steroid_list_windows).
+     * Returned un-required: callers chain `.required()` when mandatory (steroid_input)
+     * or `.registerToSchema()` directly when optional (steroid_take_screenshot).
+     */
+    fun windowId() =
+        InputSchemaElement.param("window_id")
+            .description("Window id from steroid_list_windows identifying the target IDE window.")
+            .string()
+
     /** Required `reason` string with the audit-log convention: `Reason for $action. Required for audit logs.` */
     fun reason() =
         InputSchemaElement.param("reason")

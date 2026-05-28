@@ -18,6 +18,7 @@ import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
+import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -199,15 +200,9 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `screenshot bridge handler remembers returned execution id`(
+    fun `screenshot bridge handler forwards request`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val screenshotExecutionId = "eid_20260518T125900-npx-screenshot"
-        val resultBody = ToolCallResult(
-            content = listOf(ContentItem.Text("screenshot saved in $screenshotExecutionId")),
-            isError = false,
-        )
-        streamResponse = """{"type":"result","result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}""" + "\n"
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
@@ -238,11 +233,10 @@ class DevrigToolBridgeClientTest {
         assertEquals("screenshot-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("capture state", arguments["reason"]?.jsonPrimitive?.content)
         assertEquals(null, arguments["window_id"])
-        assertEquals(42L, routing.routeScreenshotExecution(screenshotExecutionId))
     }
 
     @Test
-    fun `input bridge handler forwards when screenshot id belongs to the same ide`(
+    fun `input bridge handler forwards original window id when it belongs to the same ide`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val projectA = Files.createDirectories(tempDir.resolve("project-a"))
@@ -260,7 +254,7 @@ class DevrigToolBridgeClientTest {
             ),
         )
         val route = routing.routes().values.single { it.idePid == 43L }
-        routing.rememberScreenshotExecution("eid_same_ide", route)
+        val exposedWindow = routing.rewriteWindow(43, windowInfo("project-b", projectB, "frame-b"))
         val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(routing, httpClient))
 
         val result = handler.handleInputSequence(
@@ -268,7 +262,7 @@ class DevrigToolBridgeClientTest {
             inputParams = InputParams(
                 taskId = "input-task",
                 reason = "press key",
-                screenshotExecutionId = "eid_same_ide",
+                windowId = exposedWindow.windowId,
                 sequence = emptyList(),
                 rawSequence = "press:ENTER",
             ),
@@ -281,12 +275,12 @@ class DevrigToolBridgeClientTest {
         assertEquals("project-b", arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("input-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("press key", arguments["reason"]?.jsonPrimitive?.content)
-        assertEquals("eid_same_ide", arguments["screenshot_execution_id"]?.jsonPrimitive?.content)
+        assertEquals("frame-b", arguments["window_id"]?.jsonPrimitive?.content)
         assertEquals("press:ENTER", arguments["sequence"]?.jsonPrimitive?.content)
     }
 
     @Test
-    fun `input bridge handler rejects screenshot id from another ide`(
+    fun `input bridge handler rejects window id from another ide`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val projectA = Files.createDirectories(tempDir.resolve("project-a"))
@@ -303,9 +297,8 @@ class DevrigToolBridgeClientTest {
                 lastSnapshot = listOf(ProjectInfo("project-b", projectB.toString())),
             ),
         )
-        val screenshotRoute = routing.routes().values.single { it.idePid == 42L }
         val inputRoute = routing.routes().values.single { it.idePid == 43L }
-        routing.rememberScreenshotExecution("eid_other_ide", screenshotRoute)
+        val exposedWindow = routing.rewriteWindow(42, windowInfo("project-a", projectA, "frame-a"))
         val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(routing, httpClient))
 
         val result = handler.handleInputSequence(
@@ -313,7 +306,7 @@ class DevrigToolBridgeClientTest {
             inputParams = InputParams(
                 taskId = "input-task",
                 reason = "press key",
-                screenshotExecutionId = "eid_other_ide",
+                windowId = exposedWindow.windowId,
                 sequence = emptyList(),
                 rawSequence = "press:ENTER",
             ),
@@ -321,7 +314,7 @@ class DevrigToolBridgeClientTest {
 
         assertEquals(true, result.isError)
         assertTrue(result.errorText().contains("belongs to another IDE"))
-        assertTrue(result.errorText().contains("call steroid_take_screenshot again"))
+        assertTrue(result.errorText().contains("call steroid_list_windows again"))
         assertEquals(null, receivedAuth)
         assertEquals(null, receivedBody)
     }
@@ -631,6 +624,17 @@ class DevrigToolBridgeClientTest {
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+
+    private fun windowInfo(projectName: String, projectHome: Path, windowId: String): WindowInfo =
+        WindowInfo(
+            projectName = projectName,
+            projectPath = projectHome.toString(),
+            title = projectName,
+            isActive = true,
+            isVisible = true,
+            bounds = null,
+            windowId = windowId,
+        )
 
     private fun discoveredIde(pid: Long, projectHome: Path): DiscoveredIde =
         DiscoveredIde(

@@ -20,7 +20,6 @@ class DevrigProjectRoutingService(
     constructor(ideMonitor: IdeMonitorService) : this({ ideMonitor.states.value })
 
     private val windowRoutes = ConcurrentHashMap<String, WindowRoute>()
-    private val screenshotExecutionRoutes = ConcurrentHashMap<String, Long>()
 
     fun routes(): Map<String, ProjectRoute> {
         val routes = linkedMapOf<String, ProjectRoute>()
@@ -65,13 +64,6 @@ class DevrigProjectRoutingService(
 
     fun routeWindow(exposedWindowId: String): WindowRoute? =
         windowRoutes[exposedWindowId]
-
-    fun rememberScreenshotExecution(executionId: String, route: ProjectRoute) {
-        screenshotExecutionRoutes[executionId] = route.idePid
-    }
-
-    fun routeScreenshotExecution(executionId: String): Long? =
-        screenshotExecutionRoutes[executionId]
 
     fun singleRouteOrNull(): ProjectRoute? {
         val routes = routes().values.toList()
