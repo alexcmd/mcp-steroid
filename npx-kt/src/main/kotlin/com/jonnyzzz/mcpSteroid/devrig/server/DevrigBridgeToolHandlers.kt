@@ -157,9 +157,11 @@ class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
-        val ide = bridge.routing.singleIdeOrNull()
+        // With several IDEs open, route to the newest one (highest build, then most recently started)
+        // instead of failing — every discovered IDE runs the MCP Steroid plugin.
+        val ide = bridge.routing.newestIdeOrNull()
             ?: return ToolCallResult.errorResult(
-                "steroid_open_project requires exactly one discovered IDE; call steroid_list_projects and close extra IDEs or start one IDE"
+                "steroid_open_project requires at least one discovered IDE with the MCP Steroid plugin; start an IDE or call steroid_list_projects"
             )
         val route = ProjectRoute(
             idePid = ide.pid,

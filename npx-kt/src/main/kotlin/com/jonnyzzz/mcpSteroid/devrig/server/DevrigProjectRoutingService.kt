@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
@@ -11,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.time.Instant
 
 class DevrigProjectRoutingService(
     private val stateProvider: () -> Map<Long, IdeMonitorState>,
@@ -60,10 +62,17 @@ class DevrigProjectRoutingService(
         return if (routes.size == 1) routes.single() else null
     }
 
-    fun singleIdeOrNull(): DiscoveredIde? {
-        val ides = stateProvider().values.map { it.ide }.distinctBy { it.pid }
-        return if (ides.size == 1) ides.single() else null
-    }
+    /**
+     * Picks the IDE that should receive `steroid_open_project` when one or more IDEs are discovered.
+     *
+     * Every discovered IDE already runs the MCP Steroid plugin (they are found via the plugin's pid
+     * markers), so the preference is purely "newest": the highest IDE build wins, ties are broken by
+     * the most recently started IDE (marker `createdAt`), then by pid for full determinism. This makes
+     * open-project deterministic even with several IDEs open instead of failing. Returns null only when
+     * no IDE is discovered at all.
+     */
+    fun newestIdeOrNull(): DiscoveredIde? =
+        stateProvider().values.map { it.ide }.distinctBy { it.pid }.maxWithOrNull(NEWEST_IDE_FIRST)
 
     private fun projectRoute(idePid: Long, ide: DiscoveredIde, project: ProjectInfo): ProjectRoute {
         val realHome = canonicalProjectHome(project.path)
@@ -94,6 +103,34 @@ class DevrigProjectRoutingService(
     }
 
     companion object {
+        /**
+         * Orders discovered IDEs so the "newest" sorts last (greatest): highest IDE build first,
+         * ties broken by the most recently started IDE, then by pid. Use with [maxWithOrNull].
+         * IDE builds carry a product-code prefix (`IU-261.…`); it is stripped so the numeric build
+         * components drive the comparison rather than the product letters.
+         */
+        private val NEWEST_IDE_FIRST: Comparator<DiscoveredIde> = Comparator { left, right ->
+            val byBuild = compareBackendVersions(
+                stripProductCode(left.marker.ide.build),
+                stripProductCode(right.marker.ide.build),
+            )
+            if (byBuild != 0) return@Comparator byBuild
+            val byCreatedAt = compareValuesBy(left, right) { parseCreatedAtOrMin(it.marker.createdAt) }
+            if (byCreatedAt != 0) return@Comparator byCreatedAt
+            left.pid.compareTo(right.pid)
+        }
+
+        private val PRODUCT_CODE_PREFIX = Regex("^[A-Za-z]+-")
+
+        private fun stripProductCode(build: String): String = build.replaceFirst(PRODUCT_CODE_PREFIX, "")
+
+        private fun parseCreatedAtOrMin(value: String): Instant =
+            try {
+                Instant.parse(value)
+            } catch (e: Exception) {
+                Instant.MIN
+            }
+
         fun canonicalProjectHome(projectHome: String): Path =
             Path.of(projectHome).toRealPath()
 

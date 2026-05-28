@@ -825,7 +825,7 @@ devrig does not silently pick a backend when the id is omitted.
 There is no "use the only IDE that happens to be running"
 shortcut, no fuzzy match, no most-recently-used fallback.
 Project-targeted MCP tool calls (`steroid_execute_code`,
-`steroid_open_project`, `steroid_take_screenshot`,
+`steroid_take_screenshot`,
 `steroid_execute_feedback`, `steroid_list_windows`,
 `steroid_fetch_resource`) require
 `project_name`. Backend-targeted CLI commands
@@ -833,6 +833,16 @@ Project-targeted MCP tool calls (`steroid_execute_code`,
 the positional id (the list-mode invocation with no id is a
 separate command that emits the JSON catalogue, not implicit
 routing).
+
+`steroid_open_project` is the sole exception. It opens a project
+*not yet open* anywhere, so it takes a filesystem `project_path`
+rather than a `project_name` and cannot route by project name. When
+several IDEs are discovered it picks the **newest** one — highest IDE
+build, ties broken by the most recently started IDE (marker
+`createdAt`), then pid — rather than failing. Every discovered IDE
+runs the MCP Steroid plugin (markers are written only by the plugin),
+so "newest IDE" always resolves to an IDE that can open the project.
+The selection lives in `DevrigProjectRoutingService.newestIdeOrNull()`.
 
 If an MCP tool definition currently allows `project_name` to be
 optional, the implementation MUST reject the call with

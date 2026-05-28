@@ -250,33 +250,98 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
-    fun `single ide policy returns null when no ides are routable`() {
+    fun `newest ide returns null when no ides are discovered`() {
         val service = routingService()
 
-        assertEquals(null, service.singleIdeOrNull())
+        assertEquals(null, service.newestIdeOrNull())
     }
 
     @Test
-    fun `single ide policy returns null when multiple ides are routable`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val service = routingService(
-            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString()))),
-            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString()))),
-        )
-
-        assertEquals(null, service.singleIdeOrNull())
-    }
-
-    @Test
-    fun `single ide policy returns the discovered ide when only one ide is routable`() {
+    fun `newest ide returns the only discovered ide`() {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val service = routingService(
             state(pid = 42, projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString()))),
         )
 
-        assertNotNull(service.singleIdeOrNull())
-        assertEquals(42, service.singleIdeOrNull()?.pid)
+        assertNotNull(service.newestIdeOrNull())
+        assertEquals(42, service.newestIdeOrNull()?.pid)
+    }
+
+    @Test
+    fun `newest ide prefers the highest build regardless of start order or pid`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val service = routingService(
+            // Higher pid and later start time, but the older build must not win.
+            state(
+                pid = 99,
+                projects = listOf(ProjectInfo("a", projectA.toString())),
+                build = "IU-253.24374.151",
+                createdAt = "2026-05-20T00:00:00Z",
+            ),
+            state(
+                pid = 1,
+                projects = listOf(ProjectInfo("b", projectB.toString())),
+                build = "IU-261.1",
+                createdAt = "2026-05-10T00:00:00Z",
+            ),
+        )
+
+        assertEquals(1, service.newestIdeOrNull()?.pid)
+    }
+
+    @Test
+    fun `newest ide breaks build ties by the most recently started ide`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val service = routingService(
+            state(
+                pid = 1,
+                projects = listOf(ProjectInfo("a", projectA.toString())),
+                build = "IU-261.24374.151",
+                createdAt = "2026-05-10T00:00:00Z",
+            ),
+            state(
+                pid = 2,
+                projects = listOf(ProjectInfo("b", projectB.toString())),
+                build = "IU-261.24374.151",
+                createdAt = "2026-05-20T00:00:00Z",
+            ),
+        )
+
+        assertEquals(2, service.newestIdeOrNull()?.pid)
+    }
+
+    @Test
+    fun `newest ide compares builds numerically across product codes`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        // "IU" sorts after "GO" lexically; numeric build comparison must ignore the product code.
+        val service = routingService(
+            state(
+                pid = 1,
+                projects = listOf(ProjectInfo("a", projectA.toString())),
+                build = "IU-253.1",
+                createdAt = "2026-05-20T00:00:00Z",
+            ),
+            state(
+                pid = 2,
+                projects = listOf(ProjectInfo("b", projectB.toString())),
+                build = "GO-261.1",
+                createdAt = "2026-05-10T00:00:00Z",
+            ),
+        )
+
+        assertEquals(2, service.newestIdeOrNull()?.pid)
+    }
+
+    @Test
+    fun `newest ide considers an ide that has no project open`() {
+        val service = routingService(
+            state(pid = 7, projects = emptyList(), build = "IU-261.1"),
+        )
+
+        assertEquals(7, service.newestIdeOrNull()?.pid)
     }
 
     @Test
@@ -351,8 +416,9 @@ class DevrigProjectRoutingServiceTest {
         pid: Long,
         projects: List<ProjectInfo>,
         build: String = "IU-261.1",
+        createdAt: String = "2026-05-17T00:00:00Z",
     ): IdeMonitorState {
-        val ide = discoveredIde(pid, build)
+        val ide = discoveredIde(pid, build, createdAt)
         return IdeMonitorState(
             ide = ide,
             status = IdeMonitorStatus.CONNECTED,
@@ -360,7 +426,7 @@ class DevrigProjectRoutingServiceTest {
         )
     }
 
-    private fun discoveredIde(pid: Long, build: String): DiscoveredIde =
+    private fun discoveredIde(pid: Long, build: String, createdAt: String = "2026-05-17T00:00:00Z"): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
             mcpUrl = "http://127.0.0.1:4343/mcp",
@@ -375,7 +441,7 @@ class DevrigProjectRoutingServiceTest {
                 ),
                 ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-                createdAt = "2026-05-17T00:00:00Z",
+                createdAt = createdAt,
                 intellijWebServer = null,
                 intellijMcpServer = null,
             ),

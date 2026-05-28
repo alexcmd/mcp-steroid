@@ -292,24 +292,24 @@ class DevrigToolBridgeClientTest {
         )
 
         assertEquals(true, result.isError)
-        assertTrue(result.errorText().contains("requires exactly one discovered IDE"))
+        assertTrue(result.errorText().contains("requires at least one discovered IDE"))
         assertEquals(null, receivedAuth)
         assertEquals(null, receivedBody)
     }
 
     @Test
-    fun `open project bridge handler rejects multiple discovered ides`(
+    fun `open project bridge handler forwards to the newest ide when several are discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val firstHome = Files.createDirectories(tempDir.resolve("first"))
-        val secondHome = Files.createDirectories(tempDir.resolve("second"))
+        val olderHome = Files.createDirectories(tempDir.resolve("older"))
+        val newerHome = Files.createDirectories(tempDir.resolve("newer"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = firstHome),
+                ide = discoveredIde(pid = 42, projectHome = olderHome, build = "IU-253.999", token = "secret-older"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
             IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = secondHome),
+                ide = discoveredIde(pid = 43, projectHome = newerHome, build = "IU-261.1", token = "secret-newer"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
         )
@@ -322,10 +322,11 @@ class DevrigToolBridgeClientTest {
             )
         )
 
-        assertEquals(true, result.isError)
-        assertTrue(result.errorText().contains("requires exactly one discovered IDE"))
-        assertEquals(null, receivedAuth)
-        assertEquals(null, receivedBody)
+        assertEquals(false, result.isError)
+        // The newest build (IU-261.1) wins, so its bearer token is the one forwarded.
+        assertEquals("Bearer secret-newer", receivedAuth)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -583,7 +584,12 @@ class DevrigToolBridgeClientTest {
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
 
-    private fun discoveredIde(pid: Long, projectHome: Path): DiscoveredIde =
+    private fun discoveredIde(
+        pid: Long,
+        projectHome: Path,
+        build: String = "IU-261.1",
+        token: String = "secret-token",
+    ): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
             mcpUrl = "http://127.0.0.1:$port/mcp",
@@ -594,9 +600,9 @@ class DevrigToolBridgeClientTest {
                 mcpSteroidServer = McpSteroidServerInfo(
                     mcpUrl = "http://127.0.0.1:$port/mcp",
                     port = port,
-                    headers = mapOf("Authorization" to "Bearer secret-token"),
+                    headers = mapOf("Authorization" to "Bearer $token"),
                 ),
-                ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+                ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
                 createdAt = "2026-05-17T00:00:00Z",
                 intellijWebServer = null,
