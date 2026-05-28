@@ -336,6 +336,14 @@ intellijPlatform {
 // Register a dedicated `integrationTest` task via the IntelliJ Platform testing DSL so it
 // gets its own sandbox (prepareSandbox_integrationTest) and the proper IDE JVM argument
 // providers, while compiling from `src/integrationTest/kotlin` instead of `src/test/kotlin`.
+//
+// Also register a sibling `testJUnit5` task that runs the JUnit 5 (Jupiter) tests in a
+// SEPARATE JVM from the default `tasks.test` (which keeps running the JUnit 3 / Vintage
+// suite). Reason: `@TestApplication` (JUnit 5 IDE fixture) and `BasePlatformTestCase`
+// (JUnit 3) BOTH manage the IntelliJ Application as a JVM-wide singleton — mixing them
+// in one JVM tears the Application down at the wrong moment ("TestLoggerFactory: Already
+// shutdown" against `FSRecordsImpl.connect`). Splitting them by engine into separate
+// processes is the only clean isolation.
 intellijPlatformTesting {
     testIde {
         register("integrationTest") {
@@ -343,13 +351,16 @@ intellijPlatformTesting {
             // configuration with opentest4j + IntelliJ test framework JARs. Without this
             // the test JVM hits NoClassDefFoundError on org.opentest4j.AssertionFailedError.
             testFramework(TestFrameworkType.Platform)
-            testFramework(TestFrameworkType.JUnit5)
 
             task {
                 group = "verification"
                 description = "Runs Docker-based CLI integration tests (Claude/Codex/Gemini). " +
                         "Requires Docker and API keys. Not run by default `:ij-plugin:test`."
-                useJUnitPlatform()
+                // Cli*IntegrationTest classes still extend BasePlatformTestCase (JUnit 3),
+                // so restrict to the Vintage engine to keep Application lifecycle clean.
+                useJUnitPlatform {
+                    includeEngines("junit-vintage")
+                }
 
                 // Replace (not append) testClassesDirs: the TestIdeTask default includes
                 // the plugin's instrumented default-test-set classes — keeping them would
@@ -363,12 +374,56 @@ intellijPlatformTesting {
                 classpath += integrationTest.output + integrationTest.runtimeClasspath
             }
         }
+
+        register("testJUnit5") {
+            testFramework(TestFrameworkType.Platform)
+            testFramework(TestFrameworkType.JUnit5)
+
+            task {
+                group = "verification"
+                description = "JUnit 5 (Jupiter) tests for the main 'test' source set. " +
+                        "Runs in a separate JVM from `tasks.test` so the `@TestApplication` " +
+                        "IDE fixture does not contend with the JUnit 3 BasePlatformTestCase " +
+                        "Application lifecycle still in use by unmigrated tests."
+                useJUnitPlatform {
+                    includeEngines("junit-jupiter")
+                }
+
+                // Run the main 'test' source set's classes — sharing produces a single
+                // compiled artifact that both Vintage and Jupiter engines can pick from.
+                testClassesDirs = sourceSets["test"].output.classesDirs
+                classpath = sourceSets["test"].runtimeClasspath +
+                        sourceSets["test"].output.classesDirs +
+                        classpath
+
+                // Mirror the system properties from tasks.test so KotlinxBundledVersionTest
+                // and friends see the same project-resolved pins.
+                systemProperty(
+                    "mcp.steroid.test.expected.kotlinxCoroutinesVersion",
+                    providers.gradleProperty("mcp.kotlinx.coroutines.version").get(),
+                )
+                systemProperty(
+                    "mcp.steroid.test.expected.kotlinxSerializationVersion",
+                    providers.gradleProperty("mcp.kotlinx.serialization.version").get(),
+                )
+            }
+        }
     }
 }
 
 tasks {
     test {
-        useJUnitPlatform()
+        // Restrict to the Vintage engine — `@TestApplication` (Jupiter) tests live
+        // in the sibling `testJUnit5` task instead, in their own JVM. See the
+        // `intellijPlatformTesting.testIde.register("testJUnit5")` block above for
+        // the lifecycle conflict that forces the split.
+        useJUnitPlatform {
+            includeEngines("junit-vintage")
+        }
+        // Both tasks operate on the same 'test' source set; the engine filter
+        // decides who picks each class up. Run `testJUnit5` automatically when
+        // someone says `:ij-plugin:test`.
+        finalizedBy("testJUnit5")
 
         // Explicitly restrict to the main 'test' source set. Without this, the
         // IntelliJ Platform plugin's TestIdeTask includes instrumented classes from
