@@ -46,7 +46,6 @@ class SteroidsMcpServer(
 
     val port: Int get() = portRef.get()
     val mcpUrl: String get() = "http://localhost:$port/mcp"
-    val skillUrl: String get() = "http://localhost:$port/skill.md"
 
     /**
      * Get the underlying MCP server core for testing or tool registration.
