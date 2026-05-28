@@ -36,7 +36,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
 
     val taskId = CommonToolParams.taskId().registerToSchema()
 
-    val reason = CommonToolParams.auditReason("taking the screenshot").registerToSchema()
+    val reason = CommonToolParams.reason().registerToSchema()
 
     val windowId = InputSchemaElement.param("window_id")
         .description("Optional window id from steroid_list_windows to target a specific IDE window.")

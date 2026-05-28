@@ -46,7 +46,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
 
     val taskId = CommonToolParams.taskId().registerToSchema()
 
-    val reason = CommonToolParams.auditReason("sending input").registerToSchema()
+    val reason = CommonToolParams.reason().registerToSchema()
 
     //TODO: just use window_id and make sure it's still around.
     val screenshotExecutionId = InputSchemaElement.param("screenshot_execution_id")
