@@ -227,7 +227,9 @@ dependencies {
     // while the suite is migrated file-by-file. junit:junit:4.13.2 stays on the
     // *compile* classpath because BasePlatformTestCase -> UsefulTestCase ->
     // junit.framework.TestCase still drives unmigrated tests.
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    // 5.13.0+ is required by IntelliJ's TestFixtureExtension — it calls
+    // `ExtensionContext.getEnclosingTestClasses()` which was added in 5.13.
+    testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
