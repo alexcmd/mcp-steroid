@@ -330,6 +330,37 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
+    fun `open project bridge handler prefers the running managed backend over a newer ide`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val userHome = Files.createDirectories(tempDir.resolve("user"))
+        val managedHome = Files.createDirectories(tempDir.resolve("managed"))
+        val routing = routingService(
+            managedPids = setOf(43L),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = userHome, build = "IU-261.9", token = "secret-user"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = managedHome, build = "IU-253.1", token = "secret-managed"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = tempDir.resolve("target").toString(),
+                trustProject = true,
+            )
+        )
+
+        assertEquals(false, result.isError)
+        // pid 42 is the newer build, but pid 43 is the devrig-managed backend — its token must be used.
+        assertEquals("Bearer secret-managed", receivedAuth)
+    }
+
+    @Test
     fun `open project bridge handler forwards request when exactly one ide is discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
@@ -583,6 +614,12 @@ class DevrigToolBridgeClientTest {
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+
+    private fun routingService(
+        managedPids: Set<Long>,
+        vararg states: IdeMonitorState,
+    ): DevrigProjectRoutingService =
+        DevrigProjectRoutingService({ states.associateBy { it.ide.pid } }, { managedPids })
 
     private fun discoveredIde(
         pid: Long,

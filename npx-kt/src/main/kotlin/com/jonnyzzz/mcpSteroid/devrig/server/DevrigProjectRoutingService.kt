@@ -5,7 +5,6 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
@@ -16,8 +15,15 @@ import java.time.Instant
 
 class DevrigProjectRoutingService(
     private val stateProvider: () -> Map<Long, IdeMonitorState>,
+    /**
+     * Pids of IDEs started and owned by devrig as managed backends (`devrig backend start`).
+     * Used by [openProjectTargetIde] to land open_project in the agent's own backend rather than
+     * an unrelated user-launched IDE. Defaults to none so plain discovery keeps its old behavior.
+     */
+    private val managedRunningPids: () -> Set<Long>,
 ) {
-    constructor(ideMonitor: IdeMonitorService) : this({ ideMonitor.states.value })
+    /** No managed-backend awareness — open_project falls back to the newest discovered IDE. */
+    constructor(stateProvider: () -> Map<Long, IdeMonitorState>) : this(stateProvider, { emptySet() })
 
     fun routes(): Map<String, ProjectRoute> {
         val routes = linkedMapOf<String, ProjectRoute>()
@@ -63,16 +69,37 @@ class DevrigProjectRoutingService(
     }
 
     /**
-     * Picks the IDE that should receive `steroid_open_project` when one or more IDEs are discovered.
+     * Picks the IDE that should receive `steroid_open_project`.
      *
-     * Every discovered IDE already runs the MCP Steroid plugin (they are found via the plugin's pid
-     * markers), so the preference is purely "newest": the highest IDE build wins, ties are broken by
-     * the most recently started IDE (marker `createdAt`), then by pid for full determinism. This makes
-     * open-project deterministic even with several IDEs open instead of failing. Returns null only when
-     * no IDE is discovered at all.
+     * Selection is two-tier:
+     *  1. If any devrig-managed backend (`devrig backend start`) is currently running and discovered,
+     *     prefer it — that is the agent's own sandbox, and open_project must land there even when the
+     *     user has a newer IDE open. This is what aligns open_project with `devrig backend` selection:
+     *     "download/start the IDE for this project, then open the project in it" works deterministically.
+     *  2. Otherwise fall back to the newest discovered IDE.
+     *
+     * Within each tier the newest IDE wins (see [newestIdeOrNull]). Returns null only when no IDE is
+     * discovered at all.
      */
-    fun newestIdeOrNull(): DiscoveredIde? =
-        stateProvider().values.map { it.ide }.distinctBy { it.pid }.maxWithOrNull(NEWEST_IDE_FIRST)
+    fun openProjectTargetIde(): DiscoveredIde? {
+        val ides = discoveredIdes()
+        if (ides.isEmpty()) return null
+        val managedPids = managedRunningPids()
+        val managed = ides.filter { it.pid in managedPids }
+        return newestOf(managed.ifEmpty { ides })
+    }
+
+    /**
+     * Picks the newest discovered IDE: highest IDE build, ties broken by the most recently started IDE
+     * (marker `createdAt`), then by pid for full determinism. Every discovered IDE already runs the MCP
+     * Steroid plugin (found via the plugin's pid markers). Returns null when no IDE is discovered.
+     */
+    fun newestIdeOrNull(): DiscoveredIde? = newestOf(discoveredIdes())
+
+    private fun discoveredIdes(): List<DiscoveredIde> =
+        stateProvider().values.map { it.ide }.distinctBy { it.pid }
+
+    private fun newestOf(ides: List<DiscoveredIde>): DiscoveredIde? = ides.maxWithOrNull(NEWEST_IDE_FIRST)
 
     private fun projectRoute(idePid: Long, ide: DiscoveredIde, project: ProjectInfo): ProjectRoute {
         val realHome = canonicalProjectHome(project.path)

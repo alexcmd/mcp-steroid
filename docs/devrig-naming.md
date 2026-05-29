@@ -837,12 +837,27 @@ routing).
 `steroid_open_project` is the sole exception. It opens a project
 *not yet open* anywhere, so it takes a filesystem `project_path`
 rather than a `project_name` and cannot route by project name. When
-several IDEs are discovered it picks the **newest** one — highest IDE
-build, ties broken by the most recently started IDE (marker
-`createdAt`), then pid — rather than failing. Every discovered IDE
-runs the MCP Steroid plugin (markers are written only by the plugin),
-so "newest IDE" always resolves to an IDE that can open the project.
-The selection lives in `DevrigProjectRoutingService.newestIdeOrNull()`.
+one or more IDEs are discovered it selects a target in two tiers
+rather than failing:
+
+1. **Prefer a running devrig-managed backend.** If the agent started
+   an IDE via `devrig backend start`, open_project lands there — the
+   agent's own sandbox — even when the user has a newer IDE open. This
+   is what makes "download/start the IDE for this project, then open it
+   there" deterministic. Managed backends are correlated by pid
+   (`devrig backend list` running pid == the IDE's marker pid).
+2. **Otherwise pick the newest discovered IDE** — highest IDE build,
+   ties broken by most recently started (marker `createdAt`), then pid.
+
+Within each tier the newest IDE wins. Every discovered IDE runs the
+MCP Steroid plugin (markers are written only by the plugin), so the
+target always resolves to an IDE that can open the project. The
+selection lives in `DevrigProjectRoutingService.openProjectTargetIde()`
+(`newestIdeOrNull()` implements tier 2). A managed backend that has
+been started but whose marker has not appeared yet is simply not in
+the discovered set, so the agent should poll `steroid_list_projects`
+after `backend start` before calling open_project — see the
+`mcp-steroid://open-project/managing-backends` recipe.
 
 If an MCP tool definition currently allows `project_name` to be
 optional, the implementation MUST reject the call with

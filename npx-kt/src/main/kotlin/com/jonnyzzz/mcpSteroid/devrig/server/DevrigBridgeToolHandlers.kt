@@ -31,9 +31,11 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -157,9 +159,10 @@ class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
-        // With several IDEs open, route to the newest one (highest build, then most recently started)
-        // instead of failing — every discovered IDE runs the MCP Steroid plugin.
-        val ide = bridge.routing.newestIdeOrNull()
+        // Prefer a devrig-managed backend if the agent has one running; otherwise route to the newest
+        // discovered IDE instead of failing. Every discovered IDE runs the MCP Steroid plugin.
+        // Off the call dispatcher: the managed-pid lookup scans the local backends dir + checks pid liveness.
+        val ide = withContext(Dispatchers.IO) { bridge.routing.openProjectTargetIde() }
             ?: return ToolCallResult.errorResult(
                 "steroid_open_project requires at least one discovered IDE with the MCP Steroid plugin; start an IDE or call steroid_list_projects"
             )

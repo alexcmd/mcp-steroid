@@ -85,7 +85,12 @@ class DevrigServices(
     }
 
     val projectRouting: DevrigProjectRoutingService by lazy {
-        DevrigProjectRoutingService(ideMonitor)
+        DevrigProjectRoutingService(
+            stateProvider = { ideMonitor.states.value },
+            // open_project prefers a running devrig-managed backend (the agent's own IDE) over an
+            // unrelated user IDE. list() is a quick local dir scan; only invoked on open_project.
+            managedRunningPids = { backendManager.list().mapNotNull { it.runningPid }.toSet() },
+        )
     }
 
     val portDiscovery: IntelliJPortDiscovery by lazy {

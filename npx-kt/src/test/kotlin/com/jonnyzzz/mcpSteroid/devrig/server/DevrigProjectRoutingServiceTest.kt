@@ -345,6 +345,66 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
+    fun `open_project target prefers a running managed backend over a newer user ide`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val service = routingService(
+            managedPids = setOf(2L),
+            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString())), build = "IU-261.1"),
+            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString())), build = "IU-253.9"),
+        )
+
+        // pid 1 is the newer build, but pid 2 is the agent's managed backend — it must win.
+        assertEquals(2, service.openProjectTargetIde()?.pid)
+        // newestIdeOrNull is unaffected and still picks the newest build.
+        assertEquals(1, service.newestIdeOrNull()?.pid)
+    }
+
+    @Test
+    fun `open_project target falls back to newest when no managed backend runs`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val service = routingService(
+            managedPids = emptySet(),
+            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString())), build = "IU-253.9"),
+            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString())), build = "IU-261.1"),
+        )
+
+        assertEquals(2, service.openProjectTargetIde()?.pid)
+    }
+
+    @Test
+    fun `open_project target ignores a managed pid that is not yet discovered`() {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        // The managed backend was started (pid 99) but its marker has not appeared yet, so it is
+        // not among discovered IDEs. Selection must fall back to the discovered newest, not error.
+        val service = routingService(
+            managedPids = setOf(99L),
+            state(pid = 1, projects = listOf(ProjectInfo("a", projectHome.toString())), build = "IU-261.1"),
+        )
+
+        assertEquals(1, service.openProjectTargetIde()?.pid)
+    }
+
+    @Test
+    fun `open_project target picks the newest among several managed backends`() {
+        val projectA = Files.createDirectories(tempDir.resolve("a"))
+        val projectB = Files.createDirectories(tempDir.resolve("b"))
+        val service = routingService(
+            managedPids = setOf(1L, 2L),
+            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString())), build = "IU-261.1"),
+            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString())), build = "IU-253.9"),
+        )
+
+        assertEquals(1, service.openProjectTargetIde()?.pid)
+    }
+
+    @Test
+    fun `open_project target returns null when no ide is discovered`() {
+        assertEquals(null, routingService().openProjectTargetIde())
+    }
+
+    @Test
     fun `prompt context is parsed from routed IDE build number`() = runTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
@@ -411,6 +471,12 @@ class DevrigProjectRoutingServiceTest {
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+
+    private fun routingService(
+        managedPids: Set<Long>,
+        vararg states: IdeMonitorState,
+    ): DevrigProjectRoutingService =
+        DevrigProjectRoutingService({ states.associateBy { it.ide.pid } }, { managedPids })
 
     private fun state(
         pid: Long,
