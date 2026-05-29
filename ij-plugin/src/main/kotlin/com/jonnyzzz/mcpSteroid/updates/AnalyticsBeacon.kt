@@ -22,7 +22,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
-import org.jetbrains.annotations.TestOnly
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
@@ -131,8 +130,7 @@ class AnalyticsBeacon(
         capture("status_score", project, enrichedProps)
     }
 
-    @TestOnly
-    fun sendEventInternal(event: String, properties: Map<String, Any>) {
+    internal fun sendEventInternal(event: String, properties: Map<String, Any>) {
         val ph = posthog ?: return
         val appInfo = ApplicationInfo.getInstance()
         val pluginVersion = PluginDescriptorProvider.getInstance().version
