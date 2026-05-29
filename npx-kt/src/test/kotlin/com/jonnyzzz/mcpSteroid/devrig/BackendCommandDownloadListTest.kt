@@ -104,7 +104,7 @@ class BackendCommandDownloadListTest {
         )
 
         val ideaCommunity = available.single { it["id"]!!.jsonPrimitive.content == "idea-community" }
-        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "releaseDate"), ideaCommunity.keys)
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible"), ideaCommunity.keys)
         assertEquals("IIC", ideaCommunity["code"]!!.jsonPrimitive.content)
         assertEquals("IntelliJ IDEA Community", ideaCommunity["displayName"]!!.jsonPrimitive.content)
         assertEquals("free", ideaCommunity["licenseTier"]!!.jsonPrimitive.content)
@@ -114,20 +114,20 @@ class BackendCommandDownloadListTest {
         assertEquals("2025-12-08", ideaCommunity["releaseDate"]!!.jsonPrimitive.content)
 
         val rider = available.single { it["id"]!!.jsonPrimitive.content == "rider" }
-        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "releaseDate"), rider.keys)
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible"), rider.keys)
         assertEquals("free-for-non-commercial", rider["licenseTier"]!!.jsonPrimitive.content)
         assertEquals("**", rider["licenseSymbol"]!!.jsonPrimitive.content)
         assertEquals("Free for non-commercial use; JetBrains license required for commercial use.", rider["licenseNote"]!!.jsonPrimitive.content)
         assertEquals("2025.3.test", rider["version"]!!.jsonPrimitive.content)
 
         val android = available.single { it["id"]!!.jsonPrimitive.content == "android-studio" }
-        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "releaseDate", "versionLookupError"), android.keys)
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible", "versionLookupError"), android.keys)
         assertNull(android["version"]!!.jsonPrimitive.contentOrNull)
         assertNull(android["releaseDate"]!!.jsonPrimitive.contentOrNull)
         assertEquals("network down", android["versionLookupError"]!!.jsonPrimitive.content)
 
         val paid = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
-        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "releaseDate"), paid.keys)
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible"), paid.keys)
         assertEquals("paid", paid["licenseTier"]!!.jsonPrimitive.content)
         assertEquals("*", paid["licenseSymbol"]!!.jsonPrimitive.content)
         assertEquals("Requires a JetBrains license.", paid["licenseNote"]!!.jsonPrimitive.content)

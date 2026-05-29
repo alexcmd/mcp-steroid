@@ -36,7 +36,9 @@ class DevrigServices(
         CoroutineScope(CoroutineName("devrig-background") + Dispatchers.IO + backgroundJob)
 
     val backendManager: BackendManager by lazy {
-        BackendManager(homePaths)
+        // Gate download/start on the bundled plugin's plugin.xml build range so we never install or
+        // launch an IDE the plugin can't load (it would never become reachable).
+        BackendManager(homePaths, pluginBuildRange = bundledPluginBuildRange)
     }
 
     val backendProvisioner: BackendProvisioner by lazy {

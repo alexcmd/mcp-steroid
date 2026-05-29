@@ -29,11 +29,16 @@ data class AvailableBackendDownload(
     val version: String?,
     val releaseDate: String? = null,
     val versionLookupError: String? = null,
+    /** Build of the latest stable release, e.g. `261.24374.151`. */
+    val build: String? = null,
+    /** True/false when the build is in/out of the bundled plugin's range; null when unknown. */
+    val compatible: Boolean? = null,
 )
 
 data class AvailableBackendRelease(
     val version: String,
     val releaseDate: String? = null,
+    val build: String? = null,
 )
 
 interface AvailableBackendVersionResolver {
@@ -53,6 +58,7 @@ class ReleaseServiceAvailableBackendVersionResolver(
         AvailableBackendRelease(
             version = archive.version,
             releaseDate = archive.releaseDate,
+            build = archive.build,
         )
     }
 }
@@ -61,8 +67,9 @@ fun runBackendDownloadListCommand(
     out: PrintStream,
     json: Boolean,
     versionResolver: AvailableBackendVersionResolver = ReleaseServiceAvailableBackendVersionResolver(),
+    pluginBuildRange: PluginBuildRange? = bundledPluginBuildRange,
     availableDownloads: suspend () -> List<AvailableBackendDownload> = {
-        collectAvailableBackendDownloads(versionResolver = versionResolver)
+        collectAvailableBackendDownloads(versionResolver = versionResolver, pluginBuildRange = pluginBuildRange)
     },
 ) {
     if (!json) {
@@ -81,16 +88,21 @@ fun runBackendDownloadListCommand(
 suspend fun collectAvailableBackendDownloads(
     products: List<IdeProduct> = orderedKnownBackendProducts(),
     versionResolver: AvailableBackendVersionResolver,
+    pluginBuildRange: PluginBuildRange? = bundledPluginBuildRange,
     totalBudget: Duration = 15.seconds,
 ): List<AvailableBackendDownload> = coroutineScope {
     products.map { product ->
         async {
-            val version = tryResolveLatestStableVersion(product, versionResolver, totalBudget)
+            val release = tryResolveLatestStableVersion(product, versionResolver, totalBudget)
+            val resolved = release.getOrNull()
+            val build = resolved?.build
             AvailableBackendDownload(
                 product = product,
-                version = version.getOrNull()?.version,
-                releaseDate = version.getOrNull()?.releaseDate,
-                versionLookupError = version.exceptionOrNull()?.shortMessage(),
+                version = resolved?.version,
+                releaseDate = resolved?.releaseDate,
+                build = build,
+                compatible = if (build != null && pluginBuildRange != null) pluginBuildRange.accepts(build) else null,
+                versionLookupError = release.exceptionOrNull()?.shortMessage(),
             )
         }
     }.awaitAll()
@@ -157,7 +169,8 @@ fun renderBackendDownloadListRowsText(
                 .takeIf { it.isNotEmpty() }
                 ?.let { "  $it" }
                 .orEmpty()
-            out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}$licenseSuffix")
+            val compatSuffix = if (row.compatible == false) "  — incompatible with the bundled plugin" else ""
+            out.println("  $indexLabel $id  $name  ${row.versionText().padEnd(versionWidth)}$licenseSuffix$compatSuffix")
         }
     }
     out.println()
@@ -185,7 +198,9 @@ fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>) = buildJ
             put("licenseSymbol", row.product.licenseTier.licenseSymbol)
             put("licenseNote", row.product.licenseTier.licenseNote)
             if (row.version == null) put("version", JsonNull) else put("version", row.version)
+            if (row.build == null) put("build", JsonNull) else put("build", row.build)
             if (row.releaseDate == null) put("releaseDate", JsonNull) else put("releaseDate", row.releaseDate)
+            if (row.compatible == null) put("compatible", JsonNull) else put("compatible", row.compatible)
             row.versionLookupError?.let { put("versionLookupError", it) }
         })
     }
