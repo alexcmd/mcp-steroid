@@ -39,6 +39,7 @@ inline val analyticsBeacon: AnalyticsBeacon get() = service()
  * - exec_code call events (success / error)
  * - execute_feedback events (success rating, explanation summary)
  * - status_score events (0-100 score as dedicated metric)
+ * - mcp_session_initialized events (MCP client + server name/version on handshake)
  *
  * Registry key: mcp.steroid.analytics.enabled (default: true)
  */
