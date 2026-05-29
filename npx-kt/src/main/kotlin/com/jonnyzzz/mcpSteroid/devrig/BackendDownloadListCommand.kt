@@ -49,16 +49,11 @@ class ReleaseServiceAvailableBackendVersionResolver(
     private val os: HostOs = resolveHostOs(),
 ) : AvailableBackendVersionResolver {
     override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease = withContext(Dispatchers.IO) {
-        // Community editions resolve from GitHub (current 261 builds); the rest from the products API.
-        val archive = if (isGithubCommunityProduct(product)) {
-            resolveGithubCommunityArchive(product = product, os = os, version = null)
-        } else {
-            resolveArchive(
-                product = product,
-                channel = IdeChannel.STABLE,
-                os = os,
-                version = null,
-            )
+        // Android Studio from the canary channel (261); Community from GitHub (261); rest from products API.
+        val archive = when {
+            product === IdeProduct.AndroidStudio -> resolveAndroidStudioCanaryArchive(os = os, version = null)
+            isGithubCommunityProduct(product) -> resolveGithubCommunityArchive(product = product, os = os, version = null)
+            else -> resolveArchive(product = product, channel = IdeChannel.STABLE, os = os, version = null)
         }
         AvailableBackendRelease(
             version = archive.version,
@@ -205,7 +200,8 @@ fun availableBackendDownloadsJson(rows: List<AvailableBackendDownload>) = buildJ
             if (row.version == null) put("version", JsonNull) else put("version", row.version)
             if (row.build == null) put("build", JsonNull) else put("build", row.build)
             if (row.releaseDate == null) put("releaseDate", JsonNull) else put("releaseDate", row.releaseDate)
-            if (row.compatible == null) put("compatible", JsonNull) else put("compatible", row.compatible)
+            // Mark incompatible lines only — no compatible=true noise on the (vast majority) usable IDEs.
+            if (row.compatible == false) put("incompatible", true)
             row.versionLookupError?.let { put("versionLookupError", it) }
         })
     }

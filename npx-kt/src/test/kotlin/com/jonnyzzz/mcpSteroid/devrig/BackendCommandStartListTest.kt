@@ -111,13 +111,13 @@ class BackendCommandStartListTest {
         assertEquals("no managed backends installed; run 'devrig backend download <id>' first", root["hint"]!!.jsonPrimitive.content)
         val available = root["available"]!!.jsonArray.map { it.jsonObject }
         val idea = available.single { it["id"]!!.jsonPrimitive.content == "idea-community" }
-        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible"), idea.keys)
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate"), idea.keys)
         assertEquals("2025.3", idea["version"]!!.jsonPrimitive.content)
         assertEquals("2025-12-08", idea["releaseDate"]!!.jsonPrimitive.content)
         assertEquals("", idea["licenseSymbol"]!!.jsonPrimitive.content)
         assertEquals("", idea["licenseNote"]!!.jsonPrimitive.content)
         val ultimate = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
-        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible"), ultimate.keys)
+        assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate"), ultimate.keys)
         assertEquals("*", ultimate["licenseSymbol"]!!.jsonPrimitive.content)
         assertEquals("Includes the Community feature set; free in Community mode, a paid license unlocks the full edition.", ultimate["licenseNote"]!!.jsonPrimitive.content)
     }
