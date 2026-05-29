@@ -64,7 +64,7 @@ class BackendCommandStartListTest {
         assertTrue(text.contains("[1] idea-community"), text)
         assertTrue(text.contains("2025.3"), text)
         assertTrue(!text.contains("2025-12-08"), text)
-        assertTrue(text.contains("  *  Requires a JetBrains license."), text)
+        assertTrue(text.contains("  *  Includes the Community feature set; free in Community mode, a paid license unlocks the full edition."), text)
         assertTrue(!text.contains("Free for non-commercial use; JetBrains license required for commercial use."), text)
         assertTrue(text.contains("Run:  devrig backend download <id> [--version <v>]"), text)
         assertTrue(text.contains("Then: devrig backend start <id>"), text)
@@ -119,7 +119,7 @@ class BackendCommandStartListTest {
         val ultimate = available.single { it["id"]!!.jsonPrimitive.content == "idea-ultimate" }
         assertEquals(setOf("id", "code", "displayName", "licenseTier", "licenseSymbol", "licenseNote", "version", "build", "releaseDate", "compatible"), ultimate.keys)
         assertEquals("*", ultimate["licenseSymbol"]!!.jsonPrimitive.content)
-        assertEquals("Requires a JetBrains license.", ultimate["licenseNote"]!!.jsonPrimitive.content)
+        assertEquals("Includes the Community feature set; free in Community mode, a paid license unlocks the full edition.", ultimate["licenseNote"]!!.jsonPrimitive.content)
     }
 
     private fun renderStartText(rows: List<InstalledBackendListRow>): String {

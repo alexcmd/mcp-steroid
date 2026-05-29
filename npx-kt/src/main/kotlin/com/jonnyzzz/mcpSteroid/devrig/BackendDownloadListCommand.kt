@@ -49,12 +49,17 @@ class ReleaseServiceAvailableBackendVersionResolver(
     private val os: HostOs = resolveHostOs(),
 ) : AvailableBackendVersionResolver {
     override suspend fun resolveLatestStableRelease(product: IdeProduct): AvailableBackendRelease = withContext(Dispatchers.IO) {
-        val archive = resolveArchive(
-            product = product,
-            channel = IdeChannel.STABLE,
-            os = os,
-            version = null,
-        )
+        // Community editions resolve from GitHub (current 261 builds); the rest from the products API.
+        val archive = if (isGithubCommunityProduct(product)) {
+            resolveGithubCommunityArchive(product = product, os = os, version = null)
+        } else {
+            resolveArchive(
+                product = product,
+                channel = IdeChannel.STABLE,
+                os = os,
+                version = null,
+            )
+        }
         AvailableBackendRelease(
             version = archive.version,
             releaseDate = archive.releaseDate,
@@ -237,7 +242,7 @@ val LicenseTier.licenseNote: String
     get() = when (this) {
         LicenseTier.Free -> ""
         LicenseTier.FreeForNonCommercial -> "Free for non-commercial use; JetBrains license required for commercial use."
-        LicenseTier.Paid -> "Requires a JetBrains license."
+        LicenseTier.Paid -> "Includes the Community feature set; free in Community mode, a paid license unlocks the full edition."
     }
 
 fun Throwable.shortMessage(): String {
