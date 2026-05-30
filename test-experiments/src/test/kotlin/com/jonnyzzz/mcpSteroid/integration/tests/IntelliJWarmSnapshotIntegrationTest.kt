@@ -5,7 +5,6 @@ import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
-import com.jonnyzzz.mcpSteroid.integration.infra.createFromSnapshot
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ImageDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -36,11 +35,14 @@ class IntelliJWarmSnapshotIntegrationTest {
         }
 
         runWithCloseableStack { lifetime ->
-            val warmSession = IntelliJContainer.createFromSnapshot(
-                lifetime = lifetime,
-                snapshotImage = snapshotImage,
-                consoleTitle = "intellij-warm-snapshot-restart",
-                project = IntelliJProject.IntelliJMasterProject,
+            val warmSession = IntelliJContainer.create(
+                IntelliJContainerOpts(
+                    lifetime = lifetime,
+                    consoleTitle = "intellij-warm-snapshot-restart",
+                    project = IntelliJProject.IntelliJMasterProject,
+                    sourceImage = snapshotImage,
+                    reuseProjectFromImage = true,
+                )
             )
 
             warmSession.waitForSnapshotReadyWithoutIndexing()

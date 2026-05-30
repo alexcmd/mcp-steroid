@@ -1,10 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.integration.infra
 
-import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
-import com.jonnyzzz.mcpSteroid.testHelper.docker.ImageDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
@@ -310,31 +308,3 @@ fun IntelliJContainer.Companion.create(opts: IntelliJContainerOpts): IntelliJCon
     return session
 }
 
-fun IntelliJContainer.Companion.createFromSnapshot(
-    lifetime: CloseableStack,
-    snapshotImage: ImageDriver,
-    consoleTitle: String,
-    project: IntelliJProject = IntelliJProject.IntelliJMasterProject,
-    layoutManager: LayoutManager = HorizontalLayoutManager(),
-    distribution: IdeDistribution = IdeDistribution.fromSystemProperties(),
-    aiMode: AiMode = AiMode.AI_MCP,
-    mcpConnectionMode: McpConnectionMode? = null,
-    repoCacheDir: File? = IdeTestFolders.repoCacheDirOrNull,
-    mountDockerSocket: Boolean = false,
-    mountSshAgent: Boolean = true,
-): IntelliJContainer = create(
-    IntelliJContainerOpts(
-    lifetime = lifetime,
-    dockerFileBase = "ide-agent",
-    consoleTitle = consoleTitle,
-    project = project,
-    layoutManager = layoutManager,
-    distribution = distribution,
-    aiMode = aiMode,
-    mcpConnectionMode = mcpConnectionMode,
-    repoCacheDir = repoCacheDir,
-    mountDockerSocket = mountDockerSocket,
-    mountSshAgent = mountSshAgent,
-    sourceImage = snapshotImage,
-    reuseProjectFromImage = true,
-))
