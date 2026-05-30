@@ -43,8 +43,11 @@ fun McpSteroidDriver.mcpRegisterJdks() {
         """
     for (homePath in temurinDirs) {
         val version = homePath.substringAfter("temurin-").substringBefore("-jdk")
+            .toIntOrNull() ?: error("Failed to parse version in $homePath")
+
         for (name in listOf(version, "corretto-$version", "temurin-$version")) {
             code += $$"""
+
                     if (table.findJdk("$$name") != null) {
                         println("[JDK-ADD]\talready-registered\tname=$$name")
                     } else {
@@ -54,7 +57,8 @@ fun McpSteroidDriver.mcpRegisterJdks() {
                         writeAction { table.addJdk(sdk) }
                         println("[JDK-ADD]\tregistered\tname=${sdk.name}\thome=${sdk.homePath}\tversion=${sdk.versionString}")
                     }
-        """.trimIndent()
+
+        """
         }
     }
 

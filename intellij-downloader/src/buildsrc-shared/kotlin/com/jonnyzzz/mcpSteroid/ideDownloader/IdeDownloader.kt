@@ -21,7 +21,6 @@ private val archiveDownloadLocks = ConcurrentHashMap<String, Any>()
 
 internal var checksumTextReader: (String, String) -> String = ::readUrlText
 
-@Suppress("GrazieInspection", "GrazieInspectionRunner", "SpellCheckingInspection")
 private data class ResolvedArchiveDownload(
     val url: String,
     val fileName: String,
@@ -111,7 +110,6 @@ private fun archiveDownloadLock(destFile: File): Any {
     return archiveDownloadLocks.computeIfAbsent(key) { Any() }
 }
 
-@Suppress("GrazieInspection", "GrazieInspectionRunner", "SpellCheckingInspection")
 private fun IdeDistribution.resolveArchiveDownload(
     os: HostOs,
 ): ResolvedArchiveDownload {
