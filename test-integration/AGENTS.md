@@ -155,6 +155,36 @@ IDE. **The IDE JVM always starts with the JDWP agent open** — no flag needed:
 This is the live-debug counterpart to the dump-first recipe above; reach for the debugger when
 a one-shot dump isn't enough (intermittent hangs, modality/EDT timing, value inspection).
 
+To attach **programmatically** (from `steroid_execute_code`, instead of the Run-config UI) —
+e.g. to script an attach to the mapped port from a controlling IDEA — see the recipe
+`mcp-steroid://debugger/debug-attach-remote-jvm`
+(`prompts/src/main/prompts/debugger/debug-attach-remote-jvm.md`): `RemoteConfiguration` with
+`SERVER_MODE=false` at `localhost:<host-port>`, or the low-level
+`DebuggerManagerEx.attachVirtualMachine`.
+
+### Debugging the in-container devrig (npx-kt) JVM too
+
+When a test runs the agents through the **devrig stdio bridge** (`AiMode.AI_DEVRIG`), the devrig
+JVM gets its **own** JDWP agent on a **different** port — `DEVRIG_DEBUG_PORT` (`ContainerPort(5006)`,
+in `intelliJ.kt`) — so the IDE and devrig can be debugged at the same time:
+
+- `DevrigSteroidDriver.deploy` writes the launcher with
+  `export DEVRIG_OPTS="-agentlib:jdwp=…,server=y,suspend=n,quiet=y,address=*:5006 …"`.
+  `DEVRIG_OPTS` is the Gradle-application opts var (only the `devrig` launch reads it — it does
+  **not** leak into child JVMs and double-bind the port, which `JAVA_TOOL_OPTIONS` would).
+  `quiet=y` keeps the agent's own "Listening …" line **off stdout** — `devrig mpc` speaks JSON-RPC
+  on stdout, so a stray line would corrupt the protocol.
+- The port is published (`.ports(… DEVRIG_DEBUG_PORT)`) and Docker-mapped. The host-mapped port is
+  printed on the host in the JVM's own wording — `Listening for transport dt_socket at address:
+  <host-port>` + `[DEVRIG-DEBUG] attach … (module npx-kt) …` — and saved to `session-info.txt` as
+  `DEVRIG_DEBUG_PORT=<host-port>`.
+- Attach a **second** "Remote JVM Debug" with classpath of module **`npx-kt`** to that host port.
+
+Caveat: the agent (`address=*:5006`, `server=y`) binds a fixed port, so it assumes a single live
+`devrig` JVM per container (the long-lived `devrig mpc` MCP server). A concurrent second `devrig`
+invocation in the same container would fail with "Address already in use" — fine for the stdio-bridge
+tests, where only `devrig mpc` runs.
+
 ## RLM Analysis of Arena Runs (run-*/intellij/mcp-steroid/)
 
 Each arena run creates server-side exec_code logs at `run-*/intellij/mcp-steroid/eid_*`. Structure:

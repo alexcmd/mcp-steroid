@@ -29,6 +29,19 @@ import kotlin.concurrent.thread
  */
 val IDE_DEBUG_PORT = ContainerPort(5005)
 
+/**
+ * JDWP debug port the in-container **devrig** (`npx-kt`) JVM listens on when deployed as the
+ * agents' stdio MCP bridge (`devrig mpc`). A *different* port from [IDE_DEBUG_PORT] so the IDE
+ * and devrig can be debugged simultaneously. Exposed through Docker and printed to the test
+ * output as `DEVRIG_DEBUG_PORT=<host-port>` plus the standard JVM "Listening for transport …"
+ * line with the host-mapped port. `suspend=n` so devrig never waits; `quiet=y` so the JDWP
+ * agent does NOT print its own "Listening …" line to stdout — that would corrupt the stdio
+ * JSON-RPC channel `devrig mpc` runs on. The host-side print (see [DevrigSteroidDriver.deploy])
+ * substitutes for it. Opts are injected via the app-specific `DEVRIG_OPTS` env var (NOT
+ * `JAVA_TOOL_OPTIONS`, which would leak into child JVMs and double-bind this port).
+ */
+val DEVRIG_DEBUG_PORT = ContainerPort(5006)
+
 class IntelliJDriver(
     private val lifetime: CloseableStack,
     private val driver: ContainerDriver,
@@ -186,6 +199,11 @@ class IntelliJDriver(
             // (printed to the test output + session-info.txt) to debug the IDE + MCP Steroid
             // plugin live while a Docker test runs. address=*: so it binds all interfaces inside
             // the container (Docker maps it to the host). See test-integration/CLAUDE.md.
+            //
+            // MUST stay suspend=n for :test-integration AND :test-experiments (both share this
+            // infra). suspend=y would block the IDE's main thread until a debugger attaches —
+            // on CI nobody attaches, so the whole test would hang until its timeout. NEVER flip
+            // this to suspend=y; set breakpoints + attach live instead (the agent stays open).
             appendLine("# Remote JVM debug (attach to mapped IDE_DEBUG_PORT; suspend=n so the IDE never waits)")
             appendLine("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${IDE_DEBUG_PORT.containerPort}")
 

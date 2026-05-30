@@ -327,6 +327,7 @@ fun IntelliJContainer.Companion.create(
                 XcvbVideoDriver.VIDEO_STREAMING_PORT,
                 McpSteroidDriver.MCP_STEROID_PORT,
                 IDE_DEBUG_PORT,
+                DEVRIG_DEBUG_PORT,
             ),
     )
 
@@ -592,6 +593,7 @@ fun IntelliJContainer.Companion.create(
     fun writeSessionInfo(mcpUrl: String?) {
         val videoPort = container.mapGuestPortToHostPort(XcvbVideoDriver.VIDEO_STREAMING_PORT)
         val ideDebugPort = container.mapGuestPortToHostPort(IDE_DEBUG_PORT)
+        val devrigDebugPort = container.mapGuestPortToHostPort(DEVRIG_DEBUG_PORT)
         val infoString = buildString {
             appendLine("=".repeat(20))
             appendLine("Use these parameters to debug the test")
@@ -603,6 +605,9 @@ fun IntelliJContainer.Companion.create(
             // Attach IntelliJ "Remote JVM Debug" to this host port to debug the in-container
             // IDE + MCP Steroid plugin live (suspend=n, so the IDE never waits for a debugger).
             appendLine("IDE_DEBUG_PORT=$ideDebugPort")
+            // devrig (npx-kt) JVM debug port — only listening when devrig is deployed as the
+            // agents' stdio MCP bridge (AiMode.AI_DEVRIG); the host port is always mapped.
+            appendLine("DEVRIG_DEBUG_PORT=$devrigDebugPort")
             if (mcpUrl != null) {
                 appendLine("MCP_STEROID=$mcpUrl")
             }
@@ -610,9 +615,13 @@ fun IntelliJContainer.Companion.create(
         }
         val infoFile = File(runDir, "session-info.txt")
         infoFile.writeText(infoString)
-        // Also surface the debug port prominently on the test console so it is easy to find
-        // in CI logs / local runs without opening session-info.txt.
-        println("[IDE-DEBUG] Remote JVM debug available — attach IntelliJ 'Remote JVM Debug' to localhost:$ideDebugPort (suspend=n)")
+        // Surface the debug port on the host console in the SAME wording the JVM's own JDWP
+        // agent prints — except with the HOST-mapped port, not the in-container 5005. The IDE's
+        // own "Listening for transport ..." line carries the container port and is invisible/
+        // useless from the host, so the harness re-emits the standard line with the mapped port.
+        // Tooling (and humans) recognise this exact format and can attach a "Remote JVM Debug" to it.
+        println("Listening for transport dt_socket at address: $ideDebugPort")
+        println("[IDE-DEBUG] attach IntelliJ 'Remote JVM Debug' to localhost:$ideDebugPort (suspend=n)")
     }
 
     if (!startIde) {

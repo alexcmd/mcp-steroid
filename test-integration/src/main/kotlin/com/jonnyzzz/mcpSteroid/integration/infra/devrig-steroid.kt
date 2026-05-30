@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.integration.infra
 import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
+import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 
@@ -47,6 +48,15 @@ class DevrigSteroidDriver(
                     java25="$(ls -d /usr/lib/jvm/temurin-25-* 2>/dev/null | head -1)"
                     export JAVA_HOME="${DEVRIG_JAVA_HOME:-${java25:-${JAVA_HOME:-}}}"
                     export PATH="$JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+                    # JDWP for the devrig JVM. DEVRIG_OPTS is the Gradle-app opts var (only the
+                    # devrig launch reads it -> no leak into child JVMs / no double-bind). quiet=y
+                    # keeps the agent's own "Listening ..." line OFF stdout: `devrig mpc` speaks
+                    # JSON-RPC on stdout, so a stray line would corrupt the protocol. The host-side
+                    # print (mapped port) stands in for the suppressed line.
+                    # MUST stay suspend=n (:test-integration + :test-experiments): suspend=y would
+                    # block devrig before it starts the MCP server, hanging the whole test on CI
+                    # where nobody attaches. NEVER flip to suspend=y.
+                    export DEVRIG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,quiet=y,address=*:$${DEVRIG_DEBUG_PORT.containerPort} ${DEVRIG_OPTS:-}"
                     exec /home/agent/devrig-cli/app/bin/devrig "$@"
                     EOF
                     chmod +x "$$launcherPath"
@@ -57,6 +67,14 @@ class DevrigSteroidDriver(
                     .description("install devrig MCP stdio launcher")
             }.awaitForProcessFinish()
                 .assertExitCode(0) { "install devrig MCP stdio launcher" }
+
+            // Surface the devrig JVM's debug port on the HOST, in the JVM's own "Listening for
+            // transport ..." wording, with the HOST-mapped port (the in-container 5006 is invisible
+            // from the host, and quiet=y suppressed the agent's own line). Attach a second "Remote
+            // JVM Debug" (module npx-kt) to step through devrig while it bridges to the IDE.
+            val devrigDebugPort = container.mapGuestPortToHostPort(DEVRIG_DEBUG_PORT)
+            println("Listening for transport dt_socket at address: $devrigDebugPort")
+            println("[DEVRIG-DEBUG] attach IntelliJ 'Remote JVM Debug' (module npx-kt) to localhost:$devrigDebugPort (suspend=n)")
 
             println("[DevrigSteroidDriver] devrig MCP stdio ready")
             return DevrigSteroidDriver(StdioMcpCommand(command = launcherPath, args = listOf("mpc")))
