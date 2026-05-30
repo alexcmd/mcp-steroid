@@ -3635,3 +3635,38 @@ Progress log appended below as each task moves.
   done.** Article + test + tool description have converged. All
   three agents complete the task in <60s with clean signal. Closing
   task #19.
+
+# TODO — test-integration JDK pre-configuration is too slow (likely sleeps) (2026-05-30)
+
+The per-test IDE JDK pre-configuration (`mcpRegisterJdks` / SDK setup during
+`waitForProjectReady`, `intelliJ-factory.kt` + `intelliJ-container.kt` +
+`mcp-steroid.kt`) takes far too long on startup — it *feels like there are
+sleeps in the code* rather than event-driven waits. Review and fix.
+- Suspects found (grep): fixed `delay(2_000L)` at `mcp-steroid.kt:664,731,800`,
+  `delay(500L)` at `:544`, `Thread.sleep(50)` polling in `IdeTestHelpers.kt:152,161`,
+  poll loops in `intelliJ-container.kt:307,315,354,384,415` (`Thread.sleep(pollIntervalMillis)`).
+- Goal: replace blocking fixed sleeps / coarse poll intervals on the JDK-setup +
+  project-ready path with event-driven / shorter-interval waits so the IDE reaches
+  "project ready" promptly. Quantify the time spent in JDK pre-config first (log
+  timestamps around `mcpRegisterJdks` + each wait), then cut the dominant sleeps.
+
+# Active — DialogKiller hang on macOS/Docker: VisionService.capture stalls under a modal (2026-05-30)
+
+The DialogKiller integration test hangs locally (macOS Docker+Xvfb; passes on CI
+Linux). Evidence from a pre-logging run's IDE log: `killProjectDialogs`
+(`eid_…093726`) started and never completed (~10-min gap); a later **direct**
+`VisionService.capture` step (`screenshot-tool-test`, `dialog_killer=false`) is the
+**last line in the log — it hung too**. So `VisionService.capture` stalls while a
+modal `DialogWrapper` is showing, and since both the killer's pre-close screenshot
+**and** `closeDialog` go through `Dispatchers.EDT + ModalityState.any()`, neither is
+pumped during this modal → the modality is never resolved → VFS refresh + all
+downstream tasks (and the MCP server) hang. The same elevated-modality-never-resolved
+hang reproduced in the live IDE when a probe elevated modality without closing it.
+- Goal (per user): the killer must reliably **close all dialogs and restore
+  `ModalityState.nonModal()`** — the screenshot is secondary and must NEVER block that.
+- Instrumentation added (commit `2e26ec6a`): `isModalDialogShown` logs `current()!=nonModal()`
+  vs `LaterInvocator.isInModalContext()`; `doLookupDialogs` logs screenshot + close
+  boundaries. A debug-port feature (commit `11bec066`) allows attaching a live debugger.
+- Next: read the new run's log (screenshot-vs-close), then fix — make the screenshot
+  best-effort/off the critical path (close first), and/or fix `VisionService.capture` to
+  not stall under a modal; verify EDT+any actually pumps during the modal in this env.

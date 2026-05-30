@@ -109,24 +109,33 @@ class DialogKiller {
         // Yield to allow other coroutines to run
         yield()
 
-        log.info("DialogKiller: capturing screenshot before closing (execution: $executionId, iteration: $iteration)")
+        // CLOSE FIRST — restoring ModalityState.nonModal() is the killer's whole purpose,
+        // and everything downstream (VFS refresh, the next execution, the MCP server) is
+        // blocked until it happens. `dialog.close()` is a lightweight EDT action; the
+        // screenshot below is heavy EDT/AWT work (component-tree walk + screen capture)
+        // that empirically STALLS while a modal is up in headless Xvfb — running it before
+        // the close meant the close was never reached and the modality never resolved
+        // (the dialog-killer hang). The screenshot is secondary diagnostics and must never
+        // gate the close.
+        log.info("DialogKiller: about to close dialog (execution: $executionId, iteration: $iteration)")
+        closeDialog(dialogToClose, 1, 1, executionId)
+        log.info("DialogKiller: closeDialog returned (execution: $executionId, iteration: $iteration)")
+
+        // Best-effort screenshot AFTER the close (now the EDT is no longer modal-blocked),
+        // strictly time-bounded; any failure/timeout is logged and ignored.
+        log.info("DialogKiller: capturing screenshot after close (execution: $executionId, iteration: $iteration)")
         try {
             withTimeout(5_000) {
                 VisionService.capture(project, executionId).logMessages().forEach { logMessage(it) }
             }
             log.info("DialogKiller: screenshot captured (execution: $executionId)")
         } catch (e: TimeoutCancellationException) {
-            log.warn("Screenshot capture timed out, proceeding to close dialog: ${e.message}")
+            log.warn("Screenshot capture timed out (non-fatal): ${e.message}")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.warn("Failed to capture screenshot before closing dialog: ${e.message}", e)
+            log.warn("Failed to capture screenshot (non-fatal): ${e.message}", e)
         }
-
-        // Close the dialog on EDT with ModalityState.any()
-        log.info("DialogKiller: about to close dialog (execution: $executionId, iteration: $iteration)")
-        closeDialog(dialogToClose, 1, 1, executionId)
-        log.info("DialogKiller: closeDialog returned (execution: $executionId, iteration: $iteration)")
 
         yield()
         doLookupDialogs(executionId, project, logMessage, iteration + 1)
