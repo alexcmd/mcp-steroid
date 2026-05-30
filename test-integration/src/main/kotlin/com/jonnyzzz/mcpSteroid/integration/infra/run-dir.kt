@@ -1,5 +1,6 @@
 package com.jonnyzzz.mcpSteroid.integration.infra
 
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -10,11 +11,11 @@ data class ConsoleFileInfo(
     val title: String,
 )
 
-fun allocRunDirAndTitle(consoleTitle: String): ConsoleFileInfo {
+fun allocRunDirAndTitle(lifetime: CloseableStack, consoleTitle: String): ConsoleFileInfo {
     val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
     val runIdName = consoleTitle.split(" ").joinToString("-") { it.lowercase() }
-    val file = File(IdeTestFolders.testOutputDir, "run-${timestamp}-${runIdName}")
-    file.mkdirs()
+    val runDir = File(IdeTestFolders.testOutputDir, "run-${timestamp}-${runIdName}")
+    runDir.mkdirs()
     // Make the runDir world-writable on the HOST before we bind-mount it at
     // /mcp-run-dir inside the container. Linux bind mounts do not do UID
     // remapping: whatever host uid owns the dir controls write access from
@@ -29,9 +30,14 @@ fun allocRunDirAndTitle(consoleTitle: String): ConsoleFileInfo {
     // `setWritable(true, ownerOnly=false)` maps to chmod a+w on Linux.
     // Add read+execute too via setReadable / setExecutable so the
     // container user can traverse the tree and read existing files.
-    file.setReadable(true, /* ownerOnly = */ false)
-    file.setWritable(true, /* ownerOnly = */ false)
-    file.setExecutable(true, /* ownerOnly = */ false)
-    return ConsoleFileInfo(file, "$consoleTitle $timestamp")
+    runDir.setReadable(true, /* ownerOnly = */ false)
+    runDir.setWritable(true, /* ownerOnly = */ false)
+    runDir.setExecutable(true, /* ownerOnly = */ false)
+
+    println("[IDE-AGENT] Run directory: $runDir")
+    lifetime.registerCleanupAction {
+        TeamCityServiceMessages.publishRunDirArtifact(runDir)
+    }
+    return ConsoleFileInfo(runDir, "$consoleTitle $timestamp")
 }
 

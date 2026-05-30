@@ -24,13 +24,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         else -> project
     }
 
-    val (runDir, realConsoleTitle) = allocRunDirAndTitle(consoleTitle)
-
-    println("[IDE-AGENT] Run directory: $runDir")
-
-    lifetime.registerCleanupAction {
-        TeamCityServiceMessages.publishRunDirArtifact(runDir)
-    }
+    val (runDir, realConsoleTitle) = allocRunDirAndTitle(lifetime, consoleTitle)
 
     val imageId = sourceImage ?: run {
         val ideArchive = if (startIde) distribution.resolveAndDownload() else null
@@ -95,33 +89,11 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     setupHostMappings.applyToContainer(container, lifetime)
 
-    val xcvb = XcvbDriver(
-        lifetime,
-        container,
-        layoutManager
-    )
-
-    xcvb.startDisplayServer()
-    container = xcvb.withDisplay(container)
-
-    val windowsDriver = XcvbWindowDriver(lifetime, container, xcvb.wholeScreenAreal())
-    windowsDriver.startWindowManager()
-
-    val videoDriver = XcvbVideoDriver(lifetime, container, windowsDriver, xcvb, "$containerMountedPath/video", realConsoleTitle)
-    videoDriver.startVideoService()
-
-    val screenshotDriver = XcvbScreenshotDriver(lifetime, container, "$containerMountedPath/screenshot")
-    screenshotDriver.startScreenshotCapture()
-
-    val windowsLayout = WindowLayoutManager(windowsDriver, layoutManager)
-
-    val consoleDriver = XcvbConsoleDriver(lifetime, container, windowsDriver)
-    val console = consoleDriver.createConsoleDriver(container, realConsoleTitle, windowsLayout.layoutStatusConsoleWindow())
+    val gui = setupGuiContainerServices(lifetime, container, layoutManager, containerMountedPath, realConsoleTitle)
+    val console = gui.console
+    container = gui.container
 
     console.writeInfo("Preparing ${ideProduct.displayName}...")
-
-    val inputDriver = XcvbInputDriver(container)
-    XcvbSkillDriver(lifetime, container)
 
     val ijDriver = IntelliJDriver(
         lifetime,
@@ -142,7 +114,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
             appendLine("Use these parameters to debug the test")
             appendLine("RUN_DIR=$runDir")
             appendLine("CONTAINER_ID=${container.containerId}")
-            appendLine("DISPLAY=${xcvb.DISPLAY}")
+            appendLine("DISPLAY=${gui.xcvb.DISPLAY}")
             appendLine("VIDEO_DASHBOARD=http://localhost:$videoPort/")
             appendLine("VIDEO_STREAM=http://localhost:$videoPort/video.mp4")
             // Attach IntelliJ "Remote JVM Debug" to this host port to debug the in-container
@@ -193,16 +165,13 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
         val session = IntelliJContainer(
             lifetime = lifetime,
+            gui = gui,
             runDirInContainer = runDir,
             scope = container,
             intellijDriver = ijDriver,
-            console = console,
-            input = inputDriver,
             mcpSteroid = mcpSteroidDriver,
             aiAgents = aiAgentDriver,
             intellij = idleProcess,
-            windows = windowsDriver,
-            windowLayout = windowsLayout,
             openFileOnStart = null,
         )
 
@@ -238,7 +207,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     require(ijProcess.isRunning()) { "${ideProduct.displayName} process finished" }
 
-    waitAndLayoutIntelliJWindow(ijProcess, container, windowsDriver, realConsoleTitle, windowsLayout)
+    waitAndLayoutIntelliJWindow(ijProcess, container, gui.windowsDriver, realConsoleTitle, gui.windowsLayout)
 
     // Wait for MCP server readiness
     val mcpSteroidDriver = McpSteroidDriver(container, ijDriver)
@@ -291,16 +260,13 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     val session = IntelliJContainer(
         lifetime = lifetime,
+        gui = gui,
         runDirInContainer = runDir,
         scope = container,
         intellijDriver = ijDriver,
-        console = console,
-        input = inputDriver,
         mcpSteroid = mcpSteroidDriver,
         aiAgents = aiAgentDriver,
         intellij = ijProcess,
-        windows = windowsDriver,
-        windowLayout = windowsLayout,
         openFileOnStart = selectedProject.openFileOnStart,
     )
 

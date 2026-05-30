@@ -53,15 +53,15 @@ enum class AiMode {
  */
 class IntelliJContainer(
     val lifetime: CloseableStack,
+    val gui: GuiContainer,
+
     val runDirInContainer: File,
     val scope: ContainerDriver,
 
     val intellijDriver: IntelliJDriver,
 
-    val input: XcvbInputDriver,
     private val intellij: RunningContainerProcess,
 
-    val console: ConsoleDriver,
     val mcpSteroid: McpSteroidDriver,
 
     /**
@@ -70,15 +70,17 @@ class IntelliJContainer(
      */
     val aiAgents: AiAgentDriver,
 
-    val windows: XcvbWindowDriver,
-    private val windowLayout: WindowLayoutManager,
-
     /**
      * Relative path (from project root) of the file to open when the IDE starts.
      * When null, the default README.md / first source file fallback is used.
      */
     private val openFileOnStart: String? = null,
 ) {
+    val input: XcvbInputDriver by gui::inputDriver
+    val console: ConsoleDriver by gui::console
+    val windows: XcvbWindowDriver by gui::windowsDriver
+    private val windowLayout: WindowLayoutManager by gui::windowsLayout
+
     val pid by intellij::pid
 
     fun execAndAssert(
