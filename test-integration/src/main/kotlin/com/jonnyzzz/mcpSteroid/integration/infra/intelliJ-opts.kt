@@ -50,13 +50,7 @@ data class IntelliJContainerOpts(
      * When provided, IDE archive download/build is skipped and this image is used directly.
      */
     val sourceImage: ImageDriver? = null,
-    /**
-     * When false, create only the GUI/container shell (Xvfb, fluxbox, video,
-     * screenshots, console, volumes) and let the test start its own IDE.
-     * Used by managed-backend tests where `devrig backend download` provides
-     * the IDE under the managed home instead of using `/opt/idea`.
-     */
-    val startIde: Boolean = true,
+
     /**
      * Reuse project sources from [sourceImage] instead of re-deploying project files/clone.
      * Use together with warm snapshot images that already contain project checkout + ide-system.

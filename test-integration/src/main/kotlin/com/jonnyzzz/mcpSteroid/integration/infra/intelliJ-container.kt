@@ -97,63 +97,6 @@ class IntelliJContainer(
             .assertExitCode(0) { "$description failed\nstdout=$stdout\nstderr=$stderr" }
     }
 
-    fun deployDevrigLauncher(packageZip: File = IdeTestFolders.devrigPackageZip): String {
-        require(packageZip.isFile) { "devrig distribution ZIP does not exist: ${packageZip.absolutePath}" }
-
-        val launcherPath = "/home/agent/devrig"
-        scope.copyToContainer(packageZip, "/tmp/devrig.zip")
-        execAndAssert(
-            description = "install devrig launcher",
-            timeoutSeconds = 120,
-            script = """
-                set -euo pipefail
-                rm -rf /home/agent/devrig-cli "$launcherPath"
-                mkdir -p /home/agent/devrig-cli
-                unzip -q /tmp/devrig.zip -d /home/agent/devrig-cli
-                app_dir="${'$'}(find /home/agent/devrig-cli -mindepth 1 -maxdepth 1 -type d -name 'devrig-*' | head -1)"
-                test -n "${'$'}app_dir"
-                mv "${'$'}app_dir" /home/agent/devrig-cli/app
-                chmod +x /home/agent/devrig-cli/app/bin/devrig
-                ln -sfn devrig /home/agent/devrig-cli/app/bin/devrig
-                ln -sfn /home/agent/devrig-cli/app/bin/devrig "$launcherPath"
-                "$launcherPath" --version
-            """.trimIndent(),
-        )
-        return launcherPath
-    }
-
-    fun waitForIntelliJBuiltInHttpServer(timeoutSeconds: Long = 180): ProcessResult {
-        val result = execAndAssert(
-            description = "wait for IntelliJ built-in HTTP server",
-            timeoutSeconds = timeoutSeconds + 15L,
-            script = """
-                set -euo pipefail
-                deadline=${'$'}((SECONDS + $timeoutSeconds))
-                found=0
-                while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
-                  for port in ${'$'}(seq 63342 63361); do
-                    body="${'$'}(curl -fsS --max-time 2 "http://127.0.0.1:${'$'}port/api/about" 2>/dev/null || true)"
-                    if [ -n "${'$'}body" ] && printf '%s\n' "${'$'}body" | jq -e '.productName == "IDEA" or ((.productName // "") | test("IntelliJ"))' >/dev/null 2>&1; then
-                      echo "port=${'$'}port"
-                      echo "${'$'}body"
-                      found=1
-                      break 2
-                    fi
-                  done
-                  sleep 2
-                done
-                if [ "${'$'}found" = "1" ]; then
-                  :
-                else
-                echo "IntelliJ IDEA did not answer /api/about on ports 63342..63361 within ${timeoutSeconds}s" >&2
-                exit 1
-                fi
-            """.trimIndent(),
-        )
-        console.writeSuccess("IntelliJ built-in HTTP server is reachable")
-        return result
-    }
-
     private fun latestScreenshotPath(): String? =
         File(runDirInContainer, "screenshot")
             .listFiles { file -> file.isFile && file.extension.equals("png", ignoreCase = true) }

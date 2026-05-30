@@ -21,16 +21,14 @@ import kotlin.io.path.exists
  * references the exact base image built in this JVM run, preventing collisions
  * when multiple test processes build the base image concurrently.
  */
-fun buildIdeImage(dockerFileBase: String, imageName: String, ideArchive: File?): ImageDriver {
+fun buildIdeImage(dockerFileBase: String, imageName: String, ideArchive: File): ImageDriver {
     val resolvedBaseImageId = buildSharedBaseImage()
     // Derive a per-build context dir from the full image name.
     // Since imageName already carries a unique suffix (e.g. "ide-agent-test-a1b2c3d4"),
     // this guarantees each concurrent build gets its own isolated directory.
     val contextDir = prepareContext("docker-$imageName", "ide-base", dockerFileBase)
 
-    if (ideArchive != null) {
-        linkIdeArchive(contextDir, ideArchive)
-    }
+    linkIdeArchive(contextDir, ideArchive)
 
     val imageId = buildDockerImage(
         logPrefix = "IDE",
@@ -38,6 +36,23 @@ fun buildIdeImage(dockerFileBase: String, imageName: String, ideArchive: File?):
         timeoutSeconds = 900,
         buildArgs = mapOf("BASE_IMAGE" to resolvedBaseImageId.imageId),
     )
+    return imageId
+}
+
+fun buildDevrigImage(dockerFileBase: String, imageName: String) : ImageDriver {
+    val resolvedBaseImageId = buildSharedBaseImage()
+    // Derive a per-build context dir from the full image name.
+    // Since imageName already carries a unique suffix (e.g. "ide-agent-test-a1b2c3d4"),
+    // this guarantees each concurrent build gets its own isolated directory.
+    val contextDir = prepareContext("docker-$imageName", "ide-base", dockerFileBase)
+
+    val imageId = buildDockerImage(
+        logPrefix = "devrig",
+        dockerfilePath = File(contextDir, "Dockerfile"),
+        timeoutSeconds = 900,
+        buildArgs = mapOf("BASE_IMAGE" to resolvedBaseImageId.imageId),
+    )
+
     return imageId
 }
 

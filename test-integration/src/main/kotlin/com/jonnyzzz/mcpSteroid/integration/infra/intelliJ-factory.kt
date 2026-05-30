@@ -6,7 +6,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
-import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import java.io.File
 import java.util.UUID
@@ -27,8 +26,8 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     val (runDir, realConsoleTitle) = allocRunDirAndTitle(lifetime, consoleTitle)
 
     val imageId = sourceImage ?: run {
-        val ideArchive = if (startIde) distribution.resolveAndDownload() else null
-        // Unique suffix ensures parallel test runs each build their own image and context dir,
+        val ideArchive = distribution.resolveAndDownload()
+        // Unique suffix ensures parallel test runs each builds their own image and context dir,
         // preventing races in buildIdeImage when multiple tests start concurrently.
         val uniqueSuffix = UUID.randomUUID().toString().take(8)
         val imageName = "$selectedDockerBase-test-$uniqueSuffix"
@@ -68,24 +67,6 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
                 DEVRIG_DEBUG_PORT,
             ),
     )
-
-    // Register the TC artifact post-process AFTER the container has been
-    // started (so its cleanup is also registered — container teardown runs
-    // BEFORE this callback in LIFO) but BEFORE the video driver is started
-    // (so the video-finalize cleanup is registered LATER and therefore
-    // runs AFTER this callback in LIFO). Resulting cleanup order:
-    //
-    //   1. (latest-registered callbacks — screenshot/rsync drivers, …)
-    //   2. video ffmpeg stop + copy-out to /mcp-run-dir/video/recording.mp4
-    //   3. <this post-process>  ← final mp4 is on the mount, container still alive
-    //   4. container stop + remove
-    //   5. publishRunDirArtifact(runDir)  ← sees <runDir>/publish/ tree
-    //
-    // The post-process is a no-op outside TeamCity; it gates on
-    // `TEAMCITY_VERSION` internally so local dev keeps the raw runDir.
-    lifetime.registerCleanupAction {
-        TeamCityArtifactPostProcess.buildPublishTree(container, containerMountedPath)
-    }
 
     setupHostMappings.applyToContainer(container, lifetime)
 
@@ -134,49 +115,9 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         // agent prints — except with the HOST-mapped port, not the in-container 5005. The IDE's
         // own "Listening for transport ..." line carries the container port and is invisible/
         // useless from the host, so the harness re-emits the standard line with the mapped port.
-        // Tooling (and humans) recognise this exact format and can attach a "Remote JVM Debug" to it.
+        // Tooling (and humans) recognize this exact format and can attach a "Remote JVM Debug" to it.
         println("Listening for transport dt_socket at address: $ideDebugPort")
         println("[IDE-DEBUG] attach IntelliJ 'Remote JVM Debug' to localhost:$ideDebugPort (suspend=n)")
-    }
-
-    if (!startIde) {
-        console.writeSuccess("GUI container ready; IDE startup is delegated to the test")
-
-        // IntelliJContainer historically carries the IDE process and MCP driver.
-        // Managed-backend tests only need the GUI shell + Docker exec helpers, so
-        // keep a harmless long-lived placeholder process to satisfy that contract
-        // without requiring `/opt/idea` to exist in the image.
-        val idleProcess = container.runInContainerDetached(listOf("sleep", "infinity"))
-        lifetime.registerCleanupAction {
-            idleProcess.kill()
-        }
-
-        val mcpSteroidDriver = McpSteroidDriver(container, ijDriver)
-        val aiAgentDriver = AiAgentDriver(
-            container = container,
-            intellijDriver = ijDriver,
-            console = console,
-            mcp = mcpSteroidDriver,
-            mcpConnection = McpConnectionMode.None,
-            logDir = runDir,
-        )
-
-        writeSessionInfo(mcpUrl = null)
-
-        val session = IntelliJContainer(
-            lifetime = lifetime,
-            gui = gui,
-            runDirInContainer = runDir,
-            scope = container,
-            intellijDriver = ijDriver,
-            mcpSteroid = mcpSteroidDriver,
-            aiAgents = aiAgentDriver,
-            intellij = idleProcess,
-            openFileOnStart = null,
-        )
-
-        println("[IDE-AGENT] GUI container ready without preinstalled IDE: $runDir")
-        return session
     }
 
     console.writeInfo("Deploying MCP Steroid plugin...")
@@ -218,7 +159,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     // which fires when project-open's `UnknownSdkStartupChecker` + Gradle auto-import
     // activities run. If `SdkLookup.findJdk(sdkName)` runs before our JDK registration
     // hits `ProjectJdkTable`, it proposes a download and blocks the EDT on a
-    // `MessageDialogBuilder$YesNo.ask` consent modal — making the test un-runnable.
+    // `MessageDialogBuilder$YesNo.ask` consent modal — making the test unrunnable.
     // Only runs for Java-capable IDEs: `mcpListJdks`/`mcpAddJdk` import
     // `com.intellij.openapi.projectRoots.JavaSdk`, which is only on the classpath
     // when the target IDE bundles `com.intellij.java` (see IdeProduct.hasJavaSdk).

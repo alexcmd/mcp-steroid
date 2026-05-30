@@ -1,42 +1,29 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.integration.tests
 
-import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
-import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
-import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
+import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
-import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
-import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
-import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
-import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Timeout
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
-class ManagedBackendGuiIntegrationTest {
+class DevrigManagedBackendGuiIntegrationTest {
     @Test
     @Timeout(value = 45, unit = TimeUnit.MINUTES)
     fun `devrig downloads starts and stops IDEA Community inside a GUI container`() = runWithCloseableStack { lifetime ->
-        val container = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
-            dockerFileBase = "managed-backend-host",
+        val container = DevrigContainer.create(lifetime, DevrigContainerOpts(
             consoleTitle = "managed-backend",
-            aiMode = AiMode.NONE,
-            startIde = false,
-            mountSshAgent = false,
-            repoCacheDir = null,
         ))
-        val devrig = container.deployDevrigLauncher()
+
         container.console.writeHeader("Managed-backend integration test")
 
         container.execAndAssert(
@@ -59,7 +46,7 @@ class ManagedBackendGuiIntegrationTest {
             script = """
                 set -euo pipefail
                 mkdir -p /tmp/mcp-home/downloads
-                DEVRIG_HOME=/tmp/mcp-home "$devrig" --debug backend download idea-community
+                DEVRIG_HOME=/tmp/mcp-home "${container.devrig}" --debug backend download idea-community
             """.trimIndent(),
         )
         assertTrue(download.stdout.contains("id: idea-community-"), download.stdout)
@@ -69,37 +56,37 @@ class ManagedBackendGuiIntegrationTest {
 
         val id = container.execAndAssert(
             description = "resolve managed backend id",
-            script = """
+            script = $$"""
                 set -euo pipefail
-                basename "${'$'}(find /tmp/mcp-home/backends -mindepth 1 -maxdepth 1 -type d -name 'idea-community-*' | sort | head -1)"
+                basename "$(find /tmp/mcp-home/backends -mindepth 1 -maxdepth 1 -type d -name 'idea-community-*' | sort | head -1)"
             """.trimIndent(),
         ).stdout.trim()
         assertTrue(Regex("""idea-community-\d+\.\d+.*""").matches(id), id)
 
         container.execAndAssert(
             description = "assert managed backend files",
-            script = """
+            script = $$"""
                 set -euo pipefail
-                backend_dir="/tmp/mcp-home/backends/$id"
-                bundle="${'$'}(find "${'$'}backend_dir" -mindepth 1 -maxdepth 1 -type d | head -1)"
-                test -n "${'$'}bundle"
-                test -f "${'$'}backend_dir/backend.json"
-                jq -e --arg id "$id" '.id == ${'$'}id and .productKey == "idea-community" and (.launcherPath | length > 0)' "${'$'}backend_dir/backend.json"
-                test -f "${'$'}bundle/product-info.json" -o -f "${'$'}bundle/Contents/Resources/product-info.json"
-                vmoptions="${'$'}backend_dir/${'$'}(basename "${'$'}bundle").vmoptions"
-                test -f "${'$'}vmoptions"
-                grep -F -- "-Didea.config.path=/tmp/mcp-home/caches/$id/config" "${'$'}vmoptions"
-                grep -F -- "-Didea.system.path=/tmp/mcp-home/caches/$id/system" "${'$'}vmoptions"
-                grep -F -- "-Didea.log.path=/tmp/mcp-home/caches/$id/logs" "${'$'}vmoptions"
-                grep -F -- "-Didea.plugins.path=/tmp/mcp-home/caches/$id/plugins" "${'$'}vmoptions"
-                grep -F -- "-Dmcp.steroid.updates.enabled=false" "${'$'}vmoptions"
-                grep -F -- "-Dmcp.steroid.analytics.enabled=false" "${'$'}vmoptions"
-                grep -F -- "-Dmcp.steroid.idea.description.enabled=false" "${'$'}vmoptions"
-                grep -F -- "-Dmcp.steroid.dialog.killer.enabled=true" "${'$'}vmoptions"
-                grep -F -- "-Dmcp.steroid.storage.path=/tmp/mcp-home/caches/$id/execution-storage" "${'$'}vmoptions"
-                grep -F -- "-Djb.consents.confirmation.enabled=false" "${'$'}vmoptions"
-                test -d "/tmp/mcp-home/caches/$id/plugins/mcp-steroid/lib"
-                test -f "/tmp/mcp-home/caches/$id/plugins/mcp-steroid/EULA"
+                backend_dir="/tmp/mcp-home/backends/$$id"
+                bundle="$(find "$backend_dir" -mindepth 1 -maxdepth 1 -type d | head -1)"
+                test -n "$bundle"
+                test -f "$backend_dir/backend.json"
+                jq -e --arg id "$$id" '.id == $id and .productKey == "idea-community" and (.launcherPath | length > 0)' "$backend_dir/backend.json"
+                test -f "$bundle/product-info.json" -o -f "$bundle/Contents/Resources/product-info.json"
+                vmoptions="$backend_dir/$(basename "$bundle").vmoptions"
+                test -f "$vmoptions"
+                grep -F -- "-Didea.config.path=/tmp/mcp-home/caches/$$id/config" "$vmoptions"
+                grep -F -- "-Didea.system.path=/tmp/mcp-home/caches/$$id/system" "$vmoptions"
+                grep -F -- "-Didea.log.path=/tmp/mcp-home/caches/$$id/logs" "$vmoptions"
+                grep -F -- "-Didea.plugins.path=/tmp/mcp-home/caches/$$id/plugins" "$vmoptions"
+                grep -F -- "-Dmcp.steroid.updates.enabled=false" "$vmoptions"
+                grep -F -- "-Dmcp.steroid.analytics.enabled=false" "$vmoptions"
+                grep -F -- "-Dmcp.steroid.idea.description.enabled=false" "$vmoptions"
+                grep -F -- "-Dmcp.steroid.dialog.killer.enabled=true" "$vmoptions"
+                grep -F -- "-Dmcp.steroid.storage.path=/tmp/mcp-home/caches/$$id/execution-storage" "$vmoptions"
+                grep -F -- "-Djb.consents.confirmation.enabled=false" "$vmoptions"
+                test -d "/tmp/mcp-home/caches/$$id/plugins/mcp-steroid/lib"
+                test -f "/tmp/mcp-home/caches/$$id/plugins/mcp-steroid/EULA"
             """.trimIndent(),
         )
 
@@ -108,7 +95,7 @@ class ManagedBackendGuiIntegrationTest {
             timeoutSeconds = 5 * 60L,
             script = """
                 set -euo pipefail
-                DEVRIG_HOME=/tmp/mcp-home "$devrig" backend start idea-community
+                DEVRIG_HOME=/tmp/mcp-home "${container.devrig}" backend start idea-community
             """.trimIndent(),
         )
         val pid = Regex("""pid: (\d+)""").find(start.stdout)?.groupValues?.get(1)
@@ -116,43 +103,43 @@ class ManagedBackendGuiIntegrationTest {
 
         container.execAndAssert(
             description = "assert managed backend pid and startup config",
-            script = """
+            script = $$"""
                 set -euo pipefail
-                test -f "/tmp/mcp-home/state/$id.pid"
-                test "${'$'}(cat "/tmp/mcp-home/state/$id.pid")" = "$pid"
-                kill -0 "$pid"
-                grep -F -- "experimental.ui.onboarding.proposed.version" "/tmp/mcp-home/caches/$id/config/options/other.xml"
-                grep -F -- "switched.from.classic.to.islands" "/tmp/mcp-home/caches/$id/config/early-access-registry.txt"
-                grep -F -- 'option name="wasShown" value="true"' "/tmp/mcp-home/caches/$id/config/options/AIOnboardingPromoWindowAdvisor.xml"
+                test -f "/tmp/mcp-home/state/$$id.pid"
+                test "$(cat "/tmp/mcp-home/state/$$id.pid")" = "$$pid"
+                kill -0 "$$pid"
+                grep -F -- "experimental.ui.onboarding.proposed.version" "/tmp/mcp-home/caches/$$id/config/options/other.xml"
+                grep -F -- "switched.from.classic.to.islands" "/tmp/mcp-home/caches/$$id/config/early-access-registry.txt"
+                grep -F -- 'option name="wasShown" value="true"' "/tmp/mcp-home/caches/$$id/config/options/AIOnboardingPromoWindowAdvisor.xml"
                 grep -F -- 'entry key="euacommunity_accepted_version" value="999.999"' "/home/agent/.java/.userPrefs/jetbrains/privacy_policy/prefs.xml"
                 grep -F -- 'entry key="euacommunity_accepted_version" value="999.999"' "/home/agent/.java/.userPrefs/jetbrains/_!(!!cg\"p!(}!}@\"j!(k!|w\"w!'8!b!\"p!':!e@==/prefs.xml"
                 grep -F -- 'rsch.send.usage.stat:1.1:0:' "/home/agent/.config/JetBrains/consentOptions/accepted"
             """.trimIndent(),
         )
 
-        container.waitForIntelliJBuiltInHttpServer(timeoutSeconds = 180)
+//        container.waitForIntelliJBuiltInHttpServer(timeoutSeconds = 180)
 
         container.console.writeStep(6, "Waiting for MCP Steroid pid marker (up to 180s)...")
         container.execAndAssert(
             description = "wait for MCP Steroid pid marker",
             timeoutSeconds = 180,
-            script = """
+            script = $$"""
                 set -euo pipefail
-                marker="/home/agent/.mcp-steroid/markers/$pid.mcp-steroid"
-                deadline=${'$'}((SECONDS + 180))
+                marker="/home/agent/.mcp-steroid/markers/$$pid.mcp-steroid"
+                deadline=$((SECONDS + 180))
                 found=0
-                while [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
-                  if [ -f "${'$'}marker" ] && jq -e --argjson pid "$pid" '.pid == ${'$'}pid and (.mcpSteroidServer.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "${'$'}marker" >/dev/null; then
-                    cat "${'$'}marker"
+                while [ "$SECONDS" -lt "$deadline" ]; do
+                  if [ -f "$marker" ] && jq -e --argjson pid "$$pid" '.pid == $pid and (.mcpSteroidServer.mcpUrl | startswith("http://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "$marker" >/dev/null; then
+                    cat "$marker"
                     found=1
                     break
                   fi
                   sleep 2
                 done
-                if [ "${'$'}found" = "1" ]; then
+                if [ "$found" = "1" ]; then
                   :
                 else
-                echo "MCP Steroid marker did not appear at ${'$'}marker" >&2
+                echo "MCP Steroid marker did not appear at $marker" >&2
                 find /home/agent/.mcp-steroid/markers -maxdepth 1 -name '*.mcp-steroid' -print -exec cat {} \; >&2 || true
                 exit 1
                 fi
@@ -163,39 +150,39 @@ class ManagedBackendGuiIntegrationTest {
         container.execAndAssertWithConsoleStream(
             description = "assert proxy discovers managed backend marker",
             timeoutSeconds = 120,
-            script = """
+            script = $$"""
                 set -euo pipefail
-                DEVRIG_HOME=/tmp/mcp-home "$devrig" backend --json > /tmp/backend.json
+                DEVRIG_HOME=/tmp/mcp-home "$${container.devrig}" backend --json > /tmp/backend.json
                 cat /tmp/backend.json
-                jq -e --argjson pid "$pid" '.backends[] | select(.source == "marker" and .pid == ${'$'}pid and .pluginInstalled == true and .managed == true)' /tmp/backend.json
+                jq -e --argjson pid "$$pid" '.backends[] | select(.source == "marker" and .pid == $pid and .pluginInstalled == true and .managed == true)' /tmp/backend.json
             """.trimIndent(),
         )
 
         container.execAndAssert(
             description = "assert managed backend cache paths",
-            script = """
+            script = $$"""
                 set -euo pipefail
-                test -d "/tmp/mcp-home/caches/$id/config"
-                test -d "/tmp/mcp-home/caches/$id/system"
-                test -d "/tmp/mcp-home/caches/$id/logs"
-                test -d "/tmp/mcp-home/caches/$id/plugins"
-                test "${'$'}(find "/tmp/mcp-home/caches/$id/logs" -type f | wc -l)" -gt 0
+                test -d "/tmp/mcp-home/caches/$$id/config"
+                test -d "/tmp/mcp-home/caches/$$id/system"
+                test -d "/tmp/mcp-home/caches/$$id/logs"
+                test -d "/tmp/mcp-home/caches/$$id/plugins"
+                test "$(find "/tmp/mcp-home/caches/$$id/logs" -type f | wc -l)" -gt 0
             """.trimIndent(),
         )
 
         container.execAndAssertWithConsoleStream(
             description = "stop IDEA Community managed backend",
             timeoutSeconds = 120,
-            script = """
+            script = $$"""
                 set -euo pipefail
-                DEVRIG_HOME=/tmp/mcp-home "$devrig" backend stop idea-community
-                test ! -f "/tmp/mcp-home/state/$id.pid"
-                deadline=${'$'}((SECONDS + 30))
-                while kill -0 $pid 2>/dev/null && [ "${'$'}SECONDS" -lt "${'$'}deadline" ]; do
+                DEVRIG_HOME=/tmp/mcp-home "$${container.devrig}" backend stop idea-community
+                test ! -f "/tmp/mcp-home/state/$$id.pid"
+                deadline=$((SECONDS + 30))
+                while kill -0 $$pid 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do
                   sleep 1
                 done
-                if kill -0 $pid 2>/dev/null; then
-                  ps -fp $pid >&2 || true
+                if kill -0 $$pid 2>/dev/null; then
+                  ps -fp $$pid >&2 || true
                   exit 1
                 fi
             """.trimIndent(),
@@ -204,7 +191,6 @@ class ManagedBackendGuiIntegrationTest {
     }
 }
 
-private const val MANAGED_BACKEND_HOME = "/tmp/mcp-home"
 private const val MANAGED_BACKEND_DOWNLOADS_DIR = "/tmp/mcp-home/downloads"
 private const val MANAGED_BACKEND_ARCHIVE_CACHE_ENV = "MCP_STEROID_TEST_ARCHIVE_CACHE"
 private val ideaCommunityArchiveName = Regex("""ideaIC-.*\.tar\.gz""")
@@ -240,7 +226,7 @@ private fun resolveManagedBackendArchiveCache(console: ConsoleDriver): File? {
 }
 
 private fun stageCachedManagedBackendArchives(
-    container: IntelliJContainer,
+    container: DevrigContainer,
     hostCacheDir: File,
 ) {
     val archives = try {
@@ -276,7 +262,7 @@ private fun stageCachedManagedBackendArchives(
 }
 
 private fun backPopulateManagedBackendArchiveCache(
-    container: IntelliJContainer,
+    container: DevrigContainer,
     hostCacheDir: File,
 ) {
     val archiveNames = container.execAndAssert(
@@ -303,7 +289,7 @@ private fun backPopulateManagedBackendArchiveCache(
 }
 
 private fun cacheManagedBackendArchive(
-    container: IntelliJContainer,
+    container: DevrigContainer,
     hostCacheDir: File,
     archiveName: String,
 ) {
@@ -359,77 +345,3 @@ private fun String.isManagedBackendArchiveFileName(): Boolean =
 
 private fun bashSingleQuote(value: String): String = "'" + value.replace("'", "'\"'\"'") + "'"
 
-/**
- * Runs a devrig script inside this container while live-streaming stdout/stderr
- * to the on-video xterm. The full transcript is still returned for assertions.
- */
-internal fun IntelliJContainer.execAndAssertWithConsoleStream(
-    description: String,
-    script: String,
-    timeoutSeconds: Long = 120,
-): ProcessResult {
-    console.writeHeader(description)
-
-    val wrappedScript = """
-        set -euo pipefail
-        (
-        ${script.trimIndent()}
-        ) 2>&1
-    """.trimIndent()
-
-    val streamedStdoutLines = AtomicInteger(0)
-    val streamedStderrLines = AtomicInteger(0)
-    val process = scope.startProcessInContainer {
-        args("bash", "-lc", wrappedScript)
-            .timeoutSeconds(timeoutSeconds)
-            .description(description)
-    }
-
-    val streamer = thread(
-        start = true,
-        isDaemon = true,
-        name = "devrig-console-stream-${System.nanoTime()}",
-    ) {
-        try {
-            runBlocking {
-                process.messagesFlow.collect { line ->
-                    when (line.type) {
-                        ProcessStreamType.STDOUT -> {
-                            streamedStdoutLines.incrementAndGet()
-                            console.writeLine("${ConsoleDriver.GREEN}[devrig]${ConsoleDriver.RESET} ${line.line}")
-                        }
-
-                        ProcessStreamType.STDERR -> {
-                            streamedStderrLines.incrementAndGet()
-                            console.writeLine("${ConsoleDriver.RED}[devrig]${ConsoleDriver.RESET} ${line.line}")
-                        }
-
-                        ProcessStreamType.INFO -> Unit
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            System.err.println("Failed to stream devrig output to the visible console: ${e.message}")
-            console.writeError("Failed to stream devrig output: ${e.message}")
-        }
-    }
-
-    val result = process.awaitForProcessFinish()
-    try {
-        streamer.join(3_000)
-    } catch (e: InterruptedException) {
-        Thread.currentThread().interrupt()
-        System.err.println("Interrupted while waiting for devrig console streamer: ${e.message}")
-    }
-
-    result.stdout.lineSequence()
-        .drop(streamedStdoutLines.get())
-        .filter { line -> line.isNotEmpty() }
-        .forEach { line -> console.writeLine("${ConsoleDriver.GREEN}[devrig]${ConsoleDriver.RESET} $line") }
-    result.stderr.lineSequence()
-        .drop(streamedStderrLines.get())
-        .filter { line -> line.isNotEmpty() }
-        .forEach { line -> console.writeLine("${ConsoleDriver.RED}[devrig]${ConsoleDriver.RESET} $line") }
-
-    return result.assertExitCode(0) { "$description failed\nstdout=$stdout\nstderr=$stderr" }
-}
