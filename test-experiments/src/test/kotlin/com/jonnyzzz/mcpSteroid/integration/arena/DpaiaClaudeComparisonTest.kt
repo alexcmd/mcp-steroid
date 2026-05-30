@@ -366,8 +366,7 @@ class DpaiaClaudeComparisonTest {
         @JvmStatic
         @BeforeAll
         fun beforeAll() {
-            val cacheDir = IdeTestFolders.repoCacheDirOrNull
-            if (cacheDir != null) BareRepoCache.warmDpaiaRepos(cacheDir)
+            BareRepoCache.warmDpaiaRepos(IdeTestFolders.repoCacheDir)
             sessionWithMcp.toString()
             sessionWithoutMcp.toString()
         }

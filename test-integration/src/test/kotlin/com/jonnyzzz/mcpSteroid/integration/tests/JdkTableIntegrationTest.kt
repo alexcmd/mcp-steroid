@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
+import com.jonnyzzz.mcpSteroid.integration.infra.mcpRegisterJdks
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
@@ -34,26 +35,25 @@ class JdkTableIntegrationTest {
     fun `JDK table has registered SDKs with valid paths`() = runWithCloseableStack { lifetime ->
         val session = IntelliJContainer.create(lifetime,IntelliJContainerOpts( consoleTitle = "jdk-table-test"))
         val console = session.console
-        val guestProjectDir = session.intellijDriver.getGuestProjectDir()
 
         // Step 1: Register JDKs via IntelliJ API
         console.writeStep(1, "Registering JDKs via mcpRegisterJdks")
-        session.mcpSteroid.mcpRegisterJdks(guestProjectDir)
+        session.mcpSteroid.mcpRegisterJdks()
         console.writeSuccess("JDK registration call completed")
 
         // Step 2: Verify JDKs are visible in ProjectJdkTable
         console.writeStep(2, "Verifying ProjectJdkTable has Java SDKs")
         session.mcpSteroid.mcpExecuteCode(
-            code = """
+            code = $$"""
                 import com.intellij.openapi.projectRoots.JavaSdk
                 import com.intellij.openapi.projectRoots.ProjectJdkTable
 
                 val javaSdks = ProjectJdkTable.getInstance().getSdksOfType(JavaSdk.getInstance())
-                println("JAVA_SDK_COUNT: ${'$'}{javaSdks.size}")
+                println("JAVA_SDK_COUNT: ${javaSdks.size}")
                 javaSdks.forEach { sdk ->
                     val home = sdk.homePath ?: "null"
                     val hasJava = java.io.File(home, "bin/java").exists()
-                    println("JDK: name=${'$'}{sdk.name} home=${'$'}home valid=${'$'}hasJava")
+                    println("JDK: name=${sdk.name} home=$home valid=$hasJava")
                 }
                 require(javaSdks.isNotEmpty()) { "No Java SDKs in ProjectJdkTable after mcpRegisterJdks" }
                 println("JDK_TABLE_OK")

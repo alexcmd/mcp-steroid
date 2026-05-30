@@ -77,9 +77,7 @@ class GitVcsAddFileDialogTest {
         console.writeStep(3, "Wait for the project to finish indexing")
         waitForProjectIndexed(session, gitProjectPath)
 
-        val gitProjectName = session.mcpSteroid.mcpListProjects()
-            .single { it.path == gitProjectPath }
-            .name
+        val gitProjectName = session.mcpSteroid.resolveProjectName()
 
         console.writeStep(4, "Confirm Git VCS detected and silencer flipped ADD confirmation to DO_NOTHING_SILENTLY")
         val vcsCheck = session.mcpSteroid.mcpExecuteCode(

@@ -25,7 +25,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     val (runDir, realConsoleTitle) = allocRunDirAndTitle(lifetime, consoleTitle)
 
-    val imageId = sourceImage ?: run {
+    val imageId = run {
         val ideArchive = distribution.resolveAndDownload()
         // Unique suffix ensures parallel test runs each builds their own image and context dir,
         // preventing races in buildIdeImage when multiple tests start concurrently.
@@ -34,17 +34,13 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         buildIdeImage(selectedDockerBase, imageName, ideArchive)
     }
 
-    if (sourceImage != null) {
-        println("[IDE-AGENT] Using prebuilt image: ${sourceImage.imageIdToLog}")
-    }
-
     val containerMountedPath = "/mcp-run-dir"
 
     val setupHostMappings = setupHostMappings(mountSshAgent = mountSshAgent, mountDockerSocket = mountDockerSocket)
 
     val volumes = buildList {
         add(ContainerVolume(runDir, containerMountedPath, "rw"))
-        if (repoCacheDir != null) add(ContainerVolume(repoCacheDir, "/repo-cache", "ro"))
+        add(ContainerVolume(IdeTestFolders.repoCacheDir, "/repo-cache", "ro"))
 
         addAll(setupHostMappings.volumes)
     }
@@ -81,7 +77,6 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         container,
         "$containerMountedPath/intellij",
         ideProduct,
-        skipChangedFilesScanOnStartup = reuseProjectFromImage,
         disableProjectTrustChecks = disableProjectTrustChecks,
         trustAllProjectPaths = trustAllProjectPaths,
     )
@@ -124,23 +119,12 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     ijDriver.deployPluginToContainer(IdeTestFolders.pluginZip)
 
 
-    if (!reuseProjectFromImage) {
-        // Warm project cache artifacts on host before deploying:
-        // bare repos, IntelliJ clone ZIPs, etc. mounted at /repo-cache.
-        if (repoCacheDir != null) {
-            println("[IDE-AGENT] Warming project cache artifacts in ${repoCacheDir.absolutePath} ...")
-            try {
-                selectedProject.warmRepoCache(repoCacheDir)
-            } catch (e: Exception) {
-                println("[IDE-AGENT] WARNING: Failed to warm project cache artifacts: ${e.message}")
-            }
-        }
+    // Warm project cache artifacts on host before deploying:
+    // bare repos, IntelliJ clone ZIPs, etc. mounted at /repo-cache.
+    selectedProject.warmRepoCache(IdeTestFolders.repoCacheDir)
 
-        val ijProjectDriver = IntelliJProjectDriver(lifetime, container, ijDriver, console)
-        ijProjectDriver.deployProject(selectedProject)
-    } else {
-        console.writeInfo("Reusing project checkout from source image; skipping project deployment")
-    }
+    val ijProjectDriver = IntelliJProjectDriver(lifetime, container, ijDriver, console)
+    ijProjectDriver.deployProject(selectedProject)
 
     console.writeInfo("Starting ${ideProduct.displayName}...")
     val ijProcess = ijDriver.startIde()
@@ -148,35 +132,10 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     require(ijProcess.isRunning()) { "${ideProduct.displayName} process finished" }
 
-    waitAndLayoutIntelliJWindow(ijProcess, container, gui.windowsDriver, realConsoleTitle, gui.windowsLayout)
-
     // Wait for MCP server readiness
     val mcpSteroidDriver = McpSteroidDriver(container, ijDriver)
     console.writeInfo("Waiting for MCP Steroid server...")
     mcpSteroidDriver.waitForMcpReady()
-
-    // Register JDKs as early as possible — racing against IntelliJ's async `SdkLookup`
-    // which fires when project-open's `UnknownSdkStartupChecker` + Gradle auto-import
-    // activities run. If `SdkLookup.findJdk(sdkName)` runs before our JDK registration
-    // hits `ProjectJdkTable`, it proposes a download and blocks the EDT on a
-    // `MessageDialogBuilder$YesNo.ask` consent modal — making the test unrunnable.
-    // Only runs for Java-capable IDEs: `mcpListJdks`/`mcpAddJdk` import
-    // `com.intellij.openapi.projectRoots.JavaSdk`, which is only on the classpath
-    // when the target IDE bundles `com.intellij.java` (see IdeProduct.hasJavaSdk).
-    if (ideProduct.hasJavaSdk) {
-        console.writeInfo("Registering JDKs early (racing project-open SdkLookup)...")
-        try {
-            waitFor(30_000L, "project appears in MCP list") {
-                mcpSteroidDriver.mcpListProjects().any { it.path == ijDriver.getGuestProjectDir() }
-            }
-            mcpSteroidDriver.mcpRegisterJdks(ijDriver.getGuestProjectDir())
-            console.writeSuccess("Early JDK registration complete")
-        } catch (e: Throwable) {
-            console.writeInfo("Early JDK registration failed: ${e.message} (will retry in waitForProjectReady)")
-        }
-    } else {
-        console.writeInfo("Skipping early JDK registration — ${ideProduct.displayName} has no Java plugin (IdeProduct.hasJavaSdk=false)")
-    }
 
     val resolvedMcpConnectionMode: McpConnectionMode = mcpConnectionMode ?: when (aiMode) {
         AiMode.NONE -> McpConnectionMode.None
@@ -210,6 +169,28 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         intellij = ijProcess,
         openFileOnStart = selectedProject.openFileOnStart,
     )
+
+    session.repositionIdeWindow()
+
+    // Register JDKs as early as possible — racing against IntelliJ's async `SdkLookup`
+    // which fires when project-open's `UnknownSdkStartupChecker` + Gradle auto-import
+    // activities run. If `SdkLookup.findJdk(sdkName)` runs before our JDK registration
+    // hits `ProjectJdkTable`, it proposes a download and blocks the EDT on a
+    // `MessageDialogBuilder$YesNo.ask` consent modal — making the test unrunnable.
+    // Only runs for Java-capable IDEs: `mcpListJdks`/`mcpAddJdk` import
+    // `com.intellij.openapi.projectRoots.JavaSdk`, which is only on the classpath
+    // when the target IDE bundles `com.intellij.java` (see IdeProduct.hasJavaSdk).
+    if (ideProduct.hasJavaSdk) {
+        console.writeInfo("Registering JDKs early (racing project-open SdkLookup)...")
+        try {
+            mcpSteroidDriver.mcpRegisterJdks()
+            console.writeSuccess("Early JDK registration complete")
+        } catch (e: Throwable) {
+            console.writeInfo("Early JDK registration failed: ${e.message} (will retry in waitForProjectReady)")
+        }
+    } else {
+        console.writeInfo("Skipping early JDK registration — ${ideProduct.displayName} has no Java plugin (IdeProduct.hasJavaSdk=false)")
+    }
 
     println("[IDE-AGENT] Session ready: $runDir")
     return session

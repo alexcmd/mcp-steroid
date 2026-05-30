@@ -1,8 +1,5 @@
 package com.jonnyzzz.mcpSteroid.integration.infra
 
-import com.jonnyzzz.mcpSteroid.testHelper.docker.ImageDriver
-import java.io.File
-
 data class IntelliJContainerOpts(
     val dockerFileBase: String = "ide-agent",
 
@@ -26,7 +23,6 @@ data class IntelliJContainerOpts(
      */
     val mcpConnectionMode: McpConnectionMode? = null,
 
-    val repoCacheDir: File? = IdeTestFolders.repoCacheDirOrNull,
     /**
      * When true, mounts the host Docker socket (`/var/run/docker.sock`) into the container
      * at the same path so Testcontainers-based tests can start sibling Docker containers.
@@ -45,25 +41,16 @@ data class IntelliJContainerOpts(
      * Required for git operations that use SSH remotes/private keys from inside the container.
      */
     val mountSshAgent: Boolean = true,
-    /**
-     * Optional prebuilt image to start from (for warm snapshot reuse).
-     * When provided, IDE archive download/build is skipped and this image is used directly.
-     */
-    val sourceImage: ImageDriver? = null,
 
-    /**
-     * Reuse project sources from [sourceImage] instead of re-deploying project files/clone.
-     * Use together with warm snapshot images that already contain project checkout + ide-system.
-     */
-    val reuseProjectFromImage: Boolean = false,
     /**
      * Default true keeps ordinary Docker tests immune to trust prompts. Tests that validate
      * project-trust behavior can set this false and rely on explicit trusted paths.
      */
     val disableProjectTrustChecks: Boolean = true,
+
     /**
      * Default true mirrors the historical test image setup that trusts every path. Tests that
-     * need an actually-untrusted secondary project can set this false.
+     * need an actually untrusted secondary project can set this false.
      */
     val trustAllProjectPaths: Boolean = true,
 )

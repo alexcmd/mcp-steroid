@@ -32,6 +32,7 @@ sealed class IntelliJProject{
      * - otherwise: no-op
      */
     open fun warmRepoCache(cacheDir: File) {
+        println("[IDE-AGENT] Warming project cache artifacts in ${cacheDir.absolutePath} ...")
         val repoUrl = getRepoUrlForCache() ?: return
         BareRepoCache.ensureRepo(repoUrl, cacheDir)
     }

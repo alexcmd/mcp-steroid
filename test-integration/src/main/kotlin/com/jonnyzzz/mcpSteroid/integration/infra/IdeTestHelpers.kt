@@ -100,8 +100,10 @@ object IdeTestFolders {
      * When non-null, it is mounted read-only at `/repo-cache` inside containers so
      * [com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver.cloneFromCachedBare] can be used.
      */
-    val repoCacheDirOrNull: File? = System.getProperty("test.integration.repo.cache.dir")
+    val repoCacheDir: File = System.getProperty("test.integration.repo.cache.dir")
         ?.let { File(it).also { dir -> dir.mkdirs() } }
+        ?: error("Failed to configure repo cache directory, set \"test.integration.repo.cache.dir\" ")
+
     val testOutputDir = remapPathForDockerHost(
         readFilePathFromSystemProperties("test.integration.testOutput"),
         System.getenv(DOCKER_HOST_PATH_MAP_ENV),
