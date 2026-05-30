@@ -178,7 +178,7 @@ class DialogKillerIntegrationTest {
                 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 
                 val executionId = ExecutionId("screenshot-tool-test")
-                val artifacts = VisionService.capture(project, executionId)
+                val artifacts = VisionService.getInstance(project).capture(executionId)
                 println("Screenshot captured: ${artifacts.imagePath}")
                 println("Image size: ${artifacts.meta.imageSize.width}x${artifacts.meta.imageSize.height}")
                 println("Component tree: ${artifacts.treePath}")
@@ -195,5 +195,83 @@ class DialogKillerIntegrationTest {
         result.assertOutputContains("Screenshot bytes:", message = "Screenshot must have non-empty bytes")
 
         console.writeSuccess("Screenshot tool works")
+    }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `kills 4 nested modal dialogs deepest-first`() {
+        console.writeStep(1, "Opening 4 nested modal dialogs")
+        // Open four stacked modal dialogs: the first is scheduled non-modal; each subsequent
+        // one is scheduled ModalityState.any() so it runs DURING the previous modal and nests
+        // on top of it -> four modal levels. doNotCancelOnModalityStateChange() keeps them open
+        // after this execution returns so the killer (next step) has all four to close.
+        session.mcpSteroid.mcpExecuteCode(
+            code = $$"""
+                doNotCancelOnModalityStateChange()
+                val app = com.intellij.openapi.application.ApplicationManager.getApplication()
+                withContext(kotlinx.coroutines.Dispatchers.EDT) {
+                    for (d in 1..4) {
+                        val modality = if (d == 1)
+                            com.intellij.openapi.application.ModalityState.nonModal()
+                        else
+                            com.intellij.openapi.application.ModalityState.any()
+                        app.invokeLater({
+                            val dialog = object : com.intellij.openapi.ui.DialogWrapper(project) {
+                                init { title = "Nested Dialog $d"; setModal(true); init() }
+                                override fun createCenterPanel(): javax.swing.JComponent {
+                                    val panel = javax.swing.JPanel()
+                                    panel.add(javax.swing.JLabel("Nested dialog $d"))
+                                    return panel
+                                }
+                            }
+                            dialog.show()
+                        }, modality)
+                    }
+                }
+                kotlinx.coroutines.delay(4000)
+                println("4 nested dialogs opened")
+            """.trimIndent(),
+            taskId = "open-nested-dialogs",
+            reason = "Open 4 nested modal dialogs",
+        ).assertExitCode(0)
+
+        val idePid = session.pid
+        val nestedTitles = (1..4).map { "Nested Dialog $it" }
+        val visibleNested = {
+            val windows = session.windows.listWindows()
+            nestedTitles.filter { t -> windows.any { it.title == t && it.pid == idePid } }
+        }
+
+        console.writeStep(2, "Verifying 4 nested dialogs are visible")
+        Assertions.assertEquals(
+            nestedTitles.toSet(), visibleNested().toSet(),
+            "All 4 nested modal dialogs should be visible before the killer runs",
+        )
+        console.writeSuccess("4 nested dialogs visible")
+
+        console.writeStep(3, "Running dialog killer (closes deepest-first, one-by-one)")
+        session.mcpSteroid.mcpExecuteCode(
+            code = """
+                import com.jonnyzzz.mcpSteroid.execution.dialogKiller
+                import com.jonnyzzz.mcpSteroid.storage.ExecutionId
+
+                dialogKiller().killProjectDialogs(
+                    project = project,
+                    executionId = ExecutionId("kill-nested-dialogs"),
+                    logMessage = { println(it) },
+                    forceEnabled = true,
+                )
+                println("Nested dialog killer completed")
+            """.trimIndent(),
+            taskId = "kill-nested-dialogs",
+            reason = "Kill 4 nested modal dialogs",
+        ).assertExitCode(0)
+
+        console.writeStep(4, "Verifying all 4 nested dialogs are gone")
+        Assertions.assertTrue(
+            visibleNested().isEmpty(),
+            "All nested modal dialogs should have been closed by the dialog killer; still visible: ${visibleNested()}",
+        )
+        console.writeSuccess("All 4 nested dialogs closed")
     }
 }

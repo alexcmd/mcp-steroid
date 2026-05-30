@@ -156,7 +156,7 @@ class McpScriptContextImpl(
             resultBuilder.logMessage("NOTE: takeIdeScreenshot ignores custom fileName and uses screenshot.png.")
         }
         return try {
-            val artifacts = VisionService.capture(project, executionId)
+            val artifacts = VisionService.getInstance(project).capture(executionId)
             resultBuilder.logImage("image/png", Base64.getEncoder().encodeToString(artifacts.imageBytes), artifacts.meta.imageFile)
             resultBuilder.logMessage("window_id: ${artifacts.meta.windowId}")
             resultBuilder.logMessage("Screenshot saved to ${artifacts.imagePath}")
