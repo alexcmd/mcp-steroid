@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.execution
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.service
 import com.intellij.testFramework.common.timeoutRunBlocking
@@ -10,7 +11,6 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
-import com.jonnyzzz.mcpSteroid.setSystemPropertyForTest
 import com.jonnyzzz.mcpSteroid.testExecParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,17 +79,14 @@ class DialogKillerTest : BasePlatformTestCase() {
         // Force the coroutine into the "slow" branch by pre-elevating modality
         // context. If `canPumpEdtNonModal` still short-circuits to false under
         // this modality, the slow branch will run and must NOT see a dialog.
-        withContext(
-            Dispatchers.EDT +
-                    com.intellij.openapi.application.ModalityState.any().asContextElement()
-        ) {
+        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
             // No dialog is actually opened. Any `isModal=true` here would be a false
             // positive driven by modality state, not by the dialog enumeration.
         }
         lookup.withModalityCheck { isModal ->
             assertFalse(
                 "withModalityCheck must return false when no DialogWrapperDialog is showing, " +
-                        "regardless of ModalityState.current()",
+                    "regardless of ModalityState.current()",
                 isModal
             )
         }
