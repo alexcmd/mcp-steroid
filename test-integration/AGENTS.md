@@ -125,6 +125,36 @@ dump out of `/tmp` into the failing test's `run-*/intellij/` folder if you plan 
 on the fix — keeping the dump alongside the run-dir artifacts (video, screenshots, logs)
 makes later comparisons trivial.
 
+## Remote-debugging the Dockerized IDE (attach a JVM debugger live)
+
+Thread/coroutine dumps tell you *where* the IDE JVM is parked; for *why* (variable values,
+stepping, conditional breakpoints in the plugin) attach a real debugger to the in-container
+IDE. **The IDE JVM always starts with the JDWP agent open** — no flag needed:
+
+- `intelliJ.kt`'s `generateVmOptions()` always appends
+  `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${IDE_DEBUG_PORT.containerPort}`.
+  `suspend=n` ⇒ the IDE never waits for a debugger, so normal/CI runs are unaffected.
+- `IDE_DEBUG_PORT` (`ContainerPort(5005)`, defined in `intelliJ.kt`) is exposed on the
+  container (`StartContainerRequest.ports(...)` in `intelliJ-factory.kt`) and Docker maps it
+  to a random host port.
+- The mapped host port is printed to the test console as
+  `[IDE-DEBUG] … attach IntelliJ 'Remote JVM Debug' to localhost:<port>` and saved to the
+  run dir's `session-info.txt` as `IDE_DEBUG_PORT=<host-port>`.
+
+### Attach from IntelliJ
+
+1. Start any test-integration test (or a `*PlaygroundTest*` for an indefinitely-held IDE).
+2. Grab the port: `grep IDE_DEBUG_PORT $(ls -t test-integration/build/test-logs/test/run-*/session-info.txt | head -1)`
+   (or read the `[IDE-DEBUG]` console line).
+3. In *this* IntelliJ (the mcp-steroid project), **Run → Edit Configurations → + → Remote JVM
+   Debug**, host `localhost`, port `<host-port>`, classpath of module `ij-plugin`. Debug.
+4. Set breakpoints in plugin sources (e.g. `DialogKiller.kt`, `DialogWindowsLookup.kt`,
+   `ScriptExecutor.kt`) and drive the IDE via MCP / the test to hit them. Because the agent
+   is `suspend=n`, attach/detach any time while the container is alive.
+
+This is the live-debug counterpart to the dump-first recipe above; reach for the debugger when
+a one-shot dump isn't enough (intermittent hangs, modality/EDT timing, value inspection).
+
 ## RLM Analysis of Arena Runs (run-*/intellij/mcp-steroid/)
 
 Each arena run creates server-side exec_code logs at `run-*/intellij/mcp-steroid/eid_*`. Structure:

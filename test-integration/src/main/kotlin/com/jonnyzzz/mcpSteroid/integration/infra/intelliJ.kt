@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.ideDownloader.ideUserStartupConfigFiles
 import com.jonnyzzz.mcpSteroid.integration.infra.McpSteroidDriver.Companion.MCP_STEROID_PORT
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
+import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ExecContainerProcessRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.RunningContainerProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
@@ -17,6 +18,16 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.io.File
 import kotlin.concurrent.thread
+
+/**
+ * JDWP debug port the in-container IDE JVM always listens on (`server=y,suspend=n`),
+ * exposed through Docker and printed to the test output + `session-info.txt` as
+ * `IDE_DEBUG_PORT=<host-port>`. Attach IntelliJ's "Remote JVM Debug" run config to
+ * `localhost:<host-port>` to debug the IDE (and the MCP Steroid plugin) live while a
+ * test runs. `suspend=n` means the IDE never waits for a debugger, so normal runs are
+ * unaffected. See test-integration/CLAUDE.md → "Remote-debugging the Dockerized IDE".
+ */
+val IDE_DEBUG_PORT = ContainerPort(5005)
 
 class IntelliJDriver(
     private val lifetime: CloseableStack,
@@ -169,6 +180,14 @@ class IntelliJDriver(
         val opts = buildString {
             appendLine("-Xmx$vmXmx")
             appendLine("-Xms$vmXms")
+
+            // JDWP debug agent — always on, never suspends (server=y,suspend=n). Lets a
+            // developer attach IntelliJ's "Remote JVM Debug" to localhost:<mapped IDE_DEBUG_PORT>
+            // (printed to the test output + session-info.txt) to debug the IDE + MCP Steroid
+            // plugin live while a Docker test runs. address=*: so it binds all interfaces inside
+            // the container (Docker maps it to the host). See test-integration/CLAUDE.md.
+            appendLine("# Remote JVM debug (attach to mapped IDE_DEBUG_PORT; suspend=n so the IDE never waits)")
+            appendLine("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${IDE_DEBUG_PORT.containerPort}")
 
             appendLine("# Redirect IDE directories to explicit paths")
             appendLine("-Didea.config.path=$configGuestDir")
