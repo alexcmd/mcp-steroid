@@ -56,7 +56,7 @@ fun buildDevrigImage(dockerFileBase: String, imageName: String) : ImageDriver {
     return imageId
 }
 
-private fun buildSharedBaseImage(): ImageDriver {
+fun buildSharedBaseImage(): ImageDriver {
     val baseContext = prepareContext("docker-ide-base", "ide-base")
 
     val rawImageId = buildDockerImage(

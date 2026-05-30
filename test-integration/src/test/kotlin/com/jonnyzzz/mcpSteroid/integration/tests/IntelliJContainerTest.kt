@@ -1,13 +1,20 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.integration.tests
 
+import com.jonnyzzz.mcpSteroid.integration.infra.IdeDistribution
+import com.jonnyzzz.mcpSteroid.integration.infra.IdeProduct
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
+import com.jonnyzzz.mcpSteroid.integration.infra.buildIdeImage
+import com.jonnyzzz.mcpSteroid.integration.infra.buildSharedBaseImage
 import com.jonnyzzz.mcpSteroid.integration.infra.create
+import com.jonnyzzz.mcpSteroid.integration.infra.resolveAndDownload
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
+import java.util.UUID
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.util.concurrent.TimeUnit
+import kotlin.time.measureTime
 
 /**
  * Integration test for IdeContainerSession infrastructure.
@@ -16,6 +23,37 @@ import java.util.concurrent.TimeUnit
  * all directories are properly mounted, and the IDE starts successfully.
  */
 class IntelliJContainerTest {
+    @Test
+    fun `base container build is incremental`() {
+        val buildImageTime = List(6) {
+            measureTime {
+                buildSharedBaseImage()
+            }
+        }.drop(1)
+
+        println(buildImageTime)
+    }
+
+    @Test
+    fun `container images are incremental`() {
+        val ide = IdeProduct.IntelliJIdea
+        val distribution = IdeDistribution.fromSystemProperties()
+        val ideArchive = distribution.resolveAndDownload()
+
+        // Unique suffix ensures parallel test runs each builds their own image and context dir,
+        // preventing races in buildIdeImage when multiple tests start concurrently.
+        val uniqueSuffix = UUID.randomUUID().toString().take(8)
+        val imageName = "ide-agent-test-$uniqueSuffix"
+
+        val buildImageTime = List(7) {
+            measureTime {
+                buildIdeImage("ide-agent", imageName, ideArchive)
+            }
+        }.drop(1)
+        println(buildImageTime)
+
+    }
+
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `container starts and IDE becomes ready`() = runWithCloseableStack { lifetime ->
