@@ -109,10 +109,12 @@ class DialogKiller {
         // Yield to allow other coroutines to run
         yield()
 
+        log.info("DialogKiller: capturing screenshot before closing (execution: $executionId, iteration: $iteration)")
         try {
             withTimeout(5_000) {
                 VisionService.capture(project, executionId).logMessages().forEach { logMessage(it) }
             }
+            log.info("DialogKiller: screenshot captured (execution: $executionId)")
         } catch (e: TimeoutCancellationException) {
             log.warn("Screenshot capture timed out, proceeding to close dialog: ${e.message}")
         } catch (e: CancellationException) {
@@ -122,7 +124,9 @@ class DialogKiller {
         }
 
         // Close the dialog on EDT with ModalityState.any()
+        log.info("DialogKiller: about to close dialog (execution: $executionId, iteration: $iteration)")
         closeDialog(dialogToClose, 1, 1, executionId)
+        log.info("DialogKiller: closeDialog returned (execution: $executionId, iteration: $iteration)")
 
         yield()
         doLookupDialogs(executionId, project, logMessage, iteration + 1)

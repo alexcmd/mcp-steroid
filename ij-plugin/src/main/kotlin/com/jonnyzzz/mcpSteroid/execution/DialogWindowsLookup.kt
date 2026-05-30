@@ -5,8 +5,10 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.application.impl.LaterInvocator
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.DialogWrapperDialog
@@ -31,6 +33,8 @@ fun dialogWindowsLookup(): DialogWindowsLookup = service()
  */
 @Service(Service.Level.APP)
 class DialogWindowsLookup {
+    private val log = Logger.getInstance(DialogWindowsLookup::class.java)
+
     /**
      * Fast negative path: ask the platform whether the current modality
      * differs from `ModalityState.nonModal()`. If it does not, no modal is
@@ -58,7 +62,19 @@ class DialogWindowsLookup {
         return withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
             val current = ModalityState.current()
             val nonModal = ModalityState.nonModal()
-            current != nonModal
+            val byComparison = current != nonModal
+            // Diagnostic: the platform-blessed check is LaterInvocator.isInModalContext()
+            // (reads ourModalEntities). Log BOTH so the IDE log shows whether the
+            // `current() != nonModal()` comparison agrees with the platform on the EDT —
+            // directly answers "does the != check detect the modal" when debugging the
+            // dialog-killer hang. Decision still uses the comparison (no behaviour change).
+            val byPlatform = LaterInvocator.isInModalContext()
+            if (byComparison != byPlatform) {
+                log.warn("isModalDialogShown DISAGREEMENT: current!=nonModal=$byComparison but isInModalContext=$byPlatform (current=$current)")
+            } else {
+                log.info("isModalDialogShown: current!=nonModal=$byComparison, isInModalContext=$byPlatform (current=$current)")
+            }
+            byComparison
         }
     }
 
