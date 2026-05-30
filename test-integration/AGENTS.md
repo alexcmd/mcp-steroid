@@ -133,13 +133,19 @@ IDE. **The IDE JVM always starts with the JDWP agent open** — no flag needed:
 
 - `intelliJ.kt`'s `generateVmOptions()` always appends
   `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${IDE_DEBUG_PORT.containerPort}`.
-  `suspend=n` ⇒ the IDE never waits for a debugger, so normal/CI runs are unaffected.
+- **`suspend=n` is mandatory for `:test-integration` AND `:test-experiments`** (they share this
+  infra). It means the IDE never waits for a debugger, so normal/CI runs are unaffected. **NEVER
+  flip it to `suspend=y`** to debug a startup hang — on CI nobody attaches, so the JVM would block
+  and the whole test would hang until its timeout. Set breakpoints and attach live instead; the
+  agent stays open the whole run.
 - `IDE_DEBUG_PORT` (`ContainerPort(5005)`, defined in `intelliJ.kt`) is exposed on the
   container (`StartContainerRequest.ports(...)` in `intelliJ-factory.kt`) and Docker maps it
   to a random host port.
-- The mapped host port is printed to the test console as
-  `[IDE-DEBUG] … attach IntelliJ 'Remote JVM Debug' to localhost:<port>` and saved to the
-  run dir's `session-info.txt` as `IDE_DEBUG_PORT=<host-port>`.
+- The mapped **host** port is printed to the test console — in the JVM's own JDWP wording so it is
+  instantly recognisable, but with the host-mapped port (the in-container port is invisible from
+  the host) — `Listening for transport dt_socket at address: <host-port>`, plus
+  `[IDE-DEBUG] attach … to localhost:<host-port>` and `IDE_DEBUG_PORT=<host-port>` in
+  `session-info.txt`.
 
 ### Attach from IntelliJ
 

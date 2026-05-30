@@ -13,71 +13,7 @@ import java.io.File
 import java.util.UUID
 
 //TODO: refactor parameters to a builder object, so we can update easily in the future, add "registerMcpSteroidToAgents" to the builder
-fun IntelliJContainer.Companion.create(
-    lifetime: CloseableStack,
-    dockerFileBase: String = "ide-agent",
-    consoleTitle: String,
-    project : IntelliJProject = IntelliJProject.TestProject,
-    layoutManager : LayoutManager = HorizontalLayoutManager(),
-    distribution: IdeDistribution = IdeDistribution.fromSystemProperties(),
-    aiMode: AiMode = AiMode.AI_MCP,
-    /**
-     * Explicit MCP connection mode for AI agents.
-     *
-     * When provided, takes precedence over [aiMode] for MCP connectivity.
-     * Use [McpConnectionMode.None] to create a container where agents have NO MCP registered
-     * (baseline / control group) while still producing real-time console output and log files.
-     *
-     * When null (default), the mode is derived from [aiMode].
-     */
-    mcpConnectionMode: McpConnectionMode? = null,
-    repoCacheDir: File? = IdeTestFolders.repoCacheDirOrNull,
-    /**
-     * When true, mounts the host Docker socket (`/var/run/docker.sock`) into the container
-     * at the same path so Testcontainers-based tests can start sibling Docker containers.
-     *
-     * Requirements:
-     * - The host Docker socket must exist at `/var/run/docker.sock`
-     * - The `ide-base` Docker image must have `docker-ce-cli` installed (already done) and
-     *   the `agent` user must be in the `docker` group (already done in the Dockerfile)
-     *
-     * Default: `false` (Docker socket not mounted — arena tests that use Testcontainers
-     * will fail with "Could not find a valid Docker environment" unless this is enabled).
-     */
-    mountDockerSocket: Boolean = false,
-    /**
-     * When true, forwards the host SSH agent socket into the container and sets SSH_AUTH_SOCK.
-     * Required for git operations that use SSH remotes/private keys from inside the container.
-     */
-    mountSshAgent: Boolean = true,
-    /**
-     * Optional prebuilt image to start from (for warm snapshot reuse).
-     * When provided, IDE archive download/build is skipped and this image is used directly.
-     */
-    sourceImage: ImageDriver? = null,
-    /**
-     * When false, create only the GUI/container shell (Xvfb, fluxbox, video,
-     * screenshots, console, volumes) and let the test start its own IDE.
-     * Used by managed-backend tests where `devrig backend download` provides
-     * the IDE under the managed home instead of using `/opt/idea`.
-     */
-    startIde: Boolean = true,
-    /**
-     * Reuse project sources from [sourceImage] instead of re-deploying project files/clone.
-     * Use together with warm snapshot images that already contain project checkout + ide-system.
-     */
-    reuseProjectFromImage: Boolean = false,
-    /**
-     * Default true keeps ordinary Docker tests immune to trust prompts. Tests that validate
-     * project-trust behavior can set this false and rely on explicit trusted paths.
-     */
-    disableProjectTrustChecks: Boolean = true,
-    /**
-     * Default true mirrors the historical test image setup that trusts every path. Tests that
-     * need an actually-untrusted secondary project can set this false.
-     */
-    trustAllProjectPaths: Boolean = true,
-): IntelliJContainer {
+fun IntelliJContainer.Companion.create(opts: IntelliJContainerOpts): IntelliJContainer = opts.run {
     val ideProduct = distribution.product
     val selectedDockerBase = if (dockerFileBase == "ide-agent") ideProduct.dockerImageBase else dockerFileBase
     val selectedProject = when {
@@ -387,6 +323,7 @@ fun IntelliJContainer.Companion.createFromSnapshot(
     mountDockerSocket: Boolean = false,
     mountSshAgent: Boolean = true,
 ): IntelliJContainer = create(
+    IntelliJContainerOpts(
     lifetime = lifetime,
     dockerFileBase = "ide-agent",
     consoleTitle = consoleTitle,
@@ -400,4 +337,4 @@ fun IntelliJContainer.Companion.createFromSnapshot(
     mountSshAgent = mountSshAgent,
     sourceImage = snapshotImage,
     reuseProjectFromImage = true,
-)
+))

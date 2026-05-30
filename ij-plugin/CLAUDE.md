@@ -271,6 +271,16 @@ jcmd <PID> Thread.print -l > /tmp/dump-with-locks.txt
 Look for: `BLOCKED` threads (deadlock), `DefaultDispatcher-worker-*` waiting (stuck coroutines),
 `AWT-EventQueue-0` deep-blocked (EDT violation), the currently executing test method.
 
+**When a dump isn't enough, attach a live debugger.** Docker integration tests always start the
+IDE JVM with a JDWP agent open (`server=y,suspend=n`, `IDE_DEBUG_PORT`=5005), and the in-container
+devrig JVM too (`DEVRIG_DEBUG_PORT`=5006) — both Docker-mapped to host ports printed on the host as
+`Listening for transport dt_socket at address: <host-port>` (+ `session-info.txt`). Attach
+IntelliJ's "Remote JVM Debug" (module `ij-plugin`) to step through plugin code (`DialogKiller`,
+`DialogWindowsLookup`, `ScriptExecutor`) live. Recipe to attach programmatically:
+`mcp-steroid://debugger/debug-attach-remote-jvm`; full workflow in `test-integration/AGENTS.md`
+→ "Remote-debugging the Dockerized IDE". The modal-dialog/EDT hang under investigation is written
+up in `docs/dialog-killer-modality-hang.md`.
+
 ### Cleaning build artifacts
 
 ```bash
