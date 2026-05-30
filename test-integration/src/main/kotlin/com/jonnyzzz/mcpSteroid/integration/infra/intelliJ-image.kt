@@ -95,6 +95,6 @@ private fun linkIdeArchive(contextDir: File, ideArchive: File) {
         createLink(ideDest, ideArchive.toPath())
     } catch (_: Exception) {
         println("[IDE-AGENT] Hard link failed, copying IDE archive...")
-        ideArchive.copyTo(File(contextDir, "ide.tar.gz"), overwrite = true)
+        copyRecursively(ideArchive, ideDest.toFile())
     }
 }
