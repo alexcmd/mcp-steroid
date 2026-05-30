@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.integration.infra.McpSteroidDriver.Companion.MCP_
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerPort
-import com.jonnyzzz.mcpSteroid.testHelper.docker.ExecContainerProcessRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.RunningContainerProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPathToHostPath
@@ -136,45 +135,32 @@ class IntelliJDriver(
         )
 
         val logFile = ideaLogsFile()
-        val logsReady = try {
-            waitFor(60_000L, "for ${ideProduct.displayName} log file") {
-                !idea.isRunning() || (logFile.exists() && logFile.length() > 0L)
-            }
-            logFile.exists() && logFile.length() > 0L
-        } catch (e: Exception) {
-            driver.log("Timed out waiting for ${ideProduct.displayName} log file: ${e.message}")
-            false
-        }
+        //make sure the log file is here
+        runCatching { logFile.parentFile.mkdirs() }
+        runCatching { logFile.appendText("\n\nStarted MCP Steroid Integration test\n\n") }
 
         if (!idea.isRunning()) {
             idea.printProcessInfo()
             throw RuntimeException("${ideProduct.displayName} exited unexpectedly with code ${idea.exitCode}. See logs above for details.")
         }
 
-        if (!logsReady) {
-            println(
-                "[IDE-AGENT] ${ideProduct.displayName} log file is not available yet at ${logFile.absolutePath}. " +
-                        "Continuing startup and relying on window/MCP readiness checks."
-            )
-        } else {
-            val ijLogsStream = thread(isDaemon = true, name = "ijLogsStream") {
-                runCatching {
-                    logFile.bufferedReader().use { reader ->
-                        while (true) {
-                            val line = reader.readLine()
-                            if (line == null) {
-                                Thread.sleep(100)
-                                continue
-                            }
-                            println("[IntelliJ LOG] $line")
+        val ijLogsStream = thread(isDaemon = true, name = "ijLogsStream") {
+            runCatching {
+                logFile.bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine()
+                        if (line == null) {
+                            Thread.sleep(100)
+                            continue
                         }
+                        println("[IntelliJ LOG] $line")
                     }
                 }
             }
+        }
 
-            lifetime.registerCleanupAction {
-                ijLogsStream.interrupt()
-            }
+        lifetime.registerCleanupAction {
+            ijLogsStream.interrupt()
         }
 
         return idea
