@@ -26,9 +26,8 @@ class DockerCheckTest {
         val lifetime by lazy { CloseableStackHost(DockerCheckTest::class.java.simpleName) }
         val session by lazy {
             IntelliJContainer.create(
+                lifetime,
                 IntelliJContainerOpts(
-                    lifetime,
-                    "ide-agent",
                     consoleTitle = "Docker Check",
                     mountDockerSocket = true,
                 )).waitForProjectReady()

@@ -95,8 +95,7 @@ class DpaiaComparisonTest {
             val aiMode = if (withMcp) AiMode.AI_MCP else AiMode.NONE
             val mcpMode = if (withMcp) null else McpConnectionMode.None
 
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "comparison-${testCase.instanceId}-$agentName-$modeLabel",
                 aiMode = aiMode,
                 mcpConnectionMode = mcpMode,

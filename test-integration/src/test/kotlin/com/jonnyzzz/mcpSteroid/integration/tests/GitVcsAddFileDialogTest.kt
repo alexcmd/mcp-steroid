@@ -39,9 +39,7 @@ class GitVcsAddFileDialogTest {
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `creating new file via execute_code in git-tracked project does not show VCS add modal dialog`() = runWithCloseableStack { lifetime ->
 
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
-            "ide-agent",
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "Git VCS Add Dialog",
         ))
         val console = session.console

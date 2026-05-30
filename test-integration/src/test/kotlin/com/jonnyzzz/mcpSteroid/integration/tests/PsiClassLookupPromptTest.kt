@@ -31,8 +31,7 @@ class PsiClassLookupPromptTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `claude uses JavaPsiFacade or KotlinClassShortNameIndex to find class and list methods`() {
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "PSI class lookup prompt test — Claude",
         )).waitForProjectReady()
 

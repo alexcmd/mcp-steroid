@@ -18,9 +18,7 @@ class OpenProjectTrustIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `open project trusts path by default and shows no modal`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
-            "ide-agent",
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "open-project-trust",
             disableProjectTrustChecks = false,
             trustAllProjectPaths = false,

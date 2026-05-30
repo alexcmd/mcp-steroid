@@ -28,8 +28,7 @@ class ManagedBackendGuiIntegrationTest {
     @Test
     @Timeout(value = 45, unit = TimeUnit.MINUTES)
     fun `devrig downloads starts and stops IDEA Community inside a GUI container`() = runWithCloseableStack { lifetime ->
-        val container = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime = lifetime,
+        val container = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             dockerFileBase = "managed-backend-host",
             consoleTitle = "managed-backend",
             aiMode = AiMode.NONE,

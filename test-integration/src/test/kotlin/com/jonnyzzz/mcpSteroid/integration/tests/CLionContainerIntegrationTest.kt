@@ -15,8 +15,7 @@ class CLionContainerIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `container starts and CLion becomes ready`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             "clion-agent",
             consoleTitle = "clion-container",
             distribution = IdeDistribution.Latest(IdeProduct.CLion),

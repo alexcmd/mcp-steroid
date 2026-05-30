@@ -49,8 +49,7 @@ class BroadleafCommerceMavenTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            IntelliJContainer.create(lifetime,IntelliJContainerOpts(
                 "ide-agent",
                 consoleTitle = "broadleaf",
                 project = IntelliJProject.BroadleafCommerceProject,

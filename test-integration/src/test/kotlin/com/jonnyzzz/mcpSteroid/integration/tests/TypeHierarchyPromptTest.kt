@@ -258,8 +258,7 @@ class TypeHierarchyPromptTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "type-hierarchy prompt test",
             )).waitForProjectReady()
         }

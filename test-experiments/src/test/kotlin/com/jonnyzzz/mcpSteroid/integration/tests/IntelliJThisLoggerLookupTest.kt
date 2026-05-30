@@ -26,9 +26,7 @@ class IntelliJThisLoggerLookupTest {
     @Test
     @Timeout(value = 180, unit = TimeUnit.MINUTES)
     fun `mcp finds thisLogger references in IntelliJ monorepo`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime = lifetime,
-            dockerFileBase = "ide-agent",
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "intellij-thislogger-lookup",
             project = IntelliJProject.IntelliJMasterProject,
         )).waitForProjectReady(

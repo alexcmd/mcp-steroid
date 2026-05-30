@@ -28,9 +28,7 @@ class GradleTestExecutionTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(GradleTestExecutionTest::class.java.simpleName) }
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "Gradle Test Execution",
             )).waitForProjectReady(
                 buildSystem = BuildSystem.GRADLE,

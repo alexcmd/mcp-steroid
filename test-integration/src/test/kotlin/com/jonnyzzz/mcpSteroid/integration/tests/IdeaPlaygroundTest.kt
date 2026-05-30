@@ -38,9 +38,7 @@ class IdeaPlaygroundTest {
     @Test
     @Timeout(value = 240, unit = TimeUnit.MINUTES)
     fun `idea playground`() {
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
-            "ide-agent",
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "IDEA Playground",
         )).waitForProjectReady()
 

@@ -90,9 +90,7 @@ class DevrigAgentRoutingIntegrationTest {
         private val json = Json { ignoreUnknownKeys = true }
         private val lifetime by lazy { CloseableStackHost(DevrigAgentRoutingIntegrationTest::class.java.simpleName) }
         private val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime = lifetime,
-                dockerFileBase = "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "devrig stdio MCP agent routing",
                 aiMode = AiMode.AI_DEVRIG,
             )).waitForProjectReady()

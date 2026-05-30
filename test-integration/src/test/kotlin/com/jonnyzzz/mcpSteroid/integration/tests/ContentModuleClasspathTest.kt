@@ -29,7 +29,13 @@ import java.util.concurrent.TimeUnit
 class ContentModuleClasspathTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(this::class.java.simpleName) }
-        val session by lazy { IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "Content Module Classpath")) }
+        val session by lazy {
+            IntelliJContainer.create(
+                lifetime, IntelliJContainerOpts(
+                    consoleTitle = "Content Module Classpath"
+                )
+            )
+        }
 
         @AfterAll
         @JvmStatic

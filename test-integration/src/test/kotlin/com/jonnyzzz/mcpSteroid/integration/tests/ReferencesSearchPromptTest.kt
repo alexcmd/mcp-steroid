@@ -31,8 +31,7 @@ class ReferencesSearchPromptTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `claude uses ReferencesSearch to find usages of a method`() {
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "PSI ReferencesSearch prompt test — Claude",
         )).waitForProjectReady()
 

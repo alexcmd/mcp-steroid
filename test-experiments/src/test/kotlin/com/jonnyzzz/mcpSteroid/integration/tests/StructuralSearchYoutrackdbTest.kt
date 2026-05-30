@@ -44,9 +44,7 @@ class StructuralSearchYoutrackdbTest {
         val lifetime by lazy { CloseableStackHost() }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "ssr / youtrackdb",
                 project = IntelliJProject.YouTrackDbProject,
             )).waitForProjectReady(buildSystem = BuildSystem.MAVEN)

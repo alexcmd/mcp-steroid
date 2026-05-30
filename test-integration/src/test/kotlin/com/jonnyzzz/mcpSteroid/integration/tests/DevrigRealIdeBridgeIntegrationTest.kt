@@ -199,9 +199,7 @@ class DevrigRealIdeBridgeIntegrationTest {
         private val json = Json { ignoreUnknownKeys = true }
         private val lifetime by lazy { CloseableStackHost(DevrigRealIdeBridgeIntegrationTest::class.java.simpleName) }
         private val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime = lifetime,
-                dockerFileBase = "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "devrig stdio MCP real IDE bridge",
                 aiMode = AiMode.NONE,
             )).waitForProjectReady()

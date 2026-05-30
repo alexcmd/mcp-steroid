@@ -318,8 +318,7 @@ class FindDuplicatesPromptTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "find-duplicates prompt test",
             )).waitForProjectReady()
         }

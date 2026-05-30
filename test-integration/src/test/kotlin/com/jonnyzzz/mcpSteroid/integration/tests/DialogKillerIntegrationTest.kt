@@ -37,8 +37,11 @@ class DialogKillerIntegrationTest {
         // the Corretto-consent modal (fixed in `mcpResolveUnknownSdks`) happened to
         // block long enough to mask the race; no such accidental delay now.
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "Dialog Killer"))
-                .waitForProjectReady()
+            IntelliJContainer.create(
+                lifetime, IntelliJContainerOpts(
+                    consoleTitle = "Dialog Killer"
+                )
+            ).waitForProjectReady()
         }
         val console get() = session.console
 

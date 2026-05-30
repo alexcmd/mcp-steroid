@@ -59,8 +59,7 @@ class DpaiaPromptCorpusRegressionTest {
     fun `agent compiles project via supported IntelliJ build API not invented helper (issue 47)`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime = lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "dpaia-regression-buildProject",
                 project = IntelliJProject.ThisLoggerProject,
             )).waitForProjectReady()
@@ -127,8 +126,7 @@ class DpaiaPromptCorpusRegressionTest {
     fun `agent wraps VFS write in the correct threading wrapper (issue 48)`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime = lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "dpaia-regression-writeAction",
                 project = IntelliJProject.ThisLoggerProject,
             )).waitForProjectReady()
@@ -193,8 +191,7 @@ class DpaiaPromptCorpusRegressionTest {
     fun `agent uses supported inspection helper not daemon highlighting internals (issue 51)`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime = lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "dpaia-regression-inspection",
                 project = IntelliJProject.ThisLoggerProject,
             )).waitForProjectReady()

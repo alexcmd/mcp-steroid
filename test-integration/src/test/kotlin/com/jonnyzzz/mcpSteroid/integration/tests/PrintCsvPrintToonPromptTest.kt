@@ -243,8 +243,7 @@ class PrintCsvPrintToonPromptTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "print-csv-toon prompt test",
             )).waitForProjectReady()
         }

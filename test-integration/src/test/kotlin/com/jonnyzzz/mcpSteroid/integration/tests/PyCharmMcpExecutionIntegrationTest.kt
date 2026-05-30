@@ -17,8 +17,7 @@ class PyCharmMcpExecutionIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `kotlin execute_code works in PyCharm lane`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             "pycharm-agent",
             consoleTitle = "pycharm-mcp-execution",
             distribution = IdeDistribution.Latest(IdeProduct.PyCharm),

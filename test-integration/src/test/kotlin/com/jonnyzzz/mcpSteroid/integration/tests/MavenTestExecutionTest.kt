@@ -29,9 +29,7 @@ class MavenTestExecutionTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(MavenTestExecutionTest::class.java.simpleName) }
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "Maven Test Execution",
                 project = IntelliJProject.MavenTestProject,
             )).waitForProjectReady(

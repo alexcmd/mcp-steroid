@@ -32,7 +32,7 @@ class JdkTableIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `JDK table has registered SDKs with valid paths`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(lifetime, consoleTitle = "jdk-table-test"))
+        val session = IntelliJContainer.create(lifetime,IntelliJContainerOpts( consoleTitle = "jdk-table-test"))
         val console = session.console
         val guestProjectDir = session.intellijDriver.getGuestProjectDir()
 

@@ -46,8 +46,7 @@ class RiderDebuggerTest {
     fun `claude debugs dotnet test in Rider via debugger`() = runRiderDebugDemo(AiAgentDriver::claude)
 
     private fun runRiderDebugDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "Rider Debug with ${agentName.name.titleCase()}",
             distribution = IdeDistribution.Latest(IdeProduct.Rider),
         )).waitForProjectReady(projectJdkVersion = null)

@@ -25,9 +25,7 @@ class DevrigAgentIntegrationTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `claude connects through devrig stdio`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
-            "ide-agent",
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "devrig-claude",
             aiMode = AiMode.AI_DEVRIG,
         )).waitForProjectReady()

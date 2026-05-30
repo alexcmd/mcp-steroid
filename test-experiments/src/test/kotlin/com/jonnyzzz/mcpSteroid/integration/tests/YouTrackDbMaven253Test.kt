@@ -70,9 +70,7 @@ class YouTrackDbMaven253Test {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "youtrackdb-253",
                 project = IntelliJProject.YouTrackDbProject,
                 distribution = IdeDistribution.FromUrl(

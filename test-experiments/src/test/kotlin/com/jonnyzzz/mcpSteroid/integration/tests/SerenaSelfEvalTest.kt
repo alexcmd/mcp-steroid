@@ -48,8 +48,7 @@ class SerenaSelfEvalTest {
     fun `gemini with mcp`() = runSelfEval(agentName = "gemini")
 
     private fun runSelfEval(agentName: String) = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime = lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "serena-$agentName",
             project = IntelliJProject.TestProject,
             aiMode = AiMode.AI_MCP,

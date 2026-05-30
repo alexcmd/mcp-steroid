@@ -98,8 +98,7 @@ class DpaiaArenaTest {
         try {
             val aiMode = if (withMcp) AiMode.AI_MCP else AiMode.NONE
             val mcpMode = if (withMcp) null else McpConnectionMode.None
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            val session = IntelliJContainer.create(lifetime,IntelliJContainerOpts(
                 consoleTitle = "arena-${testCase.instanceId}-$agentName-$modeLabel",
                 project = IntelliJProject.ProjectFromGitCommitAndPatch(
                     cloneUrl = testCase.cloneUrl,

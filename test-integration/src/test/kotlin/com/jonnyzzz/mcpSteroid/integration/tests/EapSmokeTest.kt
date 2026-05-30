@@ -30,7 +30,9 @@ class EapSmokeTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `plugin loads and core MCP tools work`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "EAP Smoke"))
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
+            consoleTitle = "EAP Smoke"
+        ))
         val console = session.console
 
         // 1. list_projects

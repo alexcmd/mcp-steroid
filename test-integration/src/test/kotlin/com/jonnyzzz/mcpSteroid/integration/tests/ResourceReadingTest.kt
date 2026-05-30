@@ -24,8 +24,7 @@ class ResourceReadingTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(ResourceReadingTest::class.java.simpleName) }
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "Resource Reading — Claude",
             )).waitForProjectReady()
         }

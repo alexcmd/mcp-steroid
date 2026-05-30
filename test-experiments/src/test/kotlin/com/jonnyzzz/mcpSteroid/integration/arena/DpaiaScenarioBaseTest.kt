@@ -94,8 +94,7 @@ abstract class DpaiaScenarioBaseTest {
                 else -> BuildSystem.NONE
             }
 
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "$consoleTitle-$modeLabel",
                 project = IntelliJProject.ProjectFromGitCommitAndPatch(
                     cloneUrl = testCase.cloneUrl,

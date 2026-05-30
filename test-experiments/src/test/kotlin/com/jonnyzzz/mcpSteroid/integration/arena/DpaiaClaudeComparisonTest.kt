@@ -183,8 +183,7 @@ class DpaiaClaudeComparisonTest {
          * No steroid_open_project call is needed — the project is already loaded.
          */
         val sessionWithMcp by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetimeWithMcp,
+            IntelliJContainer.create(lifetimeWithMcp, IntelliJContainerOpts(
                 consoleTitle = "claude-cmp-mcp",
                 aiMode = AiMode.AI_MCP,
                 project = IntelliJProject.ProjectFromGitCommitAndPatch(
@@ -215,8 +214,7 @@ class DpaiaClaudeComparisonTest {
          * The only difference is that MCP Steroid is NOT registered with the Claude agent.
          */
         val sessionWithoutMcp by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetimeWithoutMcp,
+            IntelliJContainer.create(lifetimeWithoutMcp, IntelliJContainerOpts(
                 consoleTitle = "claude-cmp-none",
                 mcpConnectionMode = McpConnectionMode.None,
                 project = IntelliJProject.ProjectFromGitCommitAndPatch(

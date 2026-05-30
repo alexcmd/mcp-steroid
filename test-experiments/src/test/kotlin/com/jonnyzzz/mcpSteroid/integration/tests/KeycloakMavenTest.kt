@@ -68,9 +68,7 @@ class KeycloakMavenTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "keycloak",
                 project = IntelliJProject.KeycloakProject,
             )).waitForProjectReady(buildSystem = BuildSystem.MAVEN)

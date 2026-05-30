@@ -50,9 +50,7 @@ class KillBillMavenTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "killbill",
                 project = IntelliJProject.KillBillProject,
             )).waitForProjectReady(

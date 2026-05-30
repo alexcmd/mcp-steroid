@@ -36,8 +36,7 @@ class FilenameIndexPromptTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `claude uses FilenameIndex to find files instead of Glob or Bash find`() {
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "FilenameIndex prompt test — Claude",
         )).waitForProjectReady()
 

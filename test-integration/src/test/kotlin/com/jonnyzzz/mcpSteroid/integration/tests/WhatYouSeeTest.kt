@@ -154,9 +154,7 @@ class WhatYouSeeTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "what-you-see",
             )).waitForProjectReady()
         }

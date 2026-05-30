@@ -59,9 +59,7 @@ class StructuralSearchYoutrackdb261Test {
         val lifetime by lazy { CloseableStackHost() }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
-                "ide-agent",
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "ssr / youtrackdb-261",
                 project = IntelliJProject.YouTrackDbProject,
                 distribution = IdeDistribution.FromUrl(

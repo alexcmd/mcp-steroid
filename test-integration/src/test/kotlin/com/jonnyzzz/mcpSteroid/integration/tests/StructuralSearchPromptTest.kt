@@ -422,8 +422,7 @@ class StructuralSearchPromptTest {
         val lifetime by lazy { CloseableStackHost() }
 
         val session by lazy {
-            IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "structural-search prompt bucket",
             )).waitForProjectReady()
         }

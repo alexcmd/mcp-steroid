@@ -107,8 +107,7 @@ class ThisLoggerComparisonTest {
     fun `mcp agent finds thisLogger usages`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "thislogger-mcp",
                 project = IntelliJProject.ThisLoggerProject,
             )).waitForProjectReady()
@@ -134,8 +133,7 @@ class ThisLoggerComparisonTest {
     fun `none agent finds thisLogger usages`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+            val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "thislogger-none",
                 project = IntelliJProject.ThisLoggerProject,
                 mcpConnectionMode = McpConnectionMode.None,

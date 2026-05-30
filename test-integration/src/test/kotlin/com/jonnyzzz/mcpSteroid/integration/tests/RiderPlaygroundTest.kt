@@ -47,8 +47,7 @@ class RiderPlaygroundTest {
     @Test
     @Timeout(value = 240, unit = TimeUnit.MINUTES)
     fun `rider playground`() {
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "Rider Playground",
             distribution = IdeDistribution.Latest(IdeProduct.Rider),
             aiMode = AiMode.NONE,

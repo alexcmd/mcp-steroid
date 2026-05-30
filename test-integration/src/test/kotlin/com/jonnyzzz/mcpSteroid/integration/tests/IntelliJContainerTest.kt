@@ -19,9 +19,7 @@ class IntelliJContainerTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `container starts and IDE becomes ready`() = runWithCloseableStack { lifetime ->
-        IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
-            "ide-agent",
+        IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             consoleTitle = "ide-container",
         ))
     }
@@ -29,7 +27,9 @@ class IntelliJContainerTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `xdotool input control works`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "ide-container-input"))
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
+            consoleTitle = "ide-container-input"
+        ))
 
         // Move the mouse to the center of the screen
         session.input.mouseMove(1920, 1080)

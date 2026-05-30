@@ -79,8 +79,7 @@ class PluginRuntimeCompatibilityTest {
         distribution: IdeDistribution,
         dockerFileBase: String,
     ) = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime,IntelliJContainerOpts(
             dockerFileBase,
             consoleTitle = "runtime-compat",
             distribution = distribution,

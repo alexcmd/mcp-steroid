@@ -24,9 +24,7 @@ class IntelliJWarmSnapshotIntegrationTest {
         lateinit var snapshotImage: ImageDriver
 
         runWithCloseableStack { lifetime ->
-            val seedSession = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime = lifetime,
-                dockerFileBase = "ide-agent",
+            val seedSession = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
                 consoleTitle = "intellij-warm-snapshot-seed",
                 project = IntelliJProject.IntelliJMasterProject,
                 sourceImage = seedImageRef?.let { ImageDriver(it, logPrefix = "IDE") },
@@ -36,8 +34,8 @@ class IntelliJWarmSnapshotIntegrationTest {
 
         runWithCloseableStack { lifetime ->
             val warmSession = IntelliJContainer.create(
+                lifetime,
                 IntelliJContainerOpts(
-                    lifetime = lifetime,
                     consoleTitle = "intellij-warm-snapshot-restart",
                     project = IntelliJProject.IntelliJMasterProject,
                     sourceImage = snapshotImage,

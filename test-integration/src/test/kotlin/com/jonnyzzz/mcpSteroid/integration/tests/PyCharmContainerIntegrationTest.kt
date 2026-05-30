@@ -15,8 +15,7 @@ class PyCharmContainerIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `container starts and PyCharm becomes ready`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-            lifetime,
+        val session = IntelliJContainer.create(lifetime, IntelliJContainerOpts(
             "pycharm-agent",
             consoleTitle = "pycharm-container",
             distribution = IdeDistribution.Latest(IdeProduct.PyCharm),

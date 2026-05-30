@@ -17,8 +17,7 @@ class CLionMcpExecutionIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `kotlin execute_code works in CLion lane`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(IntelliJContainerOpts(
-                lifetime,
+        val session = IntelliJContainer.create(lifetime,IntelliJContainerOpts(
                 "clion-agent",
                 consoleTitle = "clion-mcp-execution",
                 distribution = IdeDistribution.Latest(IdeProduct.CLion),

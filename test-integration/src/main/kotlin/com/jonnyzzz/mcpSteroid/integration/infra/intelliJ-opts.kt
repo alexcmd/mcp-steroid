@@ -1,12 +1,9 @@
 package com.jonnyzzz.mcpSteroid.integration.infra
 
-import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ImageDriver
 import java.io.File
 
 data class IntelliJContainerOpts(
-    val lifetime: CloseableStack,
-
     val dockerFileBase: String = "ide-agent",
 
     val consoleTitle: String,
