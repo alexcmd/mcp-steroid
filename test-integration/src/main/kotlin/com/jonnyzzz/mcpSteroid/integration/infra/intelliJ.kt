@@ -281,6 +281,7 @@ class IntelliJDriver(
     }
 
     private fun writeTrustedPaths() {
+        //TODO: must use the API to write that into running IDE, instead of the XML approach
         val trustedPathsXml = buildString {
             appendLine("""<application>""")
             appendLine("""  <component name="Trusted.Paths">""")
@@ -313,15 +314,17 @@ class IntelliJDriver(
      * Lists files in the container and returns the first .sln path found, or null.
      */
     private fun findSlnFile(guestProjectDir: String): String? {
+        //TODO: make sure guestProjectDir is the path to the project file, not the dir
         val result = driver.startProcessInContainer {
             this
                 .args("bash", "-c", "ls $guestProjectDir/*.sln 2>/dev/null")
                 .timeoutSeconds(5)
                 .quietly()
                 .description("find .sln in $guestProjectDir")
-        }.awaitForProcessFinish()
+        }.assertExitCode(0) {
+            "Failed to find .sln file in $guestProjectDir"
+        }
 
-        if (result.exitCode != 0) return null
         return result.stdout.lineSequence()
             .map { it.trim() }
             .firstOrNull { it.endsWith(".sln") }
