@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.McpConnectionMode
 import com.jonnyzzz.mcpSteroid.integration.infra.create
@@ -106,11 +107,11 @@ class ThisLoggerComparisonTest {
     fun `mcp agent finds thisLogger usages`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 consoleTitle = "thislogger-mcp",
                 project = IntelliJProject.ThisLoggerProject,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
 
             val result = runAgent(session, withMcp = true)
             results.add(result)
@@ -133,12 +134,12 @@ class ThisLoggerComparisonTest {
     fun `none agent finds thisLogger usages`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 consoleTitle = "thislogger-none",
                 project = IntelliJProject.ThisLoggerProject,
                 mcpConnectionMode = McpConnectionMode.None,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
 
             val result = runAgent(session, withMcp = false)
             results.add(result)

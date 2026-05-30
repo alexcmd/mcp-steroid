@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.StdioMcpCommand
 import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.DevrigSteroidDriver
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.StdioMcpProcess
@@ -198,12 +199,12 @@ class DevrigRealIdeBridgeIntegrationTest {
         private val json = Json { ignoreUnknownKeys = true }
         private val lifetime by lazy { CloseableStackHost(DevrigRealIdeBridgeIntegrationTest::class.java.simpleName) }
         private val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime = lifetime,
                 dockerFileBase = "ide-agent",
                 consoleTitle = "devrig stdio MCP real IDE bridge",
                 aiMode = AiMode.NONE,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
         }
 
         @BeforeAll

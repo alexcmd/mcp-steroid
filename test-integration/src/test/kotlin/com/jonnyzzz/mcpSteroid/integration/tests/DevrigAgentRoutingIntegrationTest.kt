@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.McpRegistrationTransport
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
@@ -89,12 +90,12 @@ class DevrigAgentRoutingIntegrationTest {
         private val json = Json { ignoreUnknownKeys = true }
         private val lifetime by lazy { CloseableStackHost(DevrigAgentRoutingIntegrationTest::class.java.simpleName) }
         private val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime = lifetime,
                 dockerFileBase = "ide-agent",
                 consoleTitle = "devrig stdio MCP agent routing",
                 aiMode = AiMode.AI_DEVRIG,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
         }
 
         @BeforeAll

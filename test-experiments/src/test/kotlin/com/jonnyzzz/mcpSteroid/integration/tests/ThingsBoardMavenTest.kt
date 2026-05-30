@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
@@ -49,12 +50,12 @@ class ThingsBoardMavenTest {
         }
 
         val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 "ide-agent",
                 consoleTitle = "thingsboard",
                 project = IntelliJProject.ThingsBoardProject,
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 buildSystem = BuildSystem.MAVEN,
                 projectJdkVersion = "25",
                 compileProject = false,

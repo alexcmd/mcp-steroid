@@ -2,10 +2,9 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
-import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.util.concurrent.TimeUnit
@@ -20,18 +19,17 @@ class IntelliJContainerTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `container starts and IDE becomes ready`() = runWithCloseableStack { lifetime ->
-        IntelliJContainer.create(
+        IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             "ide-agent",
             consoleTitle = "ide-container",
-        )
-        Thread.sleep(3000)
+        ))
     }
 
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `xdotool input control works`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(lifetime, "ide-agent", consoleTitle = "ide-container-input")
+        val session = IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "ide-container-input"))
 
         // Move the mouse to the center of the screen
         session.input.mouseMove(1920, 1080)

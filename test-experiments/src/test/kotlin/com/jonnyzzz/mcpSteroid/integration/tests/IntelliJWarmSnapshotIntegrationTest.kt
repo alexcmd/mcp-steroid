@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.integration.infra.createFromSnapshot
@@ -24,13 +25,13 @@ class IntelliJWarmSnapshotIntegrationTest {
         lateinit var snapshotImage: ImageDriver
 
         runWithCloseableStack { lifetime ->
-            val seedSession = IntelliJContainer.create(
+            val seedSession = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime = lifetime,
                 dockerFileBase = "ide-agent",
                 consoleTitle = "intellij-warm-snapshot-seed",
                 project = IntelliJProject.IntelliJMasterProject,
                 sourceImage = seedImageRef?.let { ImageDriver(it, logPrefix = "IDE") },
-            )
+            ))
             snapshotImage = seedSession.createIndexedSnapshot(snapshotTag)
         }
 

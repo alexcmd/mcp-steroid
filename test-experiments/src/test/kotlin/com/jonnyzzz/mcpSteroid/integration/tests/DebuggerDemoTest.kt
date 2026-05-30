@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 import com.jonnyzzz.mcpSteroid.integration.infra.AiAgentDriver
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
@@ -82,9 +83,10 @@ class DebuggerDemoTest {
     fun `codex debugs JonnyzzzDebugTest via debugger`() = runJonnyzzzDebugDemo(AiAgentDriver::codex)
 
     private fun runDebuggerDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime, "ide-agent",
             consoleTitle = "Debugger with ${agentName.name.titleCase()}",
+            )
         ).waitForProjectReady()
         val console = session.console
 
@@ -306,10 +308,10 @@ class DebuggerDemoTest {
      * evidence rather than by just reading the source code.
      */
     private fun runUnitTestDebugDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime, "ide-agent",
             consoleTitle = "Unit Test Debug with ${agentName.name.titleCase()}",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
@@ -430,10 +432,10 @@ class DebuggerDemoTest {
      * this via debugger evidence rather than by just reading the source code.
      */
     private fun runJonnyzzzDebugDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime, "ide-agent",
             consoleTitle = "JonnyzzzDebugTest with ${agentName.name.titleCase()}",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
@@ -521,10 +523,10 @@ class DebuggerDemoTest {
     }
 
     private fun runStringFormatDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime, "ide-agent",
             consoleTitle = "Debugger with ${agentName.name.titleCase()}",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
@@ -645,10 +647,10 @@ class DebuggerDemoTest {
     }
 
     private fun runNullDefaultDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime, "ide-agent",
             consoleTitle = "Null-Default Bug with ${agentName.name.titleCase()}",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
@@ -741,10 +743,10 @@ class DebuggerDemoTest {
     }
 
     private fun runOffByOneDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime, "ide-agent",
             consoleTitle = "Off-by-One Bug with ${agentName.name.titleCase()}",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }

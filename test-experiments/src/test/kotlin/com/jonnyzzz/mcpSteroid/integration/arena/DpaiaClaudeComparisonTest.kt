@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeTestFolders
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.McpConnectionMode
 import com.jonnyzzz.mcpSteroid.integration.infra.create
@@ -14,12 +15,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -185,7 +183,7 @@ class DpaiaClaudeComparisonTest {
          * No steroid_open_project call is needed — the project is already loaded.
          */
         val sessionWithMcp by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetimeWithMcp,
                 consoleTitle = "claude-cmp-mcp",
                 aiMode = AiMode.AI_MCP,
@@ -198,7 +196,7 @@ class DpaiaClaudeComparisonTest {
                     buildSystem = setupTestCase.buildSystem,
                 ),
                 mountDockerSocket = true,
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 projectJdkVersion = setupCaseConfig.projectJdkVersion,
                 buildSystem = when (setupTestCase.buildSystem) {
                     "maven" -> BuildSystem.MAVEN
@@ -217,7 +215,7 @@ class DpaiaClaudeComparisonTest {
          * The only difference is that MCP Steroid is NOT registered with the Claude agent.
          */
         val sessionWithoutMcp by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetimeWithoutMcp,
                 consoleTitle = "claude-cmp-none",
                 mcpConnectionMode = McpConnectionMode.None,
@@ -230,7 +228,7 @@ class DpaiaClaudeComparisonTest {
                     buildSystem = setupTestCase.buildSystem,
                 ),
                 mountDockerSocket = true,
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 projectJdkVersion = setupCaseConfig.projectJdkVersion,
                 buildSystem = when (setupTestCase.buildSystem) {
                     "maven" -> BuildSystem.MAVEN

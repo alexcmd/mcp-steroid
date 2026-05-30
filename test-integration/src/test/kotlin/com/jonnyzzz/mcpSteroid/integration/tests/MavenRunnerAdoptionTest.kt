@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
@@ -28,12 +29,12 @@ class MavenRunnerAdoptionTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(MavenRunnerAdoptionTest::class.java.simpleName) }
         val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 "ide-agent",
                 consoleTitle = "Maven Runner Adoption",
                 project = IntelliJProject.MavenTestProject,
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 buildSystem = BuildSystem.MAVEN,
                 compileProject = true,
             )

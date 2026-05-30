@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
@@ -29,7 +30,7 @@ class EapSmokeTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `plugin loads and core MCP tools work`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(lifetime, "ide-agent", consoleTitle = "EAP Smoke")
+        val session = IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "EAP Smoke"))
         val console = session.console
 
         // 1. list_projects

@@ -1,6 +1,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -30,10 +31,10 @@ class PsiClassLookupPromptTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `claude uses JavaPsiFacade or KotlinClassShortNameIndex to find class and list methods`() {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             consoleTitle = "PSI class lookup prompt test — Claude",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
 
         val console = session.console
         val agent = session.aiAgents.claude

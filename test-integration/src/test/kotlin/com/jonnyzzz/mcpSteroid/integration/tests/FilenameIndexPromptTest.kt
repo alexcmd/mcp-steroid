@@ -1,6 +1,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -35,10 +36,10 @@ class FilenameIndexPromptTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.MINUTES)
     fun `claude uses FilenameIndex to find files instead of Glob or Bash find`() {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             consoleTitle = "FilenameIndex prompt test — Claude",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
 
         val console = session.console
         val agent = session.aiAgents.claude

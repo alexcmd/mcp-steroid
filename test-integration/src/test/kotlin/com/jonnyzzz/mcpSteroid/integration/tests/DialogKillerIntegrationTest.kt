@@ -2,11 +2,11 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
-import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
@@ -37,7 +37,7 @@ class DialogKillerIntegrationTest {
         // the Corretto-consent modal (fixed in `mcpResolveUnknownSdks`) happened to
         // block long enough to mask the race; no such accidental delay now.
         val session by lazy {
-            IntelliJContainer.create(lifetime, "ide-agent", consoleTitle = "Dialog Killer")
+            IntelliJContainer.create(IntelliJContainerOpts(lifetime, "ide-agent", consoleTitle = "Dialog Killer"))
                 .waitForProjectReady()
         }
         val console get() = session.console

@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import org.junit.jupiter.api.AfterEach
@@ -37,11 +38,11 @@ class IdeaPlaygroundTest {
     @Test
     @Timeout(value = 240, unit = TimeUnit.MINUTES)
     fun `idea playground`() {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             "ide-agent",
             consoleTitle = "IDEA Playground",
-        ).waitForProjectReady()
+        )).waitForProjectReady()
 
         println()
         println("=".repeat(60))

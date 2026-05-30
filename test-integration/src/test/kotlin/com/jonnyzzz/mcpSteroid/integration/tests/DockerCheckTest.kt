@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -25,11 +26,12 @@ class DockerCheckTest {
         val lifetime by lazy { CloseableStackHost(DockerCheckTest::class.java.simpleName) }
         val session by lazy {
             IntelliJContainer.create(
-                lifetime,
-                "ide-agent",
-                consoleTitle = "Docker Check",
-                mountDockerSocket = true,
-            ).waitForProjectReady()
+                IntelliJContainerOpts(
+                    lifetime,
+                    "ide-agent",
+                    consoleTitle = "Docker Check",
+                    mountDockerSocket = true,
+                )).waitForProjectReady()
         }
 
         @AfterAll

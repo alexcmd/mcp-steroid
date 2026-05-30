@@ -4,6 +4,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeDistribution
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeProduct
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import org.junit.jupiter.api.AfterEach
@@ -46,12 +47,12 @@ class RiderPlaygroundTest {
     @Test
     @Timeout(value = 240, unit = TimeUnit.MINUTES)
     fun `rider playground`() {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             consoleTitle = "Rider Playground",
             distribution = IdeDistribution.Latest(IdeProduct.Rider),
             aiMode = AiMode.NONE,
-        ).waitForProjectReady(projectJdkVersion = null)
+        )).waitForProjectReady(projectJdkVersion = null)
 
         println()
         println("=".repeat(60))

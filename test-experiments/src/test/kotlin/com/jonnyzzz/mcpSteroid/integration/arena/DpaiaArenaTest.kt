@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeTestFolders
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.McpConnectionMode
 import com.jonnyzzz.mcpSteroid.integration.infra.create
@@ -97,8 +98,7 @@ class DpaiaArenaTest {
         try {
             val aiMode = if (withMcp) AiMode.AI_MCP else AiMode.NONE
             val mcpMode = if (withMcp) null else McpConnectionMode.None
-
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 consoleTitle = "arena-${testCase.instanceId}-$agentName-$modeLabel",
                 project = IntelliJProject.ProjectFromGitCommitAndPatch(
@@ -112,7 +112,7 @@ class DpaiaArenaTest {
                 aiMode = aiMode,
                 mcpConnectionMode = mcpMode,
                 mountDockerSocket = true,
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 timeoutMillis = caseConfig.projectReadyTimeoutMs,
                 projectJdkVersion = caseConfig.projectJdkVersion,
                 buildSystem = when (testCase.buildSystem) {

@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
@@ -12,7 +13,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessStreamType
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -28,7 +28,7 @@ class ManagedBackendGuiIntegrationTest {
     @Test
     @Timeout(value = 45, unit = TimeUnit.MINUTES)
     fun `devrig downloads starts and stops IDEA Community inside a GUI container`() = runWithCloseableStack { lifetime ->
-        val container = IntelliJContainer.create(
+        val container = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime = lifetime,
             dockerFileBase = "managed-backend-host",
             consoleTitle = "managed-backend",
@@ -36,7 +36,7 @@ class ManagedBackendGuiIntegrationTest {
             startIde = false,
             mountSshAgent = false,
             repoCacheDir = null,
-        )
+        ))
         val devrig = container.deployDevrigLauncher()
         container.console.writeHeader("Managed-backend integration test")
 

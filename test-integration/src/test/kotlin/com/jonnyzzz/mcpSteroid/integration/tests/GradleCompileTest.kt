@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -24,11 +25,11 @@ class GradleCompileTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(GradleCompileTest::class.java.simpleName) }
         val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 "ide-agent",
                 consoleTitle = "Gradle Compile",
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 buildSystem = BuildSystem.GRADLE,
                 projectJdkVersion = "25",
             )

@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.McpWindowInfo
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
@@ -37,11 +38,12 @@ class GitVcsAddFileDialogTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `creating new file via execute_code in git-tracked project does not show VCS add modal dialog`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(
+
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             "ide-agent",
             consoleTitle = "Git VCS Add Dialog",
-        )
+        ))
         val console = session.console
         val gitProjectPath = "/home/agent/git-vcs-add-dialog-repro"
 

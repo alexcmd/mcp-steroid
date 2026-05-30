@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.McpWindowInfo
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
@@ -17,13 +18,13 @@ class OpenProjectTrustIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `open project trusts path by default and shows no modal`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             "ide-agent",
             consoleTitle = "open-project-trust",
             disableProjectTrustChecks = false,
             trustAllProjectPaths = false,
-        )
+        ))
         val console = session.console
         val secondaryProjectPath = "/home/agent/open-project-trust-secondary"
 

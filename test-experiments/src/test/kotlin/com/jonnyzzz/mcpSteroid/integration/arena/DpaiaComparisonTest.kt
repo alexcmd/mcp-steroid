@@ -3,8 +3,8 @@ package com.jonnyzzz.mcpSteroid.integration.arena
 
 import com.jonnyzzz.mcpSteroid.integration.infra.AiMode
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
-import com.jonnyzzz.mcpSteroid.integration.infra.IdeTestFolders
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.McpConnectionMode
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
@@ -95,13 +95,13 @@ class DpaiaComparisonTest {
             val aiMode = if (withMcp) AiMode.AI_MCP else AiMode.NONE
             val mcpMode = if (withMcp) null else McpConnectionMode.None
 
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 consoleTitle = "comparison-${testCase.instanceId}-$agentName-$modeLabel",
                 aiMode = aiMode,
                 mcpConnectionMode = mcpMode,
                 mountDockerSocket = true,
-            ).waitForProjectReady(
+            )).waitForProjectReady(
                 timeoutMillis = caseConfig.projectReadyTimeoutMs,
                 projectJdkVersion = caseConfig.projectJdkVersion,
                 buildSystem = BuildSystem.NONE,

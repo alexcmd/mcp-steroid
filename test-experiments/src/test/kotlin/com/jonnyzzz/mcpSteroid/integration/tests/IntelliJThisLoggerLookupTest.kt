@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -25,12 +26,12 @@ class IntelliJThisLoggerLookupTest {
     @Test
     @Timeout(value = 180, unit = TimeUnit.MINUTES)
     fun `mcp finds thisLogger references in IntelliJ monorepo`() = runWithCloseableStack { lifetime ->
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime = lifetime,
             dockerFileBase = "ide-agent",
             consoleTitle = "intellij-thislogger-lookup",
             project = IntelliJProject.IntelliJMasterProject,
-        ).waitForProjectReady(
+        )).waitForProjectReady(
             timeoutMillis = System.getProperty("test.integration.intellij.project.ready.timeout.ms")
                 ?.toLongOrNull()
                 ?: 5_400_000L,

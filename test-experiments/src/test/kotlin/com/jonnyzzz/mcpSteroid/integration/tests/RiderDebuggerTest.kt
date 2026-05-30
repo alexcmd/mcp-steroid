@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleDriver
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeDistribution
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeProduct
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
@@ -45,11 +46,11 @@ class RiderDebuggerTest {
     fun `claude debugs dotnet test in Rider via debugger`() = runRiderDebugDemo(AiAgentDriver::claude)
 
     private fun runRiderDebugDemo(agentName: KProperty1<AiAgentDriver, AiAgentSession>) {
-        val session = IntelliJContainer.create(
+        val session = IntelliJContainer.create(IntelliJContainerOpts(
             lifetime,
             consoleTitle = "Rider Debug with ${agentName.name.titleCase()}",
             distribution = IdeDistribution.Latest(IdeProduct.Rider),
-        ).waitForProjectReady(projectJdkVersion = null)
+        )).waitForProjectReady(projectJdkVersion = null)
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }

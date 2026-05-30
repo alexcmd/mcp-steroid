@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
@@ -58,11 +59,11 @@ class DpaiaPromptCorpusRegressionTest {
     fun `agent compiles project via supported IntelliJ build API not invented helper (issue 47)`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime = lifetime,
                 consoleTitle = "dpaia-regression-buildProject",
                 project = IntelliJProject.ThisLoggerProject,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
 
             val agent = session.aiAgents.claude
             // Deliberately *neutral* phrasing — never name the supported API or the forbidden
@@ -126,11 +127,11 @@ class DpaiaPromptCorpusRegressionTest {
     fun `agent wraps VFS write in the correct threading wrapper (issue 48)`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime = lifetime,
                 consoleTitle = "dpaia-regression-writeAction",
                 project = IntelliJProject.ThisLoggerProject,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
 
             val agent = session.aiAgents.claude
             val markerLine = "// auto-generated marker for DpaiaPromptCorpusRegressionTest"
@@ -192,11 +193,11 @@ class DpaiaPromptCorpusRegressionTest {
     fun `agent uses supported inspection helper not daemon highlighting internals (issue 51)`() {
         val lifetime = CloseableStackHost()
         try {
-            val session = IntelliJContainer.create(
+            val session = IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime = lifetime,
                 consoleTitle = "dpaia-regression-inspection",
                 project = IntelliJProject.ThisLoggerProject,
-            ).waitForProjectReady()
+            )).waitForProjectReady()
 
             val agent = session.aiAgents.claude
             val prompt = buildString {

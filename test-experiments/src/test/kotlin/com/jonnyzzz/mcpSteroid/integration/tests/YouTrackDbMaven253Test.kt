@@ -7,6 +7,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeDistribution
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeProduct
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.AiAgentSession
@@ -69,7 +70,7 @@ class YouTrackDbMaven253Test {
         }
 
         val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 "ide-agent",
                 consoleTitle = "youtrackdb-253",
@@ -78,7 +79,7 @@ class YouTrackDbMaven253Test {
                     product = IdeProduct.IntelliJIdea,
                     url = PINNED_253_URL,
                 ),
-            ).waitForProjectReady(buildSystem = BuildSystem.MAVEN)
+            )).waitForProjectReady(buildSystem = BuildSystem.MAVEN)
         }
 
         @JvmStatic

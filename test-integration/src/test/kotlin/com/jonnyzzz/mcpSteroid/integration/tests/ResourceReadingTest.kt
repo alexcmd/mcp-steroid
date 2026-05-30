@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -23,10 +24,10 @@ class ResourceReadingTest {
     companion object {
         val lifetime by lazy { CloseableStackHost(ResourceReadingTest::class.java.simpleName) }
         val session by lazy {
-            IntelliJContainer.create(
+            IntelliJContainer.create(IntelliJContainerOpts(
                 lifetime,
                 consoleTitle = "Resource Reading — Claude",
-            ).waitForProjectReady()
+            )).waitForProjectReady()
         }
 
         @AfterAll
