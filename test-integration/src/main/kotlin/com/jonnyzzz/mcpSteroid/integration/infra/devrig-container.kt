@@ -4,7 +4,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
-import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
+import com.jonnyzzz.mcpSteroid.testHelper.docker.deployZipAndUnpack
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
@@ -13,7 +13,9 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.ZipFile
 import kotlin.concurrent.thread
+import kotlin.streams.asSequence
 import kotlinx.coroutines.runBlocking
 
 data class DevrigContainerOpts(
@@ -116,7 +118,7 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
     val (runDir, realConsoleTitle) = allocRunDirAndTitle(lifetime, opts.consoleTitle)
 
     val imageId = run {
-        // Unique suffix ensures parallel test runs each build their own image and context dir,
+        // Unique suffix ensures parallel test runs each builds their own image and context dir,
         // preventing races in buildIdeImage when multiple tests start concurrently.
         val uniqueSuffix = UUID.randomUUID().toString().take(8)
         val imageName = "${opts.dockerFileBase}-test-$uniqueSuffix"
@@ -163,31 +165,22 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
     return driver
 }
 
-
 private fun deployDevrigLauncher(scope: ContainerDriver, packageZip: File = IdeTestFolders.devrigPackageZip): String {
     require(packageZip.isFile) { "devrig distribution ZIP does not exist: ${packageZip.absolutePath}" }
 
-    val launcherPath = "/home/agent/devrig"
-    scope.copyToContainer(packageZip, "/tmp/devrig.zip")
-    execAndAssert(
-        scope,
-        description = "install devrig launcher",
-        timeoutSeconds = 120,
-        script = $$"""
-                set -euo pipefail
-                rm -rf /home/agent/devrig-cli "$$launcherPath"
-                mkdir -p /home/agent/devrig-cli
-                unzip -q /tmp/devrig.zip -d /home/agent/devrig-cli
-                app_dir="$(find /home/agent/devrig-cli -mindepth 1 -maxdepth 1 -type d -name 'devrig-*' | head -1)"
-                test -n "$app_dir"
-                mv "$app_dir" /home/agent/devrig-cli/app
-                chmod +x /home/agent/devrig-cli/app/bin/devrig
-                ln -sfn devrig /home/agent/devrig-cli/app/bin/devrig
-                ln -sfn /home/agent/devrig-cli/app/bin/devrig "$$launcherPath"
-                "$$launcherPath" --version
-            """.trimIndent(),
-    )
-    return launcherPath
+    val targetDir = "/home/agent/devrig-cli"
+    scope.deployZipAndUnpack(packageZip, targetDir)
+
+    val relPath = ZipFile(packageZip).use { zip ->
+        val allFiles by lazy {
+            zip.stream().asSequence().filter { !it.isDirectory }.map { it.name }.toSortedSet().joinToString("\n")
+        }
+        zip.stream().asSequence().singleOrNull { it.name.endsWith("/bin/devrig") }?.name ?: error(
+            "Failed to resolve the devrig.sh in the package:\n$allFiles"
+        )
+    }
+
+    return targetDir.trimEnd('/') + "/" + relPath.trimStart('/')
 }
 
 private fun execAndAssert(
