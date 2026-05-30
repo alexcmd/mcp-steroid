@@ -181,23 +181,28 @@ class McpScriptContextImpl(
         log.info("[$executionId] Waiting for indexing to complete...")
         resultBuilder.logProgress("Waiting for indexing to complete...")
 
-        suspendCancellableCoroutine { cont ->
-            fun waitForSmart() {
-                if (disposed.get()) {
-                    cont.cancel()
-                    return
-                }
-                DumbService.getInstance(project).smartInvokeLater {
+        try {
+            suspendCancellableCoroutine { cont ->
+                fun waitForSmart() {
                     if (disposed.get()) {
                         cont.cancel()
-                    } else if (DumbService.isDumb(project)) {
-                        waitForSmart()
-                    } else {
-                        cont.resume(Unit)
+                        return
+                    }
+                    DumbService.getInstance(project).smartInvokeLater {
+                        if (disposed.get()) {
+                            cont.cancel()
+                        } else if (DumbService.isDumb(project)) {
+                            waitForSmart()
+                        } else {
+                            cont.resume(Unit)
+                        }
                     }
                 }
+                waitForSmart()
             }
-            waitForSmart()
+        } finally {
+            log.info("[$executionId] Waiting for indexing completed")
+            resultBuilder.logProgress("Waiting for indexing completed")
         }
     }
 
