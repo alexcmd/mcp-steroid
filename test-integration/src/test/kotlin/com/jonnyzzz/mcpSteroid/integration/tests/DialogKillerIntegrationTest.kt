@@ -59,24 +59,27 @@ class DialogKillerIntegrationTest {
                 // Disable modal cancellation so the dialog stays open after this execution
                 doNotCancelOnModalityStateChange()
 
-                // Open test modal dialog asynchronously so it doesn't block this execution
-                withContext(kotlinx.coroutines.Dispatchers.EDT) {
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater({
-                        val dialog = object : com.intellij.openapi.ui.DialogWrapper(project) {
-                            init {
-                                title = "$testDialogTitle"
-                                setModal(true)
-                                init()
-                            }
-
-                            override fun createCenterPanel(): javax.swing.JComponent {
-                                val panel = javax.swing.JPanel()
-                                panel.add(javax.swing.JLabel("Dialog killer integration test"))
-                                return panel
-                            }
+                // Open the test modal from a VANILLA EDT scope — a fresh CoroutineScope(Dispatchers.EDT),
+                // NOT this MCP execution's coroutine context — so the modal does not inherit the
+                // execution scope / its ModalityState context element. This mirrors a real, user-opened
+                // modal and removes the execution scope as a variable while we debug why the dialog
+                // killer's EDT+ModalityState.any() work isn't pumped during the modal.
+                // show() blocks the launched coroutine inside the modal loop; the launch is fire-and-forget.
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.EDT).launch {
+                    val dialog = object : com.intellij.openapi.ui.DialogWrapper(project) {
+                        init {
+                            title = "$testDialogTitle"
+                            setModal(true)
+                            init()
                         }
-                        dialog.show()
-                    }, com.intellij.openapi.application.ModalityState.nonModal())
+
+                        override fun createCenterPanel(): javax.swing.JComponent {
+                            val panel = javax.swing.JPanel()
+                            panel.add(javax.swing.JLabel("Dialog killer integration test"))
+                            return panel
+                        }
+                    }
+                    dialog.show()
                 }
 
                 kotlinx.coroutines.delay(1000)
