@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeDistribution
-import com.jonnyzzz.mcpSteroid.integration.infra.IdeProduct
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.buildDevrigImage
@@ -42,17 +41,11 @@ class IntelliJContainerTest {
 
     @Test
     fun `container images are incremental`() {
-        val distribution = IdeDistribution.fromSystemProperties()
-        val ideArchive = distribution.resolveAndDownload()
-
-        // Unique suffix ensures parallel test runs each builds their own image and context dir,
-        // preventing races in buildIdeImage when multiple tests start concurrently.
-        val uniqueSuffix = UUID.randomUUID().toString().take(8)
-        val imageName = "ide-agent-test-$uniqueSuffix"
-
         val buildImageTime = List(7) {
             measureTime {
-                buildIdeImage("ide-agent", imageName, ideArchive)
+                val distribution = IdeDistribution.fromSystemProperties()
+                val ideArchive = distribution.resolveAndDownload()
+                buildIdeImage("ide-agent", ideArchive)
             }
         }.drop(1)
         println(buildImageTime)

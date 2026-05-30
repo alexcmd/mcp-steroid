@@ -13,20 +13,24 @@ import kotlin.io.path.exists
  * Builds the IDE Docker image for [dockerFileBase] and returns the [DockerDriver]
  * scoped to its build context together with the image ID (sha256:...).
  *
- * The build context directory is derived from [imageName], so parallel calls
- * with different image names (which include a unique suffix from the caller)
- * each get their own isolated context directory — no races.
+ * The build-context directory name is derived internally from a SHA-256 hash of the
+ * [ideArchive] path (the download path is deterministic), so the context path is STABLE
+ * across runs. BuildKit keys its local-context snapshot by that path, so a constant path
+ * lets it reuse the snapshot instead of re-transferring the ~1.5GB IDE archive on every
+ * build. Parallel :test-integration runs are forbidden (root CLAUDE.md), so a shared
+ * context dir is race-free.
  *
  * The derived image is built with `--build-arg BASE_IMAGE=<sha256>` so it
  * references the exact base image built in this JVM run, preventing collisions
  * when multiple test processes build the base image concurrently.
  */
-fun buildIdeImage(dockerFileBase: String, imageName: String, ideArchive: File): ImageDriver {
+fun buildIdeImage(dockerFileBase: String, ideArchive: File): ImageDriver {
     val resolvedBaseImageId = buildSharedBaseImage()
-    // Derive a per-build context dir from the full image name.
-    // Since imageName already carries a unique suffix (e.g. "ide-agent-test-a1b2c3d4"),
-    // this guarantees each concurrent build gets its own isolated directory.
-    val contextDir = prepareContext("docker-$imageName", "ide-base", dockerFileBase)
+    // Context dir keyed by a SHA-256 hash of the archive PATH (constant across runs) so the
+    // path stays stable and BuildKit reuses its local-context snapshot rather than
+    // re-transferring the ~1.5GB IDE archive each build (see KDoc above).
+    val contextKey = sha256Hex(ideArchive.absolutePath).take(16)
+    val contextDir = prepareContext("docker-$dockerFileBase-$contextKey", "ide-base", dockerFileBase)
 
     linkIdeArchive(contextDir, ideArchive)
 
@@ -98,3 +102,8 @@ private fun linkIdeArchive(contextDir: File, ideArchive: File) {
         copyRecursively(ideArchive, ideDest.toFile())
     }
 }
+
+private fun sha256Hex(input: String): String =
+    java.security.MessageDigest.getInstance("SHA-256")
+        .digest(input.toByteArray())
+        .joinToString("") { "%02x".format(it) }

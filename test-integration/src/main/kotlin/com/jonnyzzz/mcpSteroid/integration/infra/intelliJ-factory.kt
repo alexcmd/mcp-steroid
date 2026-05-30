@@ -8,7 +8,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
 import java.io.File
-import java.util.UUID
 
 fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJContainerOpts): IntelliJContainer = opts.run {
     val ideProduct = distribution.product
@@ -27,11 +26,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     val imageId = run {
         val ideArchive = distribution.resolveAndDownload()
-        // Unique suffix ensures parallel test runs each builds their own image and context dir,
-        // preventing races in buildIdeImage when multiple tests start concurrently.
-        val uniqueSuffix = UUID.randomUUID().toString().take(8)
-        val imageName = "$selectedDockerBase-test-$uniqueSuffix"
-        buildIdeImage(selectedDockerBase, imageName, ideArchive)
+        buildIdeImage(selectedDockerBase, ideArchive)
     }
 
     val containerMountedPath = "/mcp-run-dir"
