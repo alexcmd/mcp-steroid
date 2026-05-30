@@ -64,6 +64,7 @@ fun buildSharedBaseImage(): ImageDriver {
         dockerfilePath = File(baseContext, "Dockerfile"),
         timeoutSeconds = 900,
     )
+    //TODO: can be a problem if multiple builds run in parallel
     return rawImageId.tagDockerImage("mcp-steroid-base")
 }
 

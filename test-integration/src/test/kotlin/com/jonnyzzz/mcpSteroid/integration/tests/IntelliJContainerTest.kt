@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.integration.infra.IdeDistribution
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeProduct
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
+import com.jonnyzzz.mcpSteroid.integration.infra.buildDevrigImage
 import com.jonnyzzz.mcpSteroid.integration.infra.buildIdeImage
 import com.jonnyzzz.mcpSteroid.integration.infra.buildSharedBaseImage
 import com.jonnyzzz.mcpSteroid.integration.infra.create
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.util.concurrent.TimeUnit
 import kotlin.time.measureTime
+import org.junit.jupiter.api.Assertions
 
 /**
  * Integration test for IdeContainerSession infrastructure.
@@ -32,11 +34,14 @@ class IntelliJContainerTest {
         }.drop(1)
 
         println(buildImageTime)
+        Assertions.assertTrue(
+            buildImageTime.all { it.inWholeMilliseconds <= 2000L },
+            "Base image build time should be under 2 seconds to ensure incremental builds are efficient"
+        )
     }
 
     @Test
     fun `container images are incremental`() {
-        val ide = IdeProduct.IntelliJIdea
         val distribution = IdeDistribution.fromSystemProperties()
         val ideArchive = distribution.resolveAndDownload()
 
@@ -51,7 +56,29 @@ class IntelliJContainerTest {
             }
         }.drop(1)
         println(buildImageTime)
+        Assertions.assertTrue(
+            buildImageTime.all { it.inWholeMilliseconds <= 2000L },
+            "image build time should be under 2 seconds to ensure incremental builds are efficient"
+        )
+    }
 
+    @Test
+    fun `container devrig images are incremental`() {
+        // Unique suffix ensures parallel test runs each builds their own image and context dir,
+        // preventing races in buildIdeImage when multiple tests start concurrently.
+        val uniqueSuffix = UUID.randomUUID().toString().take(8)
+        val imageName = "ide-agent-test-$uniqueSuffix"
+
+        val buildImageTime = List(7) {
+            measureTime {
+                buildDevrigImage("managed-backend-host", imageName)
+            }
+        }.drop(1)
+        println(buildImageTime)
+        Assertions.assertTrue(
+            buildImageTime.all { it.inWholeMilliseconds <= 2000L },
+            "image build time should be under 2 seconds to ensure incremental builds are efficient"
+        )
     }
 
     @Test
