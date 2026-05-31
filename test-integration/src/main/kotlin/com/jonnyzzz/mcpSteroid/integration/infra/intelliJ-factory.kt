@@ -32,7 +32,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     val containerMountedPath = "/mcp-run-dir"
 
-    val setupHostMappings = setupHostMappings(mountSshAgent = mountSshAgent, mountDockerSocket = mountDockerSocket)
+    val setupHostMappings = setupHostMappings(opts)
 
     val volumes = buildList {
         add(ContainerVolume(runDir, containerMountedPath, "rw"))

@@ -720,10 +720,13 @@ generate→edit→regenerate→commit workflow. Rules below describe what each D
   `docker exec … bash -c "<joined args>"` are subject to shell word-splitting; `*`, `?`, `[`, `]`, `$`,
   `;`, `&`, `|`, `<`, `>`, `(`, `)`, `!` — quote every one or tokens get rewritten silently
   (e.g. `safe.directory=*` → `safe.directory=<cwd-file-1>`).
-- **`SSH_AUTH_SOCK` is NOT set on TC agents.** Tests that default `mountSshAgent = true` must fall back
-  gracefully (log + skip the mount) when `SSH_AUTH_SOCK` is unset — not hard-fail. None of the DPAIA
-  arena / debugger / bright-scenario tests actually need SSH (public HTTPS clones, local Maven/Gradle
-  drivers).
+- **No host-credential forwarding into containers.** `setupHostMappings` (`infra/docker-flip.kt`) now
+  maps **only** the Docker socket (`mountDockerSocket`); the former SSH-agent / `~/.netrc` /
+  `~/.m2/settings.xml` / JetBrains-token / private-packages / JB_SPACE forwarding was removed as insecure
+  (it copied host secrets into the container wholesale). The `mountSshAgent` opt is gone. No DPAIA arena /
+  debugger / bright-scenario test needs it — they use public HTTPS clones and local Maven/Gradle drivers.
+  Reintroduce any forwarding later behind a proper, opt-in, least-privilege mechanism as its own
+  dedicated function (mirror `dockerSocketMapping`).
 
 ### Windows CI compatibility (per-OS Gradle test matrix)
 
