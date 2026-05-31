@@ -28,6 +28,13 @@ data class ExecCodeParams(
 
     /** Controls pre-execution dialog killer: null = use registry default, true = force enable, false = force disable. */
     val dialogKiller: Boolean? = null,
+
+    /**
+     * If true, proceed even when a modal dialog is detected before the script runs: skip the
+     * pre-flight fail-fast and skip (rather than hang on) the pre-flight commit/VFS refresh, with a
+     * warning in the result. Default false (fail fast on an unexpected modal).
+     */
+    val allowModal: Boolean = false,
 )
 
 /**
@@ -61,6 +68,11 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .boolean()
         .registerToSchema()
 
+    val allowModal = InputSchemaElement.param("allow_modal")
+        .description("If true, proceed even when a modal dialog is detected before the script runs (skip the pre-flight fail-fast and skip the pre-flight commit/VFS refresh, with a warning). Default false.")
+        .boolean()
+        .registerToSchema()
+
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectName = context[projectName]
         val code = context[code]
@@ -68,6 +80,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         val reason = context[reason]
         val timeout = context[timeout]
         val dialogKiller = context[dialogKiller]
+        val allowModal = context[allowModal]
 
         val execCodeParams = ExecCodeParams(
             taskId = taskId,
@@ -75,6 +88,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
             reason = reason,
             timeout = timeout,
             dialogKiller = dialogKiller,
+            allowModal = allowModal ?: false,
         )
 
         return handler().executeCode(projectName, execCodeParams, context.mcpProgressReporter)

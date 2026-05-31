@@ -99,6 +99,7 @@ class DevrigExecuteCodeToolHandler(
             put("reason", execCodeParams.reason)
             execCodeParams.timeout?.let { put("timeout", it) }
             execCodeParams.dialogKiller?.let { put("dialog_killer", it) }
+            put("allow_modal", execCodeParams.allowModal)
         }
     }
 }
