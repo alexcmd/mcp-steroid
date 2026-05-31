@@ -4,12 +4,18 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
+import com.jonnyzzz.mcpSteroid.integration.infra.generateJdkTableXml
 import com.jonnyzzz.mcpSteroid.integration.infra.mcpRegisterJdks
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertOutputContains
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
+import org.jdom2.Element
+import org.jdom2.input.SAXBuilder
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import java.io.File
+import java.io.StringReader
 import java.util.concurrent.TimeUnit
 
 /**
@@ -145,4 +151,167 @@ class JdkTableIntegrationTest {
 
         console.writeSuccess("All JDK table checks passed")
     }
+
+    /**
+     * Fidelity: the jdk.table.xml our infra generator produces must match what a live IntelliJ
+     * produces via its own API (`mcpRegisterJdks` → `JavaSdk.createJdk` + `setupSdkPaths`) on the
+     * same host. We start with `preloadJdkTable=false` so IntelliJ builds the table itself, dump
+     * IntelliJ's serialization via `ProjectJdkImpl.writeExternal`, and compare it (per-SDK:
+     * homePath, version sans arch suffix, classPath roots, sourcePath roots) to our generator.
+     */
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `generated jdk_table_xml matches IntelliJ own serialization`() = runWithCloseableStack { lifetime ->
+        val session = IntelliJContainer.create(
+            lifetime,
+            IntelliJContainerOpts(consoleTitle = "jdk-fidelity", preloadJdkTable = false),
+        )
+        val console = session.console
+
+        console.writeStep(1, "Generating jdk.table.xml from infra (our generator)")
+        val expectedXml = generateJdkTableXml(session.scope)
+
+        console.writeStep(2, "Dumping IntelliJ's own ProjectJdkTable serialization")
+        session.mcpSteroid.mcpExecuteCode(
+            code = $$"""
+                import com.intellij.openapi.projectRoots.JavaSdk
+                import com.intellij.openapi.projectRoots.ProjectJdkTable
+                import com.intellij.openapi.projectRoots.impl.ProjectJdkImpl
+                import com.intellij.openapi.application.ApplicationManager
+                import com.intellij.openapi.components.PathMacroManager
+                import com.intellij.openapi.util.JDOMUtil
+                import org.jdom.Element
+
+                val sdks = ProjectJdkTable.getInstance().getSdksOfType(JavaSdk.getInstance())
+                val app = Element("application")
+                val comp = Element("component").setAttribute("name", "ProjectJdkTable")
+                app.addContent(comp)
+                for (sdk in sdks) {
+                    val e = Element("jdk").setAttribute("version", "2")
+                    (sdk as ProjectJdkImpl).writeExternal(e)
+                    comp.addContent(e)
+                }
+                // Collapse IDE-home paths to ${'$'}APPLICATION_HOME_DIR${'$'} — the component store does this
+                // when persisting jdk.table.xml, and our generator emits the macro form too.
+                PathMacroManager.getInstance(ApplicationManager.getApplication()).collapsePathsRecursively(app)
+                java.io.File("/mcp-run-dir/jdk-table-actual.xml").writeText(JDOMUtil.write(app))
+                println("DUMPED_SDKS=${sdks.size}")
+            """.trimIndent(),
+            taskId = "jdk-fidelity",
+            reason = "Serialize IntelliJ's ProjectJdkTable to compare against our generator output",
+        ).assertExitCode(0, "Dumping IntelliJ JDK table should succeed")
+            .assertOutputContains("DUMPED_SDKS=", message = "should dump SDK serialization")
+
+        val actualXml = File(session.runDirInContainer, "jdk-table-actual.xml").readText()
+
+        // Persist both for offline inspection on failure.
+        File(session.runDirInContainer, "jdk-table-generated.xml").writeText(expectedXml)
+
+        val expected = parseJdkTableModel(expectedXml)
+        val actual = parseJdkTableModel(actualXml)
+
+        console.writeInfo("generator SDKs=${expected.keys.sorted()}")
+        console.writeInfo("IntelliJ  SDKs=${actual.keys.sorted()}")
+
+        assertEquals(expected.keys.sorted(), actual.keys.sorted(),
+            "Generated and IntelliJ SDK name sets differ")
+
+        for (name in expected.keys.sorted()) {
+            val e = expected.getValue(name)
+            val a = actual.getValue(name)
+            assertEquals(e.homePath, a.homePath, "homePath differs for '$name'")
+            assertEquals(e.version, a.version,
+                "version differs for '$name' (compared without arch suffix)")
+            assertEquals(e.classRoots, a.classRoots,
+                "classPath roots differ for '$name' (sorted)")
+            assertEquals(e.sourceRoots, a.sourceRoots,
+                "sourcePath roots differ for '$name' (as set)")
+            assertEquals(e.annotationRoots, a.annotationRoots,
+                "annotationsPath roots differ for '$name'")
+        }
+        console.writeSuccess("Generator output matches IntelliJ's own serialization for ${expected.size} SDK entries")
+    }
+
+    /**
+     * Validates the fix: with `preloadJdkTable=true` (default) and NO post-open registration,
+     * IntelliJ loads every JDK from the pre-written `options/jdk.table.xml` — proving the file is
+     * well-formed (the old XML route silently emptied the table on a single malformed attribute)
+     * and that all generated aliases are present with their class roots.
+     */
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `IntelliJ loads all JDKs from pre-written jdk_table_xml`() = runWithCloseableStack { lifetime ->
+        val session = IntelliJContainer.create(
+            lifetime,
+            IntelliJContainerOpts(consoleTitle = "jdk-preload"),
+        )
+        val console = session.console
+
+        val expectedNames = parseJdkTableModel(generateJdkTableXml(session.scope)).keys.sorted()
+        console.writeStep(1, "Expecting pre-written JDK aliases: $expectedNames")
+
+        val result = session.mcpSteroid.mcpExecuteCode(
+            code = $$"""
+                import com.intellij.openapi.projectRoots.JavaSdk
+                import com.intellij.openapi.projectRoots.ProjectJdkTable
+
+                val sdks = ProjectJdkTable.getInstance().getSdksOfType(JavaSdk.getInstance())
+                sdks.sortedBy { it.name }.forEach { sdk ->
+                    val classRoots = sdk.rootProvider.getFiles(com.intellij.openapi.roots.OrderRootType.CLASSES).size
+                    println("SDK\t${sdk.name}\t${sdk.homePath}\tclassRoots=$classRoots")
+                }
+                println("NAMES=" + sdks.map { it.name }.sorted().joinToString(","))
+                println("PRELOAD_TABLE_OK")
+            """.trimIndent(),
+            taskId = "jdk-preload",
+            reason = "Verify IntelliJ loaded all JDKs from the pre-written jdk.table.xml",
+        ).assertExitCode(0, "querying loaded JDK table should succeed")
+            .assertOutputContains("PRELOAD_TABLE_OK")
+
+        val namesLine = result.stdout.lineSequence().firstOrNull { it.startsWith("NAMES=") }
+            ?: error("No NAMES= line in output")
+        val loadedNames = namesLine.removePrefix("NAMES=").split(",").filter { it.isNotEmpty() }.sorted()
+
+        assertEquals(expectedNames, loadedNames,
+            "IntelliJ-loaded JDK names must equal the pre-written generated set")
+        console.writeSuccess("IntelliJ loaded all ${loadedNames.size} pre-written JDKs")
+    }
+}
+
+/** One SDK's roots/version, normalized for cross-check (arch suffix stripped from version). */
+private data class JdkModel(
+    val homePath: String,
+    val version: String,
+    val classRoots: List<String>,
+    val sourceRoots: Set<String>,
+    val annotationRoots: List<String>,
+)
+
+/** Parse a jdk.table.xml string into a name -> [JdkModel] map for semantic comparison. */
+private fun parseJdkTableModel(xml: String): Map<String, JdkModel> {
+    val doc = SAXBuilder().build(StringReader(xml))
+    val component = doc.rootElement.getChild("component")
+        ?: error("No <component> in jdk.table.xml")
+    return component.getChildren("jdk").associate { jdk ->
+        val name = jdk.attrValue("name")
+        val roots = jdk.getChild("roots")
+        JdkModel(
+            homePath = jdk.attrValue("homePath"),
+            // Drop IntelliJ's trailing arch suffix (" - aarch64") — our generator omits it on purpose.
+            version = jdk.attrValue("version").substringBefore(" - "),
+            classRoots = roots.rootUrls("classPath"),
+            sourceRoots = roots.rootUrls("sourcePath").toSet(),
+            annotationRoots = roots.rootUrls("annotationsPath"),
+        ).let { name to it }
+    }
+}
+
+private fun Element.attrValue(child: String): String =
+    getChildren(child).firstOrNull()?.getAttributeValue("value")
+        ?: error("Missing <$child value=...> under <${this.name}>")
+
+private fun Element.rootUrls(orderType: String): List<String> {
+    val typeEl = getChild(orderType) ?: return emptyList()
+    val composite = typeEl.getChild("root") ?: return emptyList()
+    return composite.getChildren("root").map { it.getAttributeValue("url") }
 }
