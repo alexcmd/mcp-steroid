@@ -221,6 +221,13 @@ class ScriptExecutor(
      * Run a single dialog-killer sweep and await its completion, dismissing any
      * modal left over from a previous step before the modality gate runs.
      *
+     * This synchronous "guarantee no modal left" pass is intentionally NOT gated by
+     * [ExecCodeParams.dialogKiller]: that flag gates the *periodic* killer
+     * ([startDialogKiller]) which would otherwise close a modal the script body opens
+     * on purpose. The pre-flight pass instead clears modals that are already up before
+     * the body runs, so exec_code can safely commit/refresh and execute. It is skipped
+     * only when the caller explicitly opts to run under a modal ([ExecCodeParams.allowModal]).
+     *
      * Bounded by [INITIAL_KILL_TIMEOUT] purely as a deadlock safety net — the
      * killer's EDT work is pumped under [ModalityState.any], so it normally
      * completes promptly. On timeout we log and fall through to the gate, which
@@ -231,7 +238,7 @@ class ScriptExecutor(
         executionId: ExecutionId,
         resultBuilder: ExecutionResultBuilder,
     ) {
-        if (!exec.dialogKiller || !exec.cancelOnModal) return
+        if (exec.allowModal) return
 
         try {
             withTimeout(INITIAL_KILL_TIMEOUT) {
@@ -308,10 +315,10 @@ class ScriptExecutor(
         }
     }
 
-    private suspend fun isModalEdt(): Boolean =
-        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-            ModalityState.current() != ModalityState.nonModal()
-        }
+    // Single source of truth, shared with the dialog killer (DialogWindowsLookup): the
+    // gate and the killer must agree on what "modal" means. Yuriy's check — EDT under
+    // ModalityState.any(), current() != nonModal().
+    private suspend fun isModalEdt(): Boolean = dialogWindowsLookup().isModalEdt()
 
     private suspend fun commitAndSaveAllDocumentsGuardedOnEdt(
         project: Project,

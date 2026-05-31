@@ -34,40 +34,36 @@ fun dialogWindowsLookup(): DialogWindowsLookup = service()
 @Service(Service.Level.APP)
 class DialogWindowsLookup {
     /**
-     * Fast negative path: try dispatching to EDT without modality context.
-     * If EDT responds within the timeout, no modal dialog is blocking.
+     * Yuriy's modality check — the same logic exec_code uses (see
+     * `ScriptExecutor.isModalEdt`): dispatch to the EDT under [ModalityState.any]
+     * (which IS pumped even while a modal event loop runs, so it never hangs) and
+     * ask whether the EDT is currently in an elevated modality state.
      *
-     * NOTE! It can return false positive, when IDE is overloaded and not able to process EDT on time.
+     * This is the single, reliable modal detector shared by the gate
+     * ([withModalityCheck]) and the killer ([withDialogWindows]) — replacing the
+     * old `canPumpEdtNonModal` probe, whose 100ms `async(EDT){true}` round-trip
+     * was a false-negative under a modal whose modality let the non-modal probe
+     * slip through (it reported "EDT responsive, no modal" so the killer never
+     * enumerated anything to close).
      *
-     * @return true if EDT is responsive (no modal), false if timeout/error (modal may be present)
+     * TRUE for a modal [DialogWrapper] AND for modal progress/indexing; callers
+     * that must tell those apart enumerate the actual dialog windows afterwards.
      */
-    private suspend fun canPumpEdtNonModal(): Boolean {
-        if (ApplicationManager.getApplication().isHeadlessEnvironment) return true
-        return try {
-            // Stay on the caller's dispatcher; the inner async(Dispatchers.EDT)
-            // does the dispatch and `await()` only suspends here. CoroutineName
-            // is a diagnostics tag, not a dispatcher switch.
-            withContext(CoroutineName("DialogWindowsLookup#check")) {
-                withTimeout(100) {
-                    async(Dispatchers.EDT) { true }.await()
-                }
-            }
-        } catch (_: TimeoutCancellationException) {
-            false
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            false
+    suspend fun isModalEdt(): Boolean {
+        if (ApplicationManager.getApplication().isHeadlessEnvironment) return false
+        return withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+            ModalityState.current() != ModalityState.nonModal()
         }
     }
 
     /**
      * Detect modal dialog windows for a project and process them.
      *
-     * 1. Tries [canPumpEdtNonModal] — if EDT is responsive, calls [action] with empty list.
-     * 2. Otherwise, dispatches to EDT with [ModalityState.any] to enumerate all
-     *    modal [DialogWrapper] instances owned by the project frame.
-     * 3. Calls [action] with the found dialogs sorted by depth (deepest first).
+     * 1. [isModalEdt] — if the EDT is not in a modal state, calls [action] with empty list.
+     * 2. Otherwise, dispatches to EDT with [ModalityState.any] to enumerate modal
+     *    [DialogWrapper] instances (project-frame-owned, falling back to all showing modals).
+     * 3. Calls [action] with the found dialogs sorted by depth, **deepest (top-most) first**,
+     *    so the killer closes the front-most dialog before its parents.
      */
     suspend fun <T> withDialogWindows(
         project: Project,
@@ -77,7 +73,10 @@ class DialogWindowsLookup {
             return action(emptyList())
         }
 
-        if (canPumpEdtNonModal()) {
+        // Same modal detector as the gate (Yuriy's check): only enumerate when the EDT is
+        // actually in a modal state. This replaces the old canPumpEdtNonModal probe whose
+        // false-negative made the killer skip enumeration and never close the dialog.
+        if (!isModalEdt()) {
             return action(emptyList())
         }
 
@@ -116,7 +115,7 @@ class DialogWindowsLookup {
      * [`waitForIdeWindow`](../../integration/infra/intelliJ-container.kt)'s
      * fail-fast path abort every test as soon as indexing kicked in.
      *
-     * 1. Tries [canPumpEdtNonModal] — if EDT is responsive, calls [action] with `false`.
+     * 1. [isModalEdt] — if the EDT is not modal at all, calls [action] with `false`.
      * 2. Otherwise, dispatches to EDT with [ModalityState.any] and enumerates
      *    actual [DialogWrapperDialog] windows. If any is showing and modal → true.
      * 3. Calls [action] with the result.
@@ -129,7 +128,10 @@ class DialogWindowsLookup {
             return action(false)
         }
 
-        if (canPumpEdtNonModal()) {
+        // Yuriy's check first (shared with the killer): if the EDT is not modal at all,
+        // there is certainly no modal dialog. Otherwise enumerate to tell a real modal
+        // DialogWrapper window apart from mere progress/indexing modality.
+        if (!isModalEdt()) {
             return action(false)
         }
 
