@@ -6,8 +6,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import org.jdom2.Document
 import org.jdom2.Element
-import org.jdom2.output.Format
-import org.jdom2.output.XMLOutputter
 
 /**
  * Generates `options/jdk.table.xml` from infra code (NOT inside IntelliJ) so the JDK
@@ -81,8 +79,7 @@ fun renderJdkTableXml(entries: List<JdkTableEntry>): String {
         component.addContent(jdk)
     }
     val root = Element("application").addContent(component)
-    val format = Format.getPrettyFormat().setIndent("  ").setLineSeparator("\n")
-    return XMLOutputter(format).outputString(Document(root)) + "\n"
+    return Document(root).toIdeaXml() + "\n"
 }
 
 private fun compositeRootList(tag: String, urls: List<String>): Element {

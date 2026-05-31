@@ -131,8 +131,8 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
             console.writeInfo("Setting project JDK to $jdk in misc.xml before IDE start...")
             ijDriver.configureProjectJdk(jdk)
             if (selectedProject.buildSystems.any { it.type == BuildSystem.GRADLE }) {
-                console.writeInfo("Pinning Gradle JVM to $jdk before IDE start...")
-                ijDriver.configureGradleJvm(jdk)
+                console.writeInfo("Pinning Gradle JDK to $jdk before IDE start...")
+                ijDriver.configureGradleJdk(jdk)
             }
         }
     }

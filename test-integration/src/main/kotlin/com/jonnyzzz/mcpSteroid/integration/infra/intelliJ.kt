@@ -20,8 +20,6 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
 import org.jdom2.Document
 import org.jdom2.Element
 import org.jdom2.input.SAXBuilder
-import org.jdom2.output.Format
-import org.jdom2.output.XMLOutputter
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -361,77 +359,71 @@ class IntelliJDriver(
     }
 
     /**
-     * Pin the Gradle JVM in the project's `.idea/gradle.xml` to a registered JDK name BEFORE the
-     * IDE starts, so project-open Gradle auto-import resolves its JVM instead of stalling on an
-     * unresolved `gradleJvm` (e.g. the `#GRADLE_LOCAL_JAVA_HOME` macro). No-op if gradle.xml is
-     * absent (a fresh checkout: the project SDK we set covers the default `#USE_PROJECT_JDK`).
+     * Pin the Gradle JDK in `.idea/gradle.xml` to a registered JDK name BEFORE the IDE starts, so
+     * project-open Gradle auto-import resolves its JVM instead of stalling on an unresolved
+     * `gradleJvm` (e.g. the `#GRADLE_LOCAL_JAVA_HOME` macro). Creates the file and the nested
+     * GradleSettings → linkedExternalProjectsSettings → GradleProjectSettings elements when absent.
+     * (`gradleJvm` is IntelliJ's own option name in the XML.)
      */
-    fun configureGradleJvm(jdkName: String) {
-        val gradleXml = "$projectGuestDir/.idea/gradle.xml"
-        val sed = "s|name=\"gradleJvm\" value=\"[^\"]*\"|name=\"gradleJvm\" value=\"$jdkName\"|"
-        driver.startProcessInContainer {
-            this
-                .args("bash", "-c", "f='$gradleXml'; if [ -f \"\$f\" ]; then sed -i '$sed' \"\$f\"; echo patched; else echo 'no gradle.xml'; fi")
-                .timeoutSeconds(10)
-                .description("Pin gradleJvm=$jdkName in $gradleXml")
-                .quietly()
-        }.assertExitCode(0) { "Failed to pin gradleJvm in $gradleXml: $stderr" }
-        driver.log("Configured Gradle JVM=$jdkName for project")
+    fun configureGradleJdk(jdkName: String) {
+        patchProjectIdeaXml("gradle.xml") { root ->
+            val gradleProjectSettings = root.ensureComponent("GradleSettings")
+                .ensureOption("linkedExternalProjectsSettings")
+                .ensureChild("GradleProjectSettings")
+            // A freshly created GradleProjectSettings needs the linked project path to be valid.
+            if (gradleProjectSettings.findOption("externalProjectPath") == null) {
+                gradleProjectSettings.ensureOption("externalProjectPath").setAttribute("value", "\$PROJECT_DIR\$")
+            }
+            gradleProjectSettings.ensureOption("gradleJvm").setAttribute("value", jdkName)
+        }
+        driver.log("Configured Gradle JDK=$jdkName for project")
     }
 
     /**
      * Set the project JDK in `.idea/misc.xml` to a registered JDK name BEFORE the IDE starts, so
-     * the project SDK is resolved at project-open (rather than only by the post-open
-     * `mcpSetProjectSdk`). Patches ONLY the `ProjectRootManager` component's `project-jdk-name`
-     * attribute (adding it when absent — our fixtures ship misc.xml without it). No-op if misc.xml
-     * or the component is missing; the post-open `mcpSetProjectSdk` still covers those.
+     * the project SDK is resolved at project-open (not only by the post-open `mcpSetProjectSdk`).
+     * Creates the file and the `ProjectRootManager` component (with the JavaSDK type) when absent.
      */
     fun configureProjectJdk(jdkName: String) {
-        val ideaDir = "$projectGuestDir/.idea"
-        val miscXml = "$ideaDir/misc.xml"
-        // project-home is container-local (only /mcp-run-dir and /repo-cache are bind-mounted), so
-        // round-trip the file via copyFromContainer/copyToContainer (which map to host paths when
-        // possible, and have no content-size limit) rather than the host FS or heredoc writes.
-        val exists = driver.startProcessInContainer {
-            this
-                .args("bash", "-c", "test -f '$miscXml' && echo yes || echo no")
-                .timeoutSeconds(10)
-                .description("Check $miscXml exists")
-                .quietly()
-        }.assertExitCode(0) { "Failed to stat $miscXml: $stderr" }.stdout.trim() == "yes"
-
-        val tmp = File.createTempFile("misc-", ".xml")
-        try {
-            // Reuse the existing document, or create a fresh `<project version="4">`.
-            val doc: Document = if (exists) {
-                driver.copyFromContainer(miscXml, tmp)
-                SAXBuilder().build(tmp)
-            } else {
-                Document(Element("project").setAttribute("version", "4"))
+        patchProjectIdeaXml("misc.xml") { root ->
+            val projectRootManager = root.ensureComponent("ProjectRootManager")
+            if (projectRootManager.getAttributeValue("version") == null) {
+                projectRootManager.setAttribute("version", "2")
             }
-            val root = doc.rootElement
-
-            // Find the ProjectRootManager component, adding it (with the JavaSDK type) when absent.
-            val projectRootManager = root.children.firstOrNull {
-                it.name == "component" && it.getAttributeValue("name") == "ProjectRootManager"
-            } ?: Element("component")
-                .setAttribute("name", "ProjectRootManager")
-                .setAttribute("version", "2")
-                .setAttribute("project-jdk-type", "JavaSDK")
-                .also { root.addContent(it) }
-
             projectRootManager.setAttribute("project-jdk-name", jdkName)
             if (projectRootManager.getAttributeValue("project-jdk-type") == null) {
                 projectRootManager.setAttribute("project-jdk-type", "JavaSDK")
             }
-
-            tmp.writeText(XMLOutputter(Format.getPrettyFormat().setLineSeparator("\n")).outputString(doc))
-            driver.mkdirs(ideaDir) // docker cp needs the parent dir to exist (no-op when host-mapped)
-            driver.copyToContainer(tmp, miscXml)
-            driver.log("Configured project JDK=$jdkName in misc.xml (${if (exists) "patched" else "created"})")
-        } finally {
-            tmp.delete()
         }
+        driver.log("Configured project JDK=$jdkName for project")
+    }
+
+    /**
+     * Try to copy `.idea/<fileName>` down from the (container-local) project dir — if that
+     * succeeds the file exists, if it fails the file is absent and we start a fresh
+     * `<project version="4">`. Apply [mutateRoot] to the root element, then write it back via
+     * writeFileInContainer (which stages its own temp file, creates the parent dir, and uses
+     * direct host filesystem access when bind-mounted).
+     */
+    private fun patchProjectIdeaXml(fileName: String, mutateRoot: (Element) -> Unit) {
+        val xmlPath = "$projectGuestDir/.idea/$fileName"
+        val readTmp = File.createTempFile(fileName.substringBefore('.') + "-", ".xml")
+        val doc: Document = try {
+            val copied = try {
+                driver.copyFromContainer(xmlPath, readTmp)
+                true
+            } catch (e: Exception) {
+                driver.log("No $xmlPath (${e.message}) — creating it")
+                false
+            }
+            if (copied) SAXBuilder().build(readTmp)
+            else Document(Element("project").setAttribute("version", "4"))
+        } finally {
+            readTmp.delete()
+        }
+
+        mutateRoot(doc.rootElement)
+        driver.writeFileInContainer(xmlPath, doc.toIdeaXml())
     }
 
     fun deployPluginToContainer(pluginZipPath: File) {
