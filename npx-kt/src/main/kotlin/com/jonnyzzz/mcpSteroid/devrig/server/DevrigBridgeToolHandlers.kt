@@ -97,8 +97,8 @@ class DevrigExecuteCodeToolHandler(
             put("code", execCodeParams.code)
             put("task_id", execCodeParams.taskId)
             put("reason", execCodeParams.reason)
-            execCodeParams.timeout?.let { put("timeout", it) }
-            execCodeParams.dialogKiller?.let { put("dialog_killer", it) }
+            put("timeout", execCodeParams.timeout)
+            put("dialog_killer", execCodeParams.dialogKiller)
             put("allow_modal", execCodeParams.allowModal)
         }
     }

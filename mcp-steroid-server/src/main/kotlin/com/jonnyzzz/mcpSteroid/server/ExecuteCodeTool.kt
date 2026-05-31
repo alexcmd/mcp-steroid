@@ -11,6 +11,7 @@ import com.jonnyzzz.mcpSteroid.mcp.int
 import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.required
 import com.jonnyzzz.mcpSteroid.mcp.string
+import com.jonnyzzz.mcpSteroid.mcp.withDefaultValue
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.prompts.generated.skill.ExecuteCodeToolDescriptionPromptArticle
@@ -21,13 +22,13 @@ data class ExecCodeParams(
     val taskId: String,
     val code: String,
     val reason: String,
-    val timeout: Int?,
-    //TODO: move that away from here, allow changes only via the McpScriptContext::doNotCancelOnModalityStateChange
+    val timeout: Int,
+
     /** If true, cancel execution when a modal dialog appears and return a screenshot. Default true. */
     val cancelOnModal: Boolean = true,
 
     /** Controls pre-execution dialog killer: null = use registry default, true = force enable, false = force disable. */
-    val dialogKiller: Boolean? = null,
+    val dialogKiller: Boolean = true,
 
     /**
      * If true, proceed even when a modal dialog is detected before the script runs: skip the
@@ -56,21 +57,24 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     val reason = CommonToolParams.reason().registerToSchema()
 
-    //TODO: Drop timeout
+    private val defaultTimeoutSeconds = 600
     val timeout = InputSchemaElement.param("timeout")
-        .description("Execution timeout in seconds (default: 600, configurable via mcp.steroid.execution.timeout registry key)")
+        .description("Execution timeout in seconds (default: $defaultTimeoutSeconds, configurable via mcp.steroid.execution.timeout registry key)")
         .int()
+        .withDefaultValue(defaultTimeoutSeconds)
         .registerToSchema()
 
     //TODO: Drop dialog killer
     val dialogKiller = InputSchemaElement.param("dialog_killer")
         .description("Override pre-execution dialog killer: true = force enable, false = force disable. Default: use registry setting (mcp.steroid.dialog.killer.enabled).")
         .boolean()
+        .withDefaultValue(true)
         .registerToSchema()
 
     val allowModal = InputSchemaElement.param("allow_modal")
         .description("If true, proceed even when a modal dialog is detected before the script runs (skip the pre-flight fail-fast and skip the pre-flight commit/VFS refresh, with a warning). Default false.")
         .boolean()
+        .withDefaultValue(false)
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
@@ -88,7 +92,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
             reason = reason,
             timeout = timeout,
             dialogKiller = dialogKiller,
-            allowModal = allowModal ?: false,
+            allowModal = allowModal,
         )
 
         return handler().executeCode(projectName, execCodeParams, context.mcpProgressReporter)

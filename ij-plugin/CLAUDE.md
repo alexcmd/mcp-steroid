@@ -278,8 +278,20 @@ devrig JVM too (`DEVRIG_DEBUG_PORT`=5006) — both Docker-mapped to host ports p
 IntelliJ's "Remote JVM Debug" (module `ij-plugin`) to step through plugin code (`DialogKiller`,
 `DialogWindowsLookup`, `ScriptExecutor`) live. Recipe to attach programmatically:
 `mcp-steroid://debugger/debug-attach-remote-jvm`; full workflow in `test-integration/AGENTS.md`
-→ "Remote-debugging the Dockerized IDE". The modal-dialog/EDT hang under investigation is written
+→ "Remote-debugging the Dockerized IDE". The modal-dialog/EDT hang (resolved 2026-05-31) is written
 up in `docs/dialog-killer-modality-hang.md`.
+
+### exec_code pre-flight modality contract (ScriptExecutor.executeWithProgress)
+
+`commitAndSaveAllDocuments` and `VfsRefreshService.awaitRefresh` run on the **write-intent**
+`Dispatchers.EDT` and **hang under a modal dialog** (the dispatch is withheld). The pre-flight is
+therefore: start the dialog killer FIRST (Disposer-cancelled, never blocks completion) → gate on
+`isModalEdt()` (`Dispatchers.EDT + ModalityState.any()` reading `current() != nonModal()`, stable —
+`LaterInvocator` is `@Internal`) → run commit + VFS **only when non-modal**, inside
+`commitAndSaveAllDocumentsGuardedOnEdt` (`withTimeout(60s)`; timeout ⇒ `ToolCallErrorException`
+"deadlocked"). The `allow_modal` param skips commit/VFS under a modal (with a warning); a real modal
+dialog otherwise hard-fails. Stage markers (`[PRE]`/`[RUN]`/`[POST]`) localize any stall. Full
+rationale: `docs/dialog-killer-modality-hang.md` → Resolution.
 
 ### Cleaning build artifacts
 

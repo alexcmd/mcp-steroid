@@ -15,6 +15,8 @@ import com.intellij.openapi.ui.ExitActionType
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.vision.VisionService
+import java.awt.Dialog
+import java.awt.Frame
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
@@ -41,6 +43,31 @@ class DialogKiller {
 
     // Allow only 1 process at a time
     private val mutex = Semaphore(1)
+
+
+    fun CoroutineScope.startDialogKiller(
+        executionId: ExecutionId,
+        project: Project,
+        logMessage: (String) -> Unit,
+        dialogKiller: Boolean
+    ): Job = launch(CoroutineName("execution-dialog-killer-$executionId")) {
+        while (isActive) {
+            try {
+                killProjectDialogs(
+                    project = project,
+                    executionId = executionId,
+                    logMessage = logMessage,
+                    forceEnabled = dialogKiller,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                log.warn("Periodic dialog killer failed for $executionId: ${t.message}", t)
+            }
+
+            delay(1_000L.milliseconds)
+        }
+    }
 
     /**
      * Kill all modal dialogs owned by the project frame.
@@ -149,8 +176,8 @@ class DialogKiller {
         withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
             try {
                 val window = dialog.window
-                val title = (window as? java.awt.Frame)?.title
-                    ?: (window as? java.awt.Dialog)?.title
+                val title = (window as? Frame)?.title
+                    ?: (window as? Dialog)?.title
                     ?: "Unknown"
 
                 log.warn("Closing dialog $index/$total: '$title' (execution: $executionId)")

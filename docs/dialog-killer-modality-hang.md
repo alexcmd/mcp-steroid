@@ -1,7 +1,45 @@
 # DialogKiller hang — modal not closed (investigation notes)
 
-Status: **leading hypothesis identified (write-intent dispatch), not yet confirmed live or
-fixed.** Living doc; update as we learn more.
+Status: **RESOLVED (2026-05-31)** — the `exec_code` pre-flight was reworked so it can no longer
+hang under a modal (see **Resolution** below). The investigation notes that follow are kept for
+history; the originally-proposed `UiWithModelAccess` candidate was **not** taken (it is
+`@ApiStatus.Internal`).
+
+## Resolution (implemented 2026-05-31)
+
+The root cause was confirmed: the hang sites are write-intent `Dispatchers.EDT` dispatches that are
+withheld during a `DialogWrapper.show()` modal loop — both the killer's own `EDT + any()`
+enumeration AND, with `dialog_killer=false`, the pre-flight `commitAndSaveAllDocuments` (write-intent
+EDT, no `any()`). `ModalityState.any()` passes the modality filter but does NOT lift the write-intent
+lock, so `EDT + any()` alone is not guaranteed non-blocking.
+
+Rather than switch to the (internal) `UiWithModelAccess` dispatcher, the `exec_code` pre-flight in
+`ScriptExecutor.executeWithProgress` was restructured so commit/VFS only run when it is safe, and any
+residual write-intent stall fails fast instead of hanging:
+
+1. **Dialog killer started FIRST**, spanning the whole execution (immediate first pass, then polls).
+   Launched as a child of the request `coroutineScope` and cancelled via the execution `Disposable`
+   so it never blocks structured completion.
+2. **Non-modal gate** `isModalEdt()` = `withContext(Dispatchers.EDT + ModalityState.any().asContextElement())
+   { ModalityState.current() != ModalityState.nonModal() }`. Stable API
+   (`LaterInvocator.isInModalContext()` is `@ApiStatus.Internal` — banned). `any()` lets the read run
+   under a modal.
+3. **Commit + VFS refresh only when non-modal**, and **bounded** by `commitAndSaveAllDocumentsGuardedOnEdt`
+   — `withTimeout(60 s) { withContext(Dispatchers.EDT) { commitAllDocuments(); saveAllDocuments();
+   vfsRefreshService.awaitRefresh() } }`. **VFS refresh also requires a non-modal EDT** (it would hang
+   under a modal too), so it lives inside this guarded EDT block. On timeout ⇒ `log.error` + throw
+   `ToolCallErrorException("IntelliJ appears deadlocked …")` (clean tool error, not a 10-min stall).
+4. **Branch when modal:** `allow_modal=true` ⇒ skip commit/VFS with a warning in the result;
+   otherwise enumerate via `DialogWindowsLookup.withModalityCheck` and **hard-fail only on a real modal
+   dialog** (not on mere indexing/progress, which also elevates `ModalityState`).
+5. **Post-flight commit** re-checks `isModalEdt()` (current modality) before committing.
+6. **Stage markers** (`[PRE] …`, `[RUN] script`, `[POST] …`) are logged to the result on entry to each
+   stage, so if anything ever stalls the last marker pinpoints the exact stuck stage.
+
+New `exec_code` parameter **`allow_modal: Boolean = false`** drives step 4 (threaded through
+`ExecCodeParams` + the tool schema, and forwarded by the devrig stdio bridge in
+`DevrigBridgeToolHandlers`). Validation: `:test-integration:test --tests '*DialogKillerIntegrationTest*'`
+(macOS+Docker repro) must fail-fast / proceed without the multi-minute hang.
 
 ## Symptom
 
@@ -59,7 +97,8 @@ sibling `DispatchedCoroutine{Active} state: CREATED [Dispatchers.EDT]` — an ED
 coroutine queued and never started while the EDT sat in `WaitDispatchSupport.enter` →
 `DialogWrapper.doShow`.
 
-**Candidate fix:** run the killer's modal-time UI work on the **non-write-intent** UI dispatcher,
+**Candidate fix (NOT taken — superseded by Resolution above; `UiWithModelAccess` is `@ApiStatus.Internal`):**
+run the killer's modal-time UI work on the **non-write-intent** UI dispatcher,
 `Dispatchers.UiWithModelAccess + ModalityState.any().asContextElement()` (verified present in
 this platform at `core-api/.../coroutines.kt`), at `DialogWindowsLookup` (enumeration + modality
 check), `DialogKiller.closeDialog`, and the `VisionService`/`ScreenshotImageProvider` capture path;
@@ -142,7 +181,7 @@ whole test on CI where nobody attaches — see `jdwp-suspend-n-test-modules` mem
 - **`UiWithModelAccess` candidate**: applied to `DialogWindowsLookup` then **reverted** — not
   committed pending the live-debug confirmation (all-weather requirement, above).
 
-## Next steps
+## Next steps (superseded — see Resolution at top; kept for history)
 
 1. Start a playground / Docker test; grab the host-mapped `IDE_DEBUG_PORT` and attach IntelliJ's
    "Remote JVM Debug" (module `ij-plugin`) per the attach recipe. (Open the test modal from vanilla
