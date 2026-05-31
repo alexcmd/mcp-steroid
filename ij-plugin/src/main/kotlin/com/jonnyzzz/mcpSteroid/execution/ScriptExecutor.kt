@@ -13,6 +13,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.util.concurrency.AppExecutorUtil
+import com.intellij.util.concurrency.ThreadingAssertions
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
@@ -82,6 +83,13 @@ class ScriptExecutor(
         exec: ExecCodeParams,
         resultBuilder: ExecutionResultBuilder,
     ) {
+        // exec_code must never be driven from the EDT: the pre-flight dispatches
+        // back to the EDT (isModalEdt / commit / VFS refresh) via withContext(EDT),
+        // which deadlocks if the calling coroutine is itself parking the EDT (e.g.
+        // runBlocking on the EDT, as a misconfigured BasePlatformTestCase does).
+        // Fail fast with a clear message instead of hanging.
+        ThreadingAssertions.assertBackgroundThread()
+
         log.info("Starting execution $executionId")
 
         coroutineScope {
