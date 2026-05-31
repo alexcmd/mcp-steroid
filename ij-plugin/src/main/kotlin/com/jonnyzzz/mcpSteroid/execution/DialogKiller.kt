@@ -15,6 +15,7 @@ import com.intellij.openapi.ui.ExitActionType
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.vision.VisionService
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -165,7 +166,7 @@ class DialogKiller {
                 dialog.close(DialogWrapper.CANCEL_EXIT_CODE, ExitActionType.CANCEL)
 
                 // Let it pump events!
-                delay(10)
+                delay(10.milliseconds)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ProcessCanceledException) {
