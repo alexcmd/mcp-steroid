@@ -43,12 +43,12 @@ class JdkTableIntegrationTest {
         val console = session.console
 
         // Step 1: Register JDKs via IntelliJ API
-        console.writeStep(1, "Registering JDKs via mcpRegisterJdks")
+        console.writeStep(text = "Registering JDKs via mcpRegisterJdks")
         session.mcpSteroid.mcpRegisterJdks()
         console.writeSuccess("JDK registration call completed")
 
         // Step 2: Verify JDKs are visible in ProjectJdkTable
-        console.writeStep(2, "Verifying ProjectJdkTable has Java SDKs")
+        console.writeStep(text = "Verifying ProjectJdkTable has Java SDKs")
         session.mcpSteroid.mcpExecuteCode(
             code = $$"""
                 import com.intellij.openapi.projectRoots.JavaSdk
@@ -71,9 +71,9 @@ class JdkTableIntegrationTest {
         console.writeSuccess("JDK table has registered Java SDKs")
 
         // Step 3: Verify each JDK has valid home path with bin/java
-        console.writeStep(3, "Validating JDK home paths")
+        console.writeStep(text = "Validating JDK home paths")
         session.mcpSteroid.mcpExecuteCode(
-            code = """
+            code = $$"""
                 import com.intellij.openapi.projectRoots.JavaSdk
                 import com.intellij.openapi.projectRoots.ProjectJdkTable
 
@@ -82,16 +82,16 @@ class JdkTableIntegrationTest {
                 for (sdk in javaSdks) {
                     val home = sdk.homePath
                     if (home == null) {
-                        println("INVALID: ${'$'}{sdk.name} — homePath is null")
+                        println("INVALID: ${sdk.name} — homePath is null")
                         allValid = false
                         continue
                     }
                     val javaFile = java.io.File(home, "bin/java")
                     if (!javaFile.exists()) {
-                        println("INVALID: ${'$'}{sdk.name} — ${'$'}home/bin/java does not exist")
+                        println("INVALID: ${sdk.name} — $home/bin/java does not exist")
                         allValid = false
                     } else {
-                        println("VALID: ${'$'}{sdk.name} — ${'$'}home")
+                        println("VALID: ${sdk.name} — $home")
                     }
                 }
                 require(allValid) { "Some JDKs have invalid home paths" }
@@ -104,9 +104,9 @@ class JdkTableIntegrationTest {
         console.writeSuccess("All JDK paths are valid")
 
         // Step 4: Apply a JDK as project SDK
-        console.writeStep(4, "Setting project SDK")
+        console.writeStep(text = "Setting project SDK")
         session.mcpSteroid.mcpExecuteCode(
-            code = """
+            code = $$"""
                 import com.intellij.openapi.projectRoots.JavaSdk
                 import com.intellij.openapi.projectRoots.ProjectJdkTable
                 import com.intellij.openapi.projectRoots.ex.JavaSdkUtil
@@ -121,7 +121,7 @@ class JdkTableIntegrationTest {
                 edtWriteAction { JavaSdkUtil.applyJdkToProject(project, sdk) }
 
                 val appliedSdk = ProjectRootManager.getInstance(project).projectSdk
-                println("APPLIED_SDK: name=${'$'}{appliedSdk?.name} home=${'$'}{appliedSdk?.homePath}")
+                println("APPLIED_SDK: name=${appliedSdk?.name} home=${appliedSdk?.homePath}")
                 require(appliedSdk != null) { "Project SDK should be set" }
                 println("PROJECT_SDK_OK")
             """.trimIndent(),
@@ -132,14 +132,14 @@ class JdkTableIntegrationTest {
         console.writeSuccess("Project SDK set successfully")
 
         // Step 5: Verify compilation works
-        console.writeStep(5, "Triggering compilation to verify SDK works")
+        console.writeStep(text = "Triggering compilation to verify SDK works")
         session.mcpSteroid.mcpExecuteCode(
-            code = """
+            code = $$"""
                 val result = com.intellij.task.ProjectTaskManager.getInstance(project)
                     .buildAllModules().blockingGet(60_000)
                 val hasErrors = result?.hasErrors() ?: false
                 val isAborted = result?.isAborted ?: false
-                println("BUILD_RESULT: errors=${'$'}hasErrors aborted=${'$'}isAborted")
+                println("BUILD_RESULT: errors=$hasErrors aborted=$isAborted")
                 require(!hasErrors) { "Compilation should not have errors with a valid SDK" }
                 println("COMPILATION_OK")
             """.trimIndent(),
