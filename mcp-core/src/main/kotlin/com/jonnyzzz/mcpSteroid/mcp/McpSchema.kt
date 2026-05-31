@@ -84,6 +84,18 @@ fun InputSchemaElement<Nothing>.number() = InputSchemaElement(
     }
 )
 
+fun <T : Any> InputSchemaElement<T?>.withDefaultValue(defaultValue: T): InputSchemaElement<T> {
+    val that = this
+    return InputSchemaElement(
+        spec = spec.copy(),
+        parser = object : InputSchemaParamParser<T> {
+            override fun parseParameter(context: ToolCallContext): T {
+                return that.parser.parseParameter(context) ?: defaultValue
+            }
+        }
+    )
+}
+
 private fun <R> InputSchemaElement<R>.withExtra(block: JsonObjectBuilder.() -> Unit): InputSchemaElement<R> {
     val previous = spec.extra
     return copy(spec = spec.copy(extra = {
