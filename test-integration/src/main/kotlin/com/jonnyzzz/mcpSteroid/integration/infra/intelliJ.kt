@@ -16,7 +16,11 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import org.jdom2.input.SAXBuilder
+import org.jdom2.output.Format
+import org.jdom2.output.XMLOutputter
 import java.io.File
+import java.io.StringReader
 import kotlin.concurrent.thread
 
 /**
@@ -385,22 +389,34 @@ class IntelliJDriver(
      */
     fun configureProjectJdk(jdkName: String) {
         val miscXml = "$projectGuestDir/.idea/misc.xml"
-        val script = buildString {
-            append("f='$miscXml'; ")
-            append("if [ -f \"\$f\" ]; then ")
-            // drop any existing project-jdk-name on the ProjectRootManager line, then add ours
-            append("sed -i '/name=\"ProjectRootManager\"/ s| project-jdk-name=\"[^\"]*\"||' \"\$f\"; ")
-            append("sed -i '/name=\"ProjectRootManager\"/ s| />| project-jdk-name=\"$jdkName\" />|' \"\$f\"; ")
-            append("echo patched; else echo 'no misc.xml'; fi")
-        }
-        driver.startProcessInContainer {
+        // Project sources live on the container-local filesystem (not host-mounted), so read the
+        // file out of the container, patch it with the XML API (jdom2), and write it back.
+        val current = driver.startProcessInContainer {
             this
-                .args("bash", "-c", script)
+                .args("bash", "-c", "f='$miscXml'; [ -f \"\$f\" ] && cat \"\$f\" || true")
                 .timeoutSeconds(10)
-                .description("Set project-jdk-name=$jdkName in $miscXml")
+                .description("Read $miscXml")
                 .quietly()
-        }.assertExitCode(0) { "Failed to set project-jdk-name in $miscXml: $stderr" }
-        driver.log("Configured project JDK=$jdkName for project")
+        }.assertExitCode(0) { "Failed to read $miscXml: $stderr" }.stdout
+        if (current.isBlank()) {
+            driver.log("No misc.xml — skipping project JDK config (mcpSetProjectSdk covers it post-open)")
+            return
+        }
+
+        // Patch ONLY the ProjectRootManager component's project-jdk-name (add when absent).
+        val doc = SAXBuilder().build(StringReader(current))
+        val projectRootManager = doc.rootElement.children.firstOrNull {
+            it.name == "component" && it.getAttributeValue("name") == "ProjectRootManager"
+        }
+        if (projectRootManager == null) {
+            driver.log("misc.xml has no ProjectRootManager component — skipping project JDK config")
+            return
+        }
+        projectRootManager.setAttribute("project-jdk-name", jdkName)
+
+        val patched = XMLOutputter(Format.getPrettyFormat().setLineSeparator("\n")).outputString(doc)
+        driver.writeFileInContainer(miscXml, patched)
+        driver.log("Configured project JDK=$jdkName in misc.xml")
     }
 
     fun deployPluginToContainer(pluginZipPath: File) {
