@@ -27,8 +27,9 @@ enum class ModalMode {
     /**
      * Default, for PSI / code-management flows: close leftover modal dialogs (deepest-first), require a
      * non-modal IDE (fail with a screenshot if one survives), commit+save documents + refresh VFS, wait
-     * for indexing (smart mode), then run with the dialog killer monitoring — a modal appearing mid-run is
-     * closed and the run fails (with a thread dump + screenshot).
+     * for indexing (smart mode), then run with the modal-dialog monitor active — a modal appearing mid-run
+     * is closed and the run fails (with a thread dump + screenshot). Call `allowModalDialog()` from the
+     * script first if you open a dialog on purpose.
      */
     @SerialName("smart_non_modal")
     SMART_NON_MODAL,
@@ -107,14 +108,19 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
 
     val modal = InputSchemaElement.param("modal")
         .description(
-            "How to treat IDE modality around the script (default smart_non_modal). " +
-                "'smart_non_modal': close leftover modal dialogs, require non-modal (fail+screenshot if one " +
-                "survives), commit+save documents, refresh VFS, wait for indexing, and keep closing+failing " +
-                "on any modal that appears while running — the safe choice for PSI / code-editing scripts. " +
-                "'non_modal': only require a non-modal IDE at the start (fail+screenshot if modal); do nothing " +
-                "else — prepare what you need from the script via context methods (closeModalDialogs, " +
-                "syncDocuments, waitForSmartMode). 'unleashed': no sweep/checks/validation, run against " +
-                "whatever state exists (modals included) — for trivial/hardcoded IDE actions only, not PSI."
+            "How to treat IDE modality around the script. Default 'smart_non_modal' is right for almost " +
+                "everything — use it unless you have a specific reason not to. " +
+                "'smart_non_modal': close leftover modal dialogs, require non-modal (fail with a screenshot " +
+                "if one survives), commit+save documents, refresh VFS, wait for indexing, then run while " +
+                "watching for modals — a modal that appears mid-run is closed and the run FAILS (if your " +
+                "script opens a dialog on purpose, call allowModalDialog() from the script first). The safe " +
+                "choice for any PSI / code-editing / build / test work. " +
+                "'non_modal': only assert a non-modal IDE at the start (fail with a screenshot if modal) and " +
+                "do NOTHING else — no dialog sweep, no commit, no indexing wait; do those yourself via the " +
+                "context methods (syncDocuments, waitForSmartMode, closeModalDialogs). Not sufficient for " +
+                "PSI/editing unless you call syncDocuments()/waitForSmartMode() yourself. " +
+                "'unleashed': no sweep, no checks, no validation — runs against whatever state exists, modal " +
+                "dialogs included; for trivial / hardcoded IDE actions ONLY, never for PSI/editing."
         )
         .enumString(listOf(ModalMode.SMART_NON_MODAL.wire, ModalMode.NON_MODAL.wire, ModalMode.UNLEASHED.wire))
         .withDefaultValue(ModalMode.DEFAULT.wire)

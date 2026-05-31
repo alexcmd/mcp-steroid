@@ -326,9 +326,10 @@ interface McpScriptContext {
     fun monitorAndCloseModalDialogs()
 
     /**
-     * Suspend the [monitorAndCloseModalDialogs] guard for the rest of the execution, so a modal dialog your
-     * script opens on purpose is neither closed nor treated as a failure. No-op when the monitor is not
-     * running. (Replaces the former `doNotCancelOnModalityStateChange()`.)
+     * Disable the [monitorAndCloseModalDialogs] guard for the REST of this execution — it does NOT
+     * auto-resume — so a modal dialog your script opens on purpose is neither closed nor treated as a
+     * failure. To re-arm the guard afterwards, call [monitorAndCloseModalDialogs] again. No-op when the
+     * monitor is not running. (Replaces the former `doNotCancelOnModalityStateChange()`.)
      *
      * ```kotlin
      * allowModalDialog()                 // about to show a refactoring confirmation on purpose

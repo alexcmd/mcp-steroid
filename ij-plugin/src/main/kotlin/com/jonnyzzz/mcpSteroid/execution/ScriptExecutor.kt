@@ -52,12 +52,13 @@ inline val Project.scriptExecutor: ScriptExecutor get() = service()
  *  - **Post-flight refresh** in `finally` so the next agent step (compile,
  *    grep, follow-up edit) sees disk changes the body made (e.g. via Bash).
  *
- * Periodic dialog killing:
- * - A periodic [DialogKiller] coroutine polls during execution and dismisses
- *   any modal dialog that appears, surfacing a screenshot to the agent log.
- * - If the script intentionally shows a dialog (e.g. refactoring confirmation),
- *   call `doNotCancelOnModalityStateChange()` on the script context BEFORE
- *   the action — that cancels the killer's poll job for the rest of the run.
+ * Modality handling is driven by the `modal` option (see [ExecCodeParams.modal] / [ModalMode]); each
+ * profile is sugar over the [McpScriptContext] methods:
+ * - `smart_non_modal` (default): closeModalDialogs + require-non-modal + syncDocuments + waitForSmartMode,
+ *   then start the modal monitor — a modal appearing mid-run is closed and the run fails.
+ * - `non_modal`: require-non-modal only. `unleashed`: nothing.
+ * - If the script intentionally shows a dialog (e.g. a refactoring confirmation), call
+ *   `allowModalDialog()` on the script context BEFORE the action so the monitor leaves it alone.
  *
  * Non-modal dialogs DO NOT block execution — they neither pin the EDT nor
  * count for the modality check; the script runs to completion against the

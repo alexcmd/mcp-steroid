@@ -66,8 +66,8 @@ is available as context methods you can call from any mode.
 
 | `modal` | What it does | Use it for |
 |---|---|---|
-| `smart_non_modal` *(default)* | Close leftover modal dialogs (deepest-first), require a non-modal IDE (the call **fails with a screenshot** if a modal survives), commit + save documents, refresh the VFS, wait for indexing — then run, with a monitor that **closes any modal dialog that appears mid-run and fails the call** (thread dump + screenshot captured). | PSI / code-editing / build / test scripts — the safe default. |
-| `non_modal` | Require a non-modal IDE at the start (fail with a screenshot if modal); do nothing else. Prepare what you need via the context methods below. | "I need a non-modal IDE but will manage commits / indexing / dialogs myself." |
+| `smart_non_modal` *(default)* | Close leftover modal dialogs (deepest-first), require a non-modal IDE (the call **fails with a screenshot** if a modal survives), commit + save documents, refresh the VFS, wait for indexing — then run, with a monitor that **closes any modal dialog that appears mid-run and fails the call** (thread dump + screenshot captured). If your script opens a dialog **on purpose**, call `allowModalDialog()` first so the monitor leaves it alone. | PSI / code-editing / build / test scripts — the safe default. |
+| `non_modal` | Require a non-modal IDE at the start (fail with a screenshot if modal); do **nothing** else — no sweep, no commit, no indexing wait. **Not sufficient for PSI/editing** unless you call `syncDocuments()` / `waitForSmartMode()` yourself. | "I need a non-modal IDE but will manage commits / indexing / dialogs myself." |
 | `unleashed` | No sweep, no checks, no validation — run against whatever IDE state exists, modal dialogs included. | Trivial / hardcoded IDE actions only. NOT for PSI or code-editing flows (no consistency guarantees). |
 
 Context methods (callable from any mode — the profiles above are just sugar over these):
@@ -81,6 +81,10 @@ Context methods (callable from any mode — the profiles above are just sugar ov
 - `syncDocuments()` — commit PSI + save documents + refresh VFS; asserts non-modal (fails on a modal).
 - `waitForSmartMode()` — wait for indexing; asserts non-modal (fails on a modal). Point-in-time only —
   still use `smartReadAction { }` for index-dependent reads.
+
+There is intentionally **no "close a mid-run dialog and keep going" mode** — `smart_non_modal` closes it and
+fails. If a script must tolerate dialogs popping up while it runs, use `unleashed` and call
+`closeModalDialogs()` yourself when needed (and accept no PSI-consistency guarantees).
 
 **Surface is fixed.** `McpScriptContext` won't grow new helpers — call IntelliJ APIs directly. See `mcp-steroid://skill/design-philosophy` Tenet 3.
 
