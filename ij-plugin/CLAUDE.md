@@ -281,23 +281,43 @@ IntelliJ's "Remote JVM Debug" (module `ij-plugin`) to step through plugin code (
 → "Remote-debugging the Dockerized IDE". The modal-dialog/EDT hang (resolved 2026-05-31) is written
 up in `docs/dialog-killer-modality-hang.md`.
 
-### exec_code pre-flight modality contract (ScriptExecutor.executeWithProgress)
+### exec_code modality model — the `modal` enum (ScriptExecutor.executeWithProgress)
 
-**Modality-sensitive operations that hang under a modal:** `commitAndSaveAllDocuments` and
-`VfsRefreshService.awaitRefresh` (write-intent `Dispatchers.EDT` — the dispatch is withheld), AND
-`context.waitForSmartMode()` / `waitForIndexesReady` in the `[RUN]` stage (smart-mode/indexing
-cannot complete while a modal is up). This is why the killer must run for the **whole** execution
-(not just pre-flight) — it keeps dismissing modals so commit/VFS and the smart-mode wait progress.
+**The MCP surface is one `ModalMode` enum** (`ExecuteCodeTool.kt`), not booleans. The old
+`dialog_killer` / `cancel_on_modal` / `allow_modal` params and the runtime
+`doNotCancelOnModalityStateChange()` are GONE. Full design + behavior table + the 10-iteration review:
+`docs/exec-code-options-redesign.md` (LOCKED). Modality-hang investigation that led here:
+`docs/dialog-killer-modality-hang.md`.
 
-`commitAndSaveAllDocuments` and `VfsRefreshService.awaitRefresh` run on the **write-intent**
-`Dispatchers.EDT` and **hang under a modal dialog** (the dispatch is withheld). The pre-flight is
-therefore: start the dialog killer FIRST (Disposer-cancelled, never blocks completion) → gate on
-`isModalEdt()` (`Dispatchers.EDT + ModalityState.any()` reading `current() != nonModal()`, stable —
-`LaterInvocator` is `@Internal`) → run commit + VFS **only when non-modal**, inside
-`commitAndSaveAllDocumentsGuardedOnEdt` (`withTimeout(60s)`; timeout ⇒ `ToolCallErrorException`
-"deadlocked"). The `allow_modal` param skips commit/VFS under a modal (with a warning); a real modal
-dialog otherwise hard-fails. Stage markers (`[PRE]`/`[RUN]`/`[POST]`) localize any stall. Full
-rationale: `docs/dialog-killer-modality-hang.md` → Resolution.
+**Why a stance is needed:** `commitAllDocuments` / `saveAllDocuments` / `VfsRefreshService.awaitRefresh`
+run on the **write-intent** `Dispatchers.EDT` and **hang under a modal** (the dispatch is withheld), and
+`waitForSmartMode()` / indexing **cannot complete while a modal is up**. So a script that touches PSI must
+first guarantee a non-modal IDE. The single reliable modal check is **Yuriy's** `isModalEdt()`
+(`DialogWindowsLookup`: `Dispatchers.EDT + ModalityState.any()`, `current() != nonModal()`; stable —
+`LaterInvocator` is `@Internal`), shared by the gate and the dialog killer.
+
+**`modal` values** (default `smart_non_modal`), each a `when` branch in `executeWithProgressImpl` that is
+sugar over the `McpScriptContext` methods:
+
+| `modal` | Pre-flight | During body | Post-flight |
+|---|---|---|---|
+| `smart_non_modal` *(default)* | `closeModalDialogs()` (sweep, deepest-first) → require non-modal (`requireNonModalOrFail` → fail + screenshot + thread dump) → `syncDocuments()` (commit+save+VFS, bounded 60s) → `waitForSmartMode()` (bounded 60s) → `monitorAndCloseModalDialogs()` | monitor polls ~1s; a modal dialog gets closed + the run FAILS (screenshot + thread dump) | re-`syncDocuments()` iff `!isModalEdt()` |
+| `non_modal` | `requireNonModalOrFail` only (assert-only) | nothing | nothing |
+| `unleashed` | nothing | nothing | nothing |
+
+**Context methods** (`McpScriptContextImpl`, callable from any mode): `closeModalDialogs(): Int` (sweep;
+thread-dump+screenshot side effects, **skipped on an empty sweep**; does not fail), `monitorAndCloseModalDialogs()`
+(1s-poll watcher; close + FAIL; launched in the execution scope so throwing fails the run; `allowModalDialog()`
+cancels it for the rest of the run), `syncDocuments()` (commit+save+VFS; asserts non-modal), `waitForSmartMode()`
+(asserts non-modal; **bounded** by `WAIT_FOR_SMART_MODE_TIMEOUT`). All bounded EDT ops use
+`withTimeout → ToolCallErrorException` so a stuck modal fails fast with a thread dump instead of hanging.
+Stage markers (`[PRE]`/`[RUN]`/`[POST]`) localize a stall.
+
+**Tests:** unit `ModalModeTest` (wire/default/parse) + `ExecutionManagerTest` profile-pipeline cases;
+integration `DialogKillerIntegrationTest` (Docker) — Step-1 opens a modal with `modal=unleashed` (no
+monitor, so it survives), explicit/screenshot/nested close it with `unleashed` + `closeModalDialogs()`,
+the automatic test uses `smart_non_modal` (pre-flight sweep). The test helper's `mcpExecuteCode(modal=…)`
+and `testExecParams(modal=…)` carry the wire string.
 
 ### Cleaning build artifacts
 

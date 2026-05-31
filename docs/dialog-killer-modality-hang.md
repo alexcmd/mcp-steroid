@@ -5,6 +5,13 @@ hang under a modal (see **Resolution** below). The investigation notes that foll
 history; the originally-proposed `UiWithModelAccess` candidate was **not** taken (it is
 `@ApiStatus.Internal`).
 
+> **Superseded by the `modal` enum redesign (same day).** The killer-first / `allow_modal` pre-flight in
+> *Resolution* was the intermediate fix; it was then unified into a single `modal` profile enum
+> (`smart_non_modal` | `non_modal` | `unleashed`) + `McpScriptContext` methods. **Authoritative current
+> spec: `docs/exec-code-options-redesign.md` → "SPEC — current, implemented".** The root-cause analysis
+> here stays valid: write-intent EDT / smart-mode are modality-sensitive; the fix is Yuriy's `isModalEdt()`
+> check + bounded EDT ops + a synchronous dialog sweep before any PSI work.
+
 ## Resolution (implemented 2026-05-31)
 
 The root cause was confirmed: the hang sites are write-intent `Dispatchers.EDT` dispatches (and

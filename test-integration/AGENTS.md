@@ -214,8 +214,8 @@ the agent measurement window — they are not bottlenecks. Only agent calls coun
 ### Known Bottleneck: "Resolving SDKs..." Modal Dialog
 
 Every `ProjectTaskManager.buildAllModules()` triggers a `Resolving SDKs...` modal that the
-dialog_killer dismisses. This causes `Build errors: true, aborted: false` even when compilation
-actually succeeded. The agent then wastes an exec_code call checking the empty problem list,
+`modal=smart_non_modal` sweep / `closeModalDialogs()` dismisses. This causes `Build errors: true,
+aborted: false` even when compilation actually succeeded. The agent then wastes an exec_code call checking the empty problem list,
 then falls back to `./mvnw test-compile` via Bash (25-60s).
 
 **Confirmed across ALL 6 scenarios**: modal fires, `Build errors: true`, problem list is empty.

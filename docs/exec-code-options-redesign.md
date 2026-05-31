@@ -1,8 +1,57 @@
 # exec_code options redesign — quorum-approved proposal (2026-05-31)
 
-Status: APPROVED. Quorum (run-agent.sh): model approved 3/3 (Gemini APPROVE; Claude CHANGES;
-Codex CHANGES — both CHANGES were refinements, all incorporated below). Naming + migration
-decided by maintainer: `auto_close_dialogs` / `disableDialogAutoClose()`; clean break (no aliases).
+Status: **IMPLEMENTED & VALIDATED** (unit + `DialogKillerIntegrationTest` Docker green; prompts/server
+text aligned; 10-iteration review applied). The proposal/quorum history below is kept for the rationale;
+the authoritative current spec is this top section.
+
+---
+
+## SPEC — `steroid_execute_code` modality (current, implemented)
+
+One MCP parameter: **`modal: ModalMode`** (enum, default `smart_non_modal`). Wire values
+`smart_non_modal` | `non_modal` | `unleashed`. (Replaces the former `dialog_killer` / `cancel_on_modal` /
+`allow_modal` booleans and the runtime `doNotCancelOnModalityStateChange()` — clean break, no aliases.)
+
+| `modal` | Pre-flight | During the body | Post-flight | Use for |
+|---|---|---|---|---|
+| `smart_non_modal` *(default)* | close leftover modal dialogs (deepest-first) → require non-modal: fail (+screenshot +thread dump) if one survives → commit+save documents + VFS refresh (bounded 60s) → wait for smart mode (bounded 60s; point-in-time) | poll ~1s; a modal dialog still showing is closed and the run FAILS (+screenshot +thread dump) | re-sync documents iff non-modal | PSI / editing / build / test / read-only — the safe default |
+| `non_modal` | require non-modal at the START only (fail +screenshot if modal); nothing else | nothing | nothing | "clean non-modal start, I'll prep myself via context methods" |
+| `unleashed` | nothing | nothing | nothing | intentional modal-dialog workflows (open/inspect/close) + trivial hardcoded actions; NOT PSI |
+
+**Fine control — `McpScriptContext` methods (any mode; profiles are sugar over these):**
+- `closeModalDialogs(): Int` — sweep showing modal dialogs deepest-first; captures screenshot + thread dump
+  (skipped on an empty sweep); returns count; does NOT fail the run.
+- `monitorAndCloseModalDialogs()` — start a ~1s poll watcher; a modal still showing at a tick is closed and
+  the run FAILS (screenshot + thread dump). No-op if already active. Does not sweep dialogs already up.
+- `allowModalDialog()` — disable that watcher for the REST of the run (no auto-resume); re-arm by calling
+  `monitorAndCloseModalDialogs()` again.
+- `syncDocuments()` — commit PSI + save documents + VFS refresh; asserts non-modal (fails on a modal).
+- `waitForSmartMode()` — wait for indexing; asserts non-modal; bounded (fails on timeout). Point-in-time —
+  index reads still need `smartReadAction { }`, and `Observation.awaitConfiguration(project)` after a
+  Gradle/Maven sync (the wait is dumb→smart-mode only).
+
+**Invariants / guarantees:** the modal check is Yuriy's `isModalEdt()` (`EDT + ModalityState.any()`,
+`current() != nonModal()`), shared by the gate, killer, and exec_code. Every modality-sensitive EDT op is
+bounded (`withTimeout → ToolCallErrorException` + thread dump) so a stuck modal fails fast, never hangs.
+A `smart_non_modal` call may FAIL *before* the body (gate / commit guard / smart-mode guard) — documented
+behavior, not a script bug; failure artifacts (screenshot, thread dump) land in the execution's storage
+folder. There is intentionally **no "close a mid-run dialog and keep going" mode** (`smart_non_modal` fails;
+use `unleashed` + `closeModalDialogs()` to tolerate). `ScriptExecutor.executeWithProgress` asserts a
+background thread (`ThreadingAssertions.assertBackgroundThread()`) — exec_code must never be driven from the
+EDT (a `timeoutRunBlocking`-on-EDT test would deadlock the `withContext(EDT)` dispatches; unit tests set
+`runInDispatchThread()=false`).
+
+**Touch points:** `mcp-steroid-server/.../ExecuteCodeTool.kt` (enum + schema), `ij-plugin/.../execution/{ScriptExecutor,McpScriptContext,McpScriptContextImpl,DialogWindowsLookup}.kt`,
+`npx-kt/.../DevrigBridgeToolHandlers.kt` (forwards `modal`), prompts `skill/execute-code-tool-description.md`
++ `mcp-steroid-info.md`, tests `ModalModeTest` / `ExecutionManagerTest` / `DialogKillerIntegrationTest`.
+
+---
+
+## Original proposal + quorum history (rationale)
+
+Quorum (run-agent.sh): model approved 3/3 (Gemini APPROVE; Claude CHANGES; Codex CHANGES — both CHANGES
+were refinements, all incorporated). The naming/migration the maintainer first floated below
+(`auto_close_dialogs` / `disableDialogAutoClose()`) was superseded by the enum above; clean break (no aliases).
 
 ## Motivation
 
