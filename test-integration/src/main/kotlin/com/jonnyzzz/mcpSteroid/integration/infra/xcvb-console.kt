@@ -7,6 +7,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.RunningContainerProcess
 import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
+import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -165,7 +166,19 @@ class XcvbConsoleDriver(
     ): ConsoleDriver {
         val consoleWorkDir = "/tmp"
         val consoleFile = "$consoleWorkDir/test-console-${consoleCounter.incrementAndGet()}"
-        container.writeFileInContainer(consoleFile, "Thinking...")
+        // Seed the console file with a CONTAINER-SIDE write so it is owned by the
+        // container user (the same `agent` user that runs the `cat >> consoleFile`
+        // writer below). writeFileInContainer now stages through `docker cp`, which
+        // leaves the file owned by the host uid — `cat >>` running as `agent` then
+        // gets permission-denied and nothing past the seed ever appears in the
+        // console. Writing the seed via `docker exec` keeps ownership consistent.
+        container.startProcessInContainer {
+            this
+                .args("bash", "-c", "printf 'Thinking...\\n' > $consoleFile")
+                .description("seed console file $consoleFile")
+                .timeoutSeconds(5)
+                .quietly()
+        }.assertExitCode(0) { "Failed to seed console file $consoleFile: $stderr" }
 
         val xtermArgs = mutableListOf(
             "xterm",
