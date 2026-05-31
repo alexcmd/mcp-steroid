@@ -7,7 +7,6 @@ import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
-import com.jonnyzzz.mcpSteroid.server.wire
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
@@ -38,8 +37,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
