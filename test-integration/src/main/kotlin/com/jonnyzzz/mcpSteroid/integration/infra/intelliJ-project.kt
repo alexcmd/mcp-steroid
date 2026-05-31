@@ -11,6 +11,20 @@ import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
 import java.io.File
 
 
+/**
+ * One build system a project uses, with its own root file. A project may have several
+ * (e.g. a Gradle module alongside a Maven module), each rooted at a different file/dir.
+ *
+ * @param type     the external build system
+ * @param rootFile relative path (from the project root) of this build system's root file,
+ *                 e.g. "settings.gradle.kts", "build.gradle.kts", "pom.xml". Its parent
+ *                 directory is the external project path used for import / gradleJvm config.
+ */
+data class ProjectBuildSystem(
+    val type: BuildSystem,
+    val rootFile: String,
+)
+
 sealed class IntelliJProject{
     abstract fun IntelliJProjectDriver.deploy()
 
@@ -43,30 +57,62 @@ sealed class IntelliJProject{
      */
     open val openFileOnStart: String? = null
 
+    /**
+     * JDK version this project targets (a name registered in the pre-written jdk.table.xml,
+     * e.g. "21"). Used to set the project SDK and the Gradle JVM before/at project open so the
+     * build-system import can resolve its JDK instead of stalling. Null for non-JVM IDEs.
+     */
+    open val jdkVersion: String? = "21"
+
+    /**
+     * Build systems this project actually uses, each with its own root file. A project may
+     * declare more than one. [waitForProjectReady] imports each declared system with the proper
+     * external-system API; an empty set means there is nothing to import (and no configuration to
+     * await). Declaring the build system + root is what lets us pre-set its JVM and avoid the
+     * ~8-min `Observation.awaitConfiguration` stall on an unconfigured Gradle project.
+     */
+    open val buildSystems: Set<ProjectBuildSystem> = emptySet()
+
     object TestProject : ProjectFromRepository(
         "test-project",
         openFile = "src/test/kotlin/com/jonnyzzz/mcpSteroid/demo/DemoByJonnyzzzTest.kt",
+        jdkVersion = "21",
+        buildSystems = setOf(ProjectBuildSystem(BuildSystem.GRADLE, "settings.gradle.kts")),
     )
-    object PyCharmTestProject : ProjectFromRepository("test-project-pycharm", openFile = "main.py")
-    object GoLandTestProject : ProjectFromRepository("test-project-goland", openFile = "main.go")
-    object WebStormTestProject : ProjectFromRepository("test-project-webstorm", openFile = "index.js")
+    object PyCharmTestProject : ProjectFromRepository(
+        "test-project-pycharm", openFile = "main.py", jdkVersion = null, buildSystems = emptySet(),
+    )
+    object GoLandTestProject : ProjectFromRepository(
+        "test-project-goland", openFile = "main.go", jdkVersion = null, buildSystems = emptySet(),
+    )
+    object WebStormTestProject : ProjectFromRepository(
+        "test-project-webstorm", openFile = "index.js", jdkVersion = null, buildSystems = emptySet(),
+    )
     object RiderTestProject : ProjectFromRepository(
         "test-project-rider",
         openFile = "DemoRider.Tests/LeaderboardTests.cs",
+        jdkVersion = null,
+        buildSystems = emptySet(),
     )
     object CLionTestProject : ProjectFromRepository(
         "test-project-clion",
         openFile = "main.cpp",
+        jdkVersion = null,
+        buildSystems = emptySet(),
     )
 
     object MavenTestProject : ProjectFromRepository(
         "test-project-maven",
         openFile = "src/test/java/com/example/demo/CalculatorTest.java",
+        jdkVersion = "21",
+        buildSystems = setOf(ProjectBuildSystem(BuildSystem.MAVEN, "pom.xml")),
     )
 
     object ThisLoggerProject : ProjectFromRepository(
         "thislogger-project",
         openFile = "src/main/kotlin/com/example/util/Logging.kt",
+        jdkVersion = "21",
+        buildSystems = setOf(ProjectBuildSystem(BuildSystem.GRADLE, "settings.gradle.kts")),
     )
 
     object BroadleafCommerceProject : ProjectFromRemoteGit("https://github.com/BroadleafCommerce/BroadleafCommerce.git")
@@ -81,9 +127,21 @@ sealed class IntelliJProject{
 
     open class ProjectFromRepository protected constructor(
         val projectName: String,
-        private val openFile: String? = null,
+        private val openFile: String?,
+        override val jdkVersion: String?,
+        override val buildSystems: Set<ProjectBuildSystem>,
     ) : IntelliJProject() {
         override val openFileOnStart: String? get() = openFile
+
+        init {
+            require(buildSystems.isEmpty() || jdkVersion != null) {
+                "Project '$projectName' declares build systems $buildSystems but no jdkVersion — " +
+                    "a JVM build system needs a JDK to import."
+            }
+            require(buildSystems.all { it.rootFile.isNotBlank() }) {
+                "Project '$projectName' has a build system with a blank rootFile."
+            }
+        }
         override fun IntelliJProjectDriver.deploy() {
             console.writeInfo("Copying project $projectName files into container-local project-home...")
             val guestProjectDir = ijDriver.getGuestProjectDir()
