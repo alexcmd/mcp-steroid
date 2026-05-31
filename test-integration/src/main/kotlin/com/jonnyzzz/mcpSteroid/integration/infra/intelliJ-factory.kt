@@ -122,6 +122,15 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     val ijProjectDriver = IntelliJProjectDriver(lifetime, container, ijDriver, console)
     ijProjectDriver.deployProject(selectedProject)
 
+    // For Gradle projects, pin gradleJvm to the project's JDK BEFORE the IDE starts so
+    // project-open auto-import resolves its JVM instead of stalling on awaitConfiguration.
+    if (ideProduct.hasJavaSdk && selectedProject.buildSystems.any { it.type == BuildSystem.GRADLE }) {
+        selectedProject.jdkVersion?.let { jdk ->
+            console.writeInfo("Pinning Gradle JVM to $jdk before IDE start...")
+            ijDriver.configureGradleJvm(jdk)
+        }
+    }
+
     console.writeInfo("Starting ${ideProduct.displayName}...")
     val ijProcess = ijDriver.startIde(beforeIdeStart = beforeIdeStart)
     console.writeSuccess("${ideProduct.displayName} process started")
@@ -164,6 +173,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         aiAgents = aiAgentDriver,
         intellij = ijProcess,
         openFileOnStart = selectedProject.openFileOnStart,
+        project = selectedProject,
     )
 
     session.repositionIdeWindow()

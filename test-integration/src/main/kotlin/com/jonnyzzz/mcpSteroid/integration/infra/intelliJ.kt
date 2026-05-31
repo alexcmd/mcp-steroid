@@ -357,6 +357,25 @@ class IntelliJDriver(
             .firstOrNull { it.endsWith(".sln") }
     }
 
+    /**
+     * Pin the Gradle JVM in the project's `.idea/gradle.xml` to a registered JDK name BEFORE the
+     * IDE starts, so project-open Gradle auto-import resolves its JVM instead of stalling on an
+     * unresolved `gradleJvm` (e.g. the `#GRADLE_LOCAL_JAVA_HOME` macro). No-op if gradle.xml is
+     * absent (a fresh checkout: the project SDK we set covers the default `#USE_PROJECT_JDK`).
+     */
+    fun configureGradleJvm(jdkName: String) {
+        val gradleXml = "$projectGuestDir/.idea/gradle.xml"
+        val sed = "s|name=\"gradleJvm\" value=\"[^\"]*\"|name=\"gradleJvm\" value=\"$jdkName\"|"
+        driver.startProcessInContainer {
+            this
+                .args("bash", "-c", "f='$gradleXml'; if [ -f \"\$f\" ]; then sed -i '$sed' \"\$f\"; echo patched; else echo 'no gradle.xml'; fi")
+                .timeoutSeconds(10)
+                .description("Pin gradleJvm=$jdkName in $gradleXml")
+                .quietly()
+        }.assertExitCode(0) { "Failed to pin gradleJvm in $gradleXml: $stderr" }
+        driver.log("Configured Gradle JVM=$jdkName for project")
+    }
+
     fun deployPluginToContainer(pluginZipPath: File) {
         driver.deployZipAndUnpack(pluginZipPath, pluginsGuestDir)
     }

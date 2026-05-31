@@ -75,6 +75,13 @@ class IntelliJContainer(
      * When null, the default README.md / first source file fallback is used.
      */
     private val openFileOnStart: String? = null,
+
+    /**
+     * The project this container was created for. Carries its declared JDK version and
+     * build systems so [waitForProjectReady] can set the project SDK and import each build
+     * system without the caller restating them.
+     */
+    val project: IntelliJProject,
 ) {
     val input: XcvbInputDriver by gui::inputDriver
     val console: ConsoleDriver by gui::console
@@ -135,8 +142,12 @@ class IntelliJContainer(
         pollIntervalMillis: Long = 1_000L,
         requireIndexingComplete: Boolean = true,
         performPostSetup: Boolean = true,
-        projectJdkVersion: String? = "21",
-        buildSystem: BuildSystem = BuildSystem.NONE,
+        projectJdkVersion: String? = project.jdkVersion,
+        /**
+         * Build system to import. When null (default) the project's declared [IntelliJProject.buildSystems]
+         * are imported (each with its own root); pass an explicit value to override.
+         */
+        buildSystem: BuildSystem? = null,
         compileProject: Boolean = false,
     ) : IntelliJContainer {
         // Step 1: Wait for IDE window
@@ -165,10 +176,23 @@ class IntelliJContainer(
             console.writeStep(3, "Skipping JDK setup (projectJdkVersion=null)")
         }
 
-        // Step 5+6: Trigger import and wait for completion
-        console.writeStep(5, "Triggering $buildSystem import and waiting...")
-        mcpSteroid.mcpTriggerImportAndWait(buildSystem)
-        console.writeSuccess("Import + indexing complete")
+        // Step 5+6: Import each declared build system and wait for completion.
+        // An explicit buildSystem arg overrides; otherwise import the project's declared set.
+        // No build systems -> nothing to import (and we must NOT call awaitConfiguration on a
+        // project with an unconfigured external build, which is what stalled for ~8 min).
+        val systemsToImport: List<BuildSystem> = when {
+            buildSystem != null -> listOf(buildSystem).filter { it != BuildSystem.NONE }
+            else -> project.buildSystems.map { it.type }.distinct()
+        }
+        if (systemsToImport.isEmpty()) {
+            console.writeStep(5, "No build system to import — skipping import wait")
+        } else {
+            systemsToImport.forEach { bs ->
+                console.writeStep(5, "Triggering $bs import and waiting...")
+                mcpSteroid.mcpTriggerImportAndWait(bs)
+            }
+            console.writeSuccess("Import + indexing complete")
+        }
 
         // Step 6b: Resolve unknown SDKs (prevents "Resolving SDKs..." false positive during build)
         console.writeStep(6, "Resolving unknown SDKs...")
@@ -182,8 +206,9 @@ class IntelliJContainer(
 
         // Step 8: Compile project (optional)
         if (compileProject) {
-            console.writeStep(8, "Compiling project ($buildSystem)...")
-            mcpSteroid.mcpCompileProject(buildSystem, projectJdkVersion)
+            val compileWith = systemsToImport.firstOrNull() ?: BuildSystem.NONE
+            console.writeStep(8, "Compiling project ($compileWith)...")
+            mcpSteroid.mcpCompileProject(compileWith, projectJdkVersion)
             console.writeSuccess("Compilation complete")
         }
 
