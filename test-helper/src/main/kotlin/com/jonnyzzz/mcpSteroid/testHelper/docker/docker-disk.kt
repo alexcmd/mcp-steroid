@@ -17,6 +17,12 @@ fun ContainerDriver.mkdirs(guestPath: String): ProcessResult {
 
 fun ContainerDriver.copyFromContainer(containerPath: String, localPath: File) {
     localPath.parentFile?.mkdirs()
+    // Direct host access when the guest path is under a bind mount — no `docker cp` process.
+    mapGuestPathToHostPathOrNull(containerPath)?.let { hostPath ->
+        require(hostPath.exists()) { "Mapped host path does not exist for $containerPath: $hostPath" }
+        hostPath.copyTo(localPath, overwrite = true)
+        return
+    }
     newRunOnHost()
         .command("docker", "cp", "$containerId:$containerPath", localPath.absolutePath)
         .description("Copy container:$containerPath to ${localPath.name}")
@@ -28,6 +34,12 @@ fun ContainerDriver.copyFromContainer(containerPath: String, localPath: File) {
 
 fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {
     require(localPath.exists()) { "Local path does not exist: $localPath" }
+    // Direct host access when the guest path is under a bind mount — no `docker cp` process.
+    mapGuestPathToHostPathOrNull(containerPath)?.let { hostPath ->
+        hostPath.parentFile?.mkdirs()
+        localPath.copyTo(hostPath, overwrite = true)
+        return
+    }
     newRunOnHost()
         .command("docker", "cp", localPath.absolutePath, "$containerId:$containerPath")
         .description("Copy ${localPath.name} to container:$containerPath")
@@ -38,39 +50,31 @@ fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {
 }
 
 /**
- * Max content size for [writeFileInContainer]. The content is embedded into a single
- * `docker exec bash -c "cat > file << EOF\n<content>\nEOF"` command with a short timeout;
- * large payloads hit the OS arg-length limit and/or time out, failing in confusing ways
- * (observed with a ~200KB jdk.table.xml). For larger files write to the host-mapped path
- * (see [mapGuestPathToHostPath]) or use [copyToContainer].
+ * Write [content] to [containerPath]. Implemented over [copyToContainer] — a host temp file is
+ * staged then copied in — so there is no content-size limit and it transparently uses direct
+ * host-filesystem access when the path is under a bind mount (no `docker exec`/heredoc).
  */
-const val WRITE_FILE_IN_CONTAINER_MAX_BYTES: Int = 64 * 1024
-
 fun ContainerDriver.writeFileInContainer(
     containerPath: String,
     content: String,
     executable: Boolean = false,
 ) {
-    val byteSize = content.toByteArray(Charsets.UTF_8).size
-    require(byteSize <= WRITE_FILE_IN_CONTAINER_MAX_BYTES) {
-        "writeFileInContainer content for $containerPath is $byteSize bytes, exceeding the " +
-            "$WRITE_FILE_IN_CONTAINER_MAX_BYTES-byte heredoc limit. Write to the host-mapped path " +
-            "(mapGuestPathToHostPath) or use copyToContainer for large files."
+    val tmp = File.createTempFile("write-in-container-", ".tmp")
+    try {
+        tmp.writeText(content)
+        // `docker cp` (container-local target) needs the parent dir to exist; the host-mapped
+        // branch of copyToContainer creates the host parent itself.
+        val parentDir = containerPath.substringBeforeLast('/')
+        if (parentDir.isNotEmpty() && mapGuestPathToHostPathOrNull(containerPath) == null) {
+            mkdirs(parentDir).assertExitCode(0) { "Failed to create directory in container $parentDir: $stderr" }
+        }
+        copyToContainer(tmp, containerPath)
+    } finally {
+        tmp.delete()
     }
-    val parentDir = containerPath.substringBeforeLast('/')
-    if (parentDir.isNotEmpty()) {
-        mkdirs(parentDir).assertExitCode(0) { "Failed to create directory in container $parentDir: $stderr" }
-    }
-
-    startProcessInContainer {
-        this
-            .args("bash", "-c", "cat > ${shellQuote(containerPath)} << 'FILE_EOF'\n$content\nFILE_EOF")
-            .description("Write content to $containerPath")
-            .timeoutSeconds(5)
-            .quietly()
-    }.assertExitCode(0) { "Failed to write content in container to $containerPath: $content: $stderr" }
 
     if (executable) {
+        // chmod works for both host-mapped and container-local targets.
         startProcessInContainer {
             this
                 .args("chmod", "+x", containerPath)
@@ -80,6 +84,3 @@ fun ContainerDriver.writeFileInContainer(
         }.assertExitCode(0) { "Failed to chmod the created file in container to $containerPath: $stderr" }
     }
 }
-
-private fun shellQuote(value: String): String =
-    "'" + value.replace("'", "'\"'\"'") + "'"
