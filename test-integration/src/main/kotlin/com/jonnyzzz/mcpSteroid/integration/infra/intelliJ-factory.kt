@@ -7,6 +7,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerVolume
 import com.jonnyzzz.mcpSteroid.testHelper.docker.StartContainerRequest
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startDockerContainerAndDispose
+import com.sun.tools.javac.tree.TreeInfo.args
 import java.io.File
 
 fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJContainerOpts): IntelliJContainer = opts.run {
@@ -169,7 +170,8 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     writeSessionInfo(mcpUrl)
 
     val session = IntelliJContainer(
-        lifetime = lifetime,
+        opts = opts.copy(project = selectedProject),
+        lifetime = lifetime.nestedStack("intellij-container"),
         gui = gui,
         runDirInContainer = runDir,
         scope = container,
@@ -178,7 +180,6 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         aiAgents = aiAgentDriver,
         intellij = ijProcess,
         openFileOnStart = selectedProject.openFileOnStart,
-        project = selectedProject,
     )
 
     session.repositionIdeWindow()

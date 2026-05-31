@@ -53,6 +53,9 @@ enum class AiMode {
  */
 class IntelliJContainer(
     val lifetime: CloseableStack,
+
+    val opts: IntelliJContainerOpts,
+
     val gui: GuiContainer,
 
     val runDirInContainer: File,
@@ -75,17 +78,18 @@ class IntelliJContainer(
      * When null, the default README.md / first source file fallback is used.
      */
     private val openFileOnStart: String? = null,
+) {
+    val input: XcvbInputDriver by gui::inputDriver
+    val console: ConsoleDriver by gui::console
+    val windows: XcvbWindowDriver by gui::windowsDriver
 
     /**
      * The project this container was created for. Carries its declared JDK version and
      * build systems so [waitForProjectReady] can set the project SDK and import each build
      * system without the caller restating them.
      */
-    val project: IntelliJProject,
-) {
-    val input: XcvbInputDriver by gui::inputDriver
-    val console: ConsoleDriver by gui::console
-    val windows: XcvbWindowDriver by gui::windowsDriver
+    val project: IntelliJProject by opts::project
+
     private val windowLayout: WindowLayoutManager by gui::windowsLayout
 
     val pid by intellij::pid
