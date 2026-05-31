@@ -40,7 +40,7 @@ data class IntelliJContainerOpts(
      * When true, forwards the host SSH agent socket into the container and sets SSH_AUTH_SOCK.
      * Required for git operations that use SSH remotes/private keys from inside the container.
      */
-    val mountSshAgent: Boolean = true,
+    val mountSshAgent: Boolean = false,
 
     /**
      * Default true keeps ordinary Docker tests immune to trust prompts. Tests that validate
