@@ -17,9 +17,11 @@ import kotlin.time.Duration.Companion.seconds
  */
 class ExecutionManagerTest : BasePlatformTestCase() {
 
-    override fun setUp() {
-        super.setUp()
-    }
+    // Run tests off the EDT so `timeoutRunBlocking` doesn't park the dispatch
+    // thread while ScriptExecutor's pre-flight (isModalEdt / commit) dispatches
+    // back to the EDT — otherwise the EDT is blocked in runBlocking and the
+    // withContext(EDT) inside the execution deadlocks.
+    override fun runInDispatchThread(): Boolean = false
 
     private fun getTextContent(result: ToolCallResult): String {
         return result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
