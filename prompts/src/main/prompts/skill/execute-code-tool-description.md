@@ -50,11 +50,37 @@ If your next instinct is a native `Read` / `Edit` / `Grep` / `Glob` / `Bash` cal
 
 **Quick Start:**
 - Code is a suspend function body (never use runBlocking)
-- `waitForSmartMode()` runs automatically
-- **Available in scope** (no imports needed): `project`, `readAction`, `writeAction`, `smartReadAction`, `writeIntentReadAction`, `findFile`, `findProjectFile`, `findProjectFiles`, `findPsiFile`, `findProjectPsiFile`, `runInspectionsDirectly`, `projectScope`, `allScope`, `waitForSmartMode`, `println`, `printJson`, `printCsv`, `printToon`, `progress`, `printException`, `takeIdeScreenshot`, `disposable`. For tabular results (find-references, call-hierarchy, project-search, document-symbols) prefer `printCsv(headers, rows, dictColumns = setOf("path"))` over `printJson` — the `dictColumns` preamble dedupes repeated paths and the format is ~60% cheaper than the equivalent prose.
+- With the default `modal=smart_non_modal`, leftover modal dialogs are closed, the IDE is required
+  non-modal, documents are committed/saved + VFS refreshed, and `waitForSmartMode()` runs — all before
+  your script. See "Modality (the `modal` option)" below.
+- **Available in scope** (no imports needed): `project`, `readAction`, `writeAction`, `smartReadAction`, `writeIntentReadAction`, `findFile`, `findProjectFile`, `findProjectFiles`, `findPsiFile`, `findProjectPsiFile`, `runInspectionsDirectly`, `projectScope`, `allScope`, `waitForSmartMode`, `closeModalDialogs`, `monitorAndCloseModalDialogs`, `allowModalDialog`, `syncDocuments`, `println`, `printJson`, `printCsv`, `printToon`, `progress`, `printException`, `takeIdeScreenshot`, `disposable`. For tabular results (find-references, call-hierarchy, project-search, document-symbols) prefer `printCsv(headers, rows, dictColumns = setOf("path"))` over `printJson` — the `dictColumns` preamble dedupes repeated paths and the format is ~60% cheaper than the equivalent prose.
 - **Use `project` directly** — not `context.project` (no `context.` prefix exists).
 - **Do not invent helpers.** `buildProject()`, `compileProject()`, `createProjectFile()`, `projectDir`, `findProjectDir()`, top-level `readText(vf)` do not exist. For build use `ProjectTaskManager.getInstance(project).buildAllModules().await()` (needs `import com.intellij.task.ProjectTaskManager` + `import org.jetbrains.concurrency.await`); for new files create+write inside one `writeAction` using `VfsUtil.createDirectoryIfMissing` + `dir.createChildData` + `VfsUtil.saveText`; for the project root use `project.basePath` or `project.guessProjectDir()`; for file content use `String(vf.contentsToByteArray(), vf.charset)`. Full table: `mcp-steroid://skill/coding-with-intellij-context-api` → "Real helpers vs invented names".
 - **Do not call daemon-highlighting internals** (`DaemonCodeAnalyzerImpl`, `DaemonProgressIndicator`, `HighlightingSession`) — they require state that does not exist in a script context. For inspection diagnostics use `runInspectionsDirectly(file)` or `mcp-steroid://ide/inspect-and-fix`.
+
+## Modality (the `modal` option)
+
+`modal` is a single enum that sets how the IDE's modal state is handled around your script. Default
+`smart_non_modal` is right for almost everything (any PSI / editing / build / test work). Everything finer
+is available as context methods you can call from any mode.
+
+| `modal` | What it does | Use it for |
+|---|---|---|
+| `smart_non_modal` *(default)* | Close leftover modal dialogs (deepest-first), require a non-modal IDE (the call **fails with a screenshot** if a modal survives), commit + save documents, refresh the VFS, wait for indexing — then run, with a monitor that **closes any modal dialog that appears mid-run and fails the call** (thread dump + screenshot captured). | PSI / code-editing / build / test scripts — the safe default. |
+| `non_modal` | Require a non-modal IDE at the start (fail with a screenshot if modal); do nothing else. Prepare what you need via the context methods below. | "I need a non-modal IDE but will manage commits / indexing / dialogs myself." |
+| `unleashed` | No sweep, no checks, no validation — run against whatever IDE state exists, modal dialogs included. | Trivial / hardcoded IDE actions only. NOT for PSI or code-editing flows (no consistency guarantees). |
+
+Context methods (callable from any mode — the profiles above are just sugar over these):
+
+- `closeModalDialogs(): Int` — close all showing modal dialogs (deepest-first), capturing a screenshot +
+  thread dump first; returns how many were closed. Does **not** fail the call.
+- `monitorAndCloseModalDialogs()` — start a watcher for the rest of the run: a modal that appears is closed
+  and the call **fails** (screenshot + thread dump captured). `smart_non_modal` starts this for you.
+- `allowModalDialog()` — suspend that watcher so a dialog your script opens **on purpose** is left alone
+  (call it just before opening the dialog).
+- `syncDocuments()` — commit PSI + save documents + refresh VFS; asserts non-modal (fails on a modal).
+- `waitForSmartMode()` — wait for indexing; asserts non-modal (fails on a modal). Point-in-time only —
+  still use `smartReadAction { }` for index-dependent reads.
 
 **Surface is fixed.** `McpScriptContext` won't grow new helpers — call IntelliJ APIs directly. See `mcp-steroid://skill/design-philosophy` Tenet 3.
 

@@ -11,7 +11,79 @@ Today's options are tangled: `dialog_killer` and `cancel_on_modal` are AND-ed (c
 was removed); `doNotCancelOnModalityStateChange()` is misnamed (no longer cancels execution — it
 just stops the killer job); `waitForSmartMode()` is not auto-run despite the corpus claiming it is.
 
-## REVISION 4 (2026-05-31): full combination table → natural representation
+## LOCKED (Revision 5 + final refinements, 2026-05-31) — implementing
+
+Final refinements on top of Revision 5 (maintainer LGTM):
+- `closeModalDialogs()` returns what it closed AND has diagnostic side effects: **captures a thread dump
+  and screenshots** before closing each dialog.
+- The periodic-monitor context API is `monitorAndCloseModalDialogs()` (not `startDialogKiller`) — watches
+  all dialogs continuously.
+- **Unified monitor semantics for all scenarios:** when the monitor detects a modal dialog it **closes it,
+  captures screenshot + thread dump, and STOPS the execution (fails)** — same behavior + side effects
+  whether the monitor came from the `smart_non_modal` profile or was started via
+  `context.monitorAndCloseModalDialogs()`.
+- The one-shot `closeModalDialogs()` is explicit cleanup the script asked for → it does NOT fail the job;
+  the pre-flight gate still fails if a modal SURVIVES the initial sweep.
+- npx-kt devrig bridge updated to forward the new single `modal` param (drop `dialog_killer`/`allow_modal`).
+
+Validation plan: 3× quorum review of the implementation + live MCP Steroid IDE validation, plus
+`DialogKillerIntegrationTest` (rewritten to the new modes/context APIs) and unit tests.
+
+## REVISION 5 (2026-05-31): one `modal` profile enum + context APIs for everything else
+
+Final direction (maintainer): collapse all modal/dialog/prep behavior into ONE `modal` enum of 3
+profiles, and move every fine-grained control to `McpScriptContext` methods so the profiles are just
+sugar over context calls (and `unleashed` code can opt into any behavior on demand).
+
+### `modal` enum (single MCP param, default `smart_non_modal`)
+
+| Value | Pre-flight + run behavior | For |
+|---|---|---|
+| `smart_non_modal` *(default)* | sweep dialogs (close leftovers, deepest-first) → assert non-modal (fail+screenshot on a surviving modal dialog) → `sync_documents` (commit+save+VFS) → `wait_for_smart_mode` → run with the dialog killer monitoring (close + fail on a modal appearing during the run). | PSI / code-management flows — the safe default. |
+| `non_modal` | assert non-modal at the gate (fail+screenshot if modal); **no** sweep, sync, smart-mode, or killer. Just guarantees a non-modal start, then runs. | "I need non-modal but will prep myself via context APIs." |
+| `unleashed` | nothing swept / checked / validated; modal dialogs may be present; just run the code. | Trivial code / hardcoded IDE management. NOT for PSI / code flows (`allow_modal`'s old role — no guarantees). |
+
+### McpScriptContext APIs (fine control; available in every mode; make the profiles composable)
+
+- `waitForSmartMode()` — wait for indexing. **Asserts the EDT is non-modal (before and after); fails the
+  execution if a modal is present** (a modal can be a side effect of indexing/sync). Bounded.
+- `closeModalDialogs()` *(NEW — the dialog killer, the maintainer's ask)* — run the killer sweep on demand:
+  enumerate showing modal dialogs (deepest-first), screenshot, close. Lets `unleashed`/`non_modal` code
+  kill dialogs explicitly. Returns what it closed.
+- `syncDocuments()` *(NEW)* — commit PSI + save documents + VFS refresh on demand; asserts non-modal, fails
+  on a modal (sync can surface a modal as a side effect).
+- `allowModalDialog()` *(NEW — replaces `doNotCancelOnModalityStateChange()`)* — in `smart_non_modal`,
+  suppress the during-run killer's close+fail for a dialog the script is about to open on purpose.
+
+Equivalence: `smart_non_modal` ≡ `unleashed` + `closeModalDialogs()` + (assert non-modal) + `syncDocuments()`
++ `waitForSmartMode()` + (start monitor). The enum just bundles the common safe sequence.
+
+### Does this implement the DialogKiller tests? (sufficiency check)
+
+| Test | Mode | Body / context calls |
+|---|---|---|
+| `explicit dialog killer via script API` | Step1 `unleashed` (open modal, survives — no killer) ; Step3 `unleashed` + `context.closeModalDialogs()` | the explicit kill is the context API |
+| `automatic dialog killer closes test modal dialog` | Step1 `unleashed` ; Step3 `smart_non_modal` | pre-flight sweep closes the leftover modal |
+| `dialog killer captures screenshot before closing` | Step1 `unleashed` ; Step3 `smart_non_modal` (or `unleashed`+`closeModalDialogs()`) | sweep/closeModalDialogs screenshots before closing |
+| `screenshot tool works in IDE` | `unleashed` (open modal) | `context.takeIdeScreenshot()` |
+| `kills 4 nested modal dialogs deepest-first` | Step1 `unleashed` (open 4 nested) ; Step3 `smart_non_modal` (or `closeModalDialogs()`) | killer closes deepest-first |
+
+✅ Sufficient — **iff** `closeModalDialogs()` is added to the context (the maintainer's ask). Notes:
+- Step 1 "open & keep my modal" = `unleashed` (no killer fights it). The `doNotCancelOnModalityStateChange()`
+  calls in the current test are DROPPED — `unleashed` makes them unnecessary.
+- Cross-test modal leakage: each test's Step 3 closes its modal (sweep or `closeModalDialogs()`), so the next
+  test's `unleashed` Step 1 starts clean. A working killer (Rev: commit `16f7b07a`) is the precondition.
+- `isModalEdt()` is dynamic: the `smart_non_modal` monitor + the `*` context APIs' non-modal asserts cover
+  modals that appear mid-run (incl. as a side effect of sync / smart-mode), failing the execution.
+
+### Open
+- Names: `smart_non_modal` / `non_modal` / `unleashed`; `closeModalDialogs` / `syncDocuments` /
+  `allowModalDialog`. (`unleashed` per maintainer; alt for it: `raw`, `as_is`.)
+- Re-quorum this profile+context-API model before implementing?
+
+---
+
+## (Superseded by Revision 5) REVISION 4: full combination table → natural representation
 
 Options: **S** `close_dialogs_on_start`, **A** `allow_modal` (gate), **R**
 `close_dialogs_while_running_and_fail`, **D** `sync_documents`, **W** `wait_for_smart_mode`.
