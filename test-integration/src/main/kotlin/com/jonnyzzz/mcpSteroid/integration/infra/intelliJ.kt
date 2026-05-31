@@ -16,6 +16,8 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import org.jdom2.Document
+import org.jdom2.Element
 import org.jdom2.input.SAXBuilder
 import org.jdom2.output.Format
 import org.jdom2.output.XMLOutputter
@@ -398,25 +400,33 @@ class IntelliJDriver(
                 .description("Read $miscXml")
                 .quietly()
         }.assertExitCode(0) { "Failed to read $miscXml: $stderr" }.stdout
-        if (current.isBlank()) {
-            driver.log("No misc.xml — skipping project JDK config (mcpSetProjectSdk covers it post-open)")
-            return
-        }
 
-        // Patch ONLY the ProjectRootManager component's project-jdk-name (add when absent).
-        val doc = SAXBuilder().build(StringReader(current))
-        val projectRootManager = doc.rootElement.children.firstOrNull {
+        // Build the document: reuse the existing one, or create a fresh `<project version="4">`.
+        val doc: Document = if (current.isBlank()) {
+            Document(Element("project").setAttribute("version", "4"))
+        } else {
+            SAXBuilder().build(StringReader(current))
+        }
+        val root = doc.rootElement
+
+        // Find the ProjectRootManager component, adding it (with the JavaSDK type) when absent.
+        val projectRootManager = root.children.firstOrNull {
             it.name == "component" && it.getAttributeValue("name") == "ProjectRootManager"
-        }
-        if (projectRootManager == null) {
-            driver.log("misc.xml has no ProjectRootManager component — skipping project JDK config")
-            return
-        }
-        projectRootManager.setAttribute("project-jdk-name", jdkName)
+        } ?: Element("component")
+            .setAttribute("name", "ProjectRootManager")
+            .setAttribute("version", "2")
+            .setAttribute("project-jdk-type", "JavaSDK")
+            .also { root.addContent(it) }
 
+        projectRootManager.setAttribute("project-jdk-name", jdkName)
+        if (projectRootManager.getAttributeValue("project-jdk-type") == null) {
+            projectRootManager.setAttribute("project-jdk-type", "JavaSDK")
+        }
+
+        // writeFileInContainer creates the parent .idea/ dir when missing.
         val patched = XMLOutputter(Format.getPrettyFormat().setLineSeparator("\n")).outputString(doc)
         driver.writeFileInContainer(miscXml, patched)
-        driver.log("Configured project JDK=$jdkName in misc.xml")
+        driver.log("Configured project JDK=$jdkName in misc.xml (${if (current.isBlank()) "created" else "patched"})")
     }
 
     fun deployPluginToContainer(pluginZipPath: File) {
