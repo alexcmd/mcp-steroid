@@ -16,13 +16,13 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.runInContainerDetached
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
+import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
 import org.jdom2.Document
 import org.jdom2.Element
 import org.jdom2.input.SAXBuilder
 import org.jdom2.output.Format
 import org.jdom2.output.XMLOutputter
 import java.io.File
-import java.io.StringReader
 import kotlin.concurrent.thread
 
 /**
@@ -333,12 +333,9 @@ class IntelliJDriver(
             return
         }
         val xml = generateJdkTableXml(driver)
-        // jdk.table.xml is large (~200KB+). writeFileInContainer streams via a `bash -c` heredoc
-        // with a short timeout and chokes on that size, so write straight to the host-mapped path
-        // (configGuestDir lives under the host-mounted run dir).
-        val hostFile = driver.mapGuestPathToHostPath("$configGuestDir/options/jdk.table.xml")
-        hostFile.parentFile?.mkdirs()
-        hostFile.writeText(xml)
+        // writeFileInContainer is backed by copyToContainer (host-mapped direct write here, since
+        // configGuestDir is under the host-mounted run dir) — no size limit for the ~200KB+ file.
+        driver.writeFileInContainer("$configGuestDir/options/jdk.table.xml", xml)
         driver.log("Pre-wrote jdk.table.xml (${xml.length} chars) into $configGuestDir/options")
     }
 
@@ -390,43 +387,51 @@ class IntelliJDriver(
      * or the component is missing; the post-open `mcpSetProjectSdk` still covers those.
      */
     fun configureProjectJdk(jdkName: String) {
-        val miscXml = "$projectGuestDir/.idea/misc.xml"
-        // Project sources live on the container-local filesystem (not host-mounted), so read the
-        // file out of the container, patch it with the XML API (jdom2), and write it back.
-        val current = driver.startProcessInContainer {
+        val ideaDir = "$projectGuestDir/.idea"
+        val miscXml = "$ideaDir/misc.xml"
+        // project-home is container-local (only /mcp-run-dir and /repo-cache are bind-mounted), so
+        // round-trip the file via copyFromContainer/copyToContainer (which map to host paths when
+        // possible, and have no content-size limit) rather than the host FS or heredoc writes.
+        val exists = driver.startProcessInContainer {
             this
-                .args("bash", "-c", "f='$miscXml'; [ -f \"\$f\" ] && cat \"\$f\" || true")
+                .args("bash", "-c", "test -f '$miscXml' && echo yes || echo no")
                 .timeoutSeconds(10)
-                .description("Read $miscXml")
+                .description("Check $miscXml exists")
                 .quietly()
-        }.assertExitCode(0) { "Failed to read $miscXml: $stderr" }.stdout
+        }.assertExitCode(0) { "Failed to stat $miscXml: $stderr" }.stdout.trim() == "yes"
 
-        // Build the document: reuse the existing one, or create a fresh `<project version="4">`.
-        val doc: Document = if (current.isBlank()) {
-            Document(Element("project").setAttribute("version", "4"))
-        } else {
-            SAXBuilder().build(StringReader(current))
+        val tmp = File.createTempFile("misc-", ".xml")
+        try {
+            // Reuse the existing document, or create a fresh `<project version="4">`.
+            val doc: Document = if (exists) {
+                driver.copyFromContainer(miscXml, tmp)
+                SAXBuilder().build(tmp)
+            } else {
+                Document(Element("project").setAttribute("version", "4"))
+            }
+            val root = doc.rootElement
+
+            // Find the ProjectRootManager component, adding it (with the JavaSDK type) when absent.
+            val projectRootManager = root.children.firstOrNull {
+                it.name == "component" && it.getAttributeValue("name") == "ProjectRootManager"
+            } ?: Element("component")
+                .setAttribute("name", "ProjectRootManager")
+                .setAttribute("version", "2")
+                .setAttribute("project-jdk-type", "JavaSDK")
+                .also { root.addContent(it) }
+
+            projectRootManager.setAttribute("project-jdk-name", jdkName)
+            if (projectRootManager.getAttributeValue("project-jdk-type") == null) {
+                projectRootManager.setAttribute("project-jdk-type", "JavaSDK")
+            }
+
+            tmp.writeText(XMLOutputter(Format.getPrettyFormat().setLineSeparator("\n")).outputString(doc))
+            driver.mkdirs(ideaDir) // docker cp needs the parent dir to exist (no-op when host-mapped)
+            driver.copyToContainer(tmp, miscXml)
+            driver.log("Configured project JDK=$jdkName in misc.xml (${if (exists) "patched" else "created"})")
+        } finally {
+            tmp.delete()
         }
-        val root = doc.rootElement
-
-        // Find the ProjectRootManager component, adding it (with the JavaSDK type) when absent.
-        val projectRootManager = root.children.firstOrNull {
-            it.name == "component" && it.getAttributeValue("name") == "ProjectRootManager"
-        } ?: Element("component")
-            .setAttribute("name", "ProjectRootManager")
-            .setAttribute("version", "2")
-            .setAttribute("project-jdk-type", "JavaSDK")
-            .also { root.addContent(it) }
-
-        projectRootManager.setAttribute("project-jdk-name", jdkName)
-        if (projectRootManager.getAttributeValue("project-jdk-type") == null) {
-            projectRootManager.setAttribute("project-jdk-type", "JavaSDK")
-        }
-
-        // writeFileInContainer creates the parent .idea/ dir when missing.
-        val patched = XMLOutputter(Format.getPrettyFormat().setLineSeparator("\n")).outputString(doc)
-        driver.writeFileInContainer(miscXml, patched)
-        driver.log("Configured project JDK=$jdkName in misc.xml (${if (current.isBlank()) "created" else "patched"})")
     }
 
     fun deployPluginToContainer(pluginZipPath: File) {
