@@ -11,10 +11,11 @@ This is a **STATEFUL** API — every call changes the IDE state. The IntelliJ ID
 
 **Modality — the `modal` option on `steroid_execute_code`.** By default (`modal=smart_non_modal`) the call
 closes stray modal dialogs, requires a non-modal IDE, commits/saves documents + refreshes the VFS, and waits
-for indexing — all before your script — then monitors for modals during the run. This is the safe choice for
-any PSI / editing / build / test work. `non_modal` only asserts a non-modal start; `unleashed` does no
-sweep/checks at all (trivial, non-PSI actions only). Finer control (`closeModalDialogs()`, `syncDocuments()`,
-`waitForSmartMode()`, `allowModalDialog()`) lives in the script-context methods. See
+for indexing — all before your script — then closes any modal dialog that appears during the run and fails
+the call with diagnostics. This is the safe choice for any PSI / editing / build / test work. `non_modal`
+only asserts a non-modal start; `unleashed` does no sweep/checks at all (intentional modal-dialog workflows
+or trivial non-PSI actions only). Finer control (`closeModalDialogs()`, `monitorAndCloseModalDialogs()`,
+`allowModalDialog()`, `syncDocuments()`, `waitForSmartMode()`) lives in the script-context methods. See
 `mcp-steroid://skill/execute-code-tool-description`.
 
 **Design philosophy in one breath.** The MCP tool surface is small **on purpose** — power lives in `mcp-steroid://` recipes that teach you to call IntelliJ's APIs directly inside `steroid_execute_code`. `McpScriptContext` stays narrow. Don't expect new `steroid_*` tools or new context methods; expect richer recipes. Fetch `mcp-steroid://skill/design-philosophy` once if you're new here.

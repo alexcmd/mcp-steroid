@@ -90,6 +90,9 @@ class McpScriptContextImpl(
 
     /** Deadlock guard for [syncDocuments] (EDT write-intent can be withheld by a modal). */
     private val SYNC_DOCUMENTS_TIMEOUT = 60.seconds
+
+    /** Deadlock guard for [waitForSmartMode] when indexing never reaches smart mode. */
+    private val WAIT_FOR_SMART_MODE_TIMEOUT = 60.seconds
     private val log = Logger.getInstance(McpScriptContextImpl::class.java)
 
     private val objectMapper = ObjectMapper().apply {
@@ -200,24 +203,35 @@ class McpScriptContextImpl(
         resultBuilder.logProgress("Waiting for indexing to complete...")
 
         try {
-            suspendCancellableCoroutine { cont ->
-                fun waitForSmart() {
-                    if (disposed.get()) {
-                        cont.cancel()
-                        return
-                    }
-                    DumbService.getInstance(project).smartInvokeLater {
+            // Bounded as a deadlock safety net (indexing that never reaches smart mode) — the tool docs
+            // promise the wait is bounded. Timeout => fail the execution with a clear message.
+            withTimeout(WAIT_FOR_SMART_MODE_TIMEOUT) {
+                suspendCancellableCoroutine<Unit> { cont ->
+                    fun waitForSmart() {
                         if (disposed.get()) {
                             cont.cancel()
-                        } else if (DumbService.isDumb(project)) {
-                            waitForSmart()
-                        } else {
-                            cont.resume(Unit)
+                            return
+                        }
+                        DumbService.getInstance(project).smartInvokeLater {
+                            if (disposed.get()) {
+                                cont.cancel()
+                            } else if (DumbService.isDumb(project)) {
+                                waitForSmart()
+                            } else {
+                                cont.resume(Unit)
+                            }
                         }
                     }
+                    waitForSmart()
                 }
-                waitForSmart()
             }
+        } catch (e: TimeoutCancellationException) {
+            captureThreadDump("waitForSmartMode-timeout")
+            log.error("[$executionId] waitForSmartMode did not reach smart mode within $WAIT_FOR_SMART_MODE_TIMEOUT")
+            throw ToolCallErrorException(
+                "waitForSmartMode did not reach smart mode within $WAIT_FOR_SMART_MODE_TIMEOUT — indexing may " +
+                    "be stuck. See the thread dump under execution '${executionId.executionId}'."
+            )
         } finally {
             log.info("[$executionId] Waiting for indexing completed")
             resultBuilder.logProgress("Waiting for indexing completed")
@@ -230,8 +244,10 @@ class McpScriptContextImpl(
 
     override suspend fun closeModalDialogs(): Int {
         checkDisposed()
-        captureThreadDump("closeModalDialogs")
         val found = dialogWindowsLookup().withDialogWindows(project) { it.size }
+        // Nothing to close (the common case under smart_non_modal) — don't attach a diagnostic dump.
+        if (found == 0) return 0
+        captureThreadDump("closeModalDialogs")
         // killProjectDialogs captures a screenshot before closing each dialog (VisionService).
         dialogKiller().killProjectDialogs(
             project = project,

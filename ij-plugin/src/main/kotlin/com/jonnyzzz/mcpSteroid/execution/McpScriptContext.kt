@@ -16,13 +16,14 @@ import kotlin.time.Duration.Companion.seconds
  * Context provided to exec_code scripts.
  *
  * IMPORTANT: Script code runs in a suspend context; exec_code executes the script body directly.
- * waitForSmartMode() is called automatically before your script starts.
+ * Under the default modal=smart_non_modal profile, waitForSmartMode() is called automatically before your
+ * script starts; other modal modes (non_modal / unleashed) must call it explicitly if they need it.
  * This context provides helper functions for common IntelliJ operations.
  *
  * ## Quick Reference
  *
  * ```kotlin
- * // waitForSmartMode() is called automatically before your script starts
+ * // Under modal=smart_non_modal (default), waitForSmartMode() is called automatically before your script
  * // Read PSI/VFS data (use helpers - no imports needed!):
  * val psiFile = readAction {
  *     PsiManager.getInstance(project).findFile(virtualFile)
@@ -318,10 +319,12 @@ interface McpScriptContext {
     suspend fun closeModalDialogs(): Int
 
     /**
-     * Start watching for modal dialogs for the rest of the execution. When one appears it is closed
-     * (deepest-first), a screenshot + thread dump are captured, and the execution FAILS. This is the guard
-     * `smart_non_modal` enables automatically; call it explicitly from `non_modal` / `unleashed` to get the
-     * same behavior. Call [allowModalDialog] before opening a dialog on purpose to suspend the guard.
+     * Poll for showing modal dialogs (~1s) for the rest of the execution. A modal dialog still showing at a
+     * poll tick is closed (deepest-first), a screenshot + thread dump are captured, and the execution FAILS.
+     * (A dialog that opens and closes between ticks is not observed.) Does NOT sweep dialogs already on
+     * screen — call [closeModalDialogs] first for those. No-op if the monitor is already active. This is the
+     * guard `smart_non_modal` enables automatically; call it explicitly from `non_modal` / `unleashed` to
+     * get the same behavior. Call [allowModalDialog] before opening a dialog on purpose to disable the guard.
      */
     fun monitorAndCloseModalDialogs()
 

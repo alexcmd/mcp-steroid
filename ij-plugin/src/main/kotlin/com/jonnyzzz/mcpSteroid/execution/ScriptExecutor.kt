@@ -16,9 +16,11 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.concurrency.ThreadingAssertions
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
+import com.intellij.diagnostic.ThreadDumper
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
+import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
@@ -159,9 +161,10 @@ class ScriptExecutor(
         resultBuilder.logMessage("[RUN] script")
         executeCodeBlocks(exec, context, evalResult, executionId, resultBuilder)
 
-        // Post-flight: re-sync to disk iff we are non-modal NOW (a fresh read — the body may have
-        // opened or closed a modal). Skipped for `unleashed` (no disk-consistency contract).
-        if (exec.modal != ModalMode.UNLEASHED && !isModalEdt()) {
+        // Post-flight: re-sync to disk only for `smart_non_modal`, whose profile owns the document-
+        // consistency contract. `non_modal` is intentionally start-gate-only and `unleashed` does nothing —
+        // neither re-syncs (a fresh isModalEdt() read, since the body may have changed modality).
+        if (exec.modal == ModalMode.SMART_NON_MODAL && !isModalEdt()) {
             resultBuilder.logMessage("[POST] sync documents")
             try {
                 context.syncDocuments()
@@ -178,15 +181,25 @@ class ScriptExecutor(
      */
     private suspend fun requireNonModalOrFail(executionId: ExecutionId, modal: ModalMode) {
         if (!isModalEdt()) return
+        // Capture the same diagnostics the during-run monitor does (screenshot + thread dump) — a gate
+        // failure often means a modal is stuck on a background process, where the thread dump is key.
         try {
             VisionService.getInstance(project).capture(executionId)
         } catch (e: Exception) {
             log.warn("Failed to capture modal screenshot for $executionId: ${e.message}", e)
         }
+        try {
+            project.executionStorage.writeCodeExecutionData(
+                executionId, "thread-dump-modality-gate.txt", ThreadDumper.dumpThreadsToString())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Failed to capture modality-gate thread dump for $executionId: ${e.message}")
+        }
         throw ToolCallErrorException(
             "modal=${modal.name.lowercase()} requires a non-modal IDE, but a modal dialog/progress is present " +
                 "and could not be cleared. Use modal=unleashed to run anyway (no PSI guarantees). " +
-                "See the screenshot under execution '${executionId.executionId}'."
+                "See the screenshot + thread dump under execution '${executionId.executionId}'."
         )
     }
 
