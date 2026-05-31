@@ -100,7 +100,7 @@ class GitVcsAddFileDialogTest {
             taskId = "vcs-add-dialog",
             reason = "Confirm Git VCS detected and silencer set ADD confirmation to DO_NOTHING_SILENTLY",
             projectName = gitProjectName,
-            dialogKiller = false,
+            modal = "unleashed",
         )
         vcsCheck.assertExitCode(0, "VCS state probe should succeed")
             .assertOutputContains("HAS_GIT=true", "ADD_CONFIRMATION=2")
@@ -128,7 +128,7 @@ class GitVcsAddFileDialogTest {
             taskId = "vcs-add-dialog",
             reason = "Mirror agent script in ~/Work/mcp-steroid-data/eid_20260507T090*/script.kts that creates a new file in a Git-tracked project",
             projectName = gitProjectName,
-            dialogKiller = false,
+            modal = "unleashed",
         )
         createFile.assertExitCode(0, "execute_code that creates a new file should succeed")
             .assertOutputContains("CREATED=")

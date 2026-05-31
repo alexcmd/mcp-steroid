@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
@@ -418,7 +419,7 @@ class DevrigToolBridgeClientTest {
                 code = "println(1)",
                 reason = "verify execute-code argument and progress forwarding",
                 timeout = 17,
-                dialogKiller = true,
+                modal = ModalMode.SMART_NON_MODAL,
             ),
             callProgress = object : McpProgressReporter {
                 override fun report(message: String) {
@@ -435,7 +436,7 @@ class DevrigToolBridgeClientTest {
         assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
         assertEquals("exec-task", arguments["task_id"]?.jsonPrimitive?.content)
         assertEquals("17", arguments["timeout"]?.jsonPrimitive?.content)
-        assertEquals("true", arguments["dialog_killer"]?.jsonPrimitive?.content)
+        assertEquals("smart_non_modal", arguments["modal"]?.jsonPrimitive?.content)
     }
 
     @Test

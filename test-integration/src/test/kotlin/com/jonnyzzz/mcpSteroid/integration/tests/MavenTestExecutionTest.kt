@@ -161,7 +161,7 @@ class MavenTestExecutionTest {
             taskId = "maven-test-execution",
             reason = "Execute Maven tests via MavenRunConfigurationType with SMTRunner",
             timeout = 600,
-            dialogKiller = true,
+            modal = "smart_non_modal",
         )
 
         result.assertExitCode(0, "Maven test execution via MCP should succeed")

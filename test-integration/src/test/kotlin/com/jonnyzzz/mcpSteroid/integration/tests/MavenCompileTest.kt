@@ -65,7 +65,7 @@ class MavenCompileTest {
             taskId = "maven-compile",
             reason = "Compile Maven project via ProjectTaskManager (replaces Bash mvnw test-compile)",
             timeout = 300,
-            dialogKiller = true,
+            modal = "smart_non_modal",
         )
 
         result.assertExitCode(0, "Maven compile via ProjectTaskManager should succeed")

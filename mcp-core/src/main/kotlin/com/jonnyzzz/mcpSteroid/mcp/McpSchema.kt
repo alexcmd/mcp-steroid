@@ -66,6 +66,22 @@ fun InputSchemaElement<Nothing>.string() = InputSchemaElement(
     }
 )
 
+/**
+ * A string parameter constrained to a fixed set of [values] (rendered as JSON-schema `enum`).
+ * The parser returns the raw string; callers map it to their enum and validate.
+ */
+fun InputSchemaElement<Nothing>.enumString(values: List<String>) = InputSchemaElement(
+    spec = spec.copy(
+        type = "string",
+        extra = { putJsonArray("enum") { values.forEach { add(it) } } },
+    ),
+    parser = object : InputSchemaParamParser<String?> {
+        override fun parseParameter(context: ToolCallContext): String? {
+            return context.params.arguments[spec.name]?.jsonPrimitive?.contentOrNull
+        }
+    }
+)
+
 fun InputSchemaElement<Nothing>.int() = InputSchemaElement(
     spec = spec.copy(type = "integer"),
     parser = object : InputSchemaParamParser<Int?> {

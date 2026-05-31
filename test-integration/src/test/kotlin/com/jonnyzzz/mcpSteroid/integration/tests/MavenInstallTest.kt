@@ -87,7 +87,7 @@ class MavenInstallTest {
             taskId = "maven-install",
             reason = "Run Maven install goal via MavenRunConfigurationType (replaces Bash mvnw install)",
             timeout = 600,
-            dialogKiller = true,
+            modal = "smart_non_modal",
         )
 
         result.assertExitCode(0, "Maven install via exec_code should succeed")

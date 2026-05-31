@@ -7,6 +7,7 @@ import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
+import com.jonnyzzz.mcpSteroid.server.wire
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
@@ -98,8 +99,7 @@ class DevrigExecuteCodeToolHandler(
             put("task_id", execCodeParams.taskId)
             put("reason", execCodeParams.reason)
             put("timeout", execCodeParams.timeout)
-            put("dialog_killer", execCodeParams.dialogKiller)
-            put("allow_modal", execCodeParams.allowModal)
+            put("modal", execCodeParams.modal.wire)
         }
     }
 }

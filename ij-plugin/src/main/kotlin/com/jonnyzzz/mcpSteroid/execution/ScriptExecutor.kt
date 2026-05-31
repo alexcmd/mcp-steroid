@@ -17,7 +17,9 @@ import com.intellij.util.concurrency.ThreadingAssertions
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
+import com.jonnyzzz.mcpSteroid.vision.VisionService
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlin.time.Duration.Companion.seconds
@@ -71,12 +73,6 @@ class ScriptExecutor(
     private val log = Logger.getInstance(ScriptExecutor::class.java)
     override fun dispose() = Unit
 
-    private companion object {
-        // Deadlock safety net for the awaited initial dialog-killer pass. Generous:
-        // the killer normally clears modals in well under a second.
-        private val INITIAL_KILL_TIMEOUT = 30.seconds
-    }
-
     /**
      * Executes a script with progress reporting and returns its output.
      * It is a suspending function that runs inside the caller's coroutine context.
@@ -120,69 +116,40 @@ class ScriptExecutor(
             .codeEvalManager
             .evalCode(executionId, exec.code, resultBuilder) ?: return
 
-        log.info("Running script block(s) for $executionId with timeout ${exec.timeout}s")
-
-        // Pre-flight step 1a: run ONE dialog-killer pass and AWAIT it, so the
-        // modality gate below observes the post-kill state instead of racing a
-        // just-launched killer. Awaiting is safe: every killer EDT step runs under
-        // ModalityState.any() (pumped while a modal is up) and the heavy OCR work is
-        // deferred, so it cannot hang; a timeout still guards against a true deadlock.
-        // Without this, the gate fired before the killer closed anything and the run
-        // hard-failed with "modal still showing" even though the killer would have
-        // cleared it. Skipped only when the caller opted out.
-        resultBuilder.logMessage("[PRE] dialog-killer: initial pass")
-        runInitialDialogKillerPass(exec, executionId, resultBuilder)
-
-        // Pre-flight step 1b: start the periodic dialog killer for the rest of the
-        // execution (the body may open new modals). Launched, NEVER awaited — its
-        // polling delay would otherwise block the main flow.
-        resultBuilder.logMessage("[PRE] dialog-killer: start periodic")
-        val killerJob: Job? = startDialogKiller(exec, executionId, resultBuilder)
-
-        Disposer.register(executionDisposable) {
-            killerJob?.cancel()
-        }
+        log.info("Running script block(s) for $executionId with timeout ${exec.timeout}s, modal=${exec.modal}")
 
         val context = McpScriptContextImpl(
             project = project,
             executionId = executionId,
             disposable = executionDisposable,
             resultBuilder = resultBuilder,
-            // Script can opt out of the periodic killer for this execution.
-            onDoNotCancelOnModalityStateChange = { killerJob?.cancel() },
+            // The modal-dialog monitor (monitorAndCloseModalDialogs) launches into this scope.
+            executionScope = this,
         )
 
-        // Pre-flight step 2: modality gate (no timeout). EDT + any() is pumped
-        // under a modal loop, so the read returns; current()!=nonModal() flags any
-        // elevated modality (a real dialog OR background progress/indexing).
-        resultBuilder.logMessage("[PRE] modality gate")
-        val isEdtModal = isModalEdt()
-
-        // Pre-flight step 3: commit PSI + save docs + VFS refresh — only when safe.
-        // commit/VFS use the write-intent EDT and hang under a modal, so gate them.
-        when {
-            !isEdtModal -> {
-                resultBuilder.logMessage("[PRE] commit + save documents")
-                commitAndSaveAllDocumentsGuardedOnEdt(project, "pre-flight")
-                resultBuilder.logMessage("[PRE] VFS refresh")
+        // Pre-flight per `modal` profile. Each profile is sugar over the context APIs
+        // (closeModalDialogs / syncDocuments / waitForSmartMode / monitorAndCloseModalDialogs),
+        // which a script in any mode can also call on demand.
+        when (exec.modal) {
+            ModalMode.SMART_NON_MODAL -> {
+                resultBuilder.logMessage("[PRE] close modal dialogs")
+                context.closeModalDialogs()
+                requireNonModalOrFail(executionId, exec.modal)
+                resultBuilder.logMessage("[PRE] sync documents")
+                context.syncDocuments()
+                resultBuilder.logMessage("[PRE] wait for smart mode")
+                context.waitForSmartMode()
+                resultBuilder.logMessage("[PRE] start modal-dialog monitor")
+                context.monitorAndCloseModalDialogs()
             }
 
-            exec.allowModal -> {
-                resultBuilder.logMessage("[PRE] WARNING: modal detected and allow_modal=true — skipping pre-flight commit + VFS refresh (PSI/disk may be stale for this run)")
+            ModalMode.NON_MODAL -> {
+                resultBuilder.logMessage("[PRE] require non-modal")
+                requireNonModalOrFail(executionId, exec.modal)
             }
 
-            else -> {
-                // modal && !allow_modal: only HARD-FAIL on a real modal dialog, not
-                // on mere progress/indexing (which also elevates ModalityState).
-                val realDialog = dialogWindowsLookup().withModalityCheck { it }
-                if (realDialog) {
-                    throw ToolCallErrorException(
-                        "Modal dialog still showing after dialog killer ran — refusing to run the script. " +
-                            "Pass allow_modal=true to proceed anyway. " +
-                            "See IDE log + execution screenshot under execution id '${executionId.executionId}' for details."
-                    )
-                }
-                resultBuilder.logMessage("[PRE] WARNING: elevated modality without a modal dialog (likely indexing/progress) — skipping pre-flight commit + VFS refresh")
+            ModalMode.UNLEASHED -> {
+                resultBuilder.logMessage("[PRE] unleashed — no modality checks")
             }
         }
 
@@ -191,70 +158,35 @@ class ScriptExecutor(
         resultBuilder.logMessage("[RUN] script")
         executeCodeBlocks(exec, context, evalResult, executionId, resultBuilder)
 
-        // Post-flight commit: only if we committed pre-flight AND we are still
-        // non-modal (the body may have opened a modal or opted out of the killer).
-        if (!isModalEdt()) {
-            //maybe fire-and-forget?
-            resultBuilder.logMessage("[POST] commit + save documents + VFS Refresh")
-            commitAndSaveAllDocumentsGuardedOnEdt(project, "post-flight")
-        }
-    }
-
-    private fun CoroutineScope.startDialogKiller(
-        exec: ExecCodeParams,
-        executionId: ExecutionId,
-        resultBuilder: ExecutionResultBuilder
-    ): Job? {
-        if (!exec.dialogKiller || !exec.cancelOnModal) return null
-
-        return dialogKiller().run {
-            startDialogKiller(
-                executionId = executionId,
-                project = project,
-                logMessage = { resultBuilder.logMessage(it) },
-                dialogKiller = true
-            )
+        // Post-flight: re-sync to disk iff we are non-modal NOW (a fresh read — the body may have
+        // opened or closed a modal). Skipped for `unleashed` (no disk-consistency contract).
+        if (exec.modal != ModalMode.UNLEASHED && !isModalEdt()) {
+            resultBuilder.logMessage("[POST] sync documents")
+            try {
+                context.syncDocuments()
+            } catch (e: ToolCallErrorException) {
+                resultBuilder.logMessage("[POST] sync skipped: ${e.message}")
+            }
         }
     }
 
     /**
-     * Run a single dialog-killer sweep and await its completion, dismissing any
-     * modal left over from a previous step before the modality gate runs.
-     *
-     * This synchronous "guarantee no modal left" pass is intentionally NOT gated by
-     * [ExecCodeParams.dialogKiller]: that flag gates the *periodic* killer
-     * ([startDialogKiller]) which would otherwise close a modal the script body opens
-     * on purpose. The pre-flight pass instead clears modals that are already up before
-     * the body runs, so exec_code can safely commit/refresh and execute. It is skipped
-     * only when the caller explicitly opts to run under a modal ([ExecCodeParams.allowModal]).
-     *
-     * Bounded by [INITIAL_KILL_TIMEOUT] purely as a deadlock safety net — the
-     * killer's EDT work is pumped under [ModalityState.any], so it normally
-     * completes promptly. On timeout we log and fall through to the gate, which
-     * surfaces the canonical "modal still showing" error.
+     * Fail the execution (with a screenshot) when the IDE is in an elevated-modality state and the
+     * profile requires non-modal. Uses the shared [DialogWindowsLookup.isModalEdt] check, so the gate
+     * agrees with the context APIs' non-modal asserts.
      */
-    private suspend fun runInitialDialogKillerPass(
-        exec: ExecCodeParams,
-        executionId: ExecutionId,
-        resultBuilder: ExecutionResultBuilder,
-    ) {
-        if (exec.allowModal) return
-
+    private suspend fun requireNonModalOrFail(executionId: ExecutionId, modal: ModalMode) {
+        if (!isModalEdt()) return
         try {
-            withTimeout(INITIAL_KILL_TIMEOUT) {
-                dialogKiller().killProjectDialogs(
-                    project = project,
-                    executionId = executionId,
-                    logMessage = { resultBuilder.logMessage(it) },
-                    forceEnabled = true,
-                )
-            }
-        } catch (e: TimeoutCancellationException) {
-            log.error(
-                "Dialog killer initial pass did not complete within $INITIAL_KILL_TIMEOUT for " +
-                    "$executionId — proceeding to the modality gate (a modal may still block the run)."
-            )
+            VisionService.getInstance(project).capture(executionId)
+        } catch (e: Exception) {
+            log.warn("Failed to capture modal screenshot for $executionId: ${e.message}", e)
         }
+        throw ToolCallErrorException(
+            "modal=${modal.name.lowercase()} requires a non-modal IDE, but a modal dialog/progress is present " +
+                "and could not be cleared. Use modal=unleashed to run anyway (no PSI guarantees). " +
+                "See the screenshot under execution '${executionId.executionId}'."
+        )
     }
 
     private fun CoroutineScope.monitorExceptions(
@@ -319,37 +251,6 @@ class ScriptExecutor(
     // gate and the killer must agree on what "modal" means. Yuriy's check — EDT under
     // ModalityState.any(), current() != nonModal().
     private suspend fun isModalEdt(): Boolean = dialogWindowsLookup().isModalEdt()
-
-    private suspend fun commitAndSaveAllDocumentsGuardedOnEdt(
-        project: Project,
-        stage: String,
-    ) {
-        val commitTimeout = 60_000L
-
-        return try {
-            // Deadlock guard for the pre/post-flight document commit (write-intent EDT). Generous
-            // enough not to false-trip on a busy EDT, short enough to fail fast vs a multi-minute hang
-            // if a modal slips into the gate→commit window.
-            withTimeout(commitTimeout.milliseconds) {
-                withContext(Dispatchers.EDT) {
-                    PsiDocumentManager.getInstance(project).commitAllDocuments()
-                    FileDocumentManager.getInstance().saveAllDocuments()
-                    project.vfsRefreshService.awaitRefresh()
-                }
-                //TODO: context#waitForSmartMode
-            }
-        } catch (_: TimeoutCancellationException) {
-            log.error("IntelliJ appears deadlocked during $stage commit " +
-                "— commitAndSaveAllDocuments did not complete within " +
-                "${commitTimeout}ms (EDT write-intent likely withheld by a modal)")
-
-            throw ToolCallErrorException(
-                "IntelliJ appears deadlocked during $stage: commitAndSaveAllDocuments did " +
-                    "not complete within ${commitTimeout}ms — a modal dialog likely " +
-                    "blocks the EDT. See the IDE log."
-            )
-        }
-    }
 
     /**
      * Logs an exception with stack trace line numbers remapped from wrapped-file coordinates

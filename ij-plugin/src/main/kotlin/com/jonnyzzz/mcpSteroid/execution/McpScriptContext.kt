@@ -164,12 +164,15 @@ interface McpScriptContext {
     // ============================================================
 
     /**
-     * Wait for indexing to complete (smart mode).
-     * The exec_code call invokes waitForSmartMode() automatically before your script runs.
-     * This is only a point-in-time wait: another dumb-mode pass may begin before
-     * the next statement. Prefer smartReadAction { } for index-dependent reads.
-     * After project import/sync/configuration, use Observation.awaitConfiguration(project)
-     * before the indexed read.
+     * Wait for indexing to complete (smart mode). Runs automatically before your script under the
+     * `modal=smart_non_modal` option (default); call it yourself in other modes or after triggering
+     * indexing mid-script.
+     *
+     * Asserts the IDE is non-modal and FAILS the execution if a modal dialog is present (smart mode cannot
+     * complete under a modal — it would otherwise hang). This is only a point-in-time wait: another
+     * dumb-mode pass may begin before the next statement. Prefer smartReadAction { } for index-dependent
+     * reads. After project import/sync/configuration, use Observation.awaitConfiguration(project) before
+     * the indexed read.
      *
      * ```kotlin
      * // If you trigger indexing mid-script:
@@ -290,26 +293,57 @@ interface McpScriptContext {
 
     // ============================================================
     // Modal Dialog Control
+    //
+    // The `modal` exec_code option picks a default stance; these methods let any
+    // mode do the same things on demand:
+    //  - smart_non_modal ≡ closeModalDialogs() + (require non-modal) + syncDocuments()
+    //    + waitForSmartMode() + monitorAndCloseModalDialogs()
+    //  - non_modal       ≡ (require non-modal) only
+    //  - unleashed       ≡ nothing — call these yourself as needed
     // ============================================================
 
     /**
-     * Disable automatic cancelation when a modal dialog appears.
+     * Close all currently-showing modal dialogs, deepest (top-most) first. Captures a diagnostic
+     * screenshot and a thread dump (recorded with the execution) before closing. Does NOT fail the
+     * execution — it is an explicit, on-demand sweep. Returns the number of dialogs closed.
      *
-     * By default, if a modal dialog appears during code execution, the execution
-     * is canceled and a screenshot of the dialog is returned. Call this method
-     * to disable this behavior - useful when your code intentionally shows dialogs
-     * (like refactoring confirmations).
+     * Use from `unleashed` / `non_modal` scripts to dismiss a leftover dialog on demand. `smart_non_modal`
+     * runs this automatically before your script.
      *
      * ```kotlin
-     * // Disable modal dialog cancellation before invoking refactoring
-     * doNotCancelOnModalityStateChange()
-     *
-     * // Now refactoring dialogs won't cancel execution
-     * ActionManager.getInstance().getAction("ExtractMethod")
-     *     // ...
+     * val closed = closeModalDialogs()
+     * println("closed $closed modal dialog(s)")
      * ```
      */
-    fun doNotCancelOnModalityStateChange()
+    suspend fun closeModalDialogs(): Int
+
+    /**
+     * Start watching for modal dialogs for the rest of the execution. When one appears it is closed
+     * (deepest-first), a screenshot + thread dump are captured, and the execution FAILS. This is the guard
+     * `smart_non_modal` enables automatically; call it explicitly from `non_modal` / `unleashed` to get the
+     * same behavior. Call [allowModalDialog] before opening a dialog on purpose to suspend the guard.
+     */
+    fun monitorAndCloseModalDialogs()
+
+    /**
+     * Suspend the [monitorAndCloseModalDialogs] guard for the rest of the execution, so a modal dialog your
+     * script opens on purpose is neither closed nor treated as a failure. No-op when the monitor is not
+     * running. (Replaces the former `doNotCancelOnModalityStateChange()`.)
+     *
+     * ```kotlin
+     * allowModalDialog()                 // about to show a refactoring confirmation on purpose
+     * ActionManager.getInstance().getAction("ExtractMethod") // ...
+     * ```
+     */
+    fun allowModalDialog()
+
+    /**
+     * Commit PSI changes + save all documents + refresh the VFS, so the script reads disk-consistent state.
+     * Asserts the IDE is non-modal and FAILS the execution if a modal is present (these operations hang or
+     * are unreliable under a modal — including one surfaced as a side effect). `smart_non_modal` runs this
+     * automatically before your script.
+     */
+    suspend fun syncDocuments()
 
     // ============================================================
     // Read/Write Actions - Convenience Wrappers

@@ -74,7 +74,7 @@ class GradleCompileTest {
             taskId = "gradle-compile",
             reason = "Compile Gradle project via ProjectTaskManager (replaces Bash gradlew compile)",
             timeout = 300,
-            dialogKiller = true,
+            modal = "smart_non_modal",
         )
 
         result.assertExitCode(0, "Gradle compile via ProjectTaskManager should succeed")

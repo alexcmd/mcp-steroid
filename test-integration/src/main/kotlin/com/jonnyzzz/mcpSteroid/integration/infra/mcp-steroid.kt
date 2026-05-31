@@ -345,7 +345,8 @@ try {
         reason: String = "Integration test execution",
         timeout: Int = 600,
         projectName: String = resolveProjectName(),
-        dialogKiller: Boolean? = false,
+        /** The `modal` option wire value: "smart_non_modal" | "non_modal" | "unleashed". null = server default. */
+        modal: String? = null,
     ): ProcessResult {
         // First, initialize MCP session
         val sessionId = mcpInitialize()
@@ -362,8 +363,8 @@ try {
                     put("task_id", taskId)
                     put("reason", reason)
                     put("timeout", timeout)
-                    if (dialogKiller != null) {
-                        put("dialog_killer", dialogKiller)
+                    if (modal != null) {
+                        put("modal", modal)
                     }
                 }
             }

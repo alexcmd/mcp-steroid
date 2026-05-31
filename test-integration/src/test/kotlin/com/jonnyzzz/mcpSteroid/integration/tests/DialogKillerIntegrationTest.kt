@@ -63,15 +63,12 @@ class DialogKillerIntegrationTest {
         // Step 1: Open a custom modal DialogWrapper and leave it open (dialog killer disabled)
         console.writeStep(1, "Opening test modal dialog")
         session.mcpSteroid.mcpExecuteCode(
+            modal = "unleashed",
             code = """
-                // Disable modal cancellation so the dialog stays open after this execution
-                doNotCancelOnModalityStateChange()
-
+                // modal=unleashed → no pre-flight modality checks and no dialog monitor, so the modal
+                // this opens stays up after the execution returns (for the close step to dismiss).
                 // Open the test modal from a VANILLA EDT scope — a fresh CoroutineScope(Dispatchers.EDT),
-                // NOT this MCP execution's coroutine context — so the modal does not inherit the
-                // execution scope / its ModalityState context element. This mirrors a real, user-opened
-                // modal and removes the execution scope as a variable while we debug why the dialog
-                // killer's EDT+ModalityState.any() work isn't pumped during the modal.
+                // NOT this MCP execution's coroutine context — so it mirrors a real, user-opened modal.
                 // show() blocks the launched coroutine inside the modal loop; the launch is fire-and-forget.
                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.EDT).launch {
                     val dialog = object : com.intellij.openapi.ui.DialogWrapper(project) {
@@ -126,21 +123,15 @@ class DialogKillerIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `explicit dialog killer via script API`() = doTest("explicit") { session ->
+        // modal=unleashed so the pre-flight does NOT sweep — the explicit context API does the closing.
         session.mcpSteroid.mcpExecuteCode(
+            modal = "unleashed",
             code = """
-                import com.jonnyzzz.mcpSteroid.execution.dialogKiller
-                import com.jonnyzzz.mcpSteroid.storage.ExecutionId
-
-                dialogKiller().killProjectDialogs(
-                    project = project,
-                    executionId = ExecutionId("dialog-killer-explicit-test"),
-                    logMessage = { println(it) },
-                    forceEnabled = true,
-                )
-                println("Explicit dialog killer completed")
+                val closed = closeModalDialogs()
+                println("Explicit dialog killer closed ${'$'}closed dialog(s)")
             """.trimIndent(),
             taskId = "explicit-dialog-killer",
-            reason = "Explicitly call dialog killer from script",
+            reason = "Explicitly call closeModalDialogs() from script",
         ).assertExitCode(0)
     }
 
@@ -148,12 +139,12 @@ class DialogKillerIntegrationTest {
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `automatic dialog killer closes test modal dialog`() = doTest("automatic") { session ->
         session.mcpSteroid.mcpExecuteCode(
-            dialogKiller = true,
+            modal = "smart_non_modal",
             code = """
-                println("Dialog killer should have closed the test modal dialog before this runs")
+                println("smart_non_modal should have closed the test modal dialog before this runs")
             """.trimIndent(),
             taskId = "automatic-dialog-killer",
-            reason = "Trigger automatic dialog killer via dialog_killer=true",
+            reason = "Trigger automatic dialog sweep via modal=smart_non_modal",
         ).assertExitCode(0)
     }
 
@@ -161,22 +152,15 @@ class DialogKillerIntegrationTest {
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `dialog killer captures screenshot before closing`() = doTest("screenshot") { session ->
         session.mcpSteroid.mcpExecuteCode(
+            modal = "unleashed",
             code = """
-                import com.jonnyzzz.mcpSteroid.execution.dialogKiller
-                import com.jonnyzzz.mcpSteroid.storage.ExecutionId
-
-                dialogKiller().killProjectDialogs(
-                    project = project,
-                    executionId = ExecutionId("dialog-killer-screenshot-test"),
-                    logMessage = { println(it) },
-                    forceEnabled = true,
-                )
-                println("Dialog killer with screenshot completed")
+                val closed = closeModalDialogs()
+                println("closeModalDialogs closed ${'$'}closed dialog(s)")
             """.trimIndent(),
             taskId = "dialog-killer-screenshot",
-            reason = "Dialog killer with screenshot verification",
+            reason = "closeModalDialogs() with screenshot verification",
         ).assertExitCode(0)
-            .assertOutputContains("Screenshot saved to", message = "Dialog killer must capture screenshot before closing dialog")
+            .assertOutputContains("Screenshot saved to", message = "closeModalDialogs must capture a screenshot before closing the dialog")
     }
 
     @Test
@@ -214,11 +198,11 @@ class DialogKillerIntegrationTest {
         console.writeStep(1, "Opening 4 nested modal dialogs")
         // Open four stacked modal dialogs: the first is scheduled non-modal; each subsequent
         // one is scheduled ModalityState.any() so it runs DURING the previous modal and nests
-        // on top of it -> four modal levels. doNotCancelOnModalityStateChange() keeps them open
-        // after this execution returns so the killer (next step) has all four to close.
+        // on top of it -> four modal levels. modal=unleashed (no monitor) keeps them open after
+        // this execution returns so the killer (next step) has all four to close.
         session.mcpSteroid.mcpExecuteCode(
+            modal = "unleashed",
             code = $$"""
-                doNotCancelOnModalityStateChange()
                 val app = com.intellij.openapi.application.ApplicationManager.getApplication()
                 withContext(kotlinx.coroutines.Dispatchers.EDT) {
                     for (d in 1..4) {
@@ -262,20 +246,13 @@ class DialogKillerIntegrationTest {
 
         console.writeStep(3, "Running dialog killer (closes deepest-first, one-by-one)")
         session.mcpSteroid.mcpExecuteCode(
+            modal = "unleashed",
             code = """
-                import com.jonnyzzz.mcpSteroid.execution.dialogKiller
-                import com.jonnyzzz.mcpSteroid.storage.ExecutionId
-
-                dialogKiller().killProjectDialogs(
-                    project = project,
-                    executionId = ExecutionId("kill-nested-dialogs"),
-                    logMessage = { println(it) },
-                    forceEnabled = true,
-                )
-                println("Nested dialog killer completed")
+                val closed = closeModalDialogs()
+                println("Nested dialog killer closed ${'$'}closed dialog(s)")
             """.trimIndent(),
             taskId = "kill-nested-dialogs",
-            reason = "Kill 4 nested modal dialogs",
+            reason = "Kill 4 nested modal dialogs via closeModalDialogs()",
         ).assertExitCode(0)
 
         console.writeStep(4, "Verifying all 4 nested dialogs are gone")
