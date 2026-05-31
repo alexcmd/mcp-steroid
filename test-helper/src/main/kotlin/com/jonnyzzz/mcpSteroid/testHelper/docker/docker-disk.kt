@@ -37,11 +37,26 @@ fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {
         .assertExitCode(0) { "Failed to copy to container: $localPath: $stderr" }
 }
 
+/**
+ * Max content size for [writeFileInContainer]. The content is embedded into a single
+ * `docker exec bash -c "cat > file << EOF\n<content>\nEOF"` command with a short timeout;
+ * large payloads hit the OS arg-length limit and/or time out, failing in confusing ways
+ * (observed with a ~200KB jdk.table.xml). For larger files write to the host-mapped path
+ * (see [mapGuestPathToHostPath]) or use [copyToContainer].
+ */
+const val WRITE_FILE_IN_CONTAINER_MAX_BYTES: Int = 64 * 1024
+
 fun ContainerDriver.writeFileInContainer(
     containerPath: String,
     content: String,
     executable: Boolean = false,
 ) {
+    val byteSize = content.toByteArray(Charsets.UTF_8).size
+    require(byteSize <= WRITE_FILE_IN_CONTAINER_MAX_BYTES) {
+        "writeFileInContainer content for $containerPath is $byteSize bytes, exceeding the " +
+            "$WRITE_FILE_IN_CONTAINER_MAX_BYTES-byte heredoc limit. Write to the host-mapped path " +
+            "(mapGuestPathToHostPath) or use copyToContainer for large files."
+    }
     val parentDir = containerPath.substringBeforeLast('/')
     if (parentDir.isNotEmpty()) {
         mkdirs(parentDir).assertExitCode(0) { "Failed to create directory in container $parentDir: $stderr" }
