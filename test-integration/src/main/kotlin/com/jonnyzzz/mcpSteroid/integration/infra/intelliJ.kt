@@ -376,6 +376,33 @@ class IntelliJDriver(
         driver.log("Configured Gradle JVM=$jdkName for project")
     }
 
+    /**
+     * Set the project JDK in `.idea/misc.xml` to a registered JDK name BEFORE the IDE starts, so
+     * the project SDK is resolved at project-open (rather than only by the post-open
+     * `mcpSetProjectSdk`). Patches ONLY the `ProjectRootManager` component's `project-jdk-name`
+     * attribute (adding it when absent — our fixtures ship misc.xml without it). No-op if misc.xml
+     * or the component is missing; the post-open `mcpSetProjectSdk` still covers those.
+     */
+    fun configureProjectJdk(jdkName: String) {
+        val miscXml = "$projectGuestDir/.idea/misc.xml"
+        val script = buildString {
+            append("f='$miscXml'; ")
+            append("if [ -f \"\$f\" ]; then ")
+            // drop any existing project-jdk-name on the ProjectRootManager line, then add ours
+            append("sed -i '/name=\"ProjectRootManager\"/ s| project-jdk-name=\"[^\"]*\"||' \"\$f\"; ")
+            append("sed -i '/name=\"ProjectRootManager\"/ s| />| project-jdk-name=\"$jdkName\" />|' \"\$f\"; ")
+            append("echo patched; else echo 'no misc.xml'; fi")
+        }
+        driver.startProcessInContainer {
+            this
+                .args("bash", "-c", script)
+                .timeoutSeconds(10)
+                .description("Set project-jdk-name=$jdkName in $miscXml")
+                .quietly()
+        }.assertExitCode(0) { "Failed to set project-jdk-name in $miscXml: $stderr" }
+        driver.log("Configured project JDK=$jdkName for project")
+    }
+
     fun deployPluginToContainer(pluginZipPath: File) {
         driver.deployZipAndUnpack(pluginZipPath, pluginsGuestDir)
     }

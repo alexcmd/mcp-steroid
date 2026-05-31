@@ -122,12 +122,17 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     val ijProjectDriver = IntelliJProjectDriver(lifetime, container, ijDriver, console)
     ijProjectDriver.deployProject(selectedProject)
 
-    // For Gradle projects, pin gradleJvm to the project's JDK BEFORE the IDE starts so
-    // project-open auto-import resolves its JVM instead of stalling on awaitConfiguration.
-    if (ideProduct.hasJavaSdk && selectedProject.buildSystems.any { it.type == BuildSystem.GRADLE }) {
+    // Pin the project JDK (and, for Gradle projects, the Gradle JVM) in the project's .idea XML
+    // BEFORE the IDE starts, so project-open resolves the SDK / auto-import JVM instead of stalling
+    // on awaitConfiguration. The post-open mcpSetProjectSdk / import still run as backup.
+    if (ideProduct.hasJavaSdk) {
         selectedProject.jdkVersion?.let { jdk ->
-            console.writeInfo("Pinning Gradle JVM to $jdk before IDE start...")
-            ijDriver.configureGradleJvm(jdk)
+            console.writeInfo("Setting project JDK to $jdk in misc.xml before IDE start...")
+            ijDriver.configureProjectJdk(jdk)
+            if (selectedProject.buildSystems.any { it.type == BuildSystem.GRADLE }) {
+                console.writeInfo("Pinning Gradle JVM to $jdk before IDE start...")
+                ijDriver.configureGradleJvm(jdk)
+            }
         }
     }
 
