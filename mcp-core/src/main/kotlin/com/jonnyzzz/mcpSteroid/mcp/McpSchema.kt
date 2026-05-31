@@ -70,14 +70,28 @@ fun InputSchemaElement<Nothing>.string() = InputSchemaElement(
  * A string parameter constrained to a fixed set of [values] (rendered as JSON-schema `enum`).
  * The parser returns the raw string; callers map it to their enum and validate.
  */
-fun InputSchemaElement<Nothing>.enumString(values: List<String>) = InputSchemaElement(
+fun <R : Any> InputSchemaElement<Nothing>.enumString(values: Map<String, R>) = InputSchemaElement(
     spec = spec.copy(
         type = "string",
-        extra = { putJsonArray("enum") { values.forEach { add(it) } } },
+        extra = {
+            putJsonArray("enum") {
+                values.keys.forEach {
+                    add(it)
+                }
+            }
+        },
     ),
-    parser = object : InputSchemaParamParser<String?> {
-        override fun parseParameter(context: ToolCallContext): String? {
-            return context.params.arguments[spec.name]?.jsonPrimitive?.contentOrNull
+    parser = object : InputSchemaParamParser<R?> {
+        override fun parseParameter(context: ToolCallContext): R? {
+            val text = context.params.arguments[spec.name]
+                ?.jsonPrimitive
+                ?.contentOrNull ?: return null
+
+            return values[text]
+                ?: throw ToolCallErrorException(
+                    "Unknown value '$text' for ${spec.name}. " +
+                        "Expected one of: ${values.keys.joinToString(", ")}"
+                )
         }
     }
 )

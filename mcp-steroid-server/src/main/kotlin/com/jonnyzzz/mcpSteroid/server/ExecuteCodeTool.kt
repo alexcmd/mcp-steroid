@@ -23,7 +23,7 @@ import kotlinx.serialization.Serializable
  * One stance; everything finer is done from the script via [McpScriptContext] methods.
  */
 @Serializable
-enum class ModalMode {
+enum class ModalMode(val wire: String) {
     /**
      * Default, for PSI / code-management flows: close leftover modal dialogs (deepest-first), require a
      * non-modal IDE (fail with a screenshot if one survives), commit+save documents + refresh VFS, wait
@@ -33,7 +33,7 @@ enum class ModalMode {
      * dialog on purpose.
      */
     @SerialName("smart_non_modal")
-    SMART_NON_MODAL,
+    SMART_NON_MODAL(wire = "smart_non_modal"),
 
     /**
      * Require a non-modal IDE **at the start** (fail with a screenshot if modal); do nothing else — no
@@ -43,7 +43,7 @@ enum class ModalMode {
      * `allowModalDialog`.
      */
     @SerialName("non_modal")
-    NON_MODAL,
+    NON_MODAL(wire = "non_modal"),
 
     /**
      * No sweep, no checks, no validation — the script runs against whatever IDE state exists, modal dialogs
@@ -51,27 +51,15 @@ enum class ModalMode {
      * yourself) and trivial / hardcoded IDE actions; NOT safe for PSI / code-management flows.
      */
     @SerialName("unleashed")
-    UNLEASHED;
+    UNLEASHED(wire = "unleashed"),
+
+    ;
 
     companion object {
         val DEFAULT = SMART_NON_MODAL
 
-        private val byWire = entries.associateBy { it.wire }
-
-        fun fromWire(value: String?): ModalMode =
-            value?.let { byWire[it] ?: throw com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException(
-                "Unknown modal mode '$value'. Expected one of: ${entries.joinToString(", ") { it.wire }}.") }
-                ?: DEFAULT
     }
 }
-
-/** JSON-schema wire name for this mode (the @SerialName value), e.g. "smart_non_modal". */
-val ModalMode.wire: String
-    get() = when (this) {
-        ModalMode.SMART_NON_MODAL -> "smart_non_modal"
-        ModalMode.NON_MODAL -> "non_modal"
-        ModalMode.UNLEASHED -> "unleashed"
-    }
 
 @Serializable
 data class ExecCodeParams(
@@ -130,8 +118,8 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
                 "dialogs included; for intentional modal-dialog workflows (open/inspect/close a dialog " +
                 "yourself) or trivial / hardcoded IDE actions ONLY, never for PSI/editing."
         )
-        .enumString(listOf(ModalMode.SMART_NON_MODAL.wire, ModalMode.NON_MODAL.wire, ModalMode.UNLEASHED.wire))
-        .withDefaultValue(ModalMode.DEFAULT.wire)
+        .enumString(ModalMode.entries.associateBy { it.wire })
+        .withDefaultValue(ModalMode.SMART_NON_MODAL)
         .registerToSchema()
 
     override suspend fun call(context: ToolCallContext): ToolCallResult {
@@ -140,7 +128,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         val taskId = context[taskId]
         val reason = context[reason]
         val timeout = context[timeout]
-        val modal = ModalMode.fromWire(context[modal])
+        val modal = context[modal]
 
         val execCodeParams = ExecCodeParams(
             taskId = taskId,
