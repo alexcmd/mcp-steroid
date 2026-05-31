@@ -112,6 +112,7 @@ class DialogWindowsLookup {
      *    actual [DialogWrapperDialog] windows. If any is showing and modal → true.
      * 3. Calls [action] with the result.
      */
+    //TODO: just reeturn, there is no need for action-style callback
     suspend fun <T> withModalityCheck(
         action: suspend (isModalShowing: Boolean) -> T,
     ): T {

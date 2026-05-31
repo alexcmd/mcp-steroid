@@ -2,8 +2,9 @@
 package com.jonnyzzz.mcpSteroid.execution
 
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -13,11 +14,14 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.psi.PsiDocumentManager
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 inline val Project.scriptExecutor: ScriptExecutor get() = service()
 
@@ -98,59 +102,32 @@ class ScriptExecutor(
             val capturedBlocks = evalResult.result
             log.info("Running ${capturedBlocks.size} script block(s) for $executionId with timeout ${timeout}s")
 
-            // Pre-flight editing guard, step 1+2: kill stuck modals, then
-            // fail-fast if one is still showing. Skipped when the per-call
-            // dialog_killer override is explicitly false — the caller opted
-            // out of dialog killing and accepts modal dialogs may be present.
-            val checkModality = exec.dialogKiller != false
-            if (checkModality) {
-                dialogKiller().killProjectDialogs(
-                    project = project,
-                    executionId = executionId,
-                    logMessage = { resultBuilder.logMessage(it) },
-                    forceEnabled = exec.dialogKiller,
-                )
-                val isModalShowing = dialogWindowsLookup().withModalityCheck { it }
-                if (isModalShowing) {
-                    resultBuilder.reportFailed(
-                        "Modal dialog still showing after dialog killer ran — refusing to run the script. " +
-                                "See IDE log + execution screenshot under execution id '${executionId.executionId}' for details."
-                    )
-                    return
-                }
-            }
-
-            // Pre-flight editing guard, step 3: commit PSI, save dirty docs, await VFS refresh.
-            commitAndSaveAllDocuments(project)
-            project.vfsRefreshService.awaitRefresh()
-
             try {
                 coroutineScope {
                     withContext(Dispatchers.IO) {
-                        // Periodic dialog killer — dismisses any modal that
-                        // appears during execution, logs a screenshot to the
-                        // result builder, and lets the script continue against
-                        // the post-dismiss IDE state. If the script
-                        // intentionally shows a dialog (e.g. refactoring
-                        // confirmation), it calls
-                        // McpScriptContext.doNotCancelOnModalityStateChange() —
-                        // which cancels [killerJob] for the rest of the run.
-                        val killerJob: Job? = if (exec.cancelOnModal) {
+                        // Pre-flight step 1: start the dialog killer FIRST, spanning the whole
+                        // execution (gate, commit, VFS, body). Launched, NEVER awaited — its own
+                        // EDT work can hang, so blocking the main flow on it would re-introduce the
+                        // deadlock. Does an immediate first pass, then polls. Skipped only when the
+                        // caller opted out (dialog_killer=false or cancelOnModal=false).
+                        resultBuilder.logMessage("[PRE] dialog-killer: start")
+                        val killerJob: Job? = if (exec.dialogKiller != false && exec.cancelOnModal) {
                             launch(CoroutineName("execution-dialog-killer-$executionId")) {
                                 while (isActive) {
-                                    delay(KILLER_POLL_INTERVAL_MS.milliseconds)
                                     try {
                                         dialogKiller().killProjectDialogs(
                                             project = project,
                                             executionId = executionId,
                                             logMessage = { resultBuilder.logMessage(it) },
-                                            forceEnabled = null, // honour registry toggle
+                                            forceEnabled = exec.dialogKiller,
                                         )
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (t: Throwable) {
                                         log.warn("Periodic dialog killer failed for $executionId: ${t.message}", t)
                                     }
+
+                                    delay(1_000L.milliseconds)
                                 }
                             }
                         } else null
@@ -164,43 +141,90 @@ class ScriptExecutor(
                             onDoNotCancelOnModalityStateChange = { killerJob?.cancel() },
                         )
 
-                        val exceptionJob = launch {
-                            service<ExceptionCaptureService>().exceptions.collect { ex ->
-                                context.println(buildString {
-                                    appendLine("=== IDE Exception Captured ===")
-                                    appendLine("Time: ${ex.timestamp}")
-                                    ex.pluginId?.let { appendLine("Plugin: $it") }
-                                    appendLine("Message: ${ex.message}")
-                                    appendLine("Stacktrace:")
-                                    append(ex.stacktrace)
-                                    appendLine("=== END ===")
-                                })
-                            }
-                        }
-
                         try {
-                            withTimeout(timeout.seconds) {
-                                context.waitForSmartMode()
-                                for ((index, block) in capturedBlocks.withIndex()) {
-                                    yield()
-                                    if (capturedBlocks.size > 1) {
-                                        log.info("Executing block #${index + 1}/${capturedBlocks.size} for $executionId")
-                                        context.progress("Executing block ${index + 1} of ${capturedBlocks.size}...")
-                                    }
-                                    block(context)
+                            // Pre-flight step 2: modality gate (no timeout). EDT + any() is pumped
+                            // under a modal loop, so the read returns; current()!=nonModal() flags any
+                            // elevated modality (a real dialog OR background progress/indexing).
+                            resultBuilder.logMessage("[PRE] modality gate")
+                            val isEdtModal = isModalEdt()
+
+                            // Pre-flight step 3: commit PSI + save docs + VFS refresh — only when safe.
+                            // commit/VFS use the write-intent EDT and hang under a modal, so gate them.
+                            when {
+                                !isEdtModal -> {
+                                    resultBuilder.logMessage("[PRE] commit + save documents")
+                                    commitAndSaveAllDocumentsGuardedOnEdt(project, "pre-flight")
+                                    resultBuilder.logMessage("[PRE] VFS refresh")
                                 }
-                                log.info("Execution $executionId completed normally")
+
+                                exec.allowModal -> {
+                                    resultBuilder.logMessage("[PRE] WARNING: modal detected and allow_modal=true — skipping pre-flight commit + VFS refresh (PSI/disk may be stale for this run)")
+                                }
+
+                                else -> {
+                                    // modal && !allow_modal: only HARD-FAIL on a real modal dialog, not
+                                    // on mere progress/indexing (which also elevates ModalityState).
+                                    val realDialog = dialogWindowsLookup().withModalityCheck { it }
+                                    if (realDialog) {
+                                        resultBuilder.reportFailed(
+                                            "Modal dialog still showing after dialog killer ran — refusing to run the script. " +
+                                                "Pass allow_modal=true to proceed anyway. " +
+                                                "See IDE log + execution screenshot under execution id '${executionId.executionId}' for details."
+                                        )
+                                        return@withContext
+                                    }
+                                    resultBuilder.logMessage("[PRE] WARNING: elevated modality without a modal dialog (likely indexing/progress) — skipping pre-flight commit + VFS refresh")
+                                }
+                            }
+
+                            val exceptionJob = launch {
+                                service<ExceptionCaptureService>().exceptions.collect { ex ->
+                                    context.println(buildString {
+                                        appendLine("=== IDE Exception Captured ===")
+                                        appendLine("Time: ${ex.timestamp}")
+                                        ex.pluginId?.let { appendLine("Plugin: $it") }
+                                        appendLine("Message: ${ex.message}")
+                                        appendLine("Stacktrace:")
+                                        append(ex.stacktrace)
+                                        appendLine("=== END ===")
+                                    })
+                                }
+                            }
+
+                            try {
+                                resultBuilder.logMessage("[RUN] script")
+                                withTimeout(timeout.seconds) {
+                                    context.waitForSmartMode()
+                                    for ((index, block) in capturedBlocks.withIndex()) {
+                                        yield()
+                                        if (capturedBlocks.size > 1) {
+                                            log.info("Executing block #${index + 1}/${capturedBlocks.size} for $executionId")
+                                            context.progress("Executing block ${index + 1} of ${capturedBlocks.size}...")
+                                        }
+                                        block(context)
+                                    }
+                                    log.info("Execution $executionId completed normally")
+                                }
+
+                                // Post-flight commit: only if we committed pre-flight AND we are still
+                                // non-modal (the body may have opened a modal or opted out of the killer).
+                                if (!isModalEdt()) {
+                                    //maybe fire-and-forget?
+                                    resultBuilder.logMessage("[POST] commit + save documents")
+                                    commitAndSaveAllDocumentsGuardedOnEdt(project, "post-flight")
+                                }
+                            } finally {
+                                exceptionJob.cancel()
                             }
                         } finally {
-                            exceptionJob.cancel()
                             killerJob?.cancel()
                         }
                     }
                 }
             } finally {
-                // Post-flight editing guard, step 5: refresh so the next agent
-                // step sees disk changes the body made (e.g. files written via
-                // Bash from the script context).
+                // Post-flight: refresh so the next agent step sees disk changes the body made
+                // (e.g. files written via Bash from the script context). Already 30 s-bounded.
+                resultBuilder.logMessage("[POST] VFS refresh")
                 project.vfsRefreshService.awaitRefresh()
             }
         } catch (e: TimeoutCancellationException) {
@@ -220,32 +244,39 @@ class ScriptExecutor(
         }
     }
 
-    /**
-     * Commit pending PSI edits and flush all dirty documents to disk before
-     * the script body runs. EDT-only platform calls — dispatch when needed.
-     *
-     * When the caller is already on the EDT (BasePlatformTestCase with
-     * `runInDispatchThread()=true`, or any tool-handler that landed on the
-     * EDT), call inline — wrapping in `withContext(Dispatchers.EDT + …)`
-     * would force a dispatch and deadlock against `runBlocking` waiting for
-     * the current coroutine.
-     */
-    private suspend fun commitAndSaveAllDocuments(project: Project) {
-        if (ApplicationManager.getApplication().isDispatchThread) {
-            PsiDocumentManager.getInstance(project).commitAllDocuments()
-            FileDocumentManager.getInstance().saveAllDocuments()
-        } else {
-            withContext(Dispatchers.EDT) {
-                PsiDocumentManager.getInstance(project).commitAllDocuments()
-                FileDocumentManager.getInstance().saveAllDocuments()
-            }
+    private suspend fun isModalEdt(): Boolean =
+        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+            ModalityState.current() != ModalityState.nonModal()
         }
-    }
 
-    private companion object {
-        // Dialog killer poll cadence. 1 s is short enough to dismiss a dialog
-        // before agent timeouts kick in, long enough that we don't burn CPU.
-        const val KILLER_POLL_INTERVAL_MS = 1_000L
+    private suspend fun commitAndSaveAllDocumentsGuardedOnEdt(
+        project: Project,
+        stage: String,
+    ) {
+        val commitTimeout = 60_000L
+
+        return try {
+            // Deadlock guard for the pre/post-flight document commit (write-intent EDT). Generous
+            // enough not to false-trip on a busy EDT, short enough to fail fast vs a multi-minute hang
+            // if a modal slips into the gate→commit window.
+            withTimeout(commitTimeout.milliseconds) {
+                withContext(Dispatchers.EDT) {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments()
+                    FileDocumentManager.getInstance().saveAllDocuments()
+                    project.vfsRefreshService.awaitRefresh()
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            log.error("IntelliJ appears deadlocked during $stage commit " +
+                "— commitAndSaveAllDocuments did not complete within " +
+                "${commitTimeout}ms (EDT write-intent likely withheld by a modal)")
+
+            throw ToolCallErrorException(
+                "IntelliJ appears deadlocked during $stage: commitAndSaveAllDocuments did " +
+                    "not complete within ${commitTimeout}ms — a modal dialog likely " +
+                    "blocks the EDT. See the IDE log."
+            )
+        }
     }
 
     /**
