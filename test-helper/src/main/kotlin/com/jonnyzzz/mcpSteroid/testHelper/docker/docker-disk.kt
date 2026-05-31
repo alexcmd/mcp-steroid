@@ -62,6 +62,9 @@ fun ContainerDriver.writeFileInContainer(
     val tmp = File.createTempFile("write-in-container-", ".tmp")
     try {
         tmp.writeText(content)
+        // Set the exec bit on the source: `docker cp` preserves file mode, so the container-local
+        // target ends up executable without a separate (ownership-sensitive) chmod.
+        if (executable) tmp.setExecutable(true, false)
         // `docker cp` (container-local target) needs the parent dir to exist; the host-mapped
         // branch of copyToContainer creates the host parent itself.
         val parentDir = containerPath.substringBeforeLast('/')
@@ -69,18 +72,10 @@ fun ContainerDriver.writeFileInContainer(
             mkdirs(parentDir).assertExitCode(0) { "Failed to create directory in container $parentDir: $stderr" }
         }
         copyToContainer(tmp, containerPath)
+        // Host-mapped copyTo does NOT carry the exec bit; set it on the host destination directly
+        // (the file is host-owned there, so a docker-exec chmod by the container user would fail).
+        if (executable) mapGuestPathToHostPathOrNull(containerPath)?.setExecutable(true, false)
     } finally {
         tmp.delete()
-    }
-
-    if (executable) {
-        // chmod works for both host-mapped and container-local targets.
-        startProcessInContainer {
-            this
-                .args("chmod", "+x", containerPath)
-                .description("chmod +x $containerPath")
-                .timeoutSeconds(5)
-                .quietly()
-        }.assertExitCode(0) { "Failed to chmod the created file in container to $containerPath: $stderr" }
     }
 }
