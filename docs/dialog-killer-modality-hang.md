@@ -7,11 +7,20 @@ history; the originally-proposed `UiWithModelAccess` candidate was **not** taken
 
 ## Resolution (implemented 2026-05-31)
 
-The root cause was confirmed: the hang sites are write-intent `Dispatchers.EDT` dispatches that are
-withheld during a `DialogWrapper.show()` modal loop — both the killer's own `EDT + any()`
-enumeration AND, with `dialog_killer=false`, the pre-flight `commitAndSaveAllDocuments` (write-intent
-EDT, no `any()`). `ModalityState.any()` passes the modality filter but does NOT lift the write-intent
-lock, so `EDT + any()` alone is not guaranteed non-blocking.
+The root cause was confirmed: the hang sites are write-intent `Dispatchers.EDT` dispatches (and
+indexing/smart-mode waits) that cannot make progress during a `DialogWrapper.show()` modal loop —
+**all of these are modality-sensitive and hang under a modal**:
+- the killer's own `EDT + any()` enumeration;
+- the pre-flight `commitAndSaveAllDocuments` (write-intent EDT, no `any()`) — the literal hang site
+  with `dialog_killer=false`;
+- `VfsRefreshService.awaitRefresh()` (write-intent EDT work);
+- **`context.waitForSmartMode()` / `waitForIndexesReady`** in the `[RUN]` stage — a recent change
+  started calling it from the script-execution context, and **smart-mode / indexing cannot complete
+  while a modal is up**, so the run itself stalls (this was the trigger that re-surfaced the hang).
+
+`ModalityState.any()` passes the modality filter but does NOT lift the write-intent lock, so
+`EDT + any()` alone is not guaranteed non-blocking; and waiting for smart mode is inherently blocked
+by an open modal regardless of dispatcher.
 
 Rather than switch to the (internal) `UiWithModelAccess` dispatcher, the `exec_code` pre-flight in
 `ScriptExecutor.executeWithProgress` was restructured so commit/VFS only run when it is safe, and any
@@ -19,7 +28,10 @@ residual write-intent stall fails fast instead of hanging:
 
 1. **Dialog killer started FIRST**, spanning the whole execution (immediate first pass, then polls).
    Launched as a child of the request `coroutineScope` and cancelled via the execution `Disposable`
-   so it never blocks structured completion.
+   so it never blocks structured completion. Running it for the *whole* execution (not just the
+   pre-flight) is what lets the modality-sensitive operations above — commit/VFS in `[PRE]`/`[POST]`
+   AND `waitForSmartMode()` in `[RUN]` — make progress: the killer keeps dismissing modals so smart
+   mode/indexing can complete and the body can run.
 2. **Non-modal gate** `isModalEdt()` = `withContext(Dispatchers.EDT + ModalityState.any().asContextElement())
    { ModalityState.current() != ModalityState.nonModal() }`. Stable API
    (`LaterInvocator.isInModalContext()` is `@ApiStatus.Internal` — banned). `any()` lets the read run

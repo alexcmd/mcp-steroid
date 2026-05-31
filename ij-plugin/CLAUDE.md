@@ -283,6 +283,12 @@ up in `docs/dialog-killer-modality-hang.md`.
 
 ### exec_code pre-flight modality contract (ScriptExecutor.executeWithProgress)
 
+**Modality-sensitive operations that hang under a modal:** `commitAndSaveAllDocuments` and
+`VfsRefreshService.awaitRefresh` (write-intent `Dispatchers.EDT` — the dispatch is withheld), AND
+`context.waitForSmartMode()` / `waitForIndexesReady` in the `[RUN]` stage (smart-mode/indexing
+cannot complete while a modal is up). This is why the killer must run for the **whole** execution
+(not just pre-flight) — it keeps dismissing modals so commit/VFS and the smart-mode wait progress.
+
 `commitAndSaveAllDocuments` and `VfsRefreshService.awaitRefresh` run on the **write-intent**
 `Dispatchers.EDT` and **hang under a modal dialog** (the dispatch is withheld). The pre-flight is
 therefore: start the dialog killer FIRST (Disposer-cancelled, never blocks completion) → gate on

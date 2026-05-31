@@ -228,22 +228,38 @@ In 2 of 6 scenarios, `Build errors: false` is correctly reported (modal may have
 3. **JDK list is printed in first call** but agents still try wrong JDKs via Bash
 4. **"Build errors: true" false positive** wastes 1 exec_code + 1 Bash call per scenario
 
-## Configuring the IDE — always via `mcpExecuteCode`, never via XML
+## Configuring the IDE — pre-write VALIDATED XML before start, else `mcpExecuteCode` after
 
-Every piece of IDE state that a test relies on (JDKs, trusted paths,
-project open, module SDKs, …) must be set up by calling the IntelliJ API
-through `session.mcpSteroid.mcpExecuteCode(code = …)` — **never** by
-hand-writing config XML into `$configGuestDir/options/*.xml`.
+There are two mechanisms; pick by *when* the state must exist:
 
-Rationale: we tried the XML route for JDK registration and it failed
-silently. A single unescaped `"` in an attribute made
-`FileBasedStorage` reject `jdk.table.xml` with `WARN Cannot read …`,
-which in turn left the JDK table empty, which made
-`UnknownSdkStartupChecker` fire a download-consent modal at project
-open — and that modal deadlocked the test run in headless Docker for
-10+ minutes before any assertion ever ran. XML writes are far too
-fragile for this: no typed feedback, no compile checks, no unit tests
-reach deep enough to catch a malformed attribute.
+- **Before the IDE starts → pre-write XML** (`jdk.table.xml`, `misc.xml`'s `project-jdk-name`,
+  `gradle.xml`'s `gradleJvm`). The JDK table MUST exist before project-open, because Gradle
+  auto-import resolves the project JDK at open; registering JDKs only *after* the IDE is up loses
+  the race and the import stalls ~8 min on `Observation.awaitConfiguration` (see
+  [[jdk-table-preload-and-gradle-jvm]] memory; commits `8f07d7a5`..`8a23ea3b`). This is now the
+  **primary** path and supersedes the post-open `mcpRegisterJdks` for the stall.
+- **After the IDE is up → `mcpExecuteCode`** for anything that doesn't need to exist at open time
+  (verification, module SDK tweaks). Still the right tool there.
+
+**The old "never hand-write XML" rule was about *ad-hoc* XML.** A single unescaped `"` once made
+`FileBasedStorage` reject `jdk.table.xml` (silent `WARN Cannot read …`), leaving the table empty and
+deadlocking on a download-consent modal. The fix was NOT "never XML" — it is **generate the XML with
+the XML APIs (jdom2) so it can't be malformed, and validate it against IntelliJ's own serialization**:
+- `jdk-table-xml.kt` (`generateJdkTableXml`) renders the table by reading the container's JDK
+  artifacts (`release`→`MODULES` for classPath sorted; `src.zip` top dirs for sourcePath; version
+  from `release`; JDK ≤ 8 named `1.8`), mirroring `JavaSdkImpl`/`ProjectJdkImpl`. A
+  `JdkTableIntegrationTest` asserts it equals what a live IntelliJ produces, AND that IntelliJ loads
+  every entry at startup.
+- `IntelliJDriver.configureProjectJdk` / `configureGradleJdk` patch `misc.xml` (`ProjectRootManager`'s
+  `project-jdk-name`) and `gradle.xml` (`gradleJvm`) via jdom2 (create file/elements when absent),
+  reading the file with `copyFromContainer` and writing with `copyToContainer`/`writeFileInContainer`.
+- Projects declare their JDK + build systems: `IntelliJProject.jdkVersion` +
+  `buildSystems: Set<ProjectBuildSystem>` (each with its own root file). `waitForProjectReady` imports
+  each declared build system via the external-system API instead of the stalling `awaitConfiguration`
+  NONE path. `EmptyProject` (README-only, no build system, no JDK) is for tests where the project is
+  irrelevant (dialog killer, infra) — fast startup, no import.
+
+The remaining `mcpExecuteCode` rationale (typed, fails loud) still holds for the post-open path.
 
 The `mcpExecuteCode` path is strictly better: Kotlin is type-checked at
 runtime, the canonical IntelliJ API (`JavaSdk.createJdk(name, path,
