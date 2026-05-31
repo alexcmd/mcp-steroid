@@ -20,7 +20,6 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
-import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
@@ -51,7 +50,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.serialization.json.JsonElement
 import java.io.File
 import java.nio.file.FileSystems
 import java.nio.file.Path
@@ -62,6 +60,7 @@ import kotlin.time.Duration
 import com.intellij.openapi.application.readAction as intellijReadAction
 import com.intellij.openapi.application.writeAction as intellijWriteAction
 import com.intellij.openapi.application.smartReadAction as intellijSmartReadAction
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Implementation of McpScriptContext.
@@ -188,7 +187,6 @@ class McpScriptContextImpl(
             // ProcessCanceledException (below): never log, never wrap.
             throw e
         } catch (e: Exception) {
-            if (e is ProcessCanceledException) throw e
             resultBuilder.logException("Failed to capture IDE screenshot", e)
             null
         }
@@ -225,7 +223,7 @@ class McpScriptContextImpl(
                     waitForSmart()
                 }
             }
-        } catch (e: TimeoutCancellationException) {
+        } catch (_: TimeoutCancellationException) {
             captureThreadDump("waitForSmartMode-timeout")
             log.error("[$executionId] waitForSmartMode did not reach smart mode within $WAIT_FOR_SMART_MODE_TIMEOUT")
             throw ToolCallErrorException(
@@ -264,7 +262,7 @@ class McpScriptContextImpl(
         log.info("[$executionId] modal-dialog monitor started")
         val job = executionScope.launch(CoroutineName("modal-monitor-$executionId")) {
             while (isActive) {
-                delay(1000L)
+                delay(1000L.milliseconds)
                 if (disposed.get()) return@launch
                 // Only a real modal DialogWrapper counts — not mere indexing/progress modality.
                 val hasModalDialog = dialogWindowsLookup().withModalityCheck { it }
@@ -301,7 +299,7 @@ class McpScriptContextImpl(
                     project.vfsRefreshService.awaitRefresh()
                 }
             }
-        } catch (e: TimeoutCancellationException) {
+        } catch (_: TimeoutCancellationException) {
             captureThreadDump("syncDocuments-timeout")
             log.error("[$executionId] syncDocuments did not complete within $SYNC_DOCUMENTS_TIMEOUT (EDT likely blocked by a modal)")
             throw ToolCallErrorException(
@@ -387,7 +385,7 @@ class McpScriptContextImpl(
                     DaemonCodeAnalyzerEx.isHighlightingCompleted(editor, project)
                 }
                 if (isComplete) break
-                delay(50)
+                delay(50.milliseconds)
             }
             true
         } ?: false
@@ -415,7 +413,7 @@ class McpScriptContextImpl(
 
         // Get document for the file
         val document = readAction {
-            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
+            FileDocumentManager.getInstance().getDocument(file)
         } ?: return emptyList()
 
         // Get all highlights
