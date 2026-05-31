@@ -71,6 +71,12 @@ class ScriptExecutor(
     private val log = Logger.getInstance(ScriptExecutor::class.java)
     override fun dispose() = Unit
 
+    private companion object {
+        // Deadlock safety net for the awaited initial dialog-killer pass. Generous:
+        // the killer normally clears modals in well under a second.
+        private val INITIAL_KILL_TIMEOUT = 30.seconds
+    }
+
     /**
      * Executes a script with progress reporting and returns its output.
      * It is a suspending function that runs inside the caller's coroutine context.
@@ -116,12 +122,21 @@ class ScriptExecutor(
 
         log.info("Running script block(s) for $executionId with timeout ${exec.timeout}s")
 
-        // Pre-flight step 1: start the dialog killer FIRST, spanning the whole
-        // execution (gate, commit, VFS, body). Launched, NEVER awaited — its own
-        // EDT work can hang, so blocking the main flow on it would re-introduce the
-        // deadlock. Does an immediate first pass, then polls. Skipped only when the
-        // caller opted out (dialog_killer=false or cancelOnModal=false).
-        resultBuilder.logMessage("[PRE] dialog-killer: start")
+        // Pre-flight step 1a: run ONE dialog-killer pass and AWAIT it, so the
+        // modality gate below observes the post-kill state instead of racing a
+        // just-launched killer. Awaiting is safe: every killer EDT step runs under
+        // ModalityState.any() (pumped while a modal is up) and the heavy OCR work is
+        // deferred, so it cannot hang; a timeout still guards against a true deadlock.
+        // Without this, the gate fired before the killer closed anything and the run
+        // hard-failed with "modal still showing" even though the killer would have
+        // cleared it. Skipped only when the caller opted out.
+        resultBuilder.logMessage("[PRE] dialog-killer: initial pass")
+        runInitialDialogKillerPass(exec, executionId, resultBuilder)
+
+        // Pre-flight step 1b: start the periodic dialog killer for the rest of the
+        // execution (the body may open new modals). Launched, NEVER awaited — its
+        // polling delay would otherwise block the main flow.
+        resultBuilder.logMessage("[PRE] dialog-killer: start periodic")
         val killerJob: Job? = startDialogKiller(exec, executionId, resultBuilder)
 
         Disposer.register(executionDisposable) {
@@ -198,6 +213,39 @@ class ScriptExecutor(
                 project = project,
                 logMessage = { resultBuilder.logMessage(it) },
                 dialogKiller = true
+            )
+        }
+    }
+
+    /**
+     * Run a single dialog-killer sweep and await its completion, dismissing any
+     * modal left over from a previous step before the modality gate runs.
+     *
+     * Bounded by [INITIAL_KILL_TIMEOUT] purely as a deadlock safety net — the
+     * killer's EDT work is pumped under [ModalityState.any], so it normally
+     * completes promptly. On timeout we log and fall through to the gate, which
+     * surfaces the canonical "modal still showing" error.
+     */
+    private suspend fun runInitialDialogKillerPass(
+        exec: ExecCodeParams,
+        executionId: ExecutionId,
+        resultBuilder: ExecutionResultBuilder,
+    ) {
+        if (!exec.dialogKiller || !exec.cancelOnModal) return
+
+        try {
+            withTimeout(INITIAL_KILL_TIMEOUT) {
+                dialogKiller().killProjectDialogs(
+                    project = project,
+                    executionId = executionId,
+                    logMessage = { resultBuilder.logMessage(it) },
+                    forceEnabled = true,
+                )
+            }
+        } catch (e: TimeoutCancellationException) {
+            log.error(
+                "Dialog killer initial pass did not complete within $INITIAL_KILL_TIMEOUT for " +
+                    "$executionId — proceeding to the modality gate (a modal may still block the run)."
             )
         }
     }

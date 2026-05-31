@@ -82,8 +82,17 @@ class DialogWindowsLookup {
         }
 
         val dialogs = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-            val projectFrame = WindowManager.getInstance().getFrame(project) ?: return@withContext emptyList()
-            findDialogsOwnedBy(projectFrame)
+            // Prefer dialogs owned by the project frame, but fall back to ALL showing
+            // modal dialogs when none are project-owned. This keeps the killer's view
+            // consistent with the gate's [withModalityCheck] (which enumerates modal
+            // DialogWrapper windows globally): a detached/ownerless modal — e.g. a real
+            // user-opened dialog — would otherwise be detected by the gate but missed by
+            // the killer, so the run hard-failed with "modal still showing" and nothing
+            // ever closed it.
+            val projectFrame = WindowManager.getInstance().getFrame(project)
+            val owned = if (projectFrame != null) findDialogsOwnedBy(projectFrame) else emptyList()
+            val candidates = owned.ifEmpty { findAllShowingModalDialogs() }
+            candidates
                 .map { it to dialogDepth(it) }
                 .sortedByDescending { it.second }
                 .map { it.first }
@@ -125,11 +134,7 @@ class DialogWindowsLookup {
         }
 
         val hasModalDialogWindow = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-            Window.getWindows().any { w ->
-                w.isShowing &&
-                        w is DialogWrapperDialog &&
-                        (w.dialogWrapper?.isModal == true)
-            }
+            findAllShowingModalDialogs().isNotEmpty()
         }
 
         return action(hasModalDialogWindow)
@@ -141,6 +146,19 @@ class DialogWindowsLookup {
      *
      * Must be called on EDT.
      */
+    /**
+     * All currently showing modal [DialogWrapper] windows in the IDE, regardless of
+     * owner. The single source of truth for "is a blocking modal up" — used by the
+     * gate ([withModalityCheck]) and as the killer's fallback ([withDialogWindows]),
+     * so the two never disagree about what counts as a modal.
+     *
+     * Must be called on EDT.
+     */
+    private fun findAllShowingModalDialogs(): List<DialogWrapper> =
+        Window.getWindows().mapNotNull { w ->
+            if (w.isShowing && w is DialogWrapperDialog) w.dialogWrapper?.takeIf { it.isModal } else null
+        }
+
     private fun findDialogsOwnedBy(ownerWindow: Window): List<DialogWrapper> {
         val result = mutableListOf<DialogWrapper>()
         for (window in Window.getWindows()) {
