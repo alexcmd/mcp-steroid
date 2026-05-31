@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.integration.infra.waitForProjectReady
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
@@ -31,6 +32,8 @@ class DockerCheckTest {
                 IntelliJContainerOpts(
                     consoleTitle = "Docker Check",
                     mountDockerSocket = true,
+                    // Docker-socket check doesn't need project content — EmptyProject = fast startup.
+                    project = IntelliJProject.EmptyProject,
                 )).waitForProjectReady()
         }
 
