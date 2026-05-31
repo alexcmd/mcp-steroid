@@ -44,8 +44,10 @@ fun McpSteroidDriver.mcpRegisterJdks() {
     for (homePath in temurinDirs) {
         val version = homePath.substringAfter("temurin-").substringBefore("-jdk")
             .toIntOrNull() ?: error("Failed to parse version in $homePath")
+        // Match the generator (jdk-table-xml.kt): JDK <= 8 is named "1.8", modern JDKs use the bare major.
+        val majorAlias = if (version <= 8) "1.$version" else "$version"
 
-        for (name in listOf(version, "corretto-$version", "temurin-$version")) {
+        for (name in listOf(majorAlias, "corretto-$majorAlias", "temurin-$majorAlias")) {
             code += $$"""
 
                     if (table.findJdk("$$name") != null) {

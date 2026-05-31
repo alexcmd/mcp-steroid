@@ -74,6 +74,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         ideProduct,
         disableProjectTrustChecks = disableProjectTrustChecks,
         trustAllProjectPaths = trustAllProjectPaths,
+        preloadJdkTable = preloadJdkTable,
     )
 
     fun writeSessionInfo(mcpUrl: String?) {
@@ -122,7 +123,7 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     ijProjectDriver.deployProject(selectedProject)
 
     console.writeInfo("Starting ${ideProduct.displayName}...")
-    val ijProcess = ijDriver.startIde()
+    val ijProcess = ijDriver.startIde(beforeIdeStart = beforeIdeStart)
     console.writeSuccess("${ideProduct.displayName} process started")
 
     require(ijProcess.isRunning()) { "${ideProduct.displayName} process finished" }
@@ -167,15 +168,19 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
 
     session.repositionIdeWindow()
 
-    // Register JDKs as early as possible — racing against IntelliJ's async `SdkLookup`
-    // which fires when project-open's `UnknownSdkStartupChecker` + Gradle auto-import
-    // activities run. If `SdkLookup.findJdk(sdkName)` runs before our JDK registration
-    // hits `ProjectJdkTable`, it proposes a download and blocks the EDT on a
-    // `MessageDialogBuilder$YesNo.ask` consent modal — making the test unrunnable.
-    // Only runs for Java-capable IDEs: `mcpListJdks`/`mcpAddJdk` import
-    // `com.intellij.openapi.projectRoots.JavaSdk`, which is only on the classpath
-    // when the target IDE bundles `com.intellij.java` (see IdeProduct.hasJavaSdk).
-    if (ideProduct.hasJavaSdk) {
+    // After-start hooks: caller-provided steps once the session is fully built.
+    afterIdeStart.forEach { it(session) }
+
+    // JDK availability at project-open: when `preloadJdkTable` is on (default), the JDK table
+    // was already pre-written into `options/jdk.table.xml` before the IDE launched (see
+    // IntelliJDriver.writeJdkTable) — so it is populated before project-open's Gradle auto-import
+    // / `SdkLookup` runs, and no post-open registration is needed.
+    //
+    // Only when pre-write is disabled (e.g. the generator-fidelity test) do we fall back to the
+    // legacy path: register JDKs via the IntelliJ API as early as possible, racing the async
+    // `SdkLookup`. If `findJdk(sdkName)` ran first it would propose a download and block the EDT
+    // on a consent modal. `mcpRegisterJdks` imports `JavaSdk`, only on the classpath for Java IDEs.
+    if (!preloadJdkTable && ideProduct.hasJavaSdk) {
         console.writeInfo("Registering JDKs early (racing project-open SdkLookup)...")
         try {
             mcpSteroidDriver.mcpRegisterJdks()
@@ -183,8 +188,10 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
         } catch (e: Throwable) {
             console.writeInfo("Early JDK registration failed: ${e.message} (will retry in waitForProjectReady)")
         }
+    } else if (preloadJdkTable && ideProduct.hasJavaSdk) {
+        console.writeInfo("JDK table pre-written before IDE start (preloadJdkTable=true) — skipping post-open registration")
     } else {
-        console.writeInfo("Skipping early JDK registration — ${ideProduct.displayName} has no Java plugin (IdeProduct.hasJavaSdk=false)")
+        console.writeInfo("Skipping JDK registration — ${ideProduct.displayName} has no Java plugin (IdeProduct.hasJavaSdk=false)")
     }
 
     println("[IDE-AGENT] Session ready: $runDir")

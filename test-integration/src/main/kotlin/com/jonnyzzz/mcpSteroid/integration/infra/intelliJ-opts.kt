@@ -53,4 +53,26 @@ data class IntelliJContainerOpts(
      * need an actually untrusted secondary project can set this false.
      */
     val trustAllProjectPaths: Boolean = true,
+
+    /**
+     * When true (default), pre-write `options/jdk.table.xml` before the IDE starts so Gradle
+     * auto-import resolves the project JDK at project-open and does not stall on
+     * `Observation.awaitConfiguration`. Tests that need IntelliJ to build the JDK table from
+     * scratch (e.g. the generator-fidelity test) set this false.
+     */
+    val preloadJdkTable: Boolean = true,
+
+    /**
+     * Hooks invoked just BEFORE the IDE process is launched (after all built-in startup
+     * config files are written, including the pre-generated `jdk.table.xml`). Use these to
+     * adjust the IDE config dir / project files while no IDE is running yet — e.g. to inject
+     * or override a file under the `options` config dir. Each hook receives the [IntelliJDriver].
+     */
+    val beforeIdeStart: List<IntelliJDriver.() -> Unit> = emptyList(),
+
+    /**
+     * Hooks invoked AFTER the container session is fully built (IDE up, MCP ready, window
+     * positioned). Each hook receives the live [IntelliJContainer].
+     */
+    val afterIdeStart: List<IntelliJContainer.() -> Unit> = emptyList(),
 )
