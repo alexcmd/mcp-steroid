@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
+import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJProject
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -39,7 +40,10 @@ class DialogKillerIntegrationTest {
         val session by lazy {
             IntelliJContainer.create(
                 lifetime, IntelliJContainerOpts(
-                    consoleTitle = "Dialog Killer"
+                    consoleTitle = "Dialog Killer",
+                    // Project content is irrelevant here — use the empty project so setup skips
+                    // JDK setup and build-system import (fast, no Gradle/Maven to configure).
+                    project = IntelliJProject.EmptyProject,
                 )
             ).waitForProjectReady()
         }

@@ -79,6 +79,18 @@ sealed class IntelliJProject{
         jdkVersion = "21",
         buildSystems = setOf(ProjectBuildSystem(BuildSystem.GRADLE, "settings.gradle.kts")),
     )
+
+    /**
+     * Minimal IDEA project — just a README, no build system, no JDK. For tests where the project
+     * content is irrelevant (dialog killer, infrastructure smoke tests): startup is fast because
+     * `waitForProjectReady` skips JDK setup and build-system import.
+     */
+    object EmptyProject : ProjectFromRepository(
+        "test-project-empty",
+        openFile = "README.md",
+        jdkVersion = null,
+        buildSystems = emptySet(),
+    )
     object PyCharmTestProject : ProjectFromRepository(
         "test-project-pycharm", openFile = "main.py", jdkVersion = null, buildSystems = emptySet(),
     )
