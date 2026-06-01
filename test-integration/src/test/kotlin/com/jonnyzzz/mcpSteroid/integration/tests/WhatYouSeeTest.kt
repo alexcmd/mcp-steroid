@@ -51,10 +51,18 @@ class WhatYouSeeTest {
     }
 
     private fun checkWhatYouSee(agent: AiAgentSession) {
+        // Drive the agent through the MCP tools explicitly: first list projects + the available steroid_*
+        // tools (which forces loading their schemas — Claude Code defers them, see
+        // docs/claude-defers-mcp-tools.md), THEN describe the IDE. Without this, a client that defers the
+        // tool schemas can answer NO_IDE_ACCESS in one turn without ever loading them.
         agent.runPrompt(
-            "Describe the current state of the IntelliJ IDEA IDE. " +
-                    "Mention the project name if visible. " +
-                    "If you cannot access IDE information, respond with the word NO_IDE_ACCESS.",
+            "First, access my IDE through the MCP Steroid tools: call steroid_list_projects and list the " +
+                    "open projects, and list the steroid_* tools you have available. If those tools are not " +
+                    "loaded yet, load them first (e.g. via ToolSearch). " +
+                    "Then describe the current state of my IntelliJ IDEA IDE — the open project name and what " +
+                    "you can see. " +
+                    "Respond with the word NO_IDE_ACCESS only if the steroid_* tools are genuinely unavailable " +
+                    "after you have attempted to load them.",
             timeoutSeconds = 180
         )
             .assertExitCode(0) { "Prompt failed" }
