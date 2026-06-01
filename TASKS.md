@@ -3670,3 +3670,30 @@ hang reproduced in the live IDE when a probe elevated modality without closing i
 - Next: read the new run's log (screenshot-vs-close), then fix — make the screenshot
   best-effort/off the critical path (close first), and/or fix `VisionService.capture` to
   not stall under a modal; verify EDT+any actually pumps during the modal in this env.
+
+## TODO — devrig binary end-to-end console test (managed-backend self-install scenario)
+
+A new console test that exercises the **whole devrig managed-backend flow** an external user/agent hits —
+no pre-provisioned IDE; devrig fetches it. Each step must be visible in the console log:
+
+1. **Clone Keycloak over HTTPS** — `https://github.com/keycloak/keycloak.git` into the agent workspace.
+   Show a real `git clone` (use the local bare-repo cache for speed — `BareRepoCache` /
+   `GitDriver.cloneFromCachedBare`, `ProjectFromRemoteGit`). Confirms the project is on disk before devrig.
+2. **`devrig install claude`** — run the devrig binary's `install` command to register devrig as the
+   `mcp-steroid` MCP stdio server for Claude (repeat per agent: codex, gemini).
+3. **Run the agent with a find-usages task** — start the agent and ask it (best-scenario prompt TBD) to
+   use devrig to **install + start an IDE** and **find usages of** a well-chosen Keycloak symbol (pick one
+   with clear, countable usages so the assertion is deterministic; prepare the exact target).
+4. The agent's devrig tool then **fetches the IDE (managed-backend download), starts it**, and the agent
+   **opens the Keycloak project** in that IDE to answer the ask.
+
+Acceptance: console shows git clone → `devrig install claude` → agent turn → managed-backend IDE
+download+start → project open → find-usages result; assert the expected usage(s) are reported.
+
+Prerequisites (from the stability sweep):
+- Managed-backend path must be healthy — `DevrigManagedBackendGui` / `DevrigRealIdeBridge` / `DevrigAgent`
+  currently FAIL (distinct root causes; see `test-integration/TODO-stability-report.md`). The devrig JVM
+  must launch on **Java 25** (class-file v69) — `DEVRIG_JAVA_HOME` support being moved into the product
+  launcher (`.sh`).
+- Console must stay clean: download/progress = plain `println` (no `[IDE-DOWNLOAD]` prefix, no logback
+  category/severity); full debug stays in the devrig log folder + under `--debug`.
