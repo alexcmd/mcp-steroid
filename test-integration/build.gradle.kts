@@ -53,6 +53,11 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     testImplementation("org.slf4j:slf4j-simple:2.0.17")
+    // Pure-JVM (no IntelliJ platform) protocol/marker classes (PidMarker, Npx* bridge models,
+    // McpSteroidServerInfo, DevrigEndpointInfo) used by DevrigFakeIdeBridgeIntegrationTest to forge a
+    // fake IDE marker + the devrig↔IDE bridge wire format. The fake bridge itself uses the JDK's built-in
+    // com.sun.net.httpserver.HttpServer (no ktor dependency needed).
+    testImplementation(project(":mcp-steroid-server"))
 }
 
 kotlin {
