@@ -3697,3 +3697,16 @@ Prerequisites (from the stability sweep):
   launcher (`.sh`).
 - Console must stay clean: download/progress = plain `println` (no `[IDE-DOWNLOAD]` prefix, no logback
   category/severity); full debug stays in the devrig log folder + under `--debug`.
+
+## TODO — release: clearly state MCP Steroid + Devrig are independent, NOT by JetBrains
+
+Per our agreement with JetBrains, **every** distributed artifact and public surface MUST clearly state that
+**MCP Steroid and Devrig are independent open-source projects, not made by / not official JetBrains
+products**. This disclosure has to appear everywhere, consistently:
+- Website (every page footer / about), README(s), docs.
+- The plugin: Marketplace listing + plugin description / `plugin.xml` vendor text + any in-IDE about/notice.
+- The devrig binary: `--version` / `--help` banner, the dist `licenses/README`, npm/package metadata.
+- Release notes / GitHub release descriptions, EULA, and any artifact bundled with the build.
+Wording: "MCP Steroid / Devrig are independent open-source projects and are not affiliated with, endorsed
+by, or made by JetBrains." (final wording TBD). Add a release-checklist item + a build-time guard/test
+where feasible so a release can't ship without the disclosure. **Backlog — revisit later.**
