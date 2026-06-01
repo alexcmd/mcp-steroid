@@ -168,10 +168,10 @@ class JdkTableIntegrationTest {
         )
         val console = session.console
 
-        console.writeStep(1, "Generating jdk.table.xml from infra (our generator)")
+        console.writeStep(text = "Generating jdk.table.xml from infra (our generator)")
         val expectedXml = generateJdkTableXml(session.scope)
 
-        console.writeStep(2, "Dumping IntelliJ's own ProjectJdkTable serialization")
+        console.writeStep(text = "Dumping IntelliJ's own ProjectJdkTable serialization")
         session.mcpSteroid.mcpExecuteCode(
             code = $$"""
                 import com.intellij.openapi.projectRoots.JavaSdk
@@ -248,7 +248,7 @@ class JdkTableIntegrationTest {
         val console = session.console
 
         val expectedNames = parseJdkTableModel(generateJdkTableXml(session.scope)).keys.sorted()
-        console.writeStep(1, "Expecting pre-written JDK aliases: $expectedNames")
+        console.writeStep(text = "Expecting pre-written JDK aliases: $expectedNames")
 
         val result = session.mcpSteroid.mcpExecuteCode(
             code = $$"""

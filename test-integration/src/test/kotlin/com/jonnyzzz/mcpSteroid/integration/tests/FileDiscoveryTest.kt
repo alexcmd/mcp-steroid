@@ -48,7 +48,7 @@ class FileDiscoveryTest {
     fun `FilenameIndex discovers project files by extension`() {
         val console = session.console
 
-        console.writeStep(1, "Discovering project files via FilenameIndex")
+        console.writeStep("Discovering project files via FilenameIndex")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = """
                 import com.intellij.psi.search.FilenameIndex

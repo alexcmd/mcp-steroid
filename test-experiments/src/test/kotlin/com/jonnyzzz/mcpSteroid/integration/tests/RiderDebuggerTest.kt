@@ -54,7 +54,7 @@ class RiderDebuggerTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep(text = "Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug a failing .NET test using Rider via MCP Steroid")
@@ -84,13 +84,13 @@ class RiderDebuggerTest {
             appendLine("DEBUGGER_EVIDENCE: <variable values observed AT the breakpoint proving the bug>")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep(text = "Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep(text = "Validating agent output")
 
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
                 hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")

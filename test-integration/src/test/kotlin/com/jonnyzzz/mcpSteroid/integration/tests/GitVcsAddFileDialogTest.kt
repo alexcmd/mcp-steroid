@@ -59,7 +59,7 @@ class GitVcsAddFileDialogTest {
         val projectName = session.mcpSteroid.resolveProjectName()
         val projectPath = session.intellijDriver.getGuestProjectDir()
 
-        console.writeStep(1, "Wait for Git detection + a non-modal ADD confirmation (silencer flip or platform default)")
+        console.writeStep("Wait for Git detection + a non-modal ADD confirmation (silencer flip or platform default)")
         // The real invariant is that the "Add to VCS?" modal will NOT fire — i.e. the ADD confirmation is
         // anything other than SHOW_CONFIRMATION (0). Both DO_ACTION_SILENTLY (1, the Git default in IDEA
         // 2026.1) and DO_NOTHING_SILENTLY (2, what VcsConfirmationSilencer flips a SHOW_CONFIRMATION to) are
@@ -106,7 +106,7 @@ class GitVcsAddFileDialogTest {
                     "ADD_CONFIRMATION=0 (SHOW_CONFIRMATION) would pop the Add-to-VCS modal. Last probe output:\n$lastProbeOut"
         }
 
-        console.writeStep(2, "Create a new unversioned file via findOrCreateChildData + VfsUtil.saveText")
+        console.writeStep("Create a new unversioned file via findOrCreateChildData + VfsUtil.saveText")
         val createFile = session.mcpSteroid.mcpExecuteCode(
             code = """
                 import com.intellij.openapi.application.ApplicationManager
@@ -134,7 +134,7 @@ class GitVcsAddFileDialogTest {
         createFile.assertExitCode(0, "execute_code that creates a new file should succeed")
             .assertOutputContains("CREATED=")
 
-        console.writeStep(3, "Poll mcpListWindows to confirm no VCS add-file modal dialog appears")
+        console.writeStep("Poll mcpListWindows to confirm no VCS add-file modal dialog appears")
         val modalSeen = waitForModalDialog(session, projectPath, timeoutMillis = 30_000L)
         Assertions.assertFalse(
             modalSeen,

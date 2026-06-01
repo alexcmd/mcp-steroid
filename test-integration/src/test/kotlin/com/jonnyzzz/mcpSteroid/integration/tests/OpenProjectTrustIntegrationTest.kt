@@ -26,7 +26,7 @@ class OpenProjectTrustIntegrationTest {
         val console = session.console
         val secondaryProjectPath = "/home/agent/open-project-trust-secondary"
 
-        console.writeStep(1, "Creating secondary project directory")
+        console.writeStep(text = "Creating secondary project directory")
         session.scope.startProcessInContainer {
             this
                 .args(
@@ -43,16 +43,16 @@ class OpenProjectTrustIntegrationTest {
                 .description("Create secondary project for trusted open test")
         }.awaitForProcessFinish().assertExitCode(0, "Failed to create secondary project")
 
-        console.writeStep(2, "Verifying secondary project starts untrusted")
+        console.writeStep(text = "Verifying secondary project starts untrusted")
         session.assertTrustedState(secondaryProjectPath, expectedTrusted = false, taskId = "trust-before-open")
 
-        console.writeStep(3, "Opening project through MCP default trust path")
+        console.writeStep(text = "Opening project through MCP default trust path")
         session.mcpSteroid.mcpOpenProject(secondaryProjectPath, trustProject = null)
 
-        console.writeStep(4, "Waiting for secondary project without modal dialogs")
+        console.writeStep(text = "Waiting for secondary project without modal dialogs")
         waitForOpenedProjectWithoutModal(session, secondaryProjectPath)
 
-        console.writeStep(5, "Verifying secondary project was registered as trusted")
+        console.writeStep(text = "Verifying secondary project was registered as trusted")
         session.assertTrustedState(secondaryProjectPath, expectedTrusted = true, taskId = "trust-after-open")
         console.writeSuccess("MCP open_project trusted the path and opened without a modal dialog")
     }

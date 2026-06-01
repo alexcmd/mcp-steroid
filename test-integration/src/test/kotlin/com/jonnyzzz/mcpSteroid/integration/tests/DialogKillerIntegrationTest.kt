@@ -62,7 +62,7 @@ class DialogKillerIntegrationTest {
         console.writeInfo("Mode: $modeName")
 
         // Step 1: Open a custom modal DialogWrapper and leave it open (dialog killer disabled)
-        console.writeStep(1, "Opening test modal dialog")
+        console.writeStep("Opening test modal dialog")
         session.mcpSteroid.mcpExecuteCode(
             modal = ModalMode.UNLEASHED,
             code = """
@@ -96,7 +96,7 @@ class DialogKillerIntegrationTest {
         ).assertExitCode(0)
 
         // Step 2: Verify test modal dialog appeared via xcvb window list
-        console.writeStep(2, "Verifying test modal dialog is visible")
+        console.writeStep("Verifying test modal dialog is visible")
         val dialogWindow = {
             val idePid = session.pid
             val listWindows = session.windows.listWindows()
@@ -111,11 +111,11 @@ class DialogKillerIntegrationTest {
         console.writeSuccess("Test modal dialog visible")
 
         // Step 3: Execute the close action
-        console.writeStep(3, "Running dialog killer ($modeName)")
+        console.writeStep("Running dialog killer ($modeName)")
         closeAction(session)
 
         // Step 4: Verify test modal dialog is gone via xcvb window list
-        console.writeStep(4, "Verifying test modal dialog is gone")
+        console.writeStep("Verifying test modal dialog is gone")
         console.writeInfo("[TEST] Windows after dialog killer:")
         Assertions.assertNull(dialogWindow(), "Test modal dialog should have been closed by dialog killer")
         console.writeSuccess("Test modal dialog closed")
@@ -167,7 +167,7 @@ class DialogKillerIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `screenshot tool works in IDE`() {
-        console.writeStep(1, "Taking screenshot of IDE via execute_code")
+        console.writeStep("Taking screenshot of IDE via execute_code")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = $$"""
                 import com.jonnyzzz.mcpSteroid.vision.VisionService
@@ -196,7 +196,7 @@ class DialogKillerIntegrationTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
     fun `kills 4 nested modal dialogs deepest-first`() {
-        console.writeStep(1, "Opening 4 nested modal dialogs")
+        console.writeStep("Opening 4 nested modal dialogs")
         // Open four stacked modal dialogs: the first is scheduled non-modal; each subsequent
         // one is scheduled ModalityState.any() so it runs DURING the previous modal and nests
         // on top of it -> four modal levels. modal=unleashed (no monitor) keeps them open after
@@ -238,14 +238,14 @@ class DialogKillerIntegrationTest {
             nestedTitles.filter { t -> windows.any { it.title == t && it.pid == idePid } }
         }
 
-        console.writeStep(2, "Verifying 4 nested dialogs are visible")
+        console.writeStep("Verifying 4 nested dialogs are visible")
         Assertions.assertEquals(
             nestedTitles.toSet(), visibleNested().toSet(),
             "All 4 nested modal dialogs should be visible before the killer runs",
         )
         console.writeSuccess("4 nested dialogs visible")
 
-        console.writeStep(3, "Running dialog killer (closes deepest-first, one-by-one)")
+        console.writeStep("Running dialog killer (closes deepest-first, one-by-one)")
         session.mcpSteroid.mcpExecuteCode(
             modal = ModalMode.UNLEASHED,
             code = """
@@ -256,7 +256,7 @@ class DialogKillerIntegrationTest {
             reason = "Kill 4 nested modal dialogs via closeModalDialogs()",
         ).assertExitCode(0)
 
-        console.writeStep(4, "Verifying all 4 nested dialogs are gone")
+        console.writeStep("Verifying all 4 nested dialogs are gone")
         Assertions.assertTrue(
             visibleNested().isEmpty(),
             "All nested modal dialogs should have been closed by the dialog killer; still visible: ${visibleNested()}",

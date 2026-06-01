@@ -39,7 +39,7 @@ class PsiClassLookupPromptTest {
         val console = session.console
         val agent = session.aiAgents.claude
 
-        console.writeStep(1, "Building prompt for PSI class lookup")
+        console.writeStep(text = "Building prompt for PSI class lookup")
 
         val prompt = buildString {
             appendLine("# Task: Find a Kotlin data class and list its methods using PSI")
@@ -60,13 +60,13 @@ class PsiClassLookupPromptTest {
             appendLine("METHODS: <comma-separated list of method names found>")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep(text = "Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep(text = "Validating agent output")
 
         // If agent failed, check if required markers were still emitted
         val hasClassFoundMarker = hasAnyMarkerLine(output, "CLASS_FOUND", "Class found")

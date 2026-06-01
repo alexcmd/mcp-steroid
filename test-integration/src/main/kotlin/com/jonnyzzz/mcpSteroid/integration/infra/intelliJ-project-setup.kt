@@ -41,7 +41,7 @@ fun IntelliJContainer.waitForProjectReady(
 ) : IntelliJContainer {
     // Step 1: Wait for IDE window
     val waitLabel = if (requireIndexingComplete) "project import and indexing" else "project initialization"
-    console.writeStep(1, "Waiting for $waitLabel...")
+    console.writeStep(text =  "Waiting for $waitLabel...")
     val guestProjectDir = intellijDriver.getGuestProjectDir()
     waitForIdeWindow(guestProjectDir, timeoutMillis, pollIntervalMillis, requireIndexingComplete, waitLabel)
 
@@ -51,18 +51,18 @@ fun IntelliJContainer.waitForProjectReady(
     // Only for Java-capable IDEs: `mcpRegisterJdks` / `mcpSetProjectSdk` use
     // `JavaSdk` which isn't on the script classpath in PyCharm/GoLand/WebStorm/Rider.
     if (projectJdkVersion != null && intellijDriver.ideProduct.hasJavaSdk) {
-        console.writeStep(3, "Registering JDKs via IntelliJ API...")
+        console.writeStep(text = "Registering JDKs via IntelliJ API...")
         mcpSteroid.mcpRegisterJdks()
         console.writeSuccess("JDK registration complete")
 
         // Step 4: Set project SDK
-        console.writeStep(4, "Setting project SDK to JDK $projectJdkVersion...")
+        console.writeStep(text =  "Setting project SDK to JDK $projectJdkVersion...")
         mcpSteroid.mcpSetProjectSdk(projectJdkVersion)
         console.writeSuccess("Project SDK set to $projectJdkVersion")
     } else if (projectJdkVersion != null) {
-        console.writeStep(3, "Skipping JDK setup — ${intellijDriver.ideProduct.displayName} has no Java plugin")
+        console.writeStep(text =  "Skipping JDK setup — ${intellijDriver.ideProduct.displayName} has no Java plugin")
     } else {
-        console.writeStep(3, "Skipping JDK setup (projectJdkVersion=null)")
+        console.writeStep(text =  "Skipping JDK setup (projectJdkVersion=null)")
     }
 
     // Step 5+6: Import each declared build system and wait for completion.
@@ -74,35 +74,35 @@ fun IntelliJContainer.waitForProjectReady(
         else -> project.buildSystems.map { it.type }.distinct()
     }
     if (systemsToImport.isEmpty()) {
-        console.writeStep(5, "No build system to import — skipping import wait")
+        console.writeStep(text = "No build system to import — skipping import wait")
     } else {
         systemsToImport.forEach { bs ->
-            console.writeStep(5, "Triggering $bs import and waiting...")
+            console.writeStep(text = "Triggering $bs import and waiting...")
             mcpSteroid.mcpTriggerImportAndWait(bs)
         }
         console.writeSuccess("Import + indexing complete")
     }
 
     // Step 6b: Resolve unknown SDKs (prevents "Resolving SDKs..." false positive during build)
-    console.writeStep(6, "Resolving unknown SDKs...")
+    console.writeStep(text = "Resolving unknown SDKs...")
     mcpSteroid.mcpResolveUnknownSdks()
     console.writeSuccess("SDK resolution complete")
 
     // Step 7: Install IDE plugins
-    console.writeStep(7, "Installing required IDE plugins...")
+    console.writeStep(text = "Installing required IDE plugins...")
     mcpSteroid.mcpInstallRequiredPlugins()
     console.writeSuccess("Plugin installation complete")
 
     // Step 8: Compile project (optional)
     if (compileProject) {
         val compileWith = systemsToImport.firstOrNull() ?: BuildSystem.NONE
-        console.writeStep(8, "Compiling project ($compileWith)...")
+        console.writeStep(text = "Compiling project ($compileWith)...")
         mcpSteroid.mcpCompileProject(compileWith, projectJdkVersion)
         console.writeSuccess("Compilation complete")
     }
 
     // Step 9: Open file + show tool windows
-    console.writeStep(9, "Opening project file and build tool window...")
+    console.writeStep(text = "Opening project file and build tool window...")
     mcpSteroid.mcpOpenFileAndBuildToolWindow(openFileOnStart)
     console.writeSuccess("Project UX ready")
 

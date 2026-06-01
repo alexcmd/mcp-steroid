@@ -50,7 +50,7 @@ class GradleTestExecutionTest {
     fun `gradle test execution via GradleRunConfiguration with SMTRunner`() {
         val console = session.console
 
-        console.writeStep(1, "Executing Gradle tests via GradleRunConfiguration + SMTRunner")
+        console.writeStep("Executing Gradle tests via GradleRunConfiguration + SMTRunner")
         val result = session.mcpSteroid.mcpExecuteCode(
             modal = ModalMode.SMART_NON_MODAL,
             code = """

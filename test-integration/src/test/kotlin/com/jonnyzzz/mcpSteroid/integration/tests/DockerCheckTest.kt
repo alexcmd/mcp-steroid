@@ -49,7 +49,7 @@ class DockerCheckTest {
     fun `docker socket availability check via exec_code`() {
         val console = session.console
 
-        console.writeStep(1, "Checking Docker socket availability via exec_code")
+        console.writeStep("Checking Docker socket availability via exec_code")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = """
                 val dockerOk = java.io.File("/var/run/docker.sock").exists()

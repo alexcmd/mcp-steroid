@@ -83,7 +83,7 @@ class DpaiaPromptCorpusRegressionTest {
                 appendLine("BUILD_RESULT: success | errors | aborted")
             }
 
-            session.console.writeStep(1, "Running buildProject regression prompt")
+            session.console.writeStep("Running buildProject regression prompt")
             val result = agent.runPrompt(prompt, timeoutSeconds = 900).awaitForProcessFinish()
             val combined = result.stdout + "\n" + result.stderr
 
@@ -154,7 +154,7 @@ class DpaiaPromptCorpusRegressionTest {
                 appendLine("FILE_PATH: <absolute path of the file you modified>")
             }
 
-            session.console.writeStep(1, "Running writeAction regression prompt")
+            session.console.writeStep("Running writeAction regression prompt")
             val result = agent.runPrompt(prompt, timeoutSeconds = 900).awaitForProcessFinish()
             val combined = result.stdout + "\n" + result.stderr
 
@@ -209,7 +209,7 @@ class DpaiaPromptCorpusRegressionTest {
                 appendLine("PROBLEM_COUNT: <non-negative integer>")
             }
 
-            session.console.writeStep(1, "Running inspection regression prompt")
+            session.console.writeStep("Running inspection regression prompt")
             val result = agent.runPrompt(prompt, timeoutSeconds = 900).awaitForProcessFinish()
             val combined = result.stdout + "\n" + result.stderr
 

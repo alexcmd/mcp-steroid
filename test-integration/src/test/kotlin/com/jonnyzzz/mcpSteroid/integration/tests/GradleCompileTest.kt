@@ -47,7 +47,7 @@ class GradleCompileTest {
     fun `ProjectTaskManager builds Gradle project`() {
         val console = session.console
 
-        console.writeStep(1, "Compiling Gradle project via ProjectTaskManager.build()")
+        console.writeStep("Compiling Gradle project via ProjectTaskManager.build()")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = """
                 import com.intellij.task.ProjectTaskManager

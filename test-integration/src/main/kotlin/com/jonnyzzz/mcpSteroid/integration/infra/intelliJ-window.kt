@@ -10,7 +10,7 @@ import java.io.File
  * initial xdotool positioning. This must be called after project initialization completes.
  */
 fun IntelliJContainer.repositionIdeWindow() {
-    console.writeStep(1, "Applying IDE window layout...")
+    console.writeStep(text = "Applying IDE window layout...")
     val ideWindow = windows.listWindows().firstOrNull { it.pid == pid }
     if (ideWindow == null) {
         println("[IDE-AGENT] repositionIdeWindow: no window found for PID=$pid, skipping")

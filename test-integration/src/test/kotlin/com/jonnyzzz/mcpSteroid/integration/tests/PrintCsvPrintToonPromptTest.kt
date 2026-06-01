@@ -65,13 +65,13 @@ class PrintCsvPrintToonPromptTest {
 
     private fun runAgent(agent: AiAgentSession) {
         val console = session.console
-        console.writeStep(1, "Asking ${agent.displayName} to emit CSV + TOON via the new helpers")
+        console.writeStep(text = "Asking ${agent.displayName} to emit CSV + TOON via the new helpers")
 
         val result = agent.runPrompt(PROMPT, timeoutSeconds = 900).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(2, "Validating what ${agent.displayName} actually did")
+        console.writeStep(text = "Validating what ${agent.displayName} actually did")
 
         // Exit code: tolerate non-zero only if the agent reached the markers (some
         // agents return non-zero on completion even when they delivered the task).

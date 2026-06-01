@@ -52,7 +52,7 @@ class MavenTestExecutionTest {
     fun `maven test execution via MavenRunConfigurationType with SMTRunner`() {
         val console = session.console
 
-        console.writeStep(1, "Executing Maven tests via MavenRunConfigurationType + SMTRunner")
+        console.writeStep(text = "Executing Maven tests via MavenRunConfigurationType + SMTRunner")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = """
                 import org.jetbrains.idea.maven.execution.MavenRunConfigurationType

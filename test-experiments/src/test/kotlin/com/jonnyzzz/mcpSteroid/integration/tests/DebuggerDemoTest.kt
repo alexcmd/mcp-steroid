@@ -92,7 +92,7 @@ class DebuggerDemoTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug DemoByJonnyzzz.kt to find the bug")
@@ -128,7 +128,7 @@ class DebuggerDemoTest {
             appendLine("- Read MCP debugger resources for API patterns -- do not invent API calls")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep("Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
@@ -136,7 +136,7 @@ class DebuggerDemoTest {
         // execution IDs in NDJSON tool_result events, not in the final extracted text.
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep( "Validating agent output")
 
         // If CLI timed out but the agent already emitted required markers, keep validating the output.
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
@@ -317,7 +317,7 @@ class DebuggerDemoTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug a failing JUnit test to find the bug")
@@ -358,13 +358,13 @@ class DebuggerDemoTest {
             appendLine("- Read MCP debugger resources for API patterns -- do not invent API calls")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep("Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep("Validating agent output")
 
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
                 hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")
@@ -440,7 +440,7 @@ class DebuggerDemoTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug a failing JUnit test to find the bug")
@@ -462,13 +462,13 @@ class DebuggerDemoTest {
             appendLine("DEBUGGER_EVIDENCE: <items values and filter results observed during test execution>")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep("Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep("Validating agent output")
 
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
                 hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")
@@ -530,7 +530,7 @@ class DebuggerDemoTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug DemoStringFormat.kt to find the bug")
@@ -566,13 +566,13 @@ class DebuggerDemoTest {
             appendLine("- Read MCP debugger resources for API patterns -- do not invent API calls")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep("Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep("Validating agent output")
 
         // If CLI timed out but the agent already emitted required markers, keep validating the output.
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
@@ -653,7 +653,7 @@ class DebuggerDemoTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug DemoNullDefault.kt to find the bug")
@@ -689,13 +689,13 @@ class DebuggerDemoTest {
             appendLine("- Read MCP debugger resources for API patterns -- do not invent API calls")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep("Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep("Validating agent output")
 
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
                 hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")
@@ -748,7 +748,7 @@ class DebuggerDemoTest {
         val console = session.console
 
         val agent = session.aiAgents.run { agentName(this) }
-        console.writeStep(1, "Building prompt for $agentName")
+        console.writeStep("Building prompt for $agentName")
 
         val prompt = buildString {
             appendLine("# Task: Debug DemoOffByOne.kt to find the bug")
@@ -784,13 +784,13 @@ class DebuggerDemoTest {
             appendLine("- Read MCP debugger resources for API patterns -- do not invent API calls")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep("Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep("Validating agent output")
 
         val hasFinalMarkers = hasAnyMarkerLine(output, "BUG_FOUND", "Bug found") &&
                 hasAnyMarkerLine(output, "ROOT_CAUSE", "Root cause")

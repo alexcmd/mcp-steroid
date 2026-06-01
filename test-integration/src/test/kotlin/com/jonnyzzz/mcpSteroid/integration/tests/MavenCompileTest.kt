@@ -48,7 +48,7 @@ class MavenCompileTest {
     fun `ProjectTaskManager builds Maven project`() {
         val console = session.console
 
-        console.writeStep(1, "Compiling Maven project via ProjectTaskManager.build()")
+        console.writeStep(text = "Compiling Maven project via ProjectTaskManager.build()")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = """
                 import com.intellij.task.ProjectTaskManager

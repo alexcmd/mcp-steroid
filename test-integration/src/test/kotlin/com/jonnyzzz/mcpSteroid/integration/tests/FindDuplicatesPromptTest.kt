@@ -54,13 +54,13 @@ class FindDuplicatesPromptTest {
 
     private fun findDuplicates(agent: AiAgentSession) {
         val console = session.console
-        console.writeStep(1, "Asking ${agent.displayName} to find duplicates (no recipe hints)")
+        console.writeStep(text = "Asking ${agent.displayName} to find duplicates (no recipe hints)")
 
         val result = agent.runPrompt(FIND_DUPLICATES_PROMPT, timeoutSeconds = 900).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(2, "Validating what ${agent.displayName} actually did")
+        console.writeStep(text = "Validating what ${agent.displayName} actually did")
 
         val hasDupesMarker = hasAnyMarkerLine(output, "DUPLICATES_FOUND", "Duplicates found")
         if (result.exitCode != 0 && !hasDupesMarker) {

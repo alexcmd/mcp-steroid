@@ -119,7 +119,7 @@ class DevrigManagedBackendGuiIntegrationTest {
 
 //        container.waitForIntelliJBuiltInHttpServer(timeoutSeconds = 180)
 
-        container.console.writeStep(6, "Waiting for MCP Steroid pid marker (up to 180s)...")
+        container.console.writeStep("Waiting for MCP Steroid pid marker (up to 180s)...")
         container.execAndAssert(
             description = "wait for MCP Steroid pid marker",
             timeoutSeconds = 180,

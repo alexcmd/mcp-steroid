@@ -52,13 +52,13 @@ class TypeHierarchyPromptTest {
 
     private fun typeHierarchy(agent: AiAgentSession) {
         val console = session.console
-        console.writeStep(1, "Asking ${agent.displayName} to enumerate the Greeting type hierarchy (no recipe hints)")
+        console.writeStep(text = "Asking ${agent.displayName} to enumerate the Greeting type hierarchy (no recipe hints)")
 
         val result = agent.runPrompt(TYPE_HIERARCHY_PROMPT, timeoutSeconds = 900).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(2, "Validating what ${agent.displayName} actually did")
+        console.writeStep(text =  "Validating what ${agent.displayName} actually did")
 
         val hasFoundMarker = hasAnyMarkerLine(output, "SUBTYPES_FOUND", "Subtypes found")
         if (result.exitCode != 0 && !hasFoundMarker) {

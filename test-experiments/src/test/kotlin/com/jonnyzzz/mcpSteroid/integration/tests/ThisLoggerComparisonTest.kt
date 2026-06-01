@@ -163,7 +163,7 @@ class ThisLoggerComparisonTest {
         val agent = session.aiAgents.claude
         val label = if (withMcp) "MCP" else "NONE"
 
-        console.writeStep(1, "[$label] Building thisLogger search prompt")
+        console.writeStep(text = "[$label] Building thisLogger search prompt")
 
         val prompt = buildString {
             appendLine("# Task: Count all usages of `thisLogger()` in the project")
@@ -198,12 +198,12 @@ class ThisLoggerComparisonTest {
             appendLine("COUNT_ACCURATE: yes")
         }
 
-        console.writeStep(2, "[$label] Running agent prompt")
+        console.writeStep(text = "[$label] Running agent prompt")
         val startMs = System.currentTimeMillis()
         val result = agent.runPrompt(prompt, timeoutSeconds = 900).awaitForProcessFinish()
         val durationMs = System.currentTimeMillis() - startMs
 
-        console.writeStep(3, "[$label] Evaluating agent output (${durationMs / 1000}s)")
+        console.writeStep(text = "[$label] Evaluating agent output (${durationMs / 1000}s)")
 
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr

@@ -64,7 +64,9 @@ class ConsoleDriver(
     }
 
     private val stepNumber = AtomicInteger(1)
-    fun writeStep(step: Int = stepNumber.incrementAndGet(), text: String) {
+
+    fun writeStep(text: String) {
+        val step = stepNumber.incrementAndGet()
         writeLine("$BOLD$YELLOW[$step]$RESET $text")
     }
 

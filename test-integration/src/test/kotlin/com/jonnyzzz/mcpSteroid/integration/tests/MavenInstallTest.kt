@@ -49,7 +49,7 @@ class MavenInstallTest {
     fun `Maven install goal via MavenRunConfigurationType`() {
         val console = session.console
 
-        console.writeStep(1, "Running Maven install via MavenRunConfigurationType")
+        console.writeStep(text = "Running Maven install via MavenRunConfigurationType")
         val result = session.mcpSteroid.mcpExecuteCode(
             code = """
                 import org.jetbrains.idea.maven.execution.MavenRunConfigurationType

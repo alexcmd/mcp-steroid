@@ -39,7 +39,7 @@ class ReferencesSearchPromptTest {
         val console = session.console
         val agent = session.aiAgents.claude
 
-        console.writeStep(1, "Building prompt for ReferencesSearch find-usages")
+        console.writeStep(text = "Building prompt for ReferencesSearch find-usages")
 
         val prompt = buildString {
             appendLine("# Task: Find all usages of a function in the project using PSI")
@@ -64,13 +64,13 @@ class ReferencesSearchPromptTest {
             appendLine("USAGE_COUNT: <number of usages found>")
         }
 
-        console.writeStep(2, "Running agent prompt")
+        console.writeStep(text = "Running agent prompt")
 
         val result = agent.runPrompt(prompt, timeoutSeconds = 600).awaitForProcessFinish()
         val output = result.stdout
         val combined = result.stdout + "\n" + result.stderr
 
-        console.writeStep(3, "Validating agent output")
+        console.writeStep(text = "Validating agent output")
 
         // If agent failed, check if required markers were still emitted
         val hasUsagesFoundMarker = hasAnyMarkerLine(output, "USAGES_FOUND", "Usages found")
