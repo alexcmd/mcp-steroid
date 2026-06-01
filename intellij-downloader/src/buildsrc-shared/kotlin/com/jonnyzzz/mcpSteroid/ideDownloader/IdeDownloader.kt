@@ -43,22 +43,25 @@ fun IdeDistribution.resolveAndDownload(
     downloadDir.mkdirs()
 
     val resolved = resolveArchiveDownload(os)
-    val destFile = File(downloadDir, resolved.fileName)
+    // Resolve the expected checksum BEFORE naming the file: the cache filename mixes the URL and the
+    // checksum so two distinct binaries that share a URL/filename never collide on disk.
+    val expectedChecksum = resolveExpectedChecksum(resolved)
+    val destFile = File(downloadDir, hashedArchiveFileName(resolved.url, expectedChecksum, resolved.fileName))
     ideDownloaderLog.info(
         "[IDE-DOWNLOAD] Resolved archive: {} -> {}",
         resolved.url,
         destFile,
     )
     return synchronized(archiveDownloadLock(destFile)) {
-        resolveAndDownloadLocked(resolved, destFile)
+        resolveAndDownloadLocked(resolved, expectedChecksum, destFile)
     }
 }
 
 private fun resolveAndDownloadLocked(
     resolved: ResolvedArchiveDownload,
+    expectedChecksum: String?,
     destFile: File,
 ): File {
-    val expectedChecksum = resolveExpectedChecksum(resolved)
     if (expectedChecksum == null) {
         ideDownloaderLog.warn(
             "[IDE-DOWNLOAD] No SHA-256 checksum available for {}; archive will not be verified",
@@ -190,6 +193,37 @@ private fun normalizeSha256(value: String, source: String): String {
         error("Invalid SHA-256 checksum from $source: '$value'")
     }
     return normalized
+}
+
+private const val ARCHIVE_HASH_BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+/**
+ * Cache file name for an archive: `<16-char hash>-<fileName>`. The hash disambiguates editions that share
+ * a download filename — notably IntelliJ **Community** (GitHub `idea-<version>.tar.gz`) vs **Ultimate**
+ * (data.services `idea-<version>.tar.gz`), which are byte-different but identically named. Without the
+ * prefix, the first one cached wins and the other unpacks the wrong product (IC vs IU).
+ *
+ * The hash mixes the download URL AND the expected SHA-256 of the binary (when known), so two distinct
+ * binaries never collide even if both URL and filename matched. It's base62 (alphanumeric) of
+ * SHA-256(url + checksum), first 16 chars — same convention as the project-name hash in the devrig tools.
+ */
+internal fun hashedArchiveFileName(url: String, expectedChecksum: String?, fileName: String): String =
+    "${archiveHash16(url, expectedChecksum)}-$fileName"
+
+internal fun archiveHash16(url: String, expectedChecksum: String?): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    md.update(url.toByteArray(Charsets.UTF_8))
+    md.update(0)
+    md.update((expectedChecksum ?: "").toByteArray(Charsets.UTF_8))
+    var value = java.math.BigInteger(1, md.digest())
+    val base = java.math.BigInteger.valueOf(62L)
+    val sb = StringBuilder(16)
+    repeat(16) {
+        val (q, r) = value.divideAndRemainder(base)
+        sb.append(ARCHIVE_HASH_BASE62[r.toInt()])
+        value = q
+    }
+    return sb.toString()
 }
 
 private fun sha256(file: File): String {
