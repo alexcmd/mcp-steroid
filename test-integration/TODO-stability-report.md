@@ -146,9 +146,20 @@ PASS** (validates the matcher fix), describeMcp ×3, executeCodeViaMcp ×3, chec
 |---|---|---|
 | WhatYouSeeTest `toolPreference claude` | 🔧 test bug | Matcher fix worked (codex/gemini green). Claude failed only the size check — its decoded transcript repeats the answer block (20 PREFERRED lines for 10 tasks), an output-capture duplication. Fixed: require `>= TASK_COUNT` lines and scale the steroid bar to the line count. |
 | WhatYouSeeTest `checkWhatYouSee claude` | 🔧 fixed | Was deterministic (claude deferred-schema bail, see docs/claude-defers-mcp-tools.md). Reworked the prompt to drive the agent through the MCP tools — first `steroid_list_projects` + list available `steroid_*` tools (forces loading the deferred schemas), then describe the IDE; `NO_IDE_ACCESS` only as a genuine last resort. **WhatYouSeeTest now 12/12 green.** (Strengthening the server `instructions` alone didn't help — they arrive post-`initialize`, after claude's 1-turn bail.) |
-| DevrigAgentIntegrationTest `claude connects through devrig stdio` | ❌ devrig | "devrig must dispatch IDE tool calls through the built-in-webserver RPC bridge. Missing built-in stream call." Devrig stdio bridge didn't route the IDE call through the expected webserver RPC path. Needs devrig-bridge investigation. |
-| DevrigManagedBackendGuiIntegrationTest | ❌ devrig | "Process assert managed backend files failed" — managed-backend file/setup assertion. Needs devrig-deployment investigation. |
-| DevrigRealIdeBridgeIntegrationTest | ❌ devrig | "install devrig MCP stdio launcher exit code is 2 != 0" — the devrig stdio launcher install step failed (exit 2). Setup/deployment failure; needs devrig investigation. |
+| DevrigManagedBackendGuiIntegrationTest | ❌ env (network) | `UnknownHostException: api.github.com` (download process exit 64). The managed-backend flow resolves+downloads the IDE from GitHub; DNS to api.github.com fails in this environment. NOT a code bug. |
+| DevrigRealIdeBridgeIntegrationTest | ❌ env (network) | `UnknownHostException: data.services.jetbrains.com` (init). Needs the JetBrains products/metadata API to resolve the IDE; DNS fails here. NOT a code bug. |
+| DevrigAgentIntegrationTest `claude connects through devrig stdio` | ❌ env (network) | `Error during cleanup` masking socket timeouts / `Connection refused` (UpdateChecker, video copy). Network-restricted environment. NOT a code bug. |
+
+### Devrig code fixes (done + committed, mainline "devrig MCP")
+- **JDK launch**: devrig is class-file v69 → needs Java 25. The generic `DEVRIG_JAVA_HOME`→`JAVA_HOME`
+  override now lives in devrig's OWN unix + windows launchers (startScripts injection, non-breaking);
+  added `DEVRIG_JVM_OPTS` to append JVM options on both. Harness wrapper thinned to just resolve the
+  container's Java 25 + hand it over.
+- **Console**: download progress is a clean stderr line (no `[IDE-DOWNLOAD]`/category); beacon's missing
+  `.devrig-user-id` first-run is silent.
+- **Remaining devrig test failures are environmental** (DNS/network to api.github.com + JetBrains
+  services for the IDE download) — they need a network-capable environment (CI/dev), not a code change.
+  The E2E console scenario (TASKS.md) depends on the same network path.
 
 **Flakiness verdict:** the agent-test "flakiness" is largely **deterministic** — claude consistently can't
 reach the `steroid_*` tools (deferred schema not loaded → NO_IDE_ACCESS / Bash / native fallback). The fix
