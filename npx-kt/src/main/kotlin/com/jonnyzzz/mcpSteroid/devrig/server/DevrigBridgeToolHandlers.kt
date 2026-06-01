@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
@@ -82,6 +83,7 @@ class DevrigListWindowsToolHandler(
 
 class DevrigExecuteCodeToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val beacon: DevrigBeacon,
 ) : ExecuteCodeToolHandler {
     override suspend fun executeCode(
         projectName: String,
@@ -89,7 +91,7 @@ class DevrigExecuteCodeToolHandler(
         callProgress: McpProgressReporter,
     ): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
-        return bridge.callTool(route, "steroid_execute_code", callProgress) {
+        val result = bridge.callTool(route, "steroid_execute_code", callProgress) {
             put("project_name", route.originalProjectName)
             put("code", execCodeParams.code)
             put("task_id", execCodeParams.taskId)
@@ -97,6 +99,8 @@ class DevrigExecuteCodeToolHandler(
             put("timeout", execCodeParams.timeout)
             put("modal", execCodeParams.modal.wire)
         }
+        beacon.capture("devrig_exec_code", mapOf("is_error" to (result.isError == true)))
+        return result
     }
 }
 
