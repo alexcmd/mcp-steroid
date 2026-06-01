@@ -92,8 +92,9 @@ class CliMcpStdioIntegrationTest {
             requireNotNull(tool["name"]?.jsonPrimitive?.contentOrNull) { "tool entry missing name: $tool" }
         }.toSet()
 
-        // The expected set is shared with the agent E2E tests so a regression
-        // in McpSteroidTools.registerAll surfaces from both directions.
+        // This protocol-level check (devrig mpc directly, no agent) is the
+        // canonical guard against a McpSteroidTools.registerAll regression; the
+        // live-agent path lives in :test-integration's DevrigStdioAgentMatrixTest.
         val missing = EXPECTED_STEROID_TOOL_NAMES - names
         assertTrue(
             missing.isEmpty(),
