@@ -34,17 +34,15 @@ import kotlin.concurrent.thread
 val IDE_DEBUG_PORT = ContainerPort(5005)
 
 /**
- * JDWP debug port the in-container **devrig** (`npx-kt`) JVM listens on when deployed as the
- * agents' stdio MCP bridge (`devrig mpc`). A *different* port from [IDE_DEBUG_PORT] so the IDE
- * and devrig can be debugged simultaneously. Exposed through Docker and printed to the test
- * output as `DEVRIG_DEBUG_PORT=<host-port>` plus the standard JVM "Listening for transport …"
- * line with the host-mapped port. `suspend=n` so devrig never waits; `quiet=y` so the JDWP
- * agent does NOT print its own "Listening …" line to stdout — that would corrupt the stdio
- * JSON-RPC channel `devrig mpc` runs on. The host-side print (see [DevrigSteroidDriver.deploy])
- * substitutes for it. Opts are injected via the app-specific `DEVRIG_OPTS` env var (NOT
- * `JAVA_TOOL_OPTIONS`, which would leak into child JVMs and double-bind this port).
+ * JDWP debug port RANGE the in-container **devrig** (`npx-kt`) JVMs listen on. When `DEVRIG_DEBUG` is set,
+ * devrig's start script picks a FREE port from this 100-port range (23900-23999), seeded by PID so
+ * multiple concurrent devrig processes (e.g. `mpc` + `backend start` + the agent's CLI invocations) never
+ * clash — see the `bin/devrig` script. The whole range is published through Docker so a host debugger can
+ * attach to whichever port a given devrig process chose (it announces it on stderr / its log; `suspend=n`
+ * so devrig never waits, `quiet=y` so the JDWP agent never writes to stdout — the `devrig mpc` JSON-RPC
+ * channel stays clean). Separate from [IDE_DEBUG_PORT] so the IDE and devrig can be debugged together.
  */
-val DEVRIG_DEBUG_PORT = ContainerPort(5006)
+val DEVRIG_DEBUG_PORT_RANGE: ContainerPort = ContainerPort(23900, 23999)
 
 /**
  * Receiver for [IntelliJContainerOpts.beforeIdeStart] hooks. The IDE is fully configured on disk

@@ -219,6 +219,11 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
     }
 
     val containerEnv = buildMap<String, String> {
+        // Every devrig process in this container is debuggable: DEVRIG_DEBUG makes the devrig start script
+        // pick a FREE, PID-seeded JDWP port from the published 23900-23999 range, so the concurrent devrig
+        // processes a managed-backend test spawns (mpc + backend download/start + the agent's CLI calls)
+        // never clash on a port. quiet=y/suspend=n keep stdout clean and never block. See bin/devrig.
+        put("DEVRIG_DEBUG", "1")
     }
 
     var container: ContainerDriver = startDockerContainerAndDispose(
@@ -229,10 +234,12 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
             .extraEnvVars(containerEnv)
             .volumes(volumes)
             .ports(
-                XcvbVideoDriver.VIDEO_STREAMING_PORT,
-                McpSteroidDriver.MCP_STEROID_PORT,
-                IDE_DEBUG_PORT,
-                DEVRIG_DEBUG_PORT,
+                buildList {
+                    add(XcvbVideoDriver.VIDEO_STREAMING_PORT)
+                    add(McpSteroidDriver.MCP_STEROID_PORT)
+                    add(IDE_DEBUG_PORT)
+                    add(DEVRIG_DEBUG_PORT_RANGE)
+                },
             ),
     )
 

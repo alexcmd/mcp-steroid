@@ -56,16 +56,14 @@ class DevrigSteroidDriver(
                     fi
                     export DEVRIG_JAVA_HOME
                     export PATH="$DEVRIG_JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
-                    # JDWP ONLY for the long-lived `mpc` server. The agent binds a FIXED port (server=y,
-                    # address=*:PORT), so attaching it to throwaway commands like `--version` collides with
-                    # a running `mpc` and dies with "Address already in use" (JDWP TRANSPORT_INIT) — exactly
-                    # what broke the deploy-time `--version` check. quiet=y keeps the agent's "Listening ..."
-                    # line OFF stdout (`devrig mpc` speaks JSON-RPC there); the host-side print (mapped port)
-                    # stands in for it. MUST stay suspend=n (:test-integration + :test-experiments): suspend=y
-                    # would block devrig before it starts the MCP server, hanging the whole test on CI where
-                    # nobody attaches. NEVER flip to suspend=y.
+                    # Enable devrig's JDWP debug agent for the long-lived `mpc` server. The devrig start
+                    # script (bin/devrig) reads DEVRIG_DEBUG and picks a FREE port from 23900-23999, seeded
+                    # by PID — so multiple concurrent devrig processes never clash (the old fixed-port
+                    # approach crashed with "Address already in use"). quiet=y keeps the JDWP "Listening ..."
+                    # line OFF stdout (`devrig mpc` speaks JSON-RPC there); suspend=n so devrig never waits.
+                    # The range is published by the container; the chosen port is on devrig's stderr/log.
                     if [ "${1:-}" = "mpc" ]; then
-                      export DEVRIG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,quiet=y,address=*:$${DEVRIG_DEBUG_PORT.containerPort} ${DEVRIG_OPTS:-}"
+                      export DEVRIG_DEBUG=1
                     fi
                     exec /home/agent/devrig-cli/app/bin/devrig "$@"
                     EOF
@@ -78,13 +76,11 @@ class DevrigSteroidDriver(
             }.awaitForProcessFinish()
                 .assertExitCode(0) { "install devrig MCP stdio launcher" }
 
-            // Surface the devrig JVM's debug port on the HOST, in the JVM's own "Listening for
-            // transport ..." wording, with the HOST-mapped port (the in-container 5006 is invisible
-            // from the host, and quiet=y suppressed the agent's own line). Attach a second "Remote
-            // JVM Debug" (module npx-kt) to step through devrig while it bridges to the IDE.
-            val devrigDebugPort = container.mapGuestPortToHostPort(DEVRIG_DEBUG_PORT)
-            println("Listening for transport dt_socket at address: $devrigDebugPort")
-            println("[DEVRIG-DEBUG] attach IntelliJ 'Remote JVM Debug' (module npx-kt) to localhost:$devrigDebugPort (suspend=n)")
+            // devrig's `mpc` JVM picks a FREE JDWP port from 23900-23999 (DEVRIG_DEBUG, set in the
+            // launcher above) and announces it on its own stderr/log (quiet=y keeps it off stdout). The
+            // whole range is Docker-published, so attach a "Remote JVM Debug" (module npx-kt) to the
+            // host-mapped port for the in-container port devrig reports.
+            println("[DEVRIG-DEBUG] devrig mpc JDWP: a free port in 23900-23999 (announced on devrig stderr); range is host-mapped (suspend=n)")
 
             println("[DevrigSteroidDriver] devrig MCP stdio ready")
             return DevrigSteroidDriver(StdioMcpCommand(command = launcherPath, args = listOf("mpc")))

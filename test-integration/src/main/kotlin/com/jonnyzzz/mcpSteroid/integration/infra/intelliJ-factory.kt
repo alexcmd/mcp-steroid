@@ -53,10 +53,14 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
             .extraEnvVars(containerEnv)
             .volumes(volumes)
             .ports(
-                XcvbVideoDriver.VIDEO_STREAMING_PORT,
-                McpSteroidDriver.MCP_STEROID_PORT,
-                IDE_DEBUG_PORT,
-                DEVRIG_DEBUG_PORT,
+                buildList {
+                    add(XcvbVideoDriver.VIDEO_STREAMING_PORT)
+                    add(McpSteroidDriver.MCP_STEROID_PORT)
+                    add(IDE_DEBUG_PORT)
+                    // Publish devrig's JDWP range (one `-p 23900-23999`) only for devrig tests; devrig
+                    // (DEVRIG_DEBUG) picks a free one. Skipped for non-devrig IDE containers.
+                    if (aiMode == AiMode.AI_DEVRIG) add(DEVRIG_DEBUG_PORT_RANGE)
+                },
             ),
     )
 
@@ -81,7 +85,6 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
     fun writeSessionInfo(mcpUrl: String?) {
         val videoPort = container.mapGuestPortToHostPort(XcvbVideoDriver.VIDEO_STREAMING_PORT)
         val ideDebugPort = container.mapGuestPortToHostPort(IDE_DEBUG_PORT)
-        val devrigDebugPort = container.mapGuestPortToHostPort(DEVRIG_DEBUG_PORT)
         val infoString = buildString {
             appendLine("=".repeat(20))
             appendLine("Use these parameters to debug the test")
@@ -93,9 +96,10 @@ fun IntelliJContainer.Companion.create(lifetime: CloseableStack, opts: IntelliJC
             // Attach IntelliJ "Remote JVM Debug" to this host port to debug the in-container
             // IDE + MCP Steroid plugin live (suspend=n, so the IDE never waits for a debugger).
             appendLine("IDE_DEBUG_PORT=$ideDebugPort")
-            // devrig (npx-kt) JVM debug port — only listening when devrig is deployed as the
-            // agents' stdio MCP bridge (AiMode.AI_DEVRIG); the host port is always mapped.
-            appendLine("DEVRIG_DEBUG_PORT=$devrigDebugPort")
+            // devrig (npx-kt) JVM debug — only when devrig runs as the agents' stdio bridge (AI_DEVRIG).
+            // DEVRIG_DEBUG makes devrig pick a free port in the published 23900-23999 range (announced on
+            // devrig's stderr/log); map it to the host with `docker port $CONTAINER_ID <that-port>`.
+            if (aiMode == AiMode.AI_DEVRIG) appendLine("DEVRIG_DEBUG_PORT_RANGE=23900-23999 (published; devrig picks a free one)")
             if (mcpUrl != null) {
                 appendLine("MCP_STEROID=$mcpUrl")
             }
