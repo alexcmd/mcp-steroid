@@ -18,6 +18,28 @@ enum class BuildSystem {
     NONE,
 }
 
+/**
+ * How `steroid_execute_code` should treat IDE modality around the script — the client-side mirror of
+ * the server's `modal` wire protocol values. The test infra is an MCP client, so it owns its own copy
+ * of the protocol value instead of depending on the server module.
+ *
+ * - [SMART_NON_MODAL]: close leftover modals, require non-modal IDE, commit+save+VFS, wait for smart
+ *   mode, monitor for modals during the run (default — for PSI / code-management flows).
+ * - [NON_MODAL]: require non-modal at start only; no sweep / sync / smart-wait / during-run monitor.
+ * - [UNLEASHED]: no checks at all; runs against whatever IDE state exists, modals included (for
+ *   intentional modal workflows and trivial hardcoded actions).
+ */
+enum class ModalMode(val wire: String) {
+    SMART_NON_MODAL("smart_non_modal"),
+    NON_MODAL("non_modal"),
+    UNLEASHED("unleashed"),
+    ;
+
+    companion object {
+        val DEFAULT = SMART_NON_MODAL
+    }
+}
+
 data class McpProjectInfo(
     val name: String,
     val path: String,
@@ -345,8 +367,12 @@ try {
         reason: String = "Integration test execution",
         timeout: Int = 600,
         projectName: String = resolveProjectName(),
-        /** The `modal` option wire value: "smart_non_modal" | "non_modal" | "unleashed". null = server default. */
-        modal: String? = null,
+        /**
+         * How exec_code treats IDE modality around the script. Mindfully defaulted to [ModalMode.DEFAULT]
+         * and always sent explicitly on the wire, so every driver-issued exec_code makes a deliberate
+         * modality choice rather than relying on the server's implicit default.
+         */
+        modal: ModalMode = ModalMode.DEFAULT,
     ): ProcessResult {
         // First, initialize MCP session
         val sessionId = mcpInitialize()
@@ -363,9 +389,7 @@ try {
                     put("task_id", taskId)
                     put("reason", reason)
                     put("timeout", timeout)
-                    if (modal != null) {
-                        put("modal", modal)
-                    }
+                    put("modal", modal.wire)
                 }
             }
             put("method", "tools/call")

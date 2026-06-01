@@ -46,6 +46,60 @@ val IDE_DEBUG_PORT = ContainerPort(5005)
  */
 val DEVRIG_DEBUG_PORT = ContainerPort(5006)
 
+/**
+ * Receiver for [IntelliJContainerOpts.beforeIdeStart] hooks. The IDE is fully configured on disk
+ * (startup config, JDK table, and the project files are all deployed) but the IDE process has NOT
+ * launched yet — so hooks may freely tweak project/config files or run container setup commands
+ * before project-open. Exposes typed getters so the surface can grow without changing the hook
+ * signature later.
+ *
+ * (`afterIdeStart` hooks already receive the live [IntelliJContainer], which is itself the rich
+ * post-start context, so it needs no separate wrapper.)
+ */
+class BeforeIdeStartContext internal constructor(
+    val ideDriver: IntelliJDriver,
+    private val container: ContainerDriver,
+) {
+    /** Container path of the project the IDE will open on launch. */
+    val guestProjectDir: String get() = ideDriver.getGuestProjectDir()
+
+    /** Container path of the IDE config dir (the `options` parent), writable before launch. */
+    val guestConfigDir: String get() = ideDriver.getGuestConfigDir()
+
+    val ideProduct: IdeProduct get() = ideDriver.ideProduct
+
+    /**
+     * Turn the already-deployed guest project into a committed Git repository so the IDE detects Git
+     * VCS at project-open. Used by VCS-behavior tests (e.g. the add-file confirmation silencer), which
+     * need a real `.git` present before the IDE opens the project.
+     */
+    fun initGitRepoInGuestProject() {
+        val dir = guestProjectDir
+        // Run git as the `agent` user that OWNS the deployed project dir. Running as root would create
+        // the repo under root while the working tree stays agent-owned, tripping git's safe.directory
+        // (dubious-ownership) protection — which surfaces as "fatal: not in a git directory" on the first
+        // repo-opening command after `git init`. Disable gpg signing so the commit never blocks on a key.
+        val result = container.startProcessInContainer {
+            this
+                .user("agent")
+                .args(
+                    "bash", "-lc",
+                    """
+                    set -euo pipefail
+                    git -C "$dir" init -q -b main
+                    git -C "$dir" config user.email repro@local
+                    git -C "$dir" config user.name repro
+                    git -C "$dir" -c commit.gpgsign=false add -A
+                    git -C "$dir" -c commit.gpgsign=false commit -qm "init"
+                    """.trimIndent(),
+                )
+                .timeoutSeconds(60)
+                .description("git init guest project for VCS test")
+        }.awaitForProcessFinish()
+        require(result.exitCode == 0) { "git init of guest project failed: ${result.stderr}" }
+    }
+}
+
 class IntelliJDriver(
     private val lifetime: CloseableStack,
     private val driver: ContainerDriver,
@@ -84,7 +138,7 @@ class IntelliJDriver(
 
     private fun ideaLogsFile(): File = driver.mapGuestPathToHostPath(logsGuestDir).resolve("idea.log")
 
-    fun startIde(beforeIdeStart: List<IntelliJDriver.() -> Unit> = emptyList()): RunningContainerProcess {
+    fun startIde(beforeIdeStart: List<BeforeIdeStartContext.() -> Unit> = emptyList()): RunningContainerProcess {
         driver.mkdirs(intelliJGuestHomeDir)
         driver.mkdirs(projectGuestDir)
         driver.mkdirs(configGuestDir)
@@ -112,7 +166,8 @@ class IntelliJDriver(
         writeJdkTable()
 
         // Before-start hooks: let callers tweak the IDE config / project files while no IDE runs yet.
-        beforeIdeStart.forEach { it(this) }
+        val beforeStartContext = BeforeIdeStartContext(this, driver)
+        beforeIdeStart.forEach { it(beforeStartContext) }
 
         driver.log("Starting ${ideProduct.displayName}...")
         val launcherPath = "$intelliJGuestHomeDir/bin/${ideProduct.launcherExecutable}"

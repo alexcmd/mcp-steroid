@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.integration.tests
 
+import com.jonnyzzz.mcpSteroid.integration.infra.ModalMode
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
@@ -87,7 +88,7 @@ class MavenInstallTest {
             taskId = "maven-install",
             reason = "Run Maven install goal via MavenRunConfigurationType (replaces Bash mvnw install)",
             timeout = 600,
-            modal = "smart_non_modal",
+            modal = ModalMode.SMART_NON_MODAL,
         )
 
         result.assertExitCode(0, "Maven install via exec_code should succeed")

@@ -59,11 +59,12 @@ data class IntelliJContainerOpts(
 
     /**
      * Hooks invoked just BEFORE the IDE process is launched (after all built-in startup
-     * config files are written, including the pre-generated `jdk.table.xml`). Use these to
-     * adjust the IDE config dir / project files while no IDE is running yet — e.g. to inject
-     * or override a file under the `options` config dir. Each hook receives the [IntelliJDriver].
+     * config files are written, including the pre-generated `jdk.table.xml`, and the project
+     * files are deployed). Use these to adjust the IDE config dir / project files while no IDE is
+     * running yet — e.g. inject a file under the `options` config dir, or `git init` the project.
+     * Each hook receives a [BeforeIdeStartContext].
      */
-    val beforeIdeStart: List<IntelliJDriver.() -> Unit> = emptyList(),
+    val beforeIdeStart: List<BeforeIdeStartContext.() -> Unit> = emptyList(),
 
     /**
      * Hooks invoked AFTER the container session is fully built (IDE up, MCP ready, window

@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.integration.tests
 
+import com.jonnyzzz.mcpSteroid.integration.infra.ModalMode
 import com.jonnyzzz.mcpSteroid.integration.infra.BuildSystem
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.IntelliJContainerOpts
@@ -51,7 +52,7 @@ class GradleTestExecutionTest {
 
         console.writeStep(1, "Executing Gradle tests via GradleRunConfiguration + SMTRunner")
         val result = session.mcpSteroid.mcpExecuteCode(
-            modal = "smart_non_modal",
+            modal = ModalMode.SMART_NON_MODAL,
             code = """
                 import com.intellij.execution.ProgramRunnerUtil
                 import com.intellij.execution.RunManager
