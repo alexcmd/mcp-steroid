@@ -27,7 +27,7 @@ class StubMcpSteroidTools(
     private val listWindows = DevrigListWindowsToolHandler(services)
     val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
     private val executeCode = DevrigExecuteCodeToolHandler(bridge, services.beacon)
-    private val executeFeedback = DevrigExecuteFeedbackToolHandler(bridge)
+    private val executeFeedback = DevrigExecuteFeedbackToolHandler(bridge, services.beacon)
     private val visionScreenshot = DevrigVisionScreenshotToolHandler(bridge)
     private val visionInput = DevrigVisionInputToolHandler(bridge)
     private val openProject = DevrigOpenProjectToolHandler(bridge)

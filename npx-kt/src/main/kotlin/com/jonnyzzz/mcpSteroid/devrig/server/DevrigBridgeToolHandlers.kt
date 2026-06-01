@@ -99,23 +99,27 @@ class DevrigExecuteCodeToolHandler(
             put("timeout", execCodeParams.timeout)
             put("modal", execCodeParams.modal.wire)
         }
-        beacon.capture("devrig_exec_code", mapOf("is_error" to (result.isError == true)))
+        beacon.capture("exec_code", mapOf("result" to if (result.isError == true) "error" else "success"))
         return result
     }
 }
 
 class DevrigExecuteFeedbackToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val beacon: DevrigBeacon,
 ) : ExecuteFeedbackToolHandler {
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
-        return bridge.callTool(route, "steroid_execute_feedback") {
+        val result = bridge.callTool(route, "steroid_execute_feedback") {
             put("project_name", route.originalProjectName)
             put("task_id", params.taskId)
             put("success_rating", params.successRating)
             params.explanation?.let { put("explanation", it) }
             params.code?.let { put("code", it) }
         }
+        // Mirror the ij-plugin's status_score event: 0.0-1.0 rating -> 0-100 score.
+        beacon.captureScore((params.successRating * 100).toInt(), context = "feedback")
+        return result
     }
 }
 

@@ -8,8 +8,11 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
+import com.jonnyzzz.mcpSteroid.devrig.HomePaths
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
+import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
@@ -58,6 +61,10 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.io.TempDir
 
 class DevrigToolBridgeClientTest {
+    // A no-op beacon for handler construction: :npx-kt:test sets devrig.beacon.disabled=true so PostHog
+    // never initializes and capture/captureScore are inert (no network).
+    private fun testBeacon(tempDir: Path) = DevrigBeacon(HomePaths(tempDir.resolve("beacon-home")), CloseableStackHost())
+
     private lateinit var server: EmbeddedServer<*, *>
     private lateinit var httpClient: HttpClient
     private var port: Int = 0
@@ -177,7 +184,7 @@ class DevrigToolBridgeClientTest {
             )
         )
         val route = routing.routes().values.single()
-        val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
 
         val result = handler.handleFeedback(
             projectName = route.exposedProjectName,
@@ -411,7 +418,7 @@ class DevrigToolBridgeClientTest {
         )
         val route = routing.routes().values.single()
         val progressMessages = mutableListOf<String>()
-        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
 
         val result = handler.executeCode(
             projectName = route.exposedProjectName,

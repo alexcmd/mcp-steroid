@@ -310,6 +310,8 @@ tasks.test {
     // Hand the build's project.version through to DevrigVersionMetadataTest so it can
     // end-to-end-assert the generated runtime value.
     systemProperty("devrig.expected.version", version.toString())
+    // Unit tests must never reach PostHog over the network (DevrigBeacon).
+    systemProperty("devrig.beacon.disabled", "true")
 }
 
 kotlin {
