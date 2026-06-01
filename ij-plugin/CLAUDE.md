@@ -31,6 +31,22 @@ src/main/kotlin/com/jonnyzzz/mcpSteroid/
 
 ## IntelliJ Platform coding principles
 
+### ⚠️ Public, stable API only — NEVER `@ApiStatus.Internal` (or `@ApiStatus.Experimental`)
+
+**Every IntelliJ API this plugin calls — in production code AND in `mcp-steroid://` prompt recipes —
+must be public and stable.** Before using a class/method/field/topic/extension point, confirm it is **not**
+annotated `@ApiStatus.Internal` (and prefer not `@ApiStatus.Experimental`). Internal APIs break without
+notice across IDE releases and are off-limits even when they look convenient.
+
+- **Verify it.** Check the declaration in `~/Work/intellij` (`grep -n "@ApiStatus" <File>`), or via
+  `steroid_execute_code` + PSI on the open `intellij` project. If it's `@ApiStatus.Internal`, find the
+  public replacement; if none exists, that's a design constraint to surface, not to bypass.
+- **Known traps:** `LaterInvocator.isInModalContext()` is `@ApiStatus.Internal` — use the public
+  `ModalityState.current() != ModalityState.nonModal()` (Yuriy's `isModalEdt()`) instead. Prefer public
+  message-bus topics like `ProjectLevelVcsManager.VCS_CONFIGURATION_CHANGED` over internal hooks.
+- Reflection into private fields / `setAccessible(true)` to reach internals is **not** an escape hatch —
+  it silently breaks on the next IDE release (see the reflection rule in `prompts/CLAUDE.md`).
+
 ### Services
 
 Use IntelliJ services instead of `object`/singletons:
