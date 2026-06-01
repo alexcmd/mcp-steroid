@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleAwareAgentSession
+import com.jonnyzzz.mcpSteroid.integration.infra.DEVRIG_GUEST_HOME
 import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeTestFolders
@@ -42,32 +43,31 @@ class DevrigManagedBackendAgentE2ETest {
 
     private val projectDirInContainer = "/home/agent/keycloak"
 
-    // DEVRIG_HOME stays container-only (fast, and keeps the multi-GB downloaded IDE out of the run-dir
-    // artifacts). Only its small `logs` dir is bind-mounted to the host (devrigLogsHostMountGuestPath
-    // below), so the JVM-side monitor (streamDevrigLogsToConsole) can tail the DEBUG log files directly,
-    // the same way the IntelliJ idea.log is pumped.
-    private val devrigHome = "/tmp/mcp-home"
-    private val devrigLogsGuestPath = "/tmp/mcp-home/logs"
+    // devrig's home is hardcoded to `~/.mcp-steroid` (= DEVRIG_GUEST_HOME) — we never set DEVRIG_HOME.
+    // The whole home stays inside the container (the multi-GB downloaded IDE never touches the host);
+    // only its small `logs` dir is bind-mounted to this run's folder (DevrigContainer.create), so the
+    // JVM-side monitor (streamDevrigLogsToConsole) can tail the DEBUG log files directly — the same way
+    // the IntelliJ idea.log is pumped.
+    private val keycloakRepoUrl = "https://github.com/keycloak/keycloak.git"
 
     @Test
     @Timeout(value = 60, unit = TimeUnit.MINUTES)
     fun `claude uses devrig to provision an IDE and find usages in keycloak`() = runWithCloseableStack { lifetime ->
         // The cached bare repo lets the in-container clone be a local file:// copy instead of a full fetch.
-        BareRepoCache.ensureRepo("https://github.com/keycloak/keycloak.git", IdeTestFolders.repoCacheDir)
+        BareRepoCache.ensureRepo(keycloakRepoUrl, IdeTestFolders.repoCacheDir)
 
         val container = DevrigContainer.create(
             lifetime,
             DevrigContainerOpts(
                 consoleTitle = "managed-backend-agent-e2e",
                 mountRepoCache = true,
-                devrigLogsHostMountGuestPath = devrigLogsGuestPath,
             ),
         )
         val console = container.console
         // One header banner, leading with the module — classname hierarchy so output is attributable.
         console.writeHeader("test-integration — ${this::class.simpleName} — managed-backend agent E2E (devrig self-install → find usages)")
 
-        console.writeStep("Clone Keycloak from the local bare-repo cache")
+        console.writeStep("git clone $keycloakRepoUrl $projectDirInContainer  (served from the local bare-repo cache for speed)")
         val clonedFromCache = GitDriver(container.scope).cloneFromCachedBare("keycloak/keycloak", projectDirInContainer)
         assertTrue(clonedFromCache) {
             "Keycloak must be cloneable from the mounted /repo-cache bare repo (warm the cache on the host first)."
@@ -155,9 +155,9 @@ class DevrigManagedBackendAgentE2ETest {
         appendLine()
         appendLine("1. Get an IntelliJ IDEA Community backend running:")
         appendLine("   - Download it (it may already be downloaded/cached for you — this is then quick):")
-        appendLine("       DEVRIG_HOME=$devrigHome \"$devrigPath\" backend download idea-community")
+        appendLine("       \"$devrigPath\" backend download idea-community")
         appendLine("   - Start it:")
-        appendLine("       DEVRIG_HOME=$devrigHome \"$devrigPath\" backend start idea-community")
+        appendLine("       \"$devrigPath\" backend start idea-community")
         appendLine("2. Wait for that IDE to finish booting, then open the project IN IT via MCP: call")
         appendLine("   steroid_open_project with project_path=$projectDirInContainer. Do NOT poll")
         appendLine("   steroid_list_projects — a freshly started IDE has no project open, so just ask to open it.")
@@ -195,12 +195,13 @@ class DevrigManagedBackendAgentE2ETest {
             container.console.writeInfo("No cached ideaIC archive in ${cacheDir.absolutePath}; agent download will fetch from network")
             return
         }
+        val downloadsDir = "$DEVRIG_GUEST_HOME/downloads"
         container.execAndAssert(
             description = "prepare devrig downloads dir",
-            // Don't `rm -rf $devrigHome` — its `logs` subdir is a bind mount (busy). Just ensure downloads.
-            script = "set -euo pipefail; mkdir -p $devrigHome/downloads",
+            // Don't `rm -rf` the home — its `logs` subdir is a bind mount (busy). Just ensure downloads.
+            script = "set -euo pipefail; mkdir -p $downloadsDir",
         )
-        container.scope.copyToContainer(archive, "$devrigHome/downloads/${archive.name}")
+        container.scope.copyToContainer(archive, "$downloadsDir/${archive.name}")
         container.console.writeInfo("Staged cached IDE archive: ${archive.name}")
     }
 

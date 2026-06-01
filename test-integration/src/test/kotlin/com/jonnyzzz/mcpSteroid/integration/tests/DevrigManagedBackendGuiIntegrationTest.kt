@@ -30,10 +30,11 @@ class DevrigManagedBackendGuiIntegrationTest {
 
         container.execAndAssert(
             description = "prepare managed backend home",
+            // devrig's home is the hardcoded ~/.mcp-steroid (pre-created agent-owned in the image; its
+            // `logs` subdir is a live bind mount to the run-dir). Don't `rm -rf` it — just ensure downloads.
             script = """
                 set -euo pipefail
-                rm -rf /tmp/mcp-home
-                mkdir -p /tmp/mcp-home/downloads
+                mkdir -p /home/agent/.mcp-steroid/downloads
             """.trimIndent(),
         )
 
@@ -47,8 +48,8 @@ class DevrigManagedBackendGuiIntegrationTest {
             timeoutSeconds = 35 * 60L,
             script = """
                 set -euo pipefail
-                mkdir -p /tmp/mcp-home/downloads
-                DEVRIG_HOME=/tmp/mcp-home "${container.devrig}" --debug backend download idea-community
+                mkdir -p /home/agent/.mcp-steroid/downloads
+                "${container.devrig}" --debug backend download idea-community
             """.trimIndent(),
         )
         assertTrue(download.stdout.contains("id: idea-community-"), download.stdout)
@@ -60,7 +61,7 @@ class DevrigManagedBackendGuiIntegrationTest {
             description = "resolve managed backend id",
             script = $$"""
                 set -euo pipefail
-                basename "$(find /tmp/mcp-home/backends -mindepth 1 -maxdepth 1 -type d -name 'idea-community-*' | sort | head -1)"
+                basename "$(find /home/agent/.mcp-steroid/backends -mindepth 1 -maxdepth 1 -type d -name 'idea-community-*' | sort | head -1)"
             """.trimIndent(),
         ).stdout.trim()
         assertTrue(Regex("""idea-community-\d+\.\d+.*""").matches(id), id)
@@ -71,14 +72,14 @@ class DevrigManagedBackendGuiIntegrationTest {
             description = "assert managed backend structural files + resolve vmoptions path",
             script = $$"""
                 set -euo pipefail
-                backend_dir="/tmp/mcp-home/backends/$$id"
+                backend_dir="/home/agent/.mcp-steroid/backends/$$id"
                 bundle="$(find "$backend_dir" -mindepth 1 -maxdepth 1 -type d | head -1)"
                 test -n "$bundle"
                 test -f "$backend_dir/backend.json"
                 jq -e --arg id "$$id" '.id == $id and .productKey == "idea-community" and (.launcherPath | length > 0)' "$backend_dir/backend.json" >/dev/null
                 test -f "$bundle/product-info.json" -o -f "$bundle/Contents/Resources/product-info.json"
-                test -d "/tmp/mcp-home/caches/$$id/plugins/mcp-steroid/lib"
-                test -f "/tmp/mcp-home/caches/$$id/plugins/mcp-steroid/EULA"
+                test -d "/home/agent/.mcp-steroid/caches/$$id/plugins/mcp-steroid/lib"
+                test -f "/home/agent/.mcp-steroid/caches/$$id/plugins/mcp-steroid/EULA"
                 vmoptions="$backend_dir/$(basename "$bundle").vmoptions"
                 test -f "$vmoptions"
                 echo "$vmoptions"
@@ -89,7 +90,7 @@ class DevrigManagedBackendGuiIntegrationTest {
         // signal is a non-zero exit code with no indication of which line was missing.
         val vmOptions = container.scope.readFromContainer(vmOptionsPath)
         val vmOptionLines = vmOptions.lines().map { it.trim() }
-        val cacheBase = "/tmp/mcp-home/caches/$id"
+        val cacheBase = "/home/agent/.mcp-steroid/caches/$id"
         val requiredVmOptions = listOf(
             "-Didea.config.path=$cacheBase/config",
             "-Didea.system.path=$cacheBase/system",
@@ -120,7 +121,7 @@ class DevrigManagedBackendGuiIntegrationTest {
             timeoutSeconds = 5 * 60L,
             script = """
                 set -euo pipefail
-                DEVRIG_HOME=/tmp/mcp-home "${container.devrig}" backend start idea-community
+                "${container.devrig}" backend start idea-community
             """.trimIndent(),
         )
         val pid = Regex("""pid: (\d+)""").find(start.stdout)?.groupValues?.get(1)
@@ -130,12 +131,12 @@ class DevrigManagedBackendGuiIntegrationTest {
             description = "assert managed backend pid and startup config",
             script = $$"""
                 set -euo pipefail
-                test -f "/tmp/mcp-home/state/$$id.pid"
-                test "$(cat "/tmp/mcp-home/state/$$id.pid")" = "$$pid"
+                test -f "/home/agent/.mcp-steroid/state/$$id.pid"
+                test "$(cat "/home/agent/.mcp-steroid/state/$$id.pid")" = "$$pid"
                 kill -0 "$$pid"
-                grep -F -- "experimental.ui.onboarding.proposed.version" "/tmp/mcp-home/caches/$$id/config/options/other.xml"
-                grep -F -- "switched.from.classic.to.islands" "/tmp/mcp-home/caches/$$id/config/early-access-registry.txt"
-                grep -F -- 'option name="wasShown" value="true"' "/tmp/mcp-home/caches/$$id/config/options/AIOnboardingPromoWindowAdvisor.xml"
+                grep -F -- "experimental.ui.onboarding.proposed.version" "/home/agent/.mcp-steroid/caches/$$id/config/options/other.xml"
+                grep -F -- "switched.from.classic.to.islands" "/home/agent/.mcp-steroid/caches/$$id/config/early-access-registry.txt"
+                grep -F -- 'option name="wasShown" value="true"' "/home/agent/.mcp-steroid/caches/$$id/config/options/AIOnboardingPromoWindowAdvisor.xml"
                 grep -F -- 'entry key="euacommunity_accepted_version" value="999.999"' "/home/agent/.java/.userPrefs/jetbrains/privacy_policy/prefs.xml"
                 grep -F -- 'entry key="euacommunity_accepted_version" value="999.999"' "/home/agent/.java/.userPrefs/jetbrains/_!(!!cg\"p!(}!}@\"j!(k!|w\"w!'8!b!\"p!':!e@==/prefs.xml"
                 grep -F -- 'rsch.send.usage.stat:1.1:0:' "/home/agent/.config/JetBrains/consentOptions/accepted"
@@ -177,7 +178,7 @@ class DevrigManagedBackendGuiIntegrationTest {
             timeoutSeconds = 120,
             script = $$"""
                 set -euo pipefail
-                DEVRIG_HOME=/tmp/mcp-home "$${container.devrig}" backend --json > /tmp/backend.json
+                "$${container.devrig}" backend --json > /tmp/backend.json
                 cat /tmp/backend.json
                 jq -e --argjson pid "$$pid" '.backends[] | select(.source == "marker" and .pid == $pid and .pluginInstalled == true and .managed == true)' /tmp/backend.json
             """.trimIndent(),
@@ -187,11 +188,11 @@ class DevrigManagedBackendGuiIntegrationTest {
             description = "assert managed backend cache paths",
             script = $$"""
                 set -euo pipefail
-                test -d "/tmp/mcp-home/caches/$$id/config"
-                test -d "/tmp/mcp-home/caches/$$id/system"
-                test -d "/tmp/mcp-home/caches/$$id/logs"
-                test -d "/tmp/mcp-home/caches/$$id/plugins"
-                test "$(find "/tmp/mcp-home/caches/$$id/logs" -type f | wc -l)" -gt 0
+                test -d "/home/agent/.mcp-steroid/caches/$$id/config"
+                test -d "/home/agent/.mcp-steroid/caches/$$id/system"
+                test -d "/home/agent/.mcp-steroid/caches/$$id/logs"
+                test -d "/home/agent/.mcp-steroid/caches/$$id/plugins"
+                test "$(find "/home/agent/.mcp-steroid/caches/$$id/logs" -type f | wc -l)" -gt 0
             """.trimIndent(),
         )
 
@@ -200,8 +201,8 @@ class DevrigManagedBackendGuiIntegrationTest {
             timeoutSeconds = 120,
             script = $$"""
                 set -euo pipefail
-                DEVRIG_HOME=/tmp/mcp-home "$${container.devrig}" backend stop idea-community
-                test ! -f "/tmp/mcp-home/state/$$id.pid"
+                "$${container.devrig}" backend stop idea-community
+                test ! -f "/home/agent/.mcp-steroid/state/$$id.pid"
                 deadline=$((SECONDS + 30))
                 while kill -0 $$pid 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do
                   sleep 1
@@ -216,7 +217,7 @@ class DevrigManagedBackendGuiIntegrationTest {
     }
 }
 
-private const val MANAGED_BACKEND_DOWNLOADS_DIR = "/tmp/mcp-home/downloads"
+private const val MANAGED_BACKEND_DOWNLOADS_DIR = "/home/agent/.mcp-steroid/downloads"
 private const val MANAGED_BACKEND_ARCHIVE_CACHE_ENV = "MCP_STEROID_TEST_ARCHIVE_CACHE"
 private val ideaCommunityArchiveName = Regex("""ideaIC-.*\.tar\.gz""")
 private val managedBackendArchiveExtensions = listOf(".tar.gz", ".dmg", ".zip", ".exe")

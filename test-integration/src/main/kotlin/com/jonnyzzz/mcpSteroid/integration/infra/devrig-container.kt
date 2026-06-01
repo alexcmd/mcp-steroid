@@ -18,6 +18,15 @@ import kotlin.concurrent.thread
 import kotlin.streams.asSequence
 import kotlinx.coroutines.runBlocking
 
+/**
+ * devrig's home is hardcoded to `~/.mcp-steroid` (NOT overridable — see `docs/devrig-deployment-spec.md`,
+ * and note that even with the `DEVRIG_HOME` override, the backend markers always stay under
+ * `~/.mcp-steroid/markers`). So in the container the home is always `/home/agent/.mcp-steroid` and we never
+ * set `DEVRIG_HOME`. Only its small `logs` dir is bind-mounted out to the host run-dir (see [create]).
+ */
+const val DEVRIG_GUEST_HOME: String = "/home/agent/.mcp-steroid"
+const val DEVRIG_GUEST_LOGS_DIR: String = "$DEVRIG_GUEST_HOME/logs"
+
 data class DevrigContainerOpts(
     val consoleTitle: String,
     val dockerFileBase: String = "managed-backend-host",
@@ -28,13 +37,6 @@ data class DevrigContainerOpts(
      * [com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver.cloneFromCachedBare] instead of a full network fetch.
      */
     val mountRepoCache: Boolean = false,
-    /**
-     * When set, bind-mount a host dir at this guest path so devrig's DEBUG log files land on a host-readable
-     * location (e.g. `"/tmp/mcp-home/logs"` — devrig's `DEVRIG_HOME/logs`). The heavy `DEVRIG_HOME` (the
-     * downloaded IDE, caches) stays container-only so it doesn't bloat the run-dir artifacts; only the small
-     * logs dir is exposed. The host dir is `<runDir>/devrig-logs` — pass it to [streamDevrigLogsToConsole].
-     */
-    val devrigLogsHostMountGuestPath: String? = null,
 )
 
 class DevrigContainer(
@@ -62,7 +64,8 @@ class DevrigContainer(
         script: String,
         timeoutSeconds: Long = 120,
     ): ProcessResult {
-        console.writeHeader(description)
+        // A per-command STEP, not a full header banner — the test writes the single header for the whole run.
+        console.writeStep(description)
 
         val wrappedScript = """
         set -euo pipefail
@@ -207,15 +210,17 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
             // so the mount source always exists (no silent skip on a missing dir).
             add(ContainerVolume(IdeTestFolders.repoCacheDir, "/repo-cache", "ro"))
         }
-        opts.devrigLogsHostMountGuestPath?.let { guestLogsPath ->
-            val hostLogs = File(runDir, "devrig-logs").also {
-                it.mkdirs()
-                // a+rwx so the in-container `agent` (uid 1000) can write log files through the bind mount
-                // on Linux CI (no UID remap); macOS virtiofs maps the uid transparently.
-                it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
-            }
-            add(ContainerVolume(hostLogs, guestLogsPath, "rw"))
+        // ALWAYS bind-mount ONLY devrig's logs dir out to THIS RUN's folder (`<runDir>/devrig-logs`) — never
+        // to the host's real `~/.mcp-steroid` (would trigger a macOS trust prompt and pollute the user's
+        // home), and never the whole home (the multi-GB downloaded IDE + caches would make a bind mount far
+        // too slow). The JVM-side monitor ([streamDevrigLogsToConsole]) tails these files directly.
+        val hostLogs = File(runDir, "devrig-logs").also {
+            it.mkdirs()
+            // a+rwx so the in-container `agent` (uid 1000) can write log files through the bind mount
+            // on Linux CI (no UID remap); macOS virtiofs maps the uid transparently.
+            it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
         }
+        add(ContainerVolume(hostLogs, DEVRIG_GUEST_LOGS_DIR, "rw"))
     }
 
     val containerEnv = buildMap<String, String> {
@@ -223,6 +228,7 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
         // pick a FREE, PID-seeded JDWP port from the published 23900-23999 range, so the concurrent devrig
         // processes a managed-backend test spawns (mpc + backend download/start + the agent's CLI calls)
         // never clash on a port. quiet=y/suspend=n keep stdout clean and never block. See bin/devrig.
+        // We do NOT set DEVRIG_HOME — devrig's home is always `~/.mcp-steroid` (= DEVRIG_GUEST_HOME).
         put("DEVRIG_DEBUG", "1")
     }
 
@@ -246,19 +252,6 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
     val gui = setupGuiContainerServices(lifetime, container, opts.layoutManager, containerMountedPath, realConsoleTitle)
     val console = gui.console
     container = gui.container
-
-    // Bind-mounting a nested guest path (e.g. /tmp/mcp-home/logs) makes docker create the parent
-    // (/tmp/mcp-home) owned by root, which would block the `agent` user from creating sibling dirs
-    // (downloads, backends, caches). Make the parent world-writable so devrig (run as agent) can use it.
-    opts.devrigLogsHostMountGuestPath?.let { guestLogsPath ->
-        val parent = guestLogsPath.substringBeforeLast('/').ifEmpty { "/" }
-        container.startProcessInContainer {
-            args("chmod", "0777", parent)
-                .user("root")
-                .description("make devrig home parent ($parent) agent-writable")
-                .quietly()
-        }.awaitForProcessFinish().assertExitCode(0) { "chmod 0777 $parent" }
-    }
 
     console.writeInfo("Preparing devrig...")
 
