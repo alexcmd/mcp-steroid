@@ -22,10 +22,12 @@ import kotlinx.coroutines.runBlocking
  * devrig's home is hardcoded to `~/.mcp-steroid` (NOT overridable — see `docs/devrig-deployment-spec.md`,
  * and note that even with the `DEVRIG_HOME` override, the backend markers always stay under
  * `~/.mcp-steroid/markers`). So in the container the home is always `/home/agent/.mcp-steroid` and we never
- * set `DEVRIG_HOME`. Only its small `logs` dir is bind-mounted out to the host run-dir (see [create]).
+ * set `DEVRIG_HOME`. Its `logs` dir is bind-mounted to the run-dir and its `downloads` dir to the shared
+ * IDE-archive cache (see [create]); the rest of the home stays inside the container.
  */
 const val DEVRIG_GUEST_HOME: String = "/home/agent/.mcp-steroid"
 const val DEVRIG_GUEST_LOGS_DIR: String = "$DEVRIG_GUEST_HOME/logs"
+const val DEVRIG_GUEST_DOWNLOADS_DIR: String = "$DEVRIG_GUEST_HOME/downloads"
 
 data class DevrigContainerOpts(
     val consoleTitle: String,
@@ -221,6 +223,15 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
             it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
         }
         add(ContainerVolume(hostLogs, DEVRIG_GUEST_LOGS_DIR, "rw"))
+
+        // Bind-mount the shared host IDE-archive cache ([IdeTestFolders.ideDownloadDir], the same dir the
+        // IDE-image download uses) RW at devrig's downloads dir. The first managed-backend run downloads the
+        // ~1.5GB IDE archive into it; subsequent runs (and the IDE-image build) reuse it via IdeDownloader's
+        // skip-if-exists. RW so the cache self-populates. IdeDownloader names archives `<hash>-<filename>`
+        // (hash of URL + checksum), so Community and Ultimate — which BOTH ship as `idea-<version>.tar.gz` —
+        // never collide in this shared dir.
+        val ideDownloadsCache = IdeTestFolders.ideDownloadDir.also { it.mkdirs() }
+        add(ContainerVolume(ideDownloadsCache, DEVRIG_GUEST_DOWNLOADS_DIR, "rw"))
     }
 
     val containerEnv = buildMap<String, String> {

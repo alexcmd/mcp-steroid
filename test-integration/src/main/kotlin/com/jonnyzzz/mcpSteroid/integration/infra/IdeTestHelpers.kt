@@ -104,6 +104,14 @@ object IdeTestFolders {
         ?.let { File(it).also { dir -> dir.mkdirs() } }
         ?: error("Failed to configure repo cache directory, set \"test.integration.repo.cache.dir\" ")
 
+    /**
+     * Host directory caching IDE archives (e.g. `ideaIC-<version>.tar.gz`). Shared by the IDE-image
+     * download and the devrig managed-backend downloads RW-mount — an archive fetched by either is reused
+     * by the other (IdeDownloader skips when the file already exists). Created on first use.
+     * Set via `test.integration.ide.download.dir` (default `build/ide-download`).
+     */
+    val ideDownloadDir: File = File(System.getProperty("test.integration.ide.download.dir", "build/ide-download"))
+
     val testOutputDir = remapPathForDockerHost(
         readFilePathFromSystemProperties("test.integration.testOutput"),
         System.getenv(DOCKER_HOST_PATH_MAP_ENV),
