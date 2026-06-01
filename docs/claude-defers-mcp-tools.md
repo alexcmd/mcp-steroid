@@ -55,6 +55,24 @@ The IDE integration then *appears absent* even though it is connected.
 3. **Tests**: prime a forced-`ToolSearch` setup turn before measuring, or treat the tool-adoption checks
    as prompt-quality signals (the IMPROVEMENTS harness) rather than hard stability gates.
 
+## Validation: strengthening the prompt is necessary but NOT sufficient
+
+After rewriting the server `instructions` (`mcp-steroid-info.md`) to demand "access the IDE via the
+`steroid_*` tools; load them with `ToolSearch` first; never say NO_IDE_ACCESS before trying them",
+`checkWhatYouSee claude` **still failed identically**: `mcp_servers: pending`, no `steroid_*` in the
+initial tool list, **zero tool calls**, `NO_IDE_ACCESS`.
+
+Why: the server `instructions` are returned in the **`initialize` response**, which lands only *after*
+the MCP connection completes — but claude answers the 1-turn prompt **while the connection is still
+`pending`**, so the improved instructions are not yet in its context when it bails. The prompt change
+still helps the paths where claude *does* connect + read (production interactive sessions, and the
+forcing test prompts), but it cannot fix the pre-connection bail.
+
+**The actual lever is the deferral (#1):** get the `steroid_*` tools into claude's *initial* tool list
+(prevent deferral / eager-load this server), or make claude wait for the MCP connection before its first
+turn. For the tests specifically, a connection-readiness gate (prime a forced tool call until it succeeds)
+would also remove the race.
+
 ## Evidence pointers
 
 - Server requests by client: `claude-code/2.1.159`, `codex-mcp-client`, `gemini-cli-mcp-client`, `curl`
