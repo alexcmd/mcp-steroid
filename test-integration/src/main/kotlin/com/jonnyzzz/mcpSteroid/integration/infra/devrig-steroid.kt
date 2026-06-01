@@ -56,15 +56,17 @@ class DevrigSteroidDriver(
                     fi
                     export DEVRIG_JAVA_HOME
                     export PATH="$DEVRIG_JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
-                    # JDWP for the devrig JVM. DEVRIG_OPTS is the Gradle-app opts var (only the
-                    # devrig launch reads it -> no leak into child JVMs / no double-bind). quiet=y
-                    # keeps the agent's own "Listening ..." line OFF stdout: `devrig mpc` speaks
-                    # JSON-RPC on stdout, so a stray line would corrupt the protocol. The host-side
-                    # print (mapped port) stands in for the suppressed line.
-                    # MUST stay suspend=n (:test-integration + :test-experiments): suspend=y would
-                    # block devrig before it starts the MCP server, hanging the whole test on CI
-                    # where nobody attaches. NEVER flip to suspend=y.
-                    export DEVRIG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,quiet=y,address=*:$${DEVRIG_DEBUG_PORT.containerPort} ${DEVRIG_OPTS:-}"
+                    # JDWP ONLY for the long-lived `mpc` server. The agent binds a FIXED port (server=y,
+                    # address=*:PORT), so attaching it to throwaway commands like `--version` collides with
+                    # a running `mpc` and dies with "Address already in use" (JDWP TRANSPORT_INIT) — exactly
+                    # what broke the deploy-time `--version` check. quiet=y keeps the agent's "Listening ..."
+                    # line OFF stdout (`devrig mpc` speaks JSON-RPC there); the host-side print (mapped port)
+                    # stands in for it. MUST stay suspend=n (:test-integration + :test-experiments): suspend=y
+                    # would block devrig before it starts the MCP server, hanging the whole test on CI where
+                    # nobody attaches. NEVER flip to suspend=y.
+                    if [ "${1:-}" = "mpc" ]; then
+                      export DEVRIG_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,quiet=y,address=*:$${DEVRIG_DEBUG_PORT.containerPort} ${DEVRIG_OPTS:-}"
+                    fi
                     exec /home/agent/devrig-cli/app/bin/devrig "$@"
                     EOF
                     chmod +x "$$launcherPath"

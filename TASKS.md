@@ -3710,3 +3710,28 @@ products**. This disclosure has to appear everywhere, consistently:
 Wording: "MCP Steroid / Devrig are independent open-source projects and are not affiliated with, endorsed
 by, or made by JetBrains." (final wording TBD). Add a release-checklist item + a build-time guard/test
 where feasible so a release can't ship without the disclosure. **Backlog — revisit later.**
+
+## TODO — devrig ↔ MCP Steroid plugin protocol compatibility (forward-compat from next release)
+
+From the **next release onward**, the devrig binary must stay compatible with **all** versions of the MCP
+Steroid plugin it talks to. Constraints:
+- **Additive only:** new parameters may be added, but **existing parameters must keep working** — never
+  remove/rename/repurpose a field or change its type. Graceful **service degradation** is acceptable (an
+  older plugin ignores a new param / a newer devrig copes with a missing field), but the protocol must
+  still function end-to-end.
+- **Highest-risk surface:** the **tool-call parameters devrig sends to the plugin** and the
+  **serialization/deserialization** of those JSON-RPC messages (tool args + results). A silent shape
+  change there is the likely break.
+
+What to set up (revisit after the current devrig tasks):
+1. **Contract tests** pinning the wire shape of every tool call devrig issues to the plugin (exact param
+   names/types) + the result deserialization — golden JSON, decoded with the plugin's serializers. A diff
+   fails the build, forcing a conscious, additive-only change.
+2. **A cross-version test** (devrig HEAD ↔ an older plugin build, and vice-versa) once we have a baseline
+   release to pin against — only meaningful from the next release.
+3. **AGENTS.md/CLAUDE.md guidance** (devrig + plugin): "the devrig↔plugin JSON-RPC tool params + result
+   serialization are a frozen, additive-only contract; never remove/rename/retype a field; new fields must
+   be optional with safe defaults; changes require a contract-test update + a conscious review."
+4. Audit the current `@Serializable` request/result types on both sides for accidental non-additive
+   patterns (required fields without defaults, enums parsed strictly, etc.).
+**Backlog — start after the devrig test fixes (#19–#22).**
