@@ -221,7 +221,7 @@ class JdkTableIntegrationTest {
             val a = actual.getValue(name)
             assertEquals(e.homePath, a.homePath, "homePath differs for '$name'")
             assertEquals(e.version, a.version,
-                "version differs for '$name' (compared without arch suffix)")
+                "version number differs for '$name' (normalized from IntelliJ's nondeterministic display string)")
             assertEquals(e.classRoots, a.classRoots,
                 "classPath roots differ for '$name' (sorted)")
             assertEquals(e.sourceRoots, a.sourceRoots,
@@ -287,6 +287,15 @@ private data class JdkModel(
     val annotationRoots: List<String>,
 )
 
+/**
+ * Reduce any IntelliJ/our JDK version display string to its bare version number for comparison.
+ * Handles "Eclipse Temurin 21.0.11", "Eclipse Temurin 21.0.11 - aarch64", `java version "21.0.11"`,
+ * and JDK-8 forms like "Eclipse Temurin 1.8.0_492". Returns the first `N(.N)*(_N)?` token, or the raw
+ * string if none is present.
+ */
+private fun normalizeJdkVersion(raw: String): String =
+    Regex("""\d+(?:\.\d+)*(?:_\d+)?""").find(raw)?.value ?: raw
+
 /** Parse a jdk.table.xml string into a name -> [JdkModel] map for semantic comparison. */
 private fun parseJdkTableModel(xml: String): Map<String, JdkModel> {
     val doc = SAXBuilder().build(StringReader(xml))
@@ -297,8 +306,13 @@ private fun parseJdkTableModel(xml: String): Map<String, JdkModel> {
         val roots = jdk.getChild("roots")
         JdkModel(
             homePath = jdk.attrValue("homePath"),
-            // Drop IntelliJ's trailing arch suffix (" - aarch64") — our generator omits it on purpose.
-            version = jdk.attrValue("version").substringBefore(" - "),
+            // IntelliJ's SDK version *display string* is nondeterministic: the release-file form
+            // "Eclipse Temurin 21.0.11 - aarch64" when JdkVersionDetector reads the JDK's `release` file,
+            // or the `java -version` fallback `java version "21.0.11"` when that detection doesn't win the
+            // race. Both — and our generator's "Eclipse Temurin 21.0.11" — encode the same version NUMBER,
+            // which is the meaningful invariant (the display string is re-detected by the IDE anyway).
+            // Compare the version number, not the formatted string.
+            version = normalizeJdkVersion(jdk.attrValue("version")),
             classRoots = roots.rootUrls("classPath"),
             sourceRoots = roots.rootUrls("sourcePath").toSet(),
             annotationRoots = roots.rootUrls("annotationsPath"),
