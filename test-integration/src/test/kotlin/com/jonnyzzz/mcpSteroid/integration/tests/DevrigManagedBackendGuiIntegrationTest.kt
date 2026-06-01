@@ -79,8 +79,15 @@ class DevrigManagedBackendGuiIntegrationTest {
                 grep -F -- "-Didea.system.path=/tmp/mcp-home/caches/$$id/system" "$vmoptions"
                 grep -F -- "-Didea.log.path=/tmp/mcp-home/caches/$$id/logs" "$vmoptions"
                 grep -F -- "-Didea.plugins.path=/tmp/mcp-home/caches/$$id/plugins" "$vmoptions"
-                grep -F -- "-Dmcp.steroid.updates.enabled=false" "$vmoptions"
-                grep -F -- "-Dmcp.steroid.analytics.enabled=false" "$vmoptions"
+                # A managed backend behaves like a normal install for updates/analytics — devrig must NOT
+                # inject the disabling flags (commit 4f36412e "let managed backends report analytics and
+                # check for updates"). Assert their ABSENCE so the product decision can't silently regress.
+                if grep -qF -- "-Dmcp.steroid.updates.enabled=false" "$vmoptions"; then
+                  echo "managed backend vmoptions must NOT disable mcp.steroid updates" >&2; exit 1
+                fi
+                if grep -qF -- "-Dmcp.steroid.analytics.enabled=false" "$vmoptions"; then
+                  echo "managed backend vmoptions must NOT disable mcp.steroid analytics" >&2; exit 1
+                fi
                 grep -F -- "-Dmcp.steroid.idea.description.enabled=false" "$vmoptions"
                 grep -F -- "-Dmcp.steroid.dialog.killer.enabled=true" "$vmoptions"
                 grep -F -- "-Dmcp.steroid.storage.path=/tmp/mcp-home/caches/$$id/execution-storage" "$vmoptions"
