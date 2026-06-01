@@ -39,15 +39,23 @@ class DevrigSteroidDriver(
                     cat > "$$launcherPath" <<'EOF'
                     #!/usr/bin/env bash
                     set -eu
-                    # devrig is built with jvmToolchain(25) -> class-file v69, so it needs a
-                    # JDK/JRE 25 to launch. Do NOT inherit the container's JAVA_HOME: the IDE
-                    # image pins it to java-21 for project SDKs, which fails devrig with
-                    # UnsupportedClassVersionError. Resolve a Temurin 25 explicitly; the glob
-                    # matches temurin-25-jdk-<arch> (ide-base) and temurin-25-jre-<arch>
-                    # (agent-cli), on both amd64 (CI) and arm64 (local mac).
-                    java25="$(ls -d /usr/lib/jvm/temurin-25-* 2>/dev/null | head -1)"
-                    export JAVA_HOME="${DEVRIG_JAVA_HOME:-${java25:-${JAVA_HOME:-}}}"
-                    export PATH="$JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+                    # devrig needs Java 25 (class-file v69); the IDE image pins JAVA_HOME to java-21 for
+                    # project SDKs. Resolve the container's Java 25 here (container-specific) and hand it to
+                    # devrig via DEVRIG_JAVA_HOME — the devrig launcher itself applies it to JAVA_HOME (that
+                    # generic knob now lives in the product start script, not this harness). Pick the first
+                    # temurin-25 (jdk preferred, then jre) that actually has bin/java — covers amd64 (CI) +
+                    # arm64 (local); FAIL LOUDLY if none, rather than silently launching on java-21.
+                    if [ -z "${DEVRIG_JAVA_HOME:-}" ]; then
+                      for cand in /usr/lib/jvm/temurin-25-jdk-* /usr/lib/jvm/temurin-25-jre-* /usr/lib/jvm/temurin-25-*; do
+                        if [ -x "$cand/bin/java" ]; then DEVRIG_JAVA_HOME="$cand"; break; fi
+                      done
+                    fi
+                    if [ -z "${DEVRIG_JAVA_HOME:-}" ] || [ ! -x "${DEVRIG_JAVA_HOME}/bin/java" ]; then
+                      echo "devrig launcher: no Java 25 found (set DEVRIG_JAVA_HOME). devrig is class-file v69 and needs Java 25." >&2
+                      exit 1
+                    fi
+                    export DEVRIG_JAVA_HOME
+                    export PATH="$DEVRIG_JAVA_HOME/bin:/home/agent/devrig-cli/app/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
                     # JDWP for the devrig JVM. DEVRIG_OPTS is the Gradle-app opts var (only the
                     # devrig launch reads it -> no leak into child JVMs / no double-bind). quiet=y
                     # keeps the agent's own "Listening ..." line OFF stdout: `devrig mpc` speaks

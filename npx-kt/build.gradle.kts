@@ -177,6 +177,31 @@ tasks.startScripts {
     doFirst {
         outputDir?.deleteRecursively()
     }
+    doLast {
+        // Backport the generic DEVRIG_JAVA_HOME knob into devrig's own unix launcher: devrig is
+        // class-file v69 (jvmToolchain 25) and must launch on Java 25. Honouring DEVRIG_JAVA_HOME lets a
+        // caller point devrig at a Java 25 home WITHOUT touching the caller's JAVA_HOME (e.g. an
+        // environment whose default `java` is older). Generic + non-breaking: overrides only when set; the
+        // standard JAVA_HOME/PATH resolution below is otherwise untouched. Fail-fast if the Gradle
+        // template moves the injection marker, so we never silently ship the default script unpatched.
+        val marker = "# Determine the Java command to use to start the JVM."
+        val script = unixScript
+        val text = script.readText()
+        require(text.contains(marker)) {
+            "devrig unix start-script template changed: DEVRIG_JAVA_HOME injection marker not found in " +
+                "${script.absolutePath}. Update the marker in npx-kt/build.gradle.kts."
+        }
+        val injected = buildString {
+            appendLine("# devrig requires Java 25 (class-file v69). DEVRIG_JAVA_HOME overrides the JVM used to")
+            appendLine("# launch devrig, without changing the caller's JAVA_HOME. Applied only when set.")
+            appendLine("if [ -n \"\${DEVRIG_JAVA_HOME:-}\" ] ; then")
+            appendLine("    JAVA_HOME=\"\$DEVRIG_JAVA_HOME\"")
+            appendLine("fi")
+            appendLine()
+            append(marker)
+        }
+        script.writeText(text.replaceFirst(marker, injected))
+    }
 }
 
 // Provider<File> for the resolved plugin zip — derived from `Configuration.elements`
