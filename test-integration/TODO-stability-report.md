@@ -63,6 +63,14 @@ WhatYouSee (describeMcp ×3, executeCodeViaMcp ×3, checkWhatYouSee codex+gemini
 Note: the agent-behavior failures (checkWhatYouSee, FindDuplicates, MavenRunnerAdoption) measure LLM
 tool-adoption and are inherently nondeterministic; they are prompt-quality signals, not infra/stability bugs.
 
+**Adoption tests after the `mcp-steroid-info.md` improvement (mainline HTTP-MCP):** re-ran
+`FindDuplicates` + `MavenRunnerAdoption` against the strengthened server instructions. `find-duplicates
+codex` PASSES; `find-duplicates` claude/gemini and `MavenRunnerAdoption` claude **still FAIL**. So the
+stronger instructions fix *direct* IDE access (checkWhatYouSee) but do NOT change *natural recipe
+discovery* for a complex task — claude/gemini still reach for native Read/Grep/`bash mvn` (Claude
+deferral + native-tool preference). These remain genuine **prompt-quality/adoption signals** (belong in the
+IMPROVEMENTS harness), not stability bugs; forcing the prompt would defeat what they measure.
+
 ## Batch B stability analysis (agent tests) — root cause + plan
 
 The dominant flakiness driver is **unreliable MCP tool-schema loading**, not infra:
