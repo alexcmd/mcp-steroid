@@ -7,11 +7,13 @@ import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyFromContainer
 import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
+import com.jonnyzzz.mcpSteroid.testHelper.docker.readFromContainer
 import com.jonnyzzz.mcpSteroid.testHelper.runWithCloseableStack
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.TimeUnit
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -63,39 +65,55 @@ class DevrigManagedBackendGuiIntegrationTest {
         ).stdout.trim()
         assertTrue(Regex("""idea-community-\d+\.\d+.*""").matches(id), id)
 
-        container.execAndAssert(
-            description = "assert managed backend files",
+        // Structural checks (file/dir existence, backend.json shape) stay in shell; the script's only
+        // stdout is the resolved .vmoptions path, which we then read into the JVM and assert on in Kotlin.
+        val vmOptionsPath = container.execAndAssert(
+            description = "assert managed backend structural files + resolve vmoptions path",
             script = $$"""
                 set -euo pipefail
                 backend_dir="/tmp/mcp-home/backends/$$id"
                 bundle="$(find "$backend_dir" -mindepth 1 -maxdepth 1 -type d | head -1)"
                 test -n "$bundle"
                 test -f "$backend_dir/backend.json"
-                jq -e --arg id "$$id" '.id == $id and .productKey == "idea-community" and (.launcherPath | length > 0)' "$backend_dir/backend.json"
+                jq -e --arg id "$$id" '.id == $id and .productKey == "idea-community" and (.launcherPath | length > 0)' "$backend_dir/backend.json" >/dev/null
                 test -f "$bundle/product-info.json" -o -f "$bundle/Contents/Resources/product-info.json"
-                vmoptions="$backend_dir/$(basename "$bundle").vmoptions"
-                test -f "$vmoptions"
-                grep -F -- "-Didea.config.path=/tmp/mcp-home/caches/$$id/config" "$vmoptions"
-                grep -F -- "-Didea.system.path=/tmp/mcp-home/caches/$$id/system" "$vmoptions"
-                grep -F -- "-Didea.log.path=/tmp/mcp-home/caches/$$id/logs" "$vmoptions"
-                grep -F -- "-Didea.plugins.path=/tmp/mcp-home/caches/$$id/plugins" "$vmoptions"
-                # A managed backend behaves like a normal install for updates/analytics — devrig must NOT
-                # inject the disabling flags (commit 4f36412e "let managed backends report analytics and
-                # check for updates"). Assert their ABSENCE so the product decision can't silently regress.
-                if grep -qF -- "-Dmcp.steroid.updates.enabled=false" "$vmoptions"; then
-                  echo "managed backend vmoptions must NOT disable mcp.steroid updates" >&2; exit 1
-                fi
-                if grep -qF -- "-Dmcp.steroid.analytics.enabled=false" "$vmoptions"; then
-                  echo "managed backend vmoptions must NOT disable mcp.steroid analytics" >&2; exit 1
-                fi
-                grep -F -- "-Dmcp.steroid.idea.description.enabled=false" "$vmoptions"
-                grep -F -- "-Dmcp.steroid.dialog.killer.enabled=true" "$vmoptions"
-                grep -F -- "-Dmcp.steroid.storage.path=/tmp/mcp-home/caches/$$id/execution-storage" "$vmoptions"
-                grep -F -- "-Djb.consents.confirmation.enabled=false" "$vmoptions"
                 test -d "/tmp/mcp-home/caches/$$id/plugins/mcp-steroid/lib"
                 test -f "/tmp/mcp-home/caches/$$id/plugins/mcp-steroid/EULA"
+                vmoptions="$backend_dir/$(basename "$bundle").vmoptions"
+                test -f "$vmoptions"
+                echo "$vmoptions"
             """.trimIndent(),
+        ).stdout.trim()
+
+        // Assert the .vmoptions CONTENT in Kotlin — clearer failures than a shell `grep` whose only
+        // signal is a non-zero exit code with no indication of which line was missing.
+        val vmOptions = container.scope.readFromContainer(vmOptionsPath)
+        val vmOptionLines = vmOptions.lines().map { it.trim() }
+        val cacheBase = "/tmp/mcp-home/caches/$id"
+        val requiredVmOptions = listOf(
+            "-Didea.config.path=$cacheBase/config",
+            "-Didea.system.path=$cacheBase/system",
+            "-Didea.log.path=$cacheBase/logs",
+            "-Didea.plugins.path=$cacheBase/plugins",
+            "-Dmcp.steroid.idea.description.enabled=false",
+            "-Dmcp.steroid.dialog.killer.enabled=true",
+            "-Dmcp.steroid.storage.path=$cacheBase/execution-storage",
+            "-Djb.consents.confirmation.enabled=false",
         )
+        requiredVmOptions.forEach { expected ->
+            assertTrue(expected in vmOptionLines) {
+                "managed backend vmoptions missing line: $expected\n--- $vmOptionsPath ---\n$vmOptions"
+            }
+        }
+        // A managed backend behaves like a normal install for updates/analytics — devrig production must
+        // NOT inject the disabling flags (commit 4f36412e "let managed backends report analytics and check
+        // for updates"). Assert their ABSENCE so the product decision can't silently regress.
+        listOf("-Dmcp.steroid.updates.enabled=false", "-Dmcp.steroid.analytics.enabled=false").forEach { forbidden ->
+            assertFalse(forbidden in vmOptionLines) {
+                "managed backend vmoptions must NOT disable updates/analytics in production: found $forbidden\n" +
+                    "--- $vmOptionsPath ---\n$vmOptions"
+            }
+        }
 
         val start = container.execAndAssertWithConsoleStream(
             description = "start IDEA Community managed backend",

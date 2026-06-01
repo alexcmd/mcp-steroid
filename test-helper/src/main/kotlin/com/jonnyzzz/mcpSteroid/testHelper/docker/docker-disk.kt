@@ -50,6 +50,24 @@ fun ContainerDriver.copyToContainer(localPath: File, containerPath: String) {
 }
 
 /**
+ * Read the text content of [containerPath] into the test JVM. Implemented over [copyFromContainer] —
+ * the file is staged to a host temp file then read — so there is no content-size limit and it
+ * transparently uses direct host-filesystem access when the path is under a bind mount (no
+ * `docker exec`/`cat`). Prefer this over a shell `grep`/`cat` exec when a test needs to assert on a
+ * container file's content: the assertions run in Kotlin with clear failure messages instead of a
+ * cryptic non-zero exit code.
+ */
+fun ContainerDriver.readFromContainer(containerPath: String): String {
+    val tmp = File.createTempFile("read-from-container-", ".tmp")
+    try {
+        copyFromContainer(containerPath, tmp)
+        return tmp.readText()
+    } finally {
+        tmp.delete()
+    }
+}
+
+/**
  * Write [content] to [containerPath]. Implemented over [copyToContainer] — a host temp file is
  * staged then copied in — so there is no content-size limit and it transparently uses direct
  * host-filesystem access when the path is under a bind mount (no `docker exec`/heredoc).
