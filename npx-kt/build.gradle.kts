@@ -178,29 +178,48 @@ tasks.startScripts {
         outputDir?.deleteRecursively()
     }
     doLast {
-        // Backport the generic DEVRIG_JAVA_HOME knob into devrig's own unix launcher: devrig is
-        // class-file v69 (jvmToolchain 25) and must launch on Java 25. Honouring DEVRIG_JAVA_HOME lets a
-        // caller point devrig at a Java 25 home WITHOUT touching the caller's JAVA_HOME (e.g. an
-        // environment whose default `java` is older). Generic + non-breaking: overrides only when set; the
-        // standard JAVA_HOME/PATH resolution below is otherwise untouched. Fail-fast if the Gradle
-        // template moves the injection marker, so we never silently ship the default script unpatched.
-        val marker = "# Determine the Java command to use to start the JVM."
-        val script = unixScript
-        val text = script.readText()
-        require(text.contains(marker)) {
-            "devrig unix start-script template changed: DEVRIG_JAVA_HOME injection marker not found in " +
-                "${script.absolutePath}. Update the marker in npx-kt/build.gradle.kts."
+        // Backport generic devrig knobs into devrig's OWN launchers (unix + windows), not the test harness:
+        //  - DEVRIG_JAVA_HOME overrides JAVA_HOME — devrig is class-file v69 (jvmToolchain 25) and must
+        //    launch on Java 25; this lets a caller point devrig at a Java 25 without touching the caller's
+        //    JAVA_HOME (e.g. an environment whose default `java` is older).
+        //  - DEVRIG_JVM_OPTS appends JVM options for the devrig launch (folded into the Gradle app opts
+        //    var DEVRIG_OPTS, which both launchers already pass to the JVM).
+        // Both are generic + non-breaking — applied only when set; the standard resolution is otherwise
+        // untouched. Fail-fast if a Gradle template marker moves, so we never ship the default unpatched.
+
+        // Unix launcher (bin/devrig): inject before the standard Java-command resolution.
+        run {
+            val marker = "# Determine the Java command to use to start the JVM."
+            val text = unixScript.readText()
+            require(text.contains(marker)) {
+                "devrig unix start-script template changed: injection marker not found in ${unixScript.absolutePath}."
+            }
+            val inject = buildString {
+                appendLine("# devrig: Java 25 (class-file v69). DEVRIG_JAVA_HOME overrides JAVA_HOME; DEVRIG_JVM_OPTS")
+                appendLine("# appends JVM options. Both only when set; the caller's environment is left untouched.")
+                appendLine("if [ -n \"\${DEVRIG_JAVA_HOME:-}\" ] ; then JAVA_HOME=\"\$DEVRIG_JAVA_HOME\" ; fi")
+                appendLine("if [ -n \"\${DEVRIG_JVM_OPTS:-}\" ] ; then DEVRIG_OPTS=\"\${DEVRIG_OPTS:-} \$DEVRIG_JVM_OPTS\" ; fi")
+                appendLine()
+                append(marker)
+            }
+            unixScript.writeText(text.replaceFirst(marker, inject))
         }
-        val injected = buildString {
-            appendLine("# devrig requires Java 25 (class-file v69). DEVRIG_JAVA_HOME overrides the JVM used to")
-            appendLine("# launch devrig, without changing the caller's JAVA_HOME. Applied only when set.")
-            appendLine("if [ -n \"\${DEVRIG_JAVA_HOME:-}\" ] ; then")
-            appendLine("    JAVA_HOME=\"\$DEVRIG_JAVA_HOME\"")
-            appendLine("fi")
-            appendLine()
-            append(marker)
+
+        // Windows launcher (devrig.bat): inject before the standard JAVA_HOME check.
+        run {
+            val marker = "if defined JAVA_HOME goto findJavaFromJavaHome"
+            val text = windowsScript.readText()
+            require(text.contains(marker)) {
+                "devrig windows start-script template changed: injection marker not found in ${windowsScript.absolutePath}."
+            }
+            val inject = buildString {
+                appendLine("@rem devrig: DEVRIG_JAVA_HOME overrides JAVA_HOME; DEVRIG_JVM_OPTS appends JVM options. Only when set.")
+                appendLine("if not \"%DEVRIG_JAVA_HOME%\"==\"\" set \"JAVA_HOME=%DEVRIG_JAVA_HOME%\"")
+                appendLine("if not \"%DEVRIG_JVM_OPTS%\"==\"\" set \"DEVRIG_OPTS=%DEVRIG_OPTS% %DEVRIG_JVM_OPTS%\"")
+                append(marker)
+            }
+            windowsScript.writeText(text.replaceFirst(marker, inject))
         }
-        script.writeText(text.replaceFirst(marker, injected))
     }
 }
 
