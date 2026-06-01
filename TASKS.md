@@ -3734,4 +3734,13 @@ What to set up (revisit after the current devrig tasks):
    be optional with safe defaults; changes require a contract-test update + a conscious review."
 4. Audit the current `@Serializable` request/result types on both sides for accidental non-additive
    patterns (required fields without defaults, enums parsed strictly, etc.).
-**Backlog — start after the devrig test fixes (#19–#22).**
+5. **Deferred from the #21 protocol split (commit 0bcc91f0):** today devrig still *reuses the plugin's own*
+   classes from `mcp-steroid-server` — `PidMarker`, `DevrigEndpointInfo`, the bridge tool-call request/result
+   DTOs — decoding tolerantly (`ignoreUnknownKeys` + null-default optional fields). For true independent
+   versioning, give devrig its **own** marker + bridge request/result DTOs (a devrig-side copy), so the two
+   evolve independently and only the JSON wire shape is shared. The #21 marker change already made the
+   optional sub-objects null-defaulted so old/new markers decode — that is the tolerant-decode baseline to
+   build the dedicated DTOs on.
+
+**Backlog — start after the devrig test fixes (#19–#22, now done). Remaining devrig work first: DEVRIG_DEBUG
+free-port range (#24) + re-running the devrig integration suite (#27).**
