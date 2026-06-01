@@ -261,6 +261,7 @@ internal fun downloadFile(url: String, dest: File) {
                 append = append,
                 existingBytes = if (append) resumeOffset else 0L,
                 totalBytes = totalBytes,
+                displayName = dest.name,
             )
             val expectedBytesThisResponse = connection.contentLengthLong
             if (expectedBytesThisResponse >= 0L && bytesReadThisResponse != expectedBytesThisResponse) {
@@ -297,6 +298,7 @@ private fun writeDownloadResponse(
     append: Boolean,
     existingBytes: Long,
     totalBytes: Long,
+    displayName: String,
 ): Long {
     var bytesReadThisResponse = 0L
     var bytesSinceForce = 0L
@@ -325,7 +327,7 @@ private fun writeDownloadResponse(
                     // "[IDE-DOWNLOAD]" prefix. MUST go to stderr, never stdout: this can run inside
                     // `devrig mpc`, where stdout is the JSON-RPC channel and a stray byte corrupts the MCP
                     // protocol. The one-time milestones below/above stay on the logger (log file + --debug).
-                    System.err.println("Downloading IDE: ${downloaded / 1024 / 1024} MB$progress")
+                    System.err.println("Downloading $displayName: ${downloaded / 1024 / 1024} MB$progress")
                     lastPrinted = now
                 }
             }
