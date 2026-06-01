@@ -2,14 +2,12 @@
 package com.jonnyzzz.mcpSteroid.integration.tests
 
 import com.jonnyzzz.mcpSteroid.integration.infra.ConsoleAwareAgentSession
-import com.jonnyzzz.mcpSteroid.integration.infra.DEVRIG_GUEST_HOME
 import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainer
 import com.jonnyzzz.mcpSteroid.integration.infra.DevrigContainerOpts
 import com.jonnyzzz.mcpSteroid.integration.infra.IdeTestFolders
 import com.jonnyzzz.mcpSteroid.integration.infra.create
 import com.jonnyzzz.mcpSteroid.integration.infra.streamDevrigLogsToConsole
 import com.jonnyzzz.mcpSteroid.testHelper.DockerClaudeSession
-import com.jonnyzzz.mcpSteroid.testHelper.docker.copyToContainer
 import com.jonnyzzz.mcpSteroid.testHelper.git.BareRepoCache
 import com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -33,7 +31,7 @@ import org.junit.jupiter.api.Timeout
  *    the `mcp-steroid` tools to open Keycloak and find usages of a chosen symbol.
  *
  * Heaviest test in the suite: full IDE download + Keycloak clone + indexing + an agent turn. The managed
- * IDEA archive is pre-staged from the host cache for speed (see [stageCachedIdeaArchive]).
+ * IDEA archive is cached on the host across runs (DevrigContainer RW-mounts the shared IDE download cache).
  *
  * ```
  * ./gradlew :test-integration:test --tests '*DevrigManagedBackendAgentE2ETest*'
@@ -81,8 +79,6 @@ class DevrigManagedBackendAgentE2ETest {
             """.trimIndent(),
         )
         console.writeSuccess("Keycloak checked out at $projectDirInContainer")
-
-        stageCachedIdeaArchive(container)
 
         console.writeStep("devrig install claude (register devrig mpc as the mcp-steroid MCP server)")
         container.execAndAssertWithConsoleStream(
@@ -173,36 +169,6 @@ class DevrigManagedBackendAgentE2ETest {
         appendLine("DEVRIG_IDE_STARTED: yes")
         appendLine("DEVRIG_PROJECT_OPENED: yes")
         appendLine("DEVRIG_USAGES: <the number of usages you found>")
-    }
-
-    /**
-     * Pre-copy a cached `ideaIC-*.tar.gz` from the host archive cache into the container's devrig downloads
-     * dir, so the agent's `devrig backend download` reuses it instead of fetching ~1 GB over the network.
-     * Best-effort: if no cached archive exists, the agent's download still works (just slower).
-     */
-    private fun stageCachedIdeaArchive(container: DevrigContainer) {
-        val cacheDir = (System.getenv("MCP_STEROID_TEST_ARCHIVE_CACHE")?.trim()?.takeIf { it.isNotEmpty() }
-            ?.let { File(it) }
-            ?: File(System.getProperty("user.home"), ".cache/mcp-steroid-test")).absoluteFile
-        val archive = try {
-            cacheDir.listFiles { f -> f.isFile && Regex("""ideaIC-.*\.tar\.gz""").matches(f.name) }
-                ?.minByOrNull { it.name }
-        } catch (e: Exception) {
-            container.console.writeInfo("WARN: cannot read archive cache ${cacheDir.absolutePath}: ${e.message}")
-            null
-        }
-        if (archive == null) {
-            container.console.writeInfo("No cached ideaIC archive in ${cacheDir.absolutePath}; agent download will fetch from network")
-            return
-        }
-        val downloadsDir = "$DEVRIG_GUEST_HOME/downloads"
-        container.execAndAssert(
-            description = "prepare devrig downloads dir",
-            // Don't `rm -rf` the home — its `logs` subdir is a bind mount (busy). Just ensure downloads.
-            script = "set -euo pipefail; mkdir -p $downloadsDir",
-        )
-        container.scope.copyToContainer(archive, "$downloadsDir/${archive.name}")
-        container.console.writeInfo("Staged cached IDE archive: ${archive.name}")
     }
 
     private fun hasMarker(output: String, marker: String, expected: String): Boolean =
