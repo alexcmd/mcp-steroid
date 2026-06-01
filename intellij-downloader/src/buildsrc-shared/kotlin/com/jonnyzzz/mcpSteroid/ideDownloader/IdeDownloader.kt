@@ -321,7 +321,11 @@ private fun writeDownloadResponse(
                 if (now - lastPrinted >= 5_000) {
                     val downloaded = existingBytes + bytesReadThisResponse
                     val progress = if (totalBytes > 0) " (${downloaded * 100 / totalBytes}%)" else ""
-                    ideDownloaderLog.debug("[IDE-DOWNLOAD] Progress: {} MB{}", downloaded / 1024 / 1024, progress)
+                    // User-facing download progress: a clean line — no logback severity/category and no
+                    // "[IDE-DOWNLOAD]" prefix. MUST go to stderr, never stdout: this can run inside
+                    // `devrig mpc`, where stdout is the JSON-RPC channel and a stray byte corrupts the MCP
+                    // protocol. The one-time milestones below/above stay on the logger (log file + --debug).
+                    System.err.println("Downloading IDE: ${downloaded / 1024 / 1024} MB$progress")
                     lastPrinted = now
                 }
             }

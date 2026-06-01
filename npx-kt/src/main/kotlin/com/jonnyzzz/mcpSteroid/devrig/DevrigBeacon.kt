@@ -127,7 +127,9 @@ class DevrigBeacon(
         }
 
         val existing = try {
-            userIdFile.readText().trim()
+            // A missing file is the normal first-run / managed case — handled silently by generating a
+            // fresh id below. Only a genuine read error (permissions, corruption) is worth logging.
+            if (Files.exists(userIdFile)) userIdFile.readText().trim() else ""
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
