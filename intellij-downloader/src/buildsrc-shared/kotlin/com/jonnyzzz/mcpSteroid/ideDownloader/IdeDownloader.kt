@@ -323,11 +323,16 @@ private fun writeDownloadResponse(
                 if (now - lastPrinted >= 5_000) {
                     val downloaded = existingBytes + bytesReadThisResponse
                     val progress = if (totalBytes > 0) " (${downloaded * 100 / totalBytes}%)" else ""
+                    val progressLine = "Downloading $displayName: ${downloaded / 1024 / 1024} MB$progress"
                     // User-facing download progress: a clean line — no logback severity/category and no
                     // "[IDE-DOWNLOAD]" prefix. MUST go to stderr, never stdout: this can run inside
                     // `devrig mpc`, where stdout is the JSON-RPC channel and a stray byte corrupts the MCP
-                    // protocol. The one-time milestones below/above stay on the logger (log file + --debug).
-                    System.err.println("Downloading $displayName: ${downloaded / 1024 / 1024} MB$progress")
+                    // protocol.
+                    System.err.println(progressLine)
+                    // Also record it in the log file every ~5s, so a log monitor (e.g. a test tailing the
+                    // devrig log) shows live download progress even when stderr is buffered by the caller
+                    // (the agent's Bash tool only surfaces a command's output once it finishes).
+                    ideDownloaderLog.info(progressLine)
                     lastPrinted = now
                 }
             }

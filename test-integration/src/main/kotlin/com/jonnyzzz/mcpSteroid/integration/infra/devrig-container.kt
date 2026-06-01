@@ -22,12 +22,27 @@ data class DevrigContainerOpts(
     val consoleTitle: String,
     val dockerFileBase: String = "managed-backend-host",
     val layoutManager: LayoutManager = HorizontalLayoutManager(),
+    /**
+     * Mount the host bare-repo cache ([IdeTestFolders.repoCacheDir]) read-only at `/repo-cache` so a test
+     * can clone a large project (e.g. Keycloak) from a local `file://` bare repo via
+     * [com.jonnyzzz.mcpSteroid.testHelper.git.GitDriver.cloneFromCachedBare] instead of a full network fetch.
+     */
+    val mountRepoCache: Boolean = false,
+    /**
+     * When set, bind-mount a host dir at this guest path so devrig's DEBUG log files land on a host-readable
+     * location (e.g. `"/tmp/mcp-home/logs"` — devrig's `DEVRIG_HOME/logs`). The heavy `DEVRIG_HOME` (the
+     * downloaded IDE, caches) stays container-only so it doesn't bloat the run-dir artifacts; only the small
+     * logs dir is exposed. The host dir is `<runDir>/devrig-logs` — pass it to [streamDevrigLogsToConsole].
+     */
+    val devrigLogsHostMountGuestPath: String? = null,
 )
 
 class DevrigContainer(
     val scope: ContainerDriver,
     val gui: GuiContainer,
     val devrig: String,
+    /** Host run directory for this container (logs, screenshots, video, agent NDJSON). */
+    val runDir: File,
 ) {
     val console: ConsoleDriver by gui::console
 
@@ -114,6 +129,64 @@ class DevrigContainer(
     }
 }
 
+/**
+ * Continuously tee devrig's DEBUG log file(s) to the on-video [console] for the rest of the test —
+ * the same JVM-side approach used to pump the IntelliJ `idea.log` (a daemon thread polling a
+ * host-mapped file with a buffered reader), NOT a `docker exec tail`.
+ *
+ * devrig ALWAYS writes DEBUG logs to files, so this works regardless of how devrig was launched —
+ * including when it is started ONLY as the `mpc` MCP server (the agent's `Bash` tool buffers a
+ * command's stdout until it finishes, so the log file is the only live window into devrig's activity).
+ *
+ * [hostLogsDir] must be the HOST path of devrig's `logs` dir (devrig's `DEVRIG_HOME/logs` placed under a
+ * bind-mounted dir, so the JVM can read the files directly). New session files are detected as they
+ * appear — every devrig process writes its own `devrig-<ts>-pid<PID>.log`, and each line carries the PID
+ * (so interleaved output from multiple devrig processes stays attributable).
+ */
+fun streamDevrigLogsToConsole(lifetime: CloseableStack, hostLogsDir: File, console: ConsoleDriver) {
+    val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
+    val followed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val logName = Regex("""devrig-.*\.log""")
+
+    fun follow(file: File) {
+        thread(start = true, isDaemon = true, name = "devrig-log-tee-${file.name}") {
+            try {
+                file.bufferedReader().use { reader ->
+                    while (!stopped.get()) {
+                        val line = reader.readLine()
+                        if (line == null) {
+                            Thread.sleep(150)
+                            continue
+                        }
+                        if (line.isNotEmpty()) {
+                            console.writeLine("${ConsoleDriver.CYAN}[devrig-log]${ConsoleDriver.RESET} $line")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                if (!stopped.get()) System.err.println("devrig log tee for ${file.name} stopped: ${e.message}")
+            }
+        }
+    }
+
+    val scanner = thread(start = true, isDaemon = true, name = "devrig-log-tee-scan") {
+        while (!stopped.get()) {
+            try {
+                hostLogsDir.listFiles { f -> f.isFile && logName.matches(f.name) }?.forEach { f ->
+                    if (followed.add(f.absolutePath)) follow(f)
+                }
+            } catch (e: Exception) {
+                System.err.println("devrig log scan error: ${e.message}")
+            }
+            Thread.sleep(1_000)
+        }
+    }
+    lifetime.registerCleanupAction {
+        stopped.set(true)
+        scanner.interrupt()
+    }
+}
+
 fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigContainerOpts) : DevrigContainer {
     val (runDir, realConsoleTitle) = allocRunDirAndTitle(lifetime, opts.consoleTitle)
 
@@ -129,6 +202,20 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
 
     val volumes = buildList {
         add(ContainerVolume(runDir, containerMountedPath, "rw"))
+        if (opts.mountRepoCache) {
+            // repoCacheDir mkdirs()-es itself and errors if `test.integration.repo.cache.dir` is unset,
+            // so the mount source always exists (no silent skip on a missing dir).
+            add(ContainerVolume(IdeTestFolders.repoCacheDir, "/repo-cache", "ro"))
+        }
+        opts.devrigLogsHostMountGuestPath?.let { guestLogsPath ->
+            val hostLogs = File(runDir, "devrig-logs").also {
+                it.mkdirs()
+                // a+rwx so the in-container `agent` (uid 1000) can write log files through the bind mount
+                // on Linux CI (no UID remap); macOS virtiofs maps the uid transparently.
+                it.setReadable(true, false); it.setWritable(true, false); it.setExecutable(true, false)
+            }
+            add(ContainerVolume(hostLogs, guestLogsPath, "rw"))
+        }
     }
 
     val containerEnv = buildMap<String, String> {
@@ -153,6 +240,19 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
     val console = gui.console
     container = gui.container
 
+    // Bind-mounting a nested guest path (e.g. /tmp/mcp-home/logs) makes docker create the parent
+    // (/tmp/mcp-home) owned by root, which would block the `agent` user from creating sibling dirs
+    // (downloads, backends, caches). Make the parent world-writable so devrig (run as agent) can use it.
+    opts.devrigLogsHostMountGuestPath?.let { guestLogsPath ->
+        val parent = guestLogsPath.substringBeforeLast('/').ifEmpty { "/" }
+        container.startProcessInContainer {
+            args("chmod", "0777", parent)
+                .user("root")
+                .description("make devrig home parent ($parent) agent-writable")
+                .quietly()
+        }.awaitForProcessFinish().assertExitCode(0) { "chmod 0777 $parent" }
+    }
+
     console.writeInfo("Preparing devrig...")
 
     val devrigLauncher = deployDevrigLauncher(container)
@@ -160,6 +260,7 @@ fun DevrigContainer.Companion.create(lifetime: CloseableStack, opts: DevrigConta
         container,
         gui,
         devrigLauncher,
+        runDir,
     )
 
     return driver
