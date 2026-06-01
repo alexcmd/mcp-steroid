@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig.cli
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.DevrigEndpointInfo
 import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
@@ -211,7 +212,7 @@ class CliMcpStdioFakeIdeIntegrationTest {
                         }
                     }
                 }
-                get("/npx/v1/windows") {
+                get("/api/jonnyzzz/mcp-steroid/v1/windows") {
                     receivedWindowsAuth = call.request.headers["Authorization"]
                     call.respondText(
                         text = McpJson.encodeToString(
@@ -240,7 +241,7 @@ class CliMcpStdioFakeIdeIntegrationTest {
                         contentType = ContentType.Application.Json,
                     )
                 }
-                post("/npx/v1/tools/call/stream") {
+                post("/api/jonnyzzz/mcp-steroid/v1/tools/call/stream") {
                     bridgeToolCallCount.incrementAndGet()
                     receivedToolAuth = call.request.headers["Authorization"]
                     receivedToolCall = McpJson.decodeFromString(NpxBridgeToolCallRequest.serializer(), call.receiveText())
@@ -278,7 +279,10 @@ class CliMcpStdioFakeIdeIntegrationTest {
             pid = pid,
             mcpSteroidServer = McpSteroidServerInfo(
                 mcpUrl = "http://127.0.0.1:$port/mcp",
-                port = port,
+                headers = mapOf("Authorization" to "Bearer fake-token"),
+            ),
+            devrigEndpoint = DevrigEndpointInfo(
+                rpcBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
                 headers = mapOf("Authorization" to "Bearer fake-token"),
             ),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),

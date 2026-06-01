@@ -51,16 +51,15 @@ class DevrigListWindowsToolHandler(
         val states = services.ideMonitor.states.value.values.toList()
         val responses = states.map { state ->
             async {
-                val bridgeBaseUrl = DevrigProjectRoutingService.bridgeBaseUrl(state.ide.mcpUrl)
-                val response = services.commandHttpClient.get("$bridgeBaseUrl/npx/v1/windows") {
+                val response = services.commandHttpClient.get("${state.ide.rpcBaseUrl}/windows") {
                     headers {
-                        for ((name, value) in state.ide.marker.mcpSteroidServer.headers) {
+                        for ((name, value) in state.ide.bridgeHeaders) {
                             append(name, value)
                         }
                     }
                 }
                 if (response.status.value !in 200..299) {
-                    error("HTTP ${response.status.value} from ${state.ide.label} /npx/v1/windows: ${response.bodyAsText()}")
+                    error("HTTP ${response.status.value} from ${state.ide.label} bridge /windows: ${response.bodyAsText()}")
                 }
                 state.ide.pid to McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), response.bodyAsText())
             }
@@ -166,8 +165,8 @@ class DevrigOpenProjectToolHandler(
             )
         val route = ProjectRoute(
             idePid = ide.pid,
-            bridgeBaseUrl = DevrigProjectRoutingService.bridgeBaseUrl(ide.mcpUrl),
-            headers = ide.marker.mcpSteroidServer.headers,
+            bridgeBaseUrl = ide.rpcBaseUrl,
+            headers = ide.bridgeHeaders,
             originalProjectName = "",
             exposedProjectName = "",
             projectPath = "",
@@ -200,7 +199,7 @@ class DevrigToolBridgeClient(
             NpxBridgeToolCallRequest.serializer(),
             NpxBridgeToolCallRequest(name = toolName, arguments = args),
         )
-        val url = "${route.bridgeBaseUrl}/npx/v1/tools/call/stream"
+        val url = "${route.bridgeBaseUrl}/tools/call/stream"
         var result: ToolCallResult? = null
         var errorMessage: String? = null
 

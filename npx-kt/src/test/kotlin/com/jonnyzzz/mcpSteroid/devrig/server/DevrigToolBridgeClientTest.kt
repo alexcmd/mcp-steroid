@@ -9,6 +9,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
@@ -74,7 +75,7 @@ class DevrigToolBridgeClientTest {
         port = freePort()
         server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
             routing {
-                post("/npx/v1/tools/call/stream") {
+                post("/api/jonnyzzz/mcp-steroid/v1/tools/call/stream") {
                     receivedAuth = call.request.headers["Authorization"]
                     receivedBody = call.receiveText()
                     if (httpStatus != HttpStatusCode.OK) {
@@ -529,7 +530,7 @@ class DevrigToolBridgeClientTest {
 
         assertEquals(true, result.isError)
         assertTrue(result.errorText().contains("HTTP 401"))
-        assertTrue(result.errorText().contains("/npx/v1/tools/call/stream"))
+        assertTrue(result.errorText().contains("/api/jonnyzzz/mcp-steroid/v1/tools/call/stream"))
         assertTrue(result.errorText().contains("bad token"))
     }
 
@@ -630,16 +631,17 @@ class DevrigToolBridgeClientTest {
     ): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
-            mcpUrl = "http://127.0.0.1:$port/mcp",
+            rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
+            bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
             markerPath = projectHome.resolve("$pid.mcp-steroid").toString(),
             marker = PidMarker(
                 schema = PidMarker.SCHEMA_VERSION,
                 pid = pid,
                 mcpSteroidServer = McpSteroidServerInfo(
                     mcpUrl = "http://127.0.0.1:$port/mcp",
-                    port = port,
                     headers = mapOf("Authorization" to "Bearer $token"),
                 ),
+                devrigEndpoint = testDevrigEndpoint("http://127.0.0.1:$port/mcp", mapOf("Authorization" to "Bearer $token")),
                 ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
                 createdAt = "2026-05-17T00:00:00Z",
@@ -651,7 +653,7 @@ class DevrigToolBridgeClientTest {
     private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =
         ProjectRoute(
             idePid = 42,
-            bridgeBaseUrl = "http://127.0.0.1:$port",
+            bridgeBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
             headers = mapOf("Authorization" to "Bearer $token"),
             originalProjectName = "original-project",
             exposedProjectName = "original-project-abcdefgh",
