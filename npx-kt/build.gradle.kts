@@ -235,9 +235,12 @@ tasks.startScripts {
                 appendLine("@rem PID-seeded (via PowerShell) so concurrent devrig processes don't clash on a port. quiet=y")
                 appendLine("@rem keeps the agent's listening line off stdout (the MCP JSON-RPC channel); suspend=n so devrig")
                 appendLine("@rem never waits for a debugger.")
+                // Set DEVRIG_OPTS INSIDE the for/f loop using the loop var %%P. Doing it via an
+                // intermediate %DEVRIG_DEBUG_PORT% + a nested `if` inside the parenthesised block fails:
+                // batch expands %DEVRIG_DEBUG_PORT% at block-PARSE time (before the for/f sets it), so the
+                // opt was never applied (validated on Windows). %%P is the loop value, expanded per-iteration.
                 appendLine("if not \"%DEVRIG_DEBUG%\"==\"\" (")
-                appendLine("    for /f \"usebackq tokens=*\" %%P in (`powershell -NoProfile -Command \"\$b=23900;\$r=100;\$o=[System.Diagnostics.Process]::GetCurrentProcess().Id %% \$r;for(\$i=0;\$i -lt \$r;\$i++){\$p=\$b+((\$o+\$i) %% \$r);try{\$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,\$p);\$l.Start();\$l.Stop();Write-Output \$p;break}catch{}}\"`) do set \"DEVRIG_DEBUG_PORT=%%P\"")
-                appendLine("    if not \"%DEVRIG_DEBUG_PORT%\"==\"\" set \"DEVRIG_OPTS=%DEVRIG_OPTS% -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,quiet=y,address=*:%DEVRIG_DEBUG_PORT%\"")
+                appendLine("    for /f \"usebackq tokens=*\" %%P in (`powershell -NoProfile -Command \"\$b=23900;\$r=100;\$o=[System.Diagnostics.Process]::GetCurrentProcess().Id %% \$r;for(\$i=0;\$i -lt \$r;\$i++){\$p=\$b+((\$o+\$i) %% \$r);try{\$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,\$p);\$l.Start();\$l.Stop();Write-Output \$p;break}catch{}}\"`) do set \"DEVRIG_OPTS=%DEVRIG_OPTS% -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,quiet=y,address=*:%%P\"")
                 appendLine(")")
                 append(marker)
             }
