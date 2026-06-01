@@ -172,6 +172,47 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
+    fun `execute_code handler pins the full devrig to plugin param contract`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val projectHome = Files.createDirectories(tempDir.resolve("project"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 7, projectHome = projectHome),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
+            )
+        )
+        val route = routing.routes().values.single()
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
+
+        val result = handler.executeCode(
+            projectName = route.exposedProjectName,
+            execCodeParams = ExecCodeParams(
+                taskId = "ec-task",
+                code = "println(1)",
+                reason = "verify contract",
+                timeout = 42,
+                modal = ModalMode.UNLEASHED,
+            ),
+            callProgress = object : McpProgressReporter { override fun report(message: String) = Unit },
+        )
+
+        assertEquals(false, result.isError)
+        // Frozen, additive-only wire contract — these exact param names/types are sent to EVERY plugin
+        // version. Never remove/rename/retype; new params must be optional with safe defaults.
+        val arguments = McpJson.parseToJsonElement(receivedBody ?: error("missing request body"))
+            .jsonObject["arguments"]?.jsonObject ?: error("missing arguments")
+        assertEquals("steroid_execute_code", McpJson.parseToJsonElement(receivedBody!!).jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("original-project", arguments["project_name"]?.jsonPrimitive?.content)
+        assertEquals("println(1)", arguments["code"]?.jsonPrimitive?.content)
+        assertEquals("ec-task", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("verify contract", arguments["reason"]?.jsonPrimitive?.content)
+        assertEquals(42, arguments["timeout"]?.jsonPrimitive?.content?.toInt())
+        assertEquals("unleashed", arguments["modal"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `execute feedback bridge handler forwards rating explanation and code`(
         @TempDir tempDir: Path,
     ) = runBlocking {

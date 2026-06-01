@@ -3742,5 +3742,13 @@ What to set up (revisit after the current devrig tasks):
    optional sub-objects null-defaulted so old/new markers decode — that is the tolerant-decode baseline to
    build the dedicated DTOs on.
 
-**Backlog — start after the devrig test fixes (#19–#22, now done). Remaining devrig work first: DEVRIG_DEBUG
-free-port range (#24) + re-running the devrig integration suite (#27).**
+**Status (2026-06-01):** items 1, 3, 4 DONE.
+- (4) Audit: the shared `@Serializable` DTOs (`NpxBridgeWindowsResponse`, `NpxStreamEnvelope`, …) use required
+  fields *without* defaults — these are the v1 baseline (never remove); decode tolerates unknown keys but not
+  missing required ones, so the additive-only rule (new fields optional+defaulted) is what guarantees compat.
+- (1) Contract test: `DevrigToolBridgeClientTest` pins every tool's exact param names/types, incl. a new
+  `execute_code … full devrig to plugin param contract` case (project_name/code/task_id/reason/timeout/modal).
+- (3) Docs: the frozen, additive-only contract rule is in `ij-plugin/CLAUDE.md` → "devrig ↔ plugin wire contract".
+
+**Still deferred** (need a baseline release / larger refactor): (2) cross-version test (devrig HEAD ↔ older
+plugin build); (5) give devrig its own copy of the marker/bridge DTOs for fully independent versioning.

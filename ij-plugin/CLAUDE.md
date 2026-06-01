@@ -383,3 +383,30 @@ When the IDE bundles newer Kotlin than the plugin's compiler: set `mcp.steroid.k
 
 `CodeButcher.wrapWithImports()`: extracts user imports, adds defaults, merges, wraps body into a suspend
 method.
+
+## devrig ↔ plugin wire contract (frozen, additive-only)
+
+From the 0.96 release onward, the **devrig binary must stay compatible with every plugin version it talks
+to** (and vice-versa). The wire surface is: the **JSON-RPC tool-call params** devrig sends
+(`DevrigBridgeToolHandlers` `put(...)` blocks → `steroid_execute_code`, `_execute_feedback`,
+`_take_screenshot`, `_input`, `_open_project`), the `/windows` + `/projects/stream` responses, and the
+`@Serializable` DTOs they (de)serialize with (`mcp-steroid-server`: `NpxBridge*`, `NpxStream*`, `PidMarker`,
+`McpProtocol` types; `mcp-core`: `ToolCallResult`).
+
+**Rules — never break these:**
+- **Additive only.** Never remove, rename, or retype an existing param/field. New params/fields **must be
+  optional with a safe default** (`= null` / `= ""` / `= false` / a defaulted enum), so an older peer that
+  omits them still decodes and a newer peer that ignores them still works. Graceful degradation is fine; the
+  protocol must still function end-to-end.
+- **Tolerant decode is the baseline, not a license to break.** `ignoreUnknownKeys = true` tolerates *unknown*
+  keys (additive on the sender) but a **required field without a default still throws on a *missing* key** —
+  so the additive-only rule is what actually guarantees forward/back compat. The current required fields
+  (e.g. `NpxBridgeWindowsResponse`'s 8) are the v1 baseline: present in all versions, never to be removed.
+- **Enums must not be parsed strictly** against the wire — an unknown future value must degrade, not throw.
+- **Changing the contract requires a conscious, reviewed, additive-only edit + a contract-test update.**
+  `DevrigToolBridgeClientTest` pins each tool's exact param names/types (golden-ish assertions); a diff
+  fails the build. Add a pinned case for any new tool/param.
+
+Deferred (revisit with a baseline release): (a) a cross-version test (devrig HEAD ↔ an older plugin build);
+(b) giving devrig its **own** copy of the marker/bridge DTOs so the two version independently and only the
+JSON wire shape is shared (today devrig reuses `mcp-steroid-server`'s classes, decoding tolerantly).
