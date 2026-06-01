@@ -157,9 +157,19 @@ PASS** (validates the matcher fix), describeMcp ×3, executeCodeViaMcp ×3, chec
   container's Java 25 + hand it over.
 - **Console**: download progress is a clean stderr line (no `[IDE-DOWNLOAD]`/category); beacon's missing
   `.devrig-user-id` first-run is silent.
-- **Remaining devrig test failures are environmental** (DNS/network to api.github.com + JetBrains
-  services for the IDE download) — they need a network-capable environment (CI/dev), not a code change.
-  The E2E console scenario (TASKS.md) depends on the same network path.
+- **Network-OK re-run (laptop network restored) — failures are MIXED, not uniformly environmental:**
+  - ✅ `DevrigAgentRoutingIntegrationTest` (2 methods) now PASS — devrig stdio routing + exec_code progress
+    forwarding work; confirms the devrig-stdio path + the Java-25 launch fix are good.
+  - ❌ `DevrigAgentIntegrationTest` — "devrig must dispatch IDE tool calls through the built-in-webserver
+    RPC bridge. Missing built-in stream call" — a real bridge-routing assertion (not network).
+  - ❌ `DevrigManagedBackendGuiIntegrationTest` — "assert managed backend files failed" (exit 1) —
+    post-download managed-backend files check (download reaches the network now).
+  - ❌ `DevrigRealIdeBridgeIntegrationTest` — "install devrig MCP stdio launcher exit 2" — but
+    `DevrigAgentRouting` uses the SAME `DevrigSteroidDriver.deploy` and passed → looks
+    test-specific/intermittent, not the JDK fix / harness thinning.
+  These 3 need per-test devrig diagnosis (distinct causes), no longer a blanket "network" excuse.
+- New **`DevrigStdioAgentMatrixTest`** (devrig stdio × {claude,codex,gemini}, preinstalled IDE, basic
+  exec_code) added as the simplified matrix — the STDIO half; HTTP half = `WhatYouSeeTest.executeCodeViaMcp`.
 
 **Flakiness verdict:** the agent-test "flakiness" is largely **deterministic** — claude consistently can't
 reach the `steroid_*` tools (deferred schema not loaded → NO_IDE_ACCESS / Bash / native fallback). The fix
