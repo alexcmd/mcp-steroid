@@ -97,10 +97,35 @@ The dominant flakiness driver is **unreliable MCP tool-schema loading**, not inf
   `MavenRunnerAdoption claude` FAILED a **2nd** time — all **identical** → **deterministic, NOT flaky**.
 
 **Conclusion:** the Batch-B instability was ~90% a **test-parser bug** (tool-name prefix + output
-duplication — fixed & validated) and ~10% **deterministic** claude/gemini **schema-not-loaded** (the
-agent can't reach `steroid_*`). So the stabilizing fix is **schema-priming** (load `steroid_*` schemas as
-a session setup step before the measured prompt), **not retries**. These adoption tests otherwise belong
-in the IMPROVEMENTS/prompt-quality harness, not the hard stability gate.
+duplication — fixed & validated) and ~10% **deterministic** claude **schema-not-loaded**.
+
+### ROOT CAUSE (investigated with claude MCP debug + server-side `McpHttpTransport` logs + NDJSON)
+
+It is **NOT** a connection race. Claude connects fine — the server logs a `claude-code/2.1.159`
+`initialize` on every `claude -p` invocation, completing in ~20 ms. The real cause is **Claude Code
+defers the mcp-steroid MCP tools**:
+- claude's system-init `tools` list contains **only built-ins + `ToolSearch`** — **no `steroid_*` tools**
+  (and `mcp_servers: [{mcp-steroid, pending}]`). The steroid tool **schemas are deferred**; claude must
+  call `ToolSearch` to load them before it can invoke one.
+- `checkWhatYouSee claude` made **zero tool calls** and answered `NO_IDE_ACCESS` in 1 turn — it never
+  called `ToolSearch`, because the prompt offered a no-tool escape hatch.
+- The passing claude methods (`describeMcp`, `executeCodeViaMcp`, `toolPreference`) **force** a tool, so
+  claude calls `ToolSearch` → loads the schemas → succeeds.
+- `FindDuplicates` / `MavenRunnerAdoption` (claude) have **native fallbacks** (Read/Grep/`bash mvn`), so
+  claude proceeds without ever loading the steroid tools → "didn't use steroid".
+
+**This is also a real production UX gap, not just a test artifact:** a user who asks Claude Code a casual
+IDE question with mcp-steroid configured can get "no IDE access" because the tools are deferred and claude
+won't `ToolSearch` unless pushed. Codex/Gemini don't defer (their full tool list includes the steroid
+tools), so they pass.
+
+**Fix directions (design call):**
+1. **Reduce/avoid deferral** — Claude Code defers when the visible tool count is high; investigate a
+   Claude-Code setting to eager-load this server's tools, or minimize co-loaded tools.
+2. **Strengthen the server `instructions`** (returned at `initialize`) to make `ToolSearch`-first
+   unavoidable — and verify Claude Code injects + acts on server instructions in `-p` mode.
+3. **Tests**: prime a forced-`ToolSearch` setup turn, or treat these adoption checks as prompt-quality
+   signals (IMPROVEMENTS harness), not hard stability gates.
 
 ## Batch C — other-IDE / compat / devrig + WhatYouSee re-run (25 tests): 20 passed, 5 failed
 
