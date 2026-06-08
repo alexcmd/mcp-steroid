@@ -24,7 +24,7 @@ Verified-good items are noted so the next iteration knows what already works.
     `devrig backend` discovered it as a managed backend with **MCP Steroid
     0.96.19999-SNAPSHOT-930b6fc7 loaded and responding** — even over a
     headless SSH session.
-  - **`steroid_open_project` verified end-to-end over `devrig mpc`**: the call
+  - **`steroid_open_project` verified end-to-end over `devrig mcp`**: the call
     returned `isError:false` ("Project opening initiated") and `devrig backend`
     then showed the project **open** in the managed IDE:
     `devrig-openproj-test → C:/Users/jonnyzzz/devrig-openproj-test`. So the
@@ -40,7 +40,7 @@ Verified-good items are noted so the next iteration knows what already works.
   IDEA 2026.1.2 (pid 42649) — R5 smoke now unblocked.
 - **macOS agent flow end-to-end OK**: `devrig backend start idea-community`
   launched the managed IDEA CE 2026.1.2 (pid 63943) detached; it is
-  discovered with the MCP Steroid plugin loaded. `devrig mpc` over stdio:
+  discovered with the MCP Steroid plugin loaded. `devrig mcp` over stdio:
   `initialize` ok, `tools/list` = 8 tools incl. `steroid_open_project`,
   `steroid_list_projects` routes through the bridge to real backends.
   `open_project` routing (`openProjectTargetIde`) prefers the managed
@@ -124,7 +124,7 @@ class file versions up to 65.0
   devrig log is **2026-05-15** — the current flow has never run there.
 - `devrig install <agent>` (`InstallCommand.selfMcpCommand`) does **not**
   provision Java either — it pins the *install-time* `JAVA_HOME` into the
-  agent's `devrig mpc` launch command. On a host whose only JDK is 21, that
+  agent's `devrig mcp` launch command. On a host whose only JDK is 21, that
   bakes in a JDK that can't run devrig.
 - Workaround proven: after manually installing Corretto **25** on the host
   (`jdk25.0.3_9`) and pointing `JAVA_HOME` at it, `devrig --version`,
@@ -218,7 +218,7 @@ transport) was completely untested on TC:
 - `ciIntegrationTests` = `:test-helper:test` → `:ij-plugin:integrationTest` →
   `:test-integration:test` — **`:npx-kt:integrationTest` is not in it.**
 - Net: neither devrig unit tests nor the devrig **stdio** integration tests
-  (`CliMcpStdio*`, `CliInstall*` — `devrig mpc` driven over stdin/stdout) ran
+  (`CliMcpStdio*`, `CliInstall*` — `devrig mcp` driven over stdin/stdout) ran
   anywhere on TeamCity. The stale rationale ("distributed separately, no
   influence on the IDE plugin") predates devrig shipping as a release artifact
   + becoming the agent stdio entrypoint.
@@ -536,7 +536,7 @@ This is the current source of truth after the devrig cleanup commit
 - Agent/test-helper registration should talk in terms of generic stdio MCP
   registration (`registerStdioMcp`) plus devrig-specific install/deploy
   helpers. Do not reintroduce `registerNpxMcp` or `NpxProxyInstaller`.
-- `devrig mpc` is the stdio MCP subcommand. Normal CLI output may use the
+- `devrig mcp` is the stdio MCP subcommand. Normal CLI output may use the
   captured service stdout; MCP mode must keep MCP stdout clean and route logs
   through stderr / devrig log files.
 
@@ -550,7 +550,7 @@ Verification for the cleanup checkpoint:
 
 # Active focus — npx-kt testing and stabilization plan (2026-05-18)
 
-Goal: turn npx-kt/devrig `mpc` mode from "implemented" into a stable,
+Goal: turn npx-kt/devrig `mcp` mode from "implemented" into a stable,
 diagnosable replacement for the direct IDE HTTP MCP server.
 
 Why this exists: the first full `AI_NPX` batch proved the fast/fake-IDE path
@@ -926,12 +926,12 @@ Prompt/resource behavior:
   `run_20260518-135010-58149`, Gemini `run_20260518-135010-58166`.
 
 CLI/runtime behavior:
-- [x] `devrig mpc` starts a clean stdio MCP server and exits cleanly on stdin
+- [x] `devrig mcp` starts a clean stdio MCP server and exits cleanly on stdin
   close.
-- [x] No stdout leaks before MCP frames in `mpc` mode.
+- [x] No stdout leaks before MCP frames in `mcp` mode.
   Covered by
   `CliMcpStdioStdoutCleanlinessTest.host launcher writes only JSON-RPC frames to stdout`,
-  which runs the real `installDist` launcher with `mpc`, completes after stdin
+  which runs the real `installDist` launcher with `mcp`, completes after stdin
   closes, and parses every stdout line as JSON-RPC. Verification:
   `./gradlew :npx-kt:integrationTest --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliMcpStdioStdoutCleanlinessTest.host launcher writes only JSON-RPC frames to stdout' --tests 'com.jonnyzzz.mcpSteroid.proxy.cli.CliOptionsIntegrationTest' --rerun-tasks --console=plain`
   passed after fixing launcher stderr noise and CliKt-native parse-error
@@ -961,7 +961,7 @@ CLI/runtime behavior:
   logs.
   Covered by
   `CliMcpStdioStdoutCleanlinessTest.host startup failure before handshake is visible on stderr`,
-  which runs the real `mpc` launcher with an invalid absolute `DEVRIG_HOME`,
+  which runs the real `mcp` launcher with an invalid absolute `DEVRIG_HOME`,
   feeds a normal MCP handshake, and asserts exit 64, blank stdout, and stderr
   containing `Startup failure:`, `DEVRIG_HOME`, and the canonical-path failure.
   Verification:
@@ -1011,7 +1011,7 @@ agent prompt/tool-selection bugs.
   marker and returns it through devrig.
   Added `NpxKtRealIdeBridgeIntegrationTest`, which starts one Docker IDE with
   the plugin, uses HTTP MCP only for setup, registers only `/home/agent/devrig
-  mpc` as the test MCP server, and verifies initialize -> list projects ->
+  mcp` as the test MCP server, and verifies initialize -> list projects ->
   execute-code through devrig stdio. Also fixed `NpxSteroidDriver.deploy` so
   the immutable container request builder actually runs the install script, and
   refreshed `/npx/v1/projects/stream` on subscription so devrig routes the
@@ -1100,7 +1100,7 @@ Tasks:
 
 # Active focus — npx-kt as stable MCP Steroid stdio replacement (2026-05-17)
 
-Goal: make npx-kt/devrig `mpc` mode a real replacement for the IDE HTTP MCP
+Goal: make npx-kt/devrig `mcp` mode a real replacement for the IDE HTTP MCP
 server by routing tool calls through discovered IDE bridge endpoints while
 keeping prompt/resource rendering local to npx-kt.
 

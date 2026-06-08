@@ -85,7 +85,7 @@ the **IntelliJ capability** surface stays full, exposed via
 ## Tenet 3 — devrig is stateless
 
 **The `devrig` binary holds no state across calls.** Every CLI
-invocation is a fresh process; `devrig mpc` (the stdio MCP server)
+invocation is a fresh process; `devrig mcp` (the stdio MCP server)
 holds only in-memory caches that live for the duration of the
 session and are rebuilt from scratch on the next process start.
 
@@ -108,7 +108,7 @@ Concretely:
   the process.
 - **Background scanning is implementation-detail, not contract.**
   Today devrig runs marker / port / per-IDE-stream scanners in the
-  background of `devrig mpc`; whether those stay or get replaced
+  background of `devrig mcp`; whether those stay or get replaced
   by on-demand rebuild (see
   [`docs/devrig-scanning-research.md`](devrig-scanning-research.md))
   is a tactical decision. Neither variant changes the contract

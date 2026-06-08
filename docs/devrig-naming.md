@@ -11,7 +11,7 @@ devrig is an **independent binary**. Its output is consumed by:
 1. **Humans** reading `devrig backend` / `devrig project` text.
 2. **Scripts** consuming `devrig backend --json` / `devrig project --json`.
 3. **AI agents** calling `steroid_list_projects` / `steroid_list_windows`
-   over the devrig stdio MCP server (`devrig mpc`).
+   over the devrig stdio MCP server (`devrig mcp`).
 
 All three surfaces share the names defined here. **They are not meant to
 be valid against the in-IDE MCP Steroid server** — that's a separate
