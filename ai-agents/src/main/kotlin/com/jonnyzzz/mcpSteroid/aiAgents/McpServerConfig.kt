@@ -88,6 +88,18 @@ fun codexMcpAddStdioArgs(command: StdioMcpCommand, serverName: String = DEFAULT_
 fun claudeMcpAddStdioArgs(command: StdioMcpCommand, serverName: String = DEFAULT_SERVER_NAME): List<String> =
     listOf("mcp", "add", "--scope", "user", serverName, "--", command.command) + command.args
 
+// `mcp remove` arg builders — used by `devrig install` to clear any prior registration before
+// re-adding (an idempotent upsert), so re-running install always converges on the current launcher
+// path and subcommand. Removal targets the same user scope the add commands write to.
+fun geminiMcpRemoveArgs(serverName: String = DEFAULT_SERVER_NAME): List<String> =
+    listOf("mcp", "remove", "--scope", "user", serverName)
+
+fun codexMcpRemoveArgs(serverName: String = DEFAULT_SERVER_NAME): List<String> =
+    listOf("mcp", "remove", serverName)
+
+fun claudeMcpRemoveArgs(serverName: String = DEFAULT_SERVER_NAME): List<String> =
+    listOf("mcp", "remove", "--scope", "user", serverName)
+
 private fun renderCommand(binary: String, args: List<String>): String =
     (listOf(binary) + args).joinToString(" ")
 
