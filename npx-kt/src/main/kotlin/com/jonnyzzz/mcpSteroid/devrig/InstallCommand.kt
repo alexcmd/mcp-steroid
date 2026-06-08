@@ -59,12 +59,12 @@ fun selfMcpCommand(
     return if (windows) {
         StdioMcpCommand(
             command = "cmd.exe",
-            args = listOf("/d", "/c", "set \"JAVA_HOME=$normalizedJavaHome\" && call \"$normalizedLauncher\" mpc"),
+            args = listOf("/d", "/c", "set \"JAVA_HOME=$normalizedJavaHome\" && call \"$normalizedLauncher\" mcp"),
         )
     } else {
         StdioMcpCommand(
             command = "/usr/bin/env",
-            args = listOf("JAVA_HOME=$normalizedJavaHome", normalizedLauncher.toString(), "mpc"),
+            args = listOf("JAVA_HOME=$normalizedJavaHome", normalizedLauncher.toString(), "mcp"),
         )
     }
 }

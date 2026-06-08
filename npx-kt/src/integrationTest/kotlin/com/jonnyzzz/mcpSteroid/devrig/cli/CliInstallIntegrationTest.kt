@@ -69,7 +69,7 @@ class CliInstallIntegrationTest {
         val combined = result.stdout + "\n" + result.stderr
         assertTrue(combined.contains("Installed devrig MCP for ${agent.displayName} as mcp-steroid."), combined)
         assertTrue(combined.contains("JAVA_HOME:"), combined)
-        assertTrue(combined.contains("/tmp/${installDir.name}/bin/devrig mpc"), combined)
+        assertTrue(combined.contains("/tmp/${installDir.name}/bin/devrig mcp"), combined)
     }
 
     private data class InstallAgentCase(

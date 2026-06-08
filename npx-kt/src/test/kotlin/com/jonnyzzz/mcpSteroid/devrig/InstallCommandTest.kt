@@ -20,7 +20,7 @@ class InstallCommandTest {
         val command = selfMcpCommand(launcher, javaHome, windows = false)
 
         assertEquals("/usr/bin/env", command.command)
-        assertEquals(listOf("JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mpc"), command.args)
+        assertEquals(listOf("JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mcp"), command.args)
     }
 
     @Test
@@ -29,7 +29,7 @@ class InstallCommandTest {
 
         assertEquals("cmd.exe", command.command)
         assertEquals(
-            listOf("/d", "/c", "set \"JAVA_HOME=/opt/jdk-21\" && call \"/opt/devrig/bin/devrig.bat\" mpc"),
+            listOf("/d", "/c", "set \"JAVA_HOME=/opt/jdk-21\" && call \"/opt/devrig/bin/devrig.bat\" mcp"),
             command.args,
         )
     }
@@ -42,7 +42,7 @@ class InstallCommandTest {
         assertEquals("claude", result.invocation.binary)
         assertEquals(
             listOf("mcp", "add", "--scope", "user", "mcp-steroid", "--",
-                "/usr/bin/env", "JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mpc"),
+                "/usr/bin/env", "JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mcp"),
             result.invocation.args,
         )
         assertTrue(result.stdout.contains("Installed devrig MCP for Claude as mcp-steroid."), result.stdout)
@@ -55,7 +55,7 @@ class InstallCommandTest {
         assertEquals(0, result.exitCode)
         assertEquals("codex", result.invocation.binary)
         assertEquals(
-            listOf("mcp", "add", "mcp-steroid", "--", "/usr/bin/env", "JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mpc"),
+            listOf("mcp", "add", "mcp-steroid", "--", "/usr/bin/env", "JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mcp"),
             result.invocation.args,
         )
     }
@@ -69,7 +69,7 @@ class InstallCommandTest {
         assertEquals(
             listOf(
                 "mcp", "add", "--type", "stdio", "--scope", "user", "--trust", "mcp-steroid",
-                "/usr/bin/env", "JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mpc",
+                "/usr/bin/env", "JAVA_HOME=/opt/jdk-21", "/opt/devrig/bin/devrig", "mcp",
             ),
             result.invocation.args,
         )
