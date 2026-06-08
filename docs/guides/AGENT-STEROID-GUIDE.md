@@ -17,7 +17,7 @@ The IDE has indexed everything. It knows the code better than any file search. *
 ## Available MCP Tools
 
 > **Project / backend naming contract:** if you reach this guide via
-> the **devrig stdio MCP server** (`devrig mpc`), the `project_name`
+> the **devrig stdio MCP server** (`devrig mcp`), the `project_name`
 > values returned by `steroid_list_projects` follow the
 > [`docs/devrig-naming.md`](../devrig-naming.md) spec — they include a
 > hash suffix (`<slug(name)>-<hash8>`) and are routed through an
