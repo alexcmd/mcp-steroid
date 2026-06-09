@@ -82,6 +82,72 @@ Add **explicit cross-version compatibility tests** (new Task 12) AND a new **PHI
 
 ---
 
+## Round 3 requirements (2026-06-09, data-model unification) — AUTHORITATIVE (override R2 / earlier on conflict)
+
+Refinements to the data model after the round-2 build landed. These supersede the round-2 `BackendSummary`/`ProjectInfo.backend` shapes. **Status: PENDING quorum review, then implementation.**
+
+### R3.1 + R3.2 — naming: `backend_name` and a devrig-computed `project_name`
+
+- The backend's identity field is **`backend_name`** (JSON key `backend_name`; Kotlin `@SerialName("backend_name") val backendName`). This is *the* id — the value passed to `steroid_open_project`'s `backend_name`, the `backend_name` on each project entry, and the backend element's own id. One name, used everywhere.
+- The per-project reference to its owning backend is **`backend_name`** too (rename the round-2 `ProjectInfo.backend` → `backend_name`, on the MCP entry).
+- Introduce an explicit **`project_name`** field in devrig responses (JSON key `project_name`), **devrig-computed** = the exposed disambiguated name (`${realName}-${projectHash}`, the existing `exposedProjectName`). Both the MCP `list_projects` and the devrig CLI compute it the same way.
+
+### R3.3 — one `backend_name`, one unique id scheme; `pid`/`port` are data fields
+
+There is exactly **one** `backend_name` per backend, computed by **one** scheme — no `pid-<n>` / `port-<n>` / managed-slug id *variants*. Instead the backend-info object **lists `pid` and `port`** (and `managed`, `reachable`, etc.) as its own fields.
+
+- **Proposed scheme (open for quorum):** `backend_name = "${productCodeLower}-${hash8}"`, where `hash8 = base62(sha256(sourceKey))[0..7]` (reuse `DevrigProjectRoutingService.projectHash`'s base62/sha256 helper) and `sourceKey` is the one stable per-backend locator: `"pid:<pid>"` for a marker IDE, `"port:<port>"` for a port-only IDE, `"managed:<id>"` for a managed backend. Example: `idea-9fk2a0xQ`. Deterministic and round-trippable: devrig recomputes it per discovered backend to resolve `backend_name → backend`. `pid`/`port` are separate nullable fields.
+- Routability is unchanged: only marker IDEs (those with a live bridge) are routable for `open_project`; the others are listed (CLI) with their `backend_name` but rejected by the self-correcting error.
+
+### R3.4 — ONE shared backend-info schema for CLI and MCP
+
+Define a single `@Serializable data class BackendInfo` in **`mcp-steroid-server`** (npx-kt already `implementation(project(":mcp-steroid-server"))`). It is used by **both**:
+- the MCP `steroid_list_projects` response (`backends: List<BackendInfo>`), and
+- the devrig CLI `backend --json` / `project --json` (`backends[]`) — replacing the hand-built `backendEntryJson` (`BackendIdentity.kt`) and deleting the round-2 `BackendSummary`.
+
+There must be **no second representation**. Proposed shape:
+```kotlin
+@Serializable
+data class BackendInfo(
+    @SerialName("backend_name") val backendName: String, // the single unique id (R3.3)
+    val displayName: String,                              // "IntelliJ IDEA 2026.1"
+    val locator: String,                                  // "build IU-261.x, pid 1234"
+    val source: String,                                   // "marker" | "port" | "managed"
+    val pid: Long? = null,                                // listed, not encoded into the id
+    val port: Int? = null,
+    val ideProductCode: String? = null,                   // "IU" / "PY" / "GO"
+    val build: String? = null,
+    val managed: Boolean = false,
+    val reachable: Boolean = true,
+    val pluginInstalled: Boolean = true,
+    val openProjects: List<ListedProject> = emptyList(),
+    val ide: IdeInfo? = null,
+)
+
+@Serializable
+data class ListedProject(
+    @SerialName("project_name") val projectName: String,  // devrig-computed exposed name (IDE: real name)
+    val path: String,
+    @SerialName("backend_name") val backendName: String? = null, // owning backend; null on direct in-IDE
+)
+```
+`ListProjectsResponse.projects` becomes `List<ListedProject>` (replacing `List<ProjectInfo>` on the MCP surface). CLI managed-only extras (installPath, cachePath, state, actions[]) that don't fit `BackendInfo` go in an optional nested field on `BackendInfo` (e.g. `managedDetail: ManagedBackendDetail? = null`) rather than a second top-level schema — **quorum to confirm** this keeps "one schema" honest.
+
+### R3.5 — compat boundary is the devrig↔IDE WIRE ONLY
+
+The returned **MCP/CLI JSON (devrig→agent, devrig→user) is devrig-owned end-to-end and free to change shape** — an agent/user always talks to one devrig+IDE pair, freshly. So renaming `name → project_name`, `backend → backend_name`, and replacing `BackendSummary` are all allowed.
+
+The **only** forward/backward-compat contract is the **devrig↔IDE wire**: `/projects/stream`, `/windows`, the tool-call params devrig POSTs, and their `@Serializable` DTOs — because devrig and the plugin are independently versioned (a user upgrades one, not both). Consequences:
+- **Wire `ProjectInfo {name, path}` stays EXACTLY as-is** on `/projects/stream`. **Revert the round-2 `ProjectInfo.backend` field** — the per-project backend reference now lives on the MCP-only `ListedProject`, not on the wire DTO. The wire stays pristine `{name, path}` (no churn, trivially compatible).
+- `BackendInfo` / `ListedProject` are **MCP/CLI-surface only** and never cross the devrig↔IDE wire (verify: not referenced by `ProjectsStreamService`, `NpxBridge*`, `NpxStream*`).
+- **Tenet 5 is re-scoped accordingly:** the additive-only rule binds the devrig↔IDE wire only; the devrig-computed output (MCP tool results, CLI `--json`) is explicitly outside the cross-version contract. Update PHILOSOPHY.md Tenet 5 + the `ij-plugin/CLAUDE.md` wire-contract section to state this boundary precisely (and that reverting `ProjectInfo.backend` keeps the wire unchanged).
+
+### Implementation note
+
+This reshapes Tasks 4, 7, 9, 12, 13 of the plan. The round-2 `BackendSummary`/`BackendProjectRef`/`ProjectInfo.backend` are replaced by `BackendInfo`/`ListedProject` and a reverted wire `ProjectInfo`. The CLI JSON renderers (`renderBackendJson`, `projectToBackendJson`, `backendEntryJson`) are refactored to serialize `BackendInfo`. All renamed-field assertions (tests) update accordingly.
+
+---
+
 ## Design decision: where does `backend_name` live? (locked)
 
 Three options were considered; **Option B is chosen.**
