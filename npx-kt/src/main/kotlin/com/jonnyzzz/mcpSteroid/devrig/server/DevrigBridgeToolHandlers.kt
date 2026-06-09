@@ -164,13 +164,41 @@ class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
-        // Prefer a devrig-managed backend if the agent has one running; otherwise route to the newest
-        // discovered IDE instead of failing. Every discovered IDE runs the MCP Steroid plugin.
+        val requestedBackend = openProjectParams.backendName?.trim()?.takeIf { it.isNotEmpty() }
+
+        // When the agent named a backend (devrig surface, where backend_name is REQUIRED), resolve it to
+        // that exact IDE. When it is absent (direct-handler / E2E callers pass null), keep the existing
+        // auto-pick: prefer a devrig-managed backend, else the newest discovered IDE.
         // Off the call dispatcher: the managed-pid lookup scans the local backends dir + checks pid liveness.
-        val ide = withContext(Dispatchers.IO) { bridge.routing.openProjectTargetIde() }
-            ?: return ToolCallResult.errorResult(
-                "steroid_open_project requires at least one discovered IDE with the MCP Steroid plugin; start an IDE or call steroid_list_projects"
-            )
+        val ide = withContext(Dispatchers.IO) {
+            if (requestedBackend != null) {
+                bridge.routing.resolveBackend(requestedBackend)
+            } else {
+                bridge.routing.openProjectTargetIde()
+            }
+        }
+
+        if (ide == null) {
+            return if (requestedBackend != null) {
+                val known = bridge.routing.discoveredBackends().map { it.first }
+                // Self-correct the common mistake of copying a non-routable id from `devrig backend --json`.
+                val looksNonRoutable = requestedBackend.startsWith("port-") || !requestedBackend.startsWith("pid-")
+                val hint = if (looksNonRoutable) {
+                    "Only running IDEs with the MCP Steroid plugin (ids of the form 'pid-<n>') are routable; " +
+                        "'port-<n>' and managed-slug ids from 'devrig backend --json' are not. "
+                } else ""
+                ToolCallResult.errorResult(
+                    "Unknown backend_name '$requestedBackend'. " + hint +
+                        if (known.isEmpty()) "No routable IDE backends are currently discovered; start an IDE or call steroid_list_projects."
+                        else "Routable backends: ${known.joinToString(", ")}. Call steroid_list_projects to refresh."
+                )
+            } else {
+                ToolCallResult.errorResult(
+                    "steroid_open_project requires at least one discovered IDE with the MCP Steroid plugin; start an IDE or call steroid_list_projects"
+                )
+            }
+        }
+
         val route = ProjectRoute(
             idePid = ide.pid,
             bridgeBaseUrl = ide.rpcBaseUrl,

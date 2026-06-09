@@ -3,10 +3,16 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
+import com.jonnyzzz.mcpSteroid.devrig.markerBackendDisplayName
+import com.jonnyzzz.mcpSteroid.devrig.markerBackendLocatorLabel
+import com.jonnyzzz.mcpSteroid.devrig.productCodeFromBuild
+import com.jonnyzzz.mcpSteroid.server.BackendProjectRef
+import com.jonnyzzz.mcpSteroid.server.BackendSummary
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
@@ -14,6 +20,7 @@ import com.jonnyzzz.mcpSteroid.server.ListProjectsToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
+import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
@@ -23,7 +30,7 @@ class StubMcpSteroidTools(
     val services: DevrigServices,
 ) : McpSteroidTools() {
     private val bridge = DevrigToolBridgeClient(services.projectRouting, services.mcpHttpClient)
-    private val listProjects = DevrigListProjectsToolHandler(services)
+    private val listProjects = DevrigListProjectsToolHandler(services.projectRouting)
     private val listWindows = DevrigListWindowsToolHandler(services)
     val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
     private val executeCode = DevrigExecuteCodeToolHandler(bridge, services.beacon)
@@ -47,6 +54,12 @@ class StubMcpSteroidTools(
         return type.cast(handler)
     }
 
+    // Devrig routes to one of several discovered IDEs, so it advertises the optional `backend_name`
+    // routing parameter (REQUIRED on this surface). The in-IDE plugin keeps the default single-backend
+    // surface (no `backend_name`).
+    override fun openProjectToolSpec(): McpToolBase =
+        OpenProjectToolSpec(includeBackendName = true) { handler<OpenProjectToolHandler>() }
+
     private fun unsupportedHandler(type: Class<*>): Nothing =
         throw UnsupportedOperationException(
             "not yet ready: handler<${type.name}>() is not wired in devrig yet for ${services.clientInfo.client}"
@@ -54,11 +67,26 @@ class StubMcpSteroidTools(
 }
 
 class DevrigListProjectsToolHandler(
-    private val services: DevrigServices,
+    private val routing: DevrigProjectRoutingService,
 ) : ListProjectsToolHandler {
     override suspend fun collectListProjectsResponse(): ListProjectsResponse {
-        val routes = services.projectRouting.routes().values.toList()
+        val routes = routing.routes().values.toList()
         val first = routes.firstOrNull()
+        val managedPids = routing.managedBackendPids()
+        // backends[] lists ONLY routable marker IDEs (the only ones with a live bridge) — never a dead id.
+        val backends = routing.discoveredBackends().map { (id, ide) ->
+            BackendSummary(
+                id = id, // "pid-<pid>"
+                displayName = markerBackendDisplayName(ide),
+                locator = markerBackendLocatorLabel(ide), // "build IU-261.x, pid 1234"
+                ideProductCode = productCodeFromBuild(ide.marker.ide.build) ?: "",
+                managed = ide.pid in managedPids,
+                openProjects = routes
+                    .filter { it.idePid == ide.pid }
+                    .map { BackendProjectRef(name = it.originalProjectName, path = it.projectPath) },
+                ide = ide.marker.ide,
+            )
+        }
         return ListProjectsResponse(
             ide = first?.ide ?: IdeInfo("devrig", DevrigVersionMetadata.getDevrigVersion(), "devrig"),
             plugin = first?.plugin ?: PluginInfo(
@@ -71,8 +99,10 @@ class DevrigListProjectsToolHandler(
                 ProjectInfo(
                     name = route.exposedProjectName,
                     path = route.projectPath,
+                    backend = "pid-${route.idePid}",
                 )
             },
+            backends = backends,
         )
     }
 }

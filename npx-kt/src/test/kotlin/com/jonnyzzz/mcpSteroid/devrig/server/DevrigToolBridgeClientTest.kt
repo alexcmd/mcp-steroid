@@ -443,6 +443,160 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
+    fun `open project routes to the backend named by backend_name and does not forward it`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homeA = Files.createDirectories(tempDir.resolve("a"))
+        val homeB = Files.createDirectories(tempDir.resolve("b"))
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val routing = routingService(
+            // pid 43 is the newer build (auto-pick would choose it); backend_name="pid-42" must override.
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = homeA, build = "IU-253.1", token = "secret-42"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = homeB, build = "IU-261.1", token = "secret-43"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = "pid-42",
+            )
+        )
+
+        assertEquals(false, result.isError)
+        // backend_name overrode the auto-pick: the POST hit pid 42's bridge (its token), not the newer pid 43.
+        assertEquals("Bearer secret-42", receivedAuth)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        // The forwarded args are byte-identical to today: backend_name is resolved locally, never forwarded.
+        assertEquals(targetProject.toString(), arguments["project_path"]?.jsonPrimitive?.content)
+        assertEquals("true", arguments["trust_project"]?.jsonPrimitive?.content)
+        assertEquals("open-project", arguments["task_id"]?.jsonPrimitive?.content)
+        assertEquals("Open project through devrig", arguments["reason"]?.jsonPrimitive?.content)
+        assertEquals(null, arguments["backend_name"])
+    }
+
+    @Test
+    fun `open project with unknown backend_name returns an error listing routable backends`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homeA = Files.createDirectories(tempDir.resolve("a"))
+        val homeB = Files.createDirectories(tempDir.resolve("b"))
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = homeA, token = "secret-42"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = homeB, token = "secret-43"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = "pid-999",
+            )
+        )
+
+        assertEquals(true, result.isError)
+        val message = result.errorText()
+        assertTrue(message.contains("Unknown backend_name 'pid-999'"), message)
+        // Self-correcting: the agent can read the routable ids and retry.
+        assertTrue(message.contains("pid-42"), message)
+        assertTrue(message.contains("pid-43"), message)
+        // No bridge call was made.
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
+    @Test
+    fun `open project with a non-routable port backend_name explains only pid ids are routable`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homeA = Files.createDirectories(tempDir.resolve("a"))
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val routing = routingService(
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = homeA, token = "secret-42"),
+                status = IdeMonitorStatus.CONNECTED,
+            ),
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = "port-63342",
+            )
+        )
+
+        assertEquals(true, result.isError)
+        val message = result.errorText()
+        assertTrue(message.contains("port-63342"), message)
+        assertTrue(message.contains("pid-<n>"), message)
+        assertEquals(null, receivedBody)
+    }
+
+    @Test
+    fun `devrig list_projects tags each project with its backend and lists routable backends`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val homeA = Files.createDirectories(tempDir.resolve("a"))
+        val homeB = Files.createDirectories(tempDir.resolve("b"))
+        val routing = routingService(
+            managedPids = setOf(43L),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 42, projectHome = homeA, build = "IU-261.1"),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("alpha", homeA.toString())),
+            ),
+            IdeMonitorState(
+                ide = discoveredIde(pid = 43, projectHome = homeB, build = "IU-253.9"),
+                status = IdeMonitorStatus.CONNECTED,
+                lastSnapshot = listOf(ProjectInfo("beta", homeB.toString())),
+            ),
+        )
+        val handler = DevrigListProjectsToolHandler(routing)
+
+        val response = handler.collectListProjectsResponse()
+
+        // Every project carries its owning backend id, and that id is one of the listed backends.
+        assertTrue(response.projects.all { it.backend != null })
+        assertEquals(
+            response.backends.map { it.id }.toSet(),
+            response.projects.mapNotNull { it.backend }.toSet(),
+        )
+        assertEquals(setOf("pid-42", "pid-43"), response.backends.map { it.id }.toSet())
+        for (backend in response.backends) {
+            assertTrue(backend.locator.isNotBlank(), "locator must disambiguate: $backend")
+            assertEquals("IU", backend.ideProductCode)
+            // openProjects matches exactly the routes for that pid (paths included for worktree matching).
+            val expectedPaths = response.projects
+                .filter { it.backend == backend.id }
+                .map { it.path }
+                .toSet()
+            assertEquals(expectedPaths, backend.openProjects.map { it.path }.toSet())
+        }
+        // The managed pid (43) is flagged so the agent can prefer it.
+        assertEquals(true, response.backends.single { it.id == "pid-43" }.managed)
+        assertEquals(false, response.backends.single { it.id == "pid-42" }.managed)
+    }
+
+    @Test
     fun `execute code bridge handler forwards timeout dialog killer and progress events`(
         @TempDir tempDir: Path,
     ) = runBlocking {

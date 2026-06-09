@@ -96,6 +96,31 @@ class DevrigProjectRoutingService(
      */
     fun newestIdeOrNull(): DiscoveredIde? = newestOf(discoveredIdes())
 
+    /**
+     * The agent-facing backend id for a discovered IDE — the value an agent passes as `backend_name`
+     * to steroid_open_project. Mirrors `backendStableId(BackendRow.FromMarker)` = `"pid-<pid>"`, so the
+     * id surfaced by `steroid_list_projects` / `devrig backend --json` is the one accepted here.
+     */
+    fun backendNameForIde(ide: DiscoveredIde): String = "pid-${ide.pid}"
+
+    /**
+     * Resolves a `backend_name` (as listed by steroid_list_projects / `devrig backend --json`) to its
+     * discovered IDE, or null when no currently-discovered routable backend matches. Only marker IDEs
+     * (`pid-<n>`) are routable; `port-<n>` / managed-slug ids never match here.
+     */
+    fun resolveBackend(backendName: String): DiscoveredIde? {
+        val wanted = backendName.trim()
+        if (wanted.isEmpty()) return null
+        return discoveredIdes().firstOrNull { backendNameForIde(it) == wanted }
+    }
+
+    /** All discovered backends as (backend_name, ide) pairs, for list_projects summaries and error messages. */
+    fun discoveredBackends(): List<Pair<String, DiscoveredIde>> =
+        discoveredIdes().map { backendNameForIde(it) to it }
+
+    /** Pids of devrig-managed backends currently known to the routing service (a subset of discovered IDEs). */
+    fun managedBackendPids(): Set<Long> = managedRunningPids()
+
     private fun discoveredIdes(): List<DiscoveredIde> =
         stateProvider().values.map { it.ide }.distinctBy { it.pid }
 
