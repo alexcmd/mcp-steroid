@@ -169,6 +169,36 @@ surface. Production guidance routes agents to the
 there is no dedicated MCP tool wrapping it. New context methods must
 clear the same bar.
 
+## Tenet 5 — the devrig↔plugin protocol is additive-only
+
+**The wire between `devrig` and the in-IDE plugin must stay forward AND
+backward compatible at all times. No breaking changes — ever.** A given
+devrig binary talks to many plugin versions and vice-versa (Tenet 3:
+devrig is reconstructable, not migratable). Therefore every change to a
+wire-crossing shape — the JSON-RPC tool-call params devrig POSTs to the
+bridge, the `/windows` and `/projects/stream` responses, and the
+`@Serializable` DTOs they (de)serialize — is **additive and optional**:
+
+- New fields are optional with a safe default (`= null` / `= ""` /
+  `= false` / a defaulted enum). An older peer that omits them still
+  decodes; a newer peer that ignores them still works.
+- Never remove, rename, or retype an existing field. Enums must degrade
+  on an unknown value, not throw.
+- **Prefer resolving new behavior inside devrig over extending the
+  wire.** The `backend_name` routing parameter is the canonical example:
+  it is an MCP-surface parameter that devrig resolves locally to a target
+  IDE and **never forwards** to the bridge, so the `steroid_open_project`
+  bridge call stayed byte-identical while the agent gained backend
+  selection. The only wire-crossing addition was an optional
+  `ProjectInfo.backend: String? = null` carried over `/projects/stream`.
+- Every wire change ships with a cross-version compatibility test (see
+  `WireCompatBackendFieldTest`, `DevrigToolBridgeClientTest`) and a
+  one-line entry in the `ij-plugin/CLAUDE.md` wire-contract table.
+
+**Why:** the protocol is the one thing two independently-versioned
+binaries share; a breaking change there strands every mismatched pair.
+Additive-only is what makes "delete devrig, reinstall any version" safe.
+
 ---
 
 ## Where this comes from

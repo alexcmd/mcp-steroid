@@ -58,15 +58,56 @@ start). Poll `steroid_list_projects` until the new IDE appears, then call
 `steroid_open_project` with the absolute project path.
 
 `steroid_open_project` prefers a **running devrig-managed backend** over
-any other (even newer) IDE — so once your backend is discovered, the
-project opens there deterministically. To open **several** projects in
-that one IDE, call `steroid_open_project` once per path; the global lock
-guarantees they all land in the same managed backend.
+any other (even newer) IDE when you let it auto-pick — so once your
+backend is discovered, the project opens there deterministically. To open
+**several** projects in that one IDE, call `steroid_open_project` once per
+path; the global lock guarantees they all land in the same managed
+backend. To target a **specific** IDE among several running ones, pass
+`backend_name` (see "Choosing a backend" below).
 
 After opening, poll `steroid_list_windows` (watch `modalDialogShowing`,
 `indexingInProgress`, `projectInitialized`) and use
 `steroid_take_screenshot` + `steroid_input` for any dialogs, exactly as
 in the normal open-project flow.
+
+## Choosing a backend (the `backend_name` parameter)
+
+When more than one IDE is running, tell `steroid_open_project` exactly
+which one to open the project in by passing `backend_name`. This is a
+**devrig-only** parameter — it has no effect on a direct in-IDE MCP
+connection (one MCP server == one IDE), where it is logged and ignored.
+
+To pick a value:
+
+1. Call `steroid_list_projects` and read `backends[]`. Each entry has:
+   - `id` — the value you pass as `backend_name` (e.g. `"pid-1234"`).
+   - `displayName` — human label, e.g. `"IntelliJ IDEA 2026.1"` (NOT
+     unique across two same-product IDEs).
+   - `locator` — disambiguator when two IDEs share a `displayName`
+     (e.g. `"build IU-261.x, pid 1234"`).
+   - `openProjects[]` — `{ name, path }` for every project already open
+     in that backend.
+   - `managed` — `true` if this is the devrig-managed sandbox.
+2. **Prefer the backend that already has the same project — or another
+   git worktree of the same repository — open.** Worktrees of one repo
+   share build/index/VCS context; opening them in the same IDE keeps that
+   context warm and avoids a redundant second indexing. Inspect
+   `backends[].openProjects[].path`: if a backend already holds a sibling
+   worktree of the repo you are about to open (same repo root / shared
+   `.git`), choose that backend's `id`. Otherwise prefer a `managed`
+   backend, else any listed backend.
+3. Pass the chosen `id` as `backend_name` to `steroid_open_project`.
+
+**Only routable backends are valid.** `backends[]` lists exactly the
+running IDEs that have the MCP Steroid plugin (ids of the form
+`pid-<n>`). The `port-<n>` and managed-slug ids that
+`devrig backend --json` may also show are **not** routable for
+`open_project` — passing one returns a self-correcting error that lists
+the currently-routable `pid-<n>` ids.
+
+**Ids are not stable across IDE restarts** (the pid changes), exactly
+like the pid-salted `project_name`. **Re-read `steroid_list_projects`
+each time rather than caching a `backend_name`.**
 
 ## Two common modes
 

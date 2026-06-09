@@ -146,6 +146,47 @@ Parameters:
 4. Use `steroid_take_screenshot` to visually confirm the project is loaded
 5. Verify with `steroid_list_projects` that the project appears
 
+#### Choosing a backend (`backend_name`)
+
+When you reach the IDE through the **devrig stdio MCP server**
+(`devrig mcp`), more than one IDE can be running behind a single MCP
+connection. The devrig `steroid_open_project` schema exposes an extra
+parameter, `backend_name`, that selects which IDE receives the open
+request. This parameter is **devrig-only** — on a direct in-IDE
+connection (one MCP server == one IDE) it is not advertised, and if sent
+anyway it is logged and ignored.
+
+To pick a value:
+
+1. Call `steroid_list_projects` and read `backends[]`. Each entry carries
+   `id` (the value to pass as `backend_name`, e.g. `"pid-1234"`),
+   `displayName` (human label, not unique across same-product IDEs),
+   `locator` (disambiguator, e.g. `"build IU-261.x, pid 1234"`),
+   `openProjects[]` (`{ name, path }` for each project open in that
+   backend), and `managed` (true for the devrig-managed sandbox). Each
+   `projects[]` entry also carries a `backend` field with its owning id.
+2. **Prefer the backend that already has the same project — or another
+   git worktree of the same repository — open.** Worktrees of one repo
+   share build/index/VCS context, so reusing that IDE keeps it warm and
+   avoids a redundant second indexing. Match
+   `backends[].openProjects[].path` against the repo you are opening
+   (same repo root / shared `.git`); if none matches, prefer a `managed`
+   backend, else any listed backend.
+3. Pass the chosen `id` as `backend_name`.
+
+Rules:
+- `backend_name` is a **devrig-only** parameter; it has no effect on a
+  direct in-IDE connection.
+- Only **routable** backends are valid — `backends[]` lists exactly the
+  running IDEs with the MCP Steroid plugin (`pid-<n>`). The `port-<n>` /
+  managed-slug ids that `devrig backend --json` may show are not routable
+  for `open_project`; an unknown `backend_name` returns a self-correcting
+  error listing the routable ids.
+- Backend ids are **not stable across IDE restarts** (the pid changes) —
+  **re-read `steroid_list_projects` rather than caching** a `backend_name`.
+
+See also: `mcp-steroid://open-project/managing-backends`.
+
 ## Critical Rules
 
 ### 1. The Script Body is a SUSPEND Function
