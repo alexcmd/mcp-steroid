@@ -24,6 +24,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import kotlinx.serialization.json.jsonObject
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -204,6 +205,81 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
             header(HttpHeaders.Authorization, "Bearer wrong-token")
         }
         assertEquals(HttpStatusCode.Unauthorized, wrongTokenResponse.status)
+    }
+
+    /**
+     * The direct in-IDE surface serves exactly one backend, so steroid_open_project must NOT advertise
+     * the devrig-only `backend_name` parameter (Option B). Guards the default openProjectToolSpec() seam.
+     */
+    fun testOpenProjectSchemaOmitsBackendNameOnDirectSurface(): Unit = timeoutRunBlocking(30.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+
+        val sessionId = initializeSession(server)
+
+        val toolsListResponse = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody("""{"jsonrpc":"2.0","id":"tools-list","method":"tools/list"}""")
+        }
+        assertEquals(HttpStatusCode.OK, toolsListResponse.status)
+        val toolsRpc = McpJson.decodeFromString<JsonRpcResponse>(toolsListResponse.bodyAsText())
+        assertNull("tools/list should succeed", toolsRpc.error)
+        val toolsList = McpJson.decodeFromJsonElement<ToolsListResult>(toolsRpc.result!!)
+
+        val openProject = toolsList.tools.single { it.name == "steroid_open_project" }
+        val properties = openProject.inputSchema["properties"]!!.jsonObject
+        assertFalse(
+            "Direct-IDE steroid_open_project must not advertise backend_name (devrig-only param)",
+            properties.containsKey("backend_name")
+        )
+    }
+
+    /**
+     * The shared ListProjectsResponse DTO always carries `backends` + `projects[].backend`, but on a
+     * direct in-IDE connection they must be honest empties (no devrig routing context to report).
+     */
+    fun testDirectIdeListProjectsCarriesEmptyBackendFields(): Unit = timeoutRunBlocking(30.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+
+        val sessionId = initializeSession(server)
+
+        val listProjectsResponse = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, sessionId)
+            setBody("""{"jsonrpc":"2.0","id":"call-list-projects","method":"tools/call","params":{"name":"steroid_list_projects"}}""")
+        }
+        assertEquals(HttpStatusCode.OK, listProjectsResponse.status)
+        val listProjectsRpc = McpJson.decodeFromString<JsonRpcResponse>(listProjectsResponse.bodyAsText())
+        assertNull("steroid_list_projects should not return JSON-RPC error", listProjectsRpc.error)
+        val listProjectsResult = McpJson.decodeFromJsonElement<ToolCallResult>(listProjectsRpc.result!!)
+        assertFalse("steroid_list_projects should succeed", listProjectsResult.isError)
+        val projectsPayload = (listProjectsResult.content.single() as ContentItem.Text).text
+        val projects = McpJson.decodeFromString<ListProjectsResponse>(projectsPayload)
+
+        assertTrue(
+            "Direct-IDE list_projects must report no backends summary",
+            projects.backends.isEmpty()
+        )
+        assertTrue(
+            "Direct-IDE list_projects must leave every project.backend null",
+            projects.projects.all { it.backend == null }
+        )
+    }
+
+    private suspend fun initializeSession(server: SteroidsMcpServer): String {
+        val initResponse = client.post(server.mcpUrl) {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            setBody(buildInitializeRequest())
+        }
+        assertEquals(HttpStatusCode.OK, initResponse.status)
+        val sessionId = initResponse.headers[McpHttpTransport.SESSION_HEADER]
+        assertNotNull("Server must issue an MCP session ID", sessionId)
+        return sessionId!!
     }
 
     private fun buildInitializeRequest() = buildJsonObject {
