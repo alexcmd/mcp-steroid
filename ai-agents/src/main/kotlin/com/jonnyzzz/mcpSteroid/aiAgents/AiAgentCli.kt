@@ -21,6 +21,12 @@ enum class AiAgentCli(
         GEMINI -> geminiMcpRemoveArgs(serverName)
     }
 
+    fun mcpListArgs(): List<String> = when (this) {
+        CLAUDE -> claudeMcpListArgs()
+        CODEX -> codexMcpListArgs()
+        GEMINI -> geminiMcpListArgs()
+    }
+
     companion object {
         fun parse(value: String): AiAgentCli? =
             entries.firstOrNull { it.name.equals(value, ignoreCase = true) || it.binary == value.lowercase() }
@@ -69,4 +75,12 @@ fun mcpRemoveInvocation(
     AiAgentCliInvocation(
         binary = agent.binary,
         args = agent.mcpRemoveArgs(serverName),
+    )
+
+fun mcpListInvocation(
+    agent: AiAgentCli,
+): AiAgentCliInvocation =
+    AiAgentCliInvocation(
+        binary = agent.binary,
+        args = agent.mcpListArgs(),
     )

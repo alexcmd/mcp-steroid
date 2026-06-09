@@ -100,6 +100,15 @@ fun codexMcpRemoveArgs(serverName: String = DEFAULT_SERVER_NAME): List<String> =
 fun claudeMcpRemoveArgs(serverName: String = DEFAULT_SERVER_NAME): List<String> =
     listOf("mcp", "remove", "--scope", "user", serverName)
 
+// `mcp list` arg builders — used by `devrig install` to review the agent's currently registered MCP
+// servers so it can consolidate every devrig/mcp-steroid entry into one. codex emits JSON; claude and
+// gemini emit a line-oriented `name: <command> - <status>` listing.
+fun geminiMcpListArgs(): List<String> = listOf("mcp", "list")
+
+fun codexMcpListArgs(): List<String> = listOf("mcp", "list", "--json")
+
+fun claudeMcpListArgs(): List<String> = listOf("mcp", "list")
+
 private fun renderCommand(binary: String, args: List<String>): String =
     (listOf(binary) + args).joinToString(" ")
 
