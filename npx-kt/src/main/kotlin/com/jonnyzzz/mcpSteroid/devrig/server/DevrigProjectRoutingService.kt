@@ -8,6 +8,7 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -186,25 +187,16 @@ class DevrigProjectRoutingService(
         fun canonicalProjectHome(projectHome: String): Path =
             Path.of(projectHome).toRealPath()
 
-        private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
         fun projectHash(realProjectHome: Path, idePid: Long): String {
             val digest = MessageDigest.getInstance("SHA-256")
             digest.update(realProjectHome.toString().encodeToByteArray())
             digest.update(0.toByte())
             digest.update(idePid.toString().encodeToByteArray())
-            // base62 (alphanumeric) over the full digest, first 8 chars. Unlike URL-safe
-            // Base64 the alphabet has no '-'/'_', so the suffix can never contain or end
-            // with '-'; the whole 256-bit digest feeds the result, nothing is truncated first.
-            var value = java.math.BigInteger(1, digest.digest())
-            val base = java.math.BigInteger.valueOf(62L)
-            val sb = StringBuilder(8)
-            repeat(8) {
-                val (q, r) = value.divideAndRemainder(base)
-                sb.append(BASE62[r.toInt()])
-                value = q
-            }
-            return sb.toString()
+            // base62 (alphanumeric) over the full salted digest, fixed 8 chars. Unlike URL-safe
+            // Base64 the alphabet has no '-'/'_', so the suffix can never contain or end with '-';
+            // the whole 256-bit digest feeds the result, nothing is truncated before hashing. The
+            // (home, pid) salting stays local; only the base62 rendering is shared (base62FixedWidth).
+            return base62FixedWidth(digest.digest(), 8)
         }
     }
 }

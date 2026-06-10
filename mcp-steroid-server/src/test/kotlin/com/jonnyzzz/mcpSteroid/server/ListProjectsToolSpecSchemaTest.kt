@@ -17,16 +17,50 @@ class ListProjectsToolSpecSchemaTest {
     }
 
     @Test
-    fun `response tolerates backend fields additively`() {
+    fun `response decodes ListedProject and defaults backends to empty`() {
         // IdeInfo(name, version, build) — `build` has NO default, so it MUST be present; there is no `fullName`.
-        val legacy = """{"ide":{"name":"x","version":"1","build":"x"},
+        // ListedProject uses snake_case `project_name`/`backend_name` (@SerialName); `backends` defaults empty.
+        val json = """{"ide":{"name":"x","version":"1","build":"x"},
             |"plugin":{"id":"p","name":"p","version":"1"},"pid":1,
-            |"projects":[{"name":"n","path":"/p"}]}""".trimMargin()
-        val decoded = McpJson.decodeFromString(ListProjectsResponse.serializer(), legacy)
-        assertNull(decoded.projects.single().backend)
+            |"projects":[{"project_name":"n","name":"n","path":"/p"}]}""".trimMargin()
+        val decoded = McpJson.decodeFromString(ListProjectsResponse.serializer(), json)
+        val project = decoded.projects.single()
+        assertEquals("n", project.projectName)
+        assertEquals("n", project.name)
+        assertEquals("/p", project.path)
+        assertNull(project.backendName)
         assertTrue(decoded.backends.isEmpty())
+    }
 
-        val withBackend = ProjectInfo(name = "n", path = "/p", backend = "pid-1234")
-        assertEquals("pid-1234", withBackend.backend)
+    @Test
+    fun `ListedProject round-trips snake_case keys`() {
+        val listed = ListedProject(projectName = "proj-9fk2a0xQ", name = "proj", path = "/p", backendName = "iu-9fk2a0xQ")
+        val json = McpJson.encodeToString(ListedProject.serializer(), listed)
+        assertTrue(json.contains("\"project_name\":\"proj-9fk2a0xQ\""), json)
+        assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), json)
+        val decoded = McpJson.decodeFromString(ListedProject.serializer(), json)
+        assertEquals(listed, decoded)
+    }
+
+    @Test
+    fun `BackendInfo round-trips with renamed fields`() {
+        val backend = BackendInfo(
+            backendName = "iu-9fk2a0xQ",
+            source = "marker",
+            displayName = "IntelliJ IDEA 2026.1",
+            locator = "build IU-261.x, pid 1234",
+            routable = true,
+            reachable = true,
+            mcpSteroidPluginInstalled = true,
+            pid = 1234,
+            ideProductCode = "IU",
+            portDetail = PortBackendDetail(baseUrl = "http://localhost:63342"),
+        )
+        val json = McpJson.encodeToString(BackendInfo.serializer(), backend)
+        assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), json)
+        assertTrue(json.contains("\"mcpSteroidPluginInstalled\":true"), json)
+        assertTrue(json.contains("\"portDetail\""), json)
+        val decoded = McpJson.decodeFromString(BackendInfo.serializer(), json)
+        assertEquals(backend, decoded)
     }
 }
