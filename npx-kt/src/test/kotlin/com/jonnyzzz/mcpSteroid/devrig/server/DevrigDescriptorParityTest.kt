@@ -11,6 +11,8 @@ import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
+import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
+import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import java.io.ByteArrayInputStream
@@ -74,21 +76,33 @@ class DevrigDescriptorParityTest {
 
     private fun directIdeServer(context: PromptsContext): McpServerCore =
         newServer().also { server ->
-            DirectDescriptorTools(context).registerAll(server)
+            val tools = DirectDescriptorTools(context)
+            tools.registerAll(server)
+            // Mirror the in-IDE SteroidsMcpServer callsite: registerAll() no longer registers
+            // open_project, so the single-backend surface registers its own spec (no backend_name).
+            server.toolRegistry.registerTool(
+                OpenProjectToolSpec(includeBackendName = false) { tools.handler<OpenProjectToolHandler>() }
+            )
         }
 
     private fun devrigServer(tempDir: Path): McpServerCore {
         val lifetime = CloseableStackHost()
         return try {
             newServer().also { server ->
-                StubMcpSteroidTools(
+                val tools = StubMcpSteroidTools(
                     DevrigServices(
                         lifetime = lifetime,
                         homePaths = HomePaths(tempDir.resolve("devrig-home")).also { it.mkdirsAll() },
                         mcpStdin = ByteArrayInputStream(ByteArray(0)),
                         mcpStdout = PrintStream(ByteArrayOutputStream(), true, Charsets.UTF_8),
                     )
-                ).registerAll(server)
+                )
+                tools.registerAll(server)
+                // Mirror the devrig StubStdioMcpServer callsite: the multi-backend surface registers
+                // its own open_project spec advertising the required backend_name routing param.
+                server.toolRegistry.registerTool(
+                    OpenProjectToolSpec(includeBackendName = true) { tools.handler<OpenProjectToolHandler>() }
+                )
             }
         } finally {
             lifetime.closeAllStacks()

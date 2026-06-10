@@ -125,41 +125,15 @@ fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend
     return 0
 }
 
-fun DevrigServices.collectBackendRows(): List<BackendRow> {
-    return collectBackendRows(
-        discovery = ideDiscovery,
-        httpClient = commandHttpClient,
-        portDiscovery = portDiscovery,
-        clientInfo = clientInfo,
-        managedBackends = { backendManager.list() },
-    )
-}
-
-private fun collectBackendRows(
-    discovery: IdeDiscoveryService,
-    httpClient: HttpClient,
-    portDiscovery: IntelliJPortDiscovery,
-    clientInfo: NpxStreamClientInfo,
-    managedBackends: () -> List<ManagedBackendInfo>,
-): List<BackendRow> {
-    discovery.scanOnce()
-    val ides = discovery.ides.value
-        .sortedWith(compareBy({ it.marker.ide.name }, { it.pid }))
-
-    return runBlocking(Dispatchers.IO) {
-        // Run marker-fetch and port-scan concurrently — both hit localhost
-        // and they're independent, so there's no reason to serialise.
-        val markerRowsAsync = async {
-            collectMarkerSnapshots(httpClient, ides, perIdeTimeout = 8.seconds, clientInfo = clientInfo)
-        }
-        val portIdesAsync = async {
-            collectPortDiscoveredIdes(portDiscovery)
-        }
-        val markerRows = markerRowsAsync.await()
-        val portIdes = portIdesAsync.await()
-        mergeRows(markerRows, portIdes, managedBackends())
+/**
+ * CLI entry point for the whole-model backend listing. Delegates to the shared [BackendInventory]
+ * in CLI mode (one-shot marker scan + snapshot fetch) so `devrig backend` / `devrig project` and the
+ * MCP `steroid_list_projects` / `steroid_list_windows` handlers can never diverge on discovery.
+ */
+fun DevrigServices.collectBackendRows(): List<BackendRow> =
+    runBlocking(Dispatchers.IO) {
+        cliBackendInventory(this@collectBackendRows).collectRows()
     }
-}
 
 fun scanMarkersOnce(
     homePaths: HomePaths = resolveHomePaths(),
@@ -526,8 +500,6 @@ suspend fun collectMarkerSnapshots(
     perIdeTimeout: Duration,
     clientInfo: NpxStreamClientInfo = backendCommandClientInfo(),
 ): List<BackendRow.FromMarker> = coroutineScope {
-    // R3.9: one stderr warning per (pid, plugin version) when devrig and the plugin versions differ.
-    ides.forEach { BackendVersionSkew.warnIfSkewed(it) }
     ides.map { ide ->
         async { fetchSnapshotForIde(httpClient, ide, perIdeTimeout, clientInfo) }
     }.awaitAll()
@@ -693,7 +665,11 @@ fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
     out.println(json.encodeToString(JsonObject.serializer(), payload))
 }
 
-private fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendRow>> {
+/**
+ * Pairs every row with its R3.3 `backend_name`, de-duplicating by keep-first + WARN. Shared by
+ * `backend/project --json` and the MCP handlers' `backends[]` (via `collectBackendInfos`).
+ */
+fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendRow>> {
     val rowsWithIds = rows.map { row -> backendNameForRow(row) to row }
     val ids = rowsWithIds.map { it.first }
     if (ids.toSet().size != rows.size) {

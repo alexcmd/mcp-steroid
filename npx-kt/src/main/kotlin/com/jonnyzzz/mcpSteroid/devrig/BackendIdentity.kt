@@ -3,6 +3,8 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
+import com.jonnyzzz.mcpSteroid.server.markerDisplayName
+import com.jonnyzzz.mcpSteroid.server.markerLocator
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
@@ -11,22 +13,10 @@ import kotlinx.serialization.json.put
 const val BACKEND_TYPE_INTELLIJ = "intellij"
 
 fun markerBackendDisplayName(ide: DiscoveredIde): String =
-    ideNameWithVersion(ide.marker.ide.name, ide.marker.ide.version)
+    markerDisplayName(ide.marker.ide)
 
-fun markerBackendLocatorLabel(ide: DiscoveredIde): String = buildString {
-    ide.marker.ide.build.trim().takeIf { it.isNotEmpty() }?.let {
-        append("build ").append(it).append(", ")
-    }
-    append("pid ").append(ide.pid)
-}
-
-private fun ideNameWithVersion(name: String, version: String): String {
-    val trimmedName = name.trim()
-    val trimmedVersion = version.trim()
-    if (trimmedVersion.isEmpty()) return trimmedName
-    if (trimmedName == trimmedVersion || trimmedName.endsWith(" $trimmedVersion")) return trimmedName
-    return "$trimmedName $trimmedVersion".trim()
-}
+fun markerBackendLocatorLabel(ide: DiscoveredIde): String =
+    markerLocator(ide.marker.ide.build, ide.pid)
 
 fun portBackendDisplayName(ide: DiscoveredIdeByPort): String =
     ide.productFullName ?: ide.productName ?: "(unknown JetBrains IDE)"

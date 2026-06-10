@@ -1,17 +1,13 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.PluginInfo
-import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
+import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
 import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
-import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
-import com.jonnyzzz.mcpSteroid.devrig.backendInfoForRow
+import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
 import com.jonnyzzz.mcpSteroid.server.ListedProject
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
@@ -19,7 +15,6 @@ import com.jonnyzzz.mcpSteroid.server.ListProjectsToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
-import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
@@ -28,8 +23,13 @@ class StubMcpSteroidTools(
     val services: DevrigServices,
 ) : McpSteroidTools() {
     private val bridge = DevrigToolBridgeClient(services.projectRouting, services.mcpHttpClient)
-    private val listProjects = DevrigListProjectsToolHandler(services.projectRouting)
-    private val listWindows = DevrigListWindowsToolHandler(services)
+    private val listProjects = DevrigListProjectsToolHandler(services.projectRouting, services.backendInventory)
+    private val listWindows = DevrigListWindowsToolHandler(
+        states = { services.ideMonitor.states.value.values },
+        httpClient = services.commandHttpClient,
+        routing = services.projectRouting,
+        inventory = services.backendInventory,
+    )
     val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
     private val executeCode = DevrigExecuteCodeToolHandler(bridge, services.beacon)
     private val executeFeedback = DevrigExecuteFeedbackToolHandler(bridge, services.beacon)
@@ -52,12 +52,6 @@ class StubMcpSteroidTools(
         return type.cast(handler)
     }
 
-    // Devrig routes to one of several discovered IDEs, so it advertises the optional `backend_name`
-    // routing parameter (REQUIRED on this surface). The in-IDE plugin keeps the default single-backend
-    // surface (no `backend_name`).
-    override fun openProjectToolSpec(): McpToolBase =
-        OpenProjectToolSpec(includeBackendName = true) { handler<OpenProjectToolHandler>() }
-
     private fun unsupportedHandler(type: Class<*>): Nothing =
         throw UnsupportedOperationException(
             "not yet ready: handler<${type.name}>() is not wired in devrig yet for ${services.clientInfo.client}"
@@ -66,16 +60,14 @@ class StubMcpSteroidTools(
 
 class DevrigListProjectsToolHandler(
     private val routing: DevrigProjectRoutingService,
+    private val inventory: BackendInventory,
 ) : ListProjectsToolHandler {
     override suspend fun collectListProjectsResponse(): ListProjectsResponse {
         val routes = routing.routes().values.toList()
-        val first = routes.firstOrNull()
-        val managedPids = routing.managedBackendPids()
-        // backends[] lists ONLY routable marker IDEs (the only ones with a live bridge) — never a dead id.
-        // discoveredBackends() de-dupes by backend_name (keep-first + WARN); recompute it once.
-        val discovered = routing.discoveredBackends()
         // Each route maps to its owning backend's backend_name so projects[] and backends[] agree.
-        val backendNameByPid = discovered.associate { (name, ide) -> ide.pid to name }
+        // discoveredBackends() de-dupes by backend_name (keep-first + WARN) — the same names the
+        // inventory computes for its marker rows (both use backendNameForMarker(pid, build)).
+        val backendNameByPid = routing.discoveredBackends().associate { (name, ide) -> ide.pid to name }
         val listedProjects = routes.mapNotNull { route ->
             val backendName = backendNameByPid[route.idePid] ?: return@mapNotNull null
             ListedProject(
@@ -85,31 +77,17 @@ class DevrigListProjectsToolHandler(
                 backendName = backendName,
             )
         }
-        // Reuse the ONE BackendRow -> BackendInfo mapping (shared with the CLI), so the MCP `backends[]`
-        // and `devrig backend --json` never diverge. A routing-discovered IDE is always reachable (its
-        // bridge answered), so the FromMarker row carries a non-null `projects` list -> routable = true.
-        val backends = discovered.map { (backendName, ide) ->
-            val markerProjects = routes
-                .filter { it.idePid == ide.pid }
-                .map { ProjectInfo(name = it.originalProjectName, path = it.projectPath) }
-            backendInfoForRow(
-                row = BackendRow.FromMarker(
-                    ide = ide,
-                    projects = markerProjects,
-                    managed = ide.pid in managedPids,
-                ),
-                backendName = backendName,
-                openProjects = listedProjects.filter { it.backendName == backendName },
-            )
+        // backends[] = ALL inventory rows (markers + port-discovered + managed) through the ONE
+        // BackendRow -> BackendInfo mapping shared with the CLI, so the MCP `backends[]` and
+        // `devrig backend --json` never diverge. Marker rows own their routes' projects; port/managed
+        // rows surface with routable=false and no openProjects so the agent sees the full picture.
+        val backends = inventory.collectBackendInfos { backendName, row ->
+            when (row) {
+                is BackendRow.FromMarker -> listedProjects.filter { it.backendName == backendName }
+                is BackendRow.FromPort, is BackendRow.FromManaged -> emptyList()
+            }
         }
         return ListProjectsResponse(
-            ide = first?.ide ?: IdeInfo("devrig", DevrigVersionMetadata.getDevrigVersion(), "devrig"),
-            plugin = first?.plugin ?: PluginInfo(
-                "com.jonnyzzz.mcp-steroid.devrig",
-                "devrig",
-                DevrigVersionMetadata.getDevrigVersion(),
-            ),
-            pid = first?.idePid ?: ProcessHandle.current().pid(),
             projects = listedProjects,
             backends = backends,
         )
