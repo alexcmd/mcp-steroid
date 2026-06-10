@@ -3752,3 +3752,40 @@ What to set up (revisit after the current devrig tasks):
 
 **Still deferred** (need a baseline release / larger refactor): (2) cross-version test (devrig HEAD ↔ older
 plugin build); (5) give devrig its own copy of the marker/bridge DTOs for fully independent versioning.
+
+---
+
+# Active focus — backend_name follow-ups: plugins[], shared BackendInfo, de-inherit tool reg, devrig-mgmt docs (2026-06-10)
+
+Follow-up to the merged #87 (`backend_name` routing). Five split tasks. Hard invariant for ALL of them:
+**the npx-kt ↔ ij-plugin WIRE is untouched** (`/projects/stream` `ProjectInfo{name,path}`, `/windows`
+`NpxBridgeWindowsResponse`, `/tools/call` params). Everything here is MCP/CLI-output (devrig-owned, free
+to reshape per PHILOSOPHY.md Tenet 5) or internal registration/docs. `WirePristinenessTest` must stay green.
+
+- **A — plugins[] in BackendInfo (#88 prep).** Add `@Serializable BackendPlugin(id, name, version, kind)`
+  (`kind`: `"mcp-steroid"` | `"other"`; room for `"intellij-native-mcp"`). On `BackendInfo`, REPLACE the
+  `plugin: PluginInfo?` + `mcpSteroidPluginInstalled: Boolean` fields with `plugins: List<BackendPlugin> =
+  emptyList()`. Keep `type = "intellij"` (document: more backend types may come). Add helpers
+  `BackendInfo.mcpSteroidPlugin(): BackendPlugin?` + `BackendInfo.hasMcpSteroid(): Boolean` (the "simplify
+  the check" helper). Update all producers (devrig `backendInfoForRow`, ij self-describe) and consumers
+  (BackendCommandJsonRenderTest, BackendAndProjectJsonAreIdenticalTest, DevrigToolBridgeClientTest,
+  McpServerIntegrationTest) to plugins[]/helper. Markers → one `BackendPlugin(kind=mcp-steroid)`;
+  port/managed → empty.
+- **B — share the marker→BackendInfo builder.** Extract into `mcp-steroid-server` a
+  `markerBackendInfo(backendName, pid, ide: IdeInfo, plugins, openProjects, managed, routable, reachable)`
+  assembler PLUS shared marker display/locator formatters (`markerDisplayName(ide)`,
+  `markerLocator(build, pid)`). devrig's `markerBackendDisplayName`/`markerBackendLocatorLabel` delegate to
+  them; devrig `backendInfoForRow(FromMarker)` and ij `ListProjectsToolHandler` both call
+  `markerBackendInfo` — one definition, no per-side re-implementation.
+- **C — de-inherit tool registration.** Remove `McpSteroidTools.openProjectToolSpec()` (the protected-open
+  override seam) and the `StubMcpSteroidTools` override. `registerAll` registers only the common tools; each
+  call site registers open_project explicitly — ij (`SteroidsMcpServer`) with `includeBackendName=false`,
+  devrig (`StubStdioMcpServer`) with `includeBackendName=true`, both via `tools.handler<…>()`. Delete
+  `McpSteroidToolsSeamTest`.
+- **D — backend_name devrig-management docs.** In `OpenProjectTool` BACKEND_NAME_DESCRIPTION + the agent
+  guide + `managing-backends.md`: how to manage backends via the devrig CLI — `devrig backend
+  [download|start|stop|provision] <id>` — with the launcher path on macOS/Linux (`devrig`) AND Windows
+  (`devrig.bat`, via `cmd.exe /c`), and that devrig needs Java 25: set `DEVRIG_JAVA_HOME` to a 25 home if
+  `java`/`JAVA_HOME` is older.
+- **E — verify.** `:mcp-steroid-server:test` + `:npx-kt:test` green; `:ij-plugin` compiles +
+  `McpServerIntegrationTest` green; `WirePristinenessTest` green (wire unaffected). Full diff audit.
