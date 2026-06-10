@@ -98,8 +98,6 @@ data class BackendInfo(
     val plugins: List<BackendPlugin> = emptyList(),
     /** Marker-unreachable message (was backendEntryJson "error"). */
     val error: String? = null,
-    /** Top-level provision actions (e.g. port provisioning); not nested under managed. */
-    val actions: List<BackendAction> = emptyList(),
     /** Port-only identity extras (renamed from the colliding scalar `port`). */
     val portDetail: PortBackendDetail? = null,
     /** Managed-only extras. */
@@ -210,14 +208,6 @@ fun markerBackendInfo(
     error = error,
     ide = ide,
     openProjects = openProjects,
-)
-
-@Serializable
-data class BackendAction(
-    val id: String,
-    val label: String,
-    val command: String,
-    val argv: List<String> = emptyList(),
 )
 
 @Serializable
