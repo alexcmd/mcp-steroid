@@ -168,8 +168,9 @@ To pick a value:
    `"iu-9fk2a0xQ"`), `displayName` (human label, not unique across
    same-product IDEs), `locator` (disambiguator, e.g.
    `"build IU-261.x, pid 1234"`), `routable` (true only for IDEs you can
-   actually open into), `mcpSteroidPluginInstalled` (true when the MCP
-   Steroid plugin is present), `openProjects[]` (`{ project_name, name,
+   actually open into), `plugins[]` (the IDE's relevant plugins, each
+   `{ id, name, version, kind }`; a `kind: "mcp-steroid"` entry means the
+   MCP Steroid plugin is installed), `openProjects[]` (`{ project_name, name,
    path, backend_name }` for each project open in that backend), and
    `managed` (true for the devrig-managed sandbox). Each `projects[]`
    entry carries `project_name`, the raw folder `name`, `path`, and a
@@ -187,8 +188,8 @@ Rules:
 - `backend_name` is a **devrig-only** parameter; it has no effect on a
   direct in-IDE connection.
 - Only **routable** backends are valid — `backends[]` advertises only the
-  running IDEs with the MCP Steroid plugin (`routable: true`,
-  `mcpSteroidPluginInstalled: true`). Backends `devrig backend --json` may
+  running IDEs with the MCP Steroid plugin (`routable: true`, with a
+  `plugins[]` entry of `kind: "mcp-steroid"`). Backends `devrig backend --json` may
   show that are not running with the plugin are not routable for
   `open_project`; an unknown `backend_name` returns a self-correcting
   error listing the routable `backend_name`s.
