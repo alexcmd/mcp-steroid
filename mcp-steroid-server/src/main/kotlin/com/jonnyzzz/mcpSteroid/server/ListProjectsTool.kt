@@ -31,11 +31,13 @@ interface ListProjectsToolHandler {
     suspend fun collectListProjectsResponse(): ListProjectsResponse
 }
 
+/**
+ * MCP-only output of `steroid_list_projects` — never crosses the devrig<->IDE wire. There is no
+ * top-level `ide`/`plugin`/`pid` header: the responding server's identity lives in the MCP server
+ * info, and per-entry attribution happens via `backend_name` against [backends].
+ */
 @Serializable
 data class ListProjectsResponse(
-    val ide: IdeInfo,
-    val plugin: PluginInfo,
-    val pid: Long = ProcessHandle.current().pid(),
     /**
      * Projects reachable through this connection. On a direct in-IDE connection `project_name == name`
      * and `backend_name` is this IDE's self-id; on devrig `project_name` is the disambiguated exposed

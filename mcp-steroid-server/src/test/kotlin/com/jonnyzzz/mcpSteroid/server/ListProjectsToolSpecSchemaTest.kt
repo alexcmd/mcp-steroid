@@ -18,11 +18,9 @@ class ListProjectsToolSpecSchemaTest {
 
     @Test
     fun `response decodes ListedProject and defaults backends to empty`() {
-        // IdeInfo(name, version, build) — `build` has NO default, so it MUST be present; there is no `fullName`.
+        // No top-level ide/plugin/pid header (#89) — projects[] + backends[] only.
         // ListedProject uses snake_case `project_name`/`backend_name` (@SerialName); `backends` defaults empty.
-        val json = """{"ide":{"name":"x","version":"1","build":"x"},
-            |"plugin":{"id":"p","name":"p","version":"1"},"pid":1,
-            |"projects":[{"project_name":"n","name":"n","path":"/p"}]}""".trimMargin()
+        val json = """{"projects":[{"project_name":"n","name":"n","path":"/p"}]}"""
         val decoded = McpJson.decodeFromString(ListProjectsResponse.serializer(), json)
         val project = decoded.projects.single()
         assertEquals("n", project.projectName)
@@ -30,6 +28,18 @@ class ListProjectsToolSpecSchemaTest {
         assertEquals("/p", project.path)
         assertNull(project.backendName)
         assertTrue(decoded.backends.isEmpty())
+    }
+
+    @Test
+    fun `response serializes no top-level ide-plugin-pid header`() {
+        // #89: devrig's own identity lives in the MCP server info; attribution is per-entry via backend_name.
+        val response = ListProjectsResponse(
+            projects = listOf(ListedProject(projectName = "n", name = "n", path = "/p", backendName = "iu-1")),
+        )
+        val json = McpJson.encodeToString(ListProjectsResponse.serializer(), response)
+        assertTrue(!json.contains("\"ide\""), json)
+        assertTrue(!json.contains("\"plugin\""), json)
+        assertTrue(!json.contains("\"pid\""), json)
     }
 
     @Test
