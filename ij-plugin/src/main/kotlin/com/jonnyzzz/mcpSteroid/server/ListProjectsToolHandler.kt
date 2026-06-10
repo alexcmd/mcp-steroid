@@ -9,8 +9,9 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 /**
  * Direct in-IDE `steroid_list_projects`. R3.6 — the surface self-describes with the SAME shape devrig
  * emits: exactly one [BackendInfo] for this IDE (its own R3.3 `backend_name` over its pid; `source=marker`,
- * `routable=true`, `mcpSteroidPluginInstalled=true`), and one [ListedProject] per open project where
- * `project_name == name` and `backend_name` is this IDE's self-id.
+ * `routable=true`, one `plugins[]` entry of `kind=mcp-steroid`), and one [ListedProject] per open project
+ * where `project_name == name` and `backend_name` is this IDE's self-id. Built via the shared
+ * [markerBackendInfo] assembler so the in-IDE and devrig sides never re-implement the marker shape.
  */
 class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
     override suspend fun collectListProjectsResponse(): ListProjectsResponse {
@@ -33,19 +34,11 @@ class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
             )
         }
 
-        val selfBackend = BackendInfo(
+        val selfBackend = markerBackendInfo(
             backendName = selfBackendName,
-            source = "marker",
-            displayName = "${ide.name} ${ide.version}",
-            locator = "build ${ide.build}, pid $pid",
-            routable = true,
-            reachable = true,
             pid = pid,
-            ideProductCode = productCodeFromBuild(ide.build),
-            build = ide.build,
-            mcpSteroidPluginInstalled = true,
-            plugin = plugin,
             ide = ide,
+            plugins = mcpSteroidPlugins(plugin),
             openProjects = listedProjects,
         )
 

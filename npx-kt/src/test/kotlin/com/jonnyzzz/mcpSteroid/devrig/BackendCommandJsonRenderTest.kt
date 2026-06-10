@@ -187,7 +187,6 @@ class BackendCommandJsonRenderTest {
         assertEquals(backendNameForRow(row), backend["backend_name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("intellij", backend["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("marker", backend["source"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(true, backend["mcpSteroidPluginInstalled"]?.jsonPrimitive?.boolean)
         assertEquals(true, backend["routable"]?.jsonPrimitive?.boolean)
         assertEquals(true, backend["reachable"]?.jsonPrimitive?.boolean)
         assertEquals(backendDisplayName(row), backend["displayName"]?.jsonPrimitive?.contentOrNull)
@@ -202,10 +201,13 @@ class BackendCommandJsonRenderTest {
         assertEquals("2025.3.3", ide["version"]?.jsonPrimitive?.contentOrNull)
         assertEquals("IU-253.21581.142", ide["build"]?.jsonPrimitive?.contentOrNull)
 
-        val plugin = backend["plugin"]!!.jsonObject
+        // plugins[] carries one entry tagged kind=mcp-steroid (replaces the old `plugin` block + flag).
+        val plugin = backend["plugins"]!!.jsonArray.single().jsonObject
         assertEquals("com.jonnyzzz.mcp-steroid", plugin["id"]?.jsonPrimitive?.contentOrNull)
         assertEquals("MCP Steroid", plugin["name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("0.0.0-test", plugin["version"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("mcp-steroid", plugin["kind"]?.jsonPrimitive?.contentOrNull)
+        assertNull(backend["mcpSteroidPluginInstalled"], "the boolean flag is replaced by plugins[]: $backend")
         assertEquals(0, backend["actions"]!!.jsonArray.size)
         assertNull(backend["error"], "reachable marker rows must not carry an error: $backend")
         assertNull(backend["portDetail"], "marker row carries no port detail: $backend")
@@ -270,7 +272,6 @@ class BackendCommandJsonRenderTest {
         assertEquals(backendNameForRow(row), backend["backend_name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("intellij", backend["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("port", backend["source"]?.jsonPrimitive?.contentOrNull)
-        assertEquals(false, backend["mcpSteroidPluginInstalled"]?.jsonPrimitive?.boolean)
         assertEquals(false, backend["routable"]?.jsonPrimitive?.boolean, "port rows have no bridge: $backend")
         assertEquals(true, backend["reachable"]?.jsonPrimitive?.boolean)
         assertEquals(backendDisplayName(row), backend["displayName"]?.jsonPrimitive?.contentOrNull)
@@ -285,7 +286,7 @@ class BackendCommandJsonRenderTest {
         assertEquals(253, detail["baselineVersion"]?.jsonPrimitive?.int)
         assertEquals("IU-253.21581.142", detail["buildNumber"]?.jsonPrimitive?.contentOrNull)
 
-        assertNull(backend["plugin"], "port row has no installed plugin block: $backend")
+        assertEquals(0, backend["plugins"]!!.jsonArray.size, "port row has no plugins: $backend")
         val action = backend["actions"]!!.jsonArray.single().jsonObject
         assertEquals("provision", action["id"]?.jsonPrimitive?.contentOrNull)
         assertEquals("Install MCP Steroid plugin", action["label"]?.jsonPrimitive?.contentOrNull)

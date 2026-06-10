@@ -51,16 +51,49 @@ class ListProjectsToolSpecSchemaTest {
             locator = "build IU-261.x, pid 1234",
             routable = true,
             reachable = true,
-            mcpSteroidPluginInstalled = true,
+            plugins = listOf(
+                BackendPlugin(MCP_STEROID_PLUGIN_ID, "MCP Steroid", "0.0.0-test", kind = MCP_STEROID_PLUGIN_KIND),
+            ),
             pid = 1234,
             ideProductCode = "IU",
             portDetail = PortBackendDetail(baseUrl = "http://localhost:63342"),
         )
         val json = McpJson.encodeToString(BackendInfo.serializer(), backend)
         assertTrue(json.contains("\"backend_name\":\"iu-9fk2a0xQ\""), json)
-        assertTrue(json.contains("\"mcpSteroidPluginInstalled\":true"), json)
+        assertTrue(json.contains("\"kind\":\"mcp-steroid\""), json)
         assertTrue(json.contains("\"portDetail\""), json)
         val decoded = McpJson.decodeFromString(BackendInfo.serializer(), json)
         assertEquals(backend, decoded)
+        assertTrue(decoded.hasMcpSteroid(), "decoded backend reports MCP Steroid via plugins[]: $decoded")
+        assertEquals("0.0.0-test", decoded.mcpSteroidPlugin()?.version)
+    }
+
+    @Test
+    fun `BackendInfo without an mcp-steroid plugin reports hasMcpSteroid false`() {
+        val backend = BackendInfo(
+            backendName = "iu-port",
+            source = "port",
+            displayName = "IntelliJ IDEA",
+            locator = "port 63342",
+            routable = false,
+            reachable = true,
+        )
+        assertTrue(backend.plugins.isEmpty())
+        assertNull(backend.mcpSteroidPlugin())
+        assertTrue(!backend.hasMcpSteroid())
+    }
+
+    @Test
+    fun `mcpSteroidPlugins tags our plugin id as mcp-steroid kind and others as other`() {
+        val ours = mcpSteroidPlugins(
+            com.jonnyzzz.mcpSteroid.PluginInfo(MCP_STEROID_PLUGIN_ID, "MCP Steroid", "1.2.3"),
+        ).single()
+        assertEquals(MCP_STEROID_PLUGIN_KIND, ours.kind)
+        assertEquals("1.2.3", ours.version)
+
+        val other = mcpSteroidPlugins(
+            com.jonnyzzz.mcpSteroid.PluginInfo("com.example.other", "Other", "9"),
+        ).single()
+        assertEquals("other", other.kind)
     }
 }

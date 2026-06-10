@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import com.jonnyzzz.mcpSteroid.mcp.*
+import com.jonnyzzz.mcpSteroid.server.hasMcpSteroid
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeService
@@ -273,7 +274,7 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         )
         assertTrue(
             "The self backend must report the MCP Steroid plugin installed",
-            selfBackend.mcpSteroidPluginInstalled
+            selfBackend.hasMcpSteroid()
         )
         response.projects.forEach { project ->
             assertEquals(

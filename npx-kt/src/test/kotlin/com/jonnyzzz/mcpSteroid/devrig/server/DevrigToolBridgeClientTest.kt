@@ -11,6 +11,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
+import com.jonnyzzz.mcpSteroid.server.hasMcpSteroid
 import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
@@ -599,7 +600,7 @@ class DevrigToolBridgeClientTest {
             assertTrue(backend.locator.isNotBlank(), "locator must disambiguate: $backend")
             assertEquals("IU", backend.ideProductCode)
             assertEquals(true, backend.routable)
-            assertEquals(true, backend.mcpSteroidPluginInstalled)
+            assertTrue(backend.hasMcpSteroid())
             // openProjects matches exactly the routes for that backend (paths included for worktree matching).
             val expectedPaths = response.projects
                 .filter { it.backendName == backend.backendName }

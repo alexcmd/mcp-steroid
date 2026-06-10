@@ -9,6 +9,8 @@ import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
 import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
 import com.jonnyzzz.mcpSteroid.server.backendNameFor
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
+import com.jonnyzzz.mcpSteroid.server.markerBackendInfo
+import com.jonnyzzz.mcpSteroid.server.mcpSteroidPlugins
 import com.jonnyzzz.mcpSteroid.server.productCodeFromBuild
 
 // R3.3 — the shared backend_name formula (backendNameFor + backendNameForMarker) lives in
@@ -49,22 +51,17 @@ fun backendInfoForRow(
     is BackendRow.FromMarker -> {
         val ide = row.ide
         val reachable = row.projects != null
-        BackendInfo(
+        markerBackendInfo(
             backendName = backendName,
-            source = "marker",
-            displayName = markerBackendDisplayName(ide),
-            locator = markerBackendLocatorLabel(ide),
+            pid = ide.pid,
+            ide = ide.marker.ide,
+            plugins = mcpSteroidPlugins(ide.marker.plugin),
+            openProjects = openProjects,
+            managed = managed,
             routable = reachable,
             reachable = reachable,
-            managed = managed,
-            pid = ide.pid,
-            ideProductCode = productCodeFromBuild(ide.marker.ide.build),
-            build = ide.marker.ide.build,
-            mcpSteroidPluginInstalled = true,
-            plugin = ide.marker.plugin,
             error = if (!reachable) (row.errorMessage ?: "unreachable") else null,
-            ide = ide.marker.ide,
-            openProjects = openProjects,
+            locator = backendLocatorLabel(row),
         )
     }
     is BackendRow.FromPort -> {
@@ -80,7 +77,6 @@ fun backendInfoForRow(
             port = ide.port,
             ideProductCode = productCodeFromBuild(ide.buildNumber),
             build = ide.buildNumber,
-            mcpSteroidPluginInstalled = false,
             actions = portProvisionActions(ide),
             portDetail = PortBackendDetail(
                 baseUrl = ide.baseUrl,
@@ -106,7 +102,6 @@ fun backendInfoForRow(
             pid = info.runningPid,
             ideProductCode = productCodeFromBuild(info.buildNumber) ?: info.productCode,
             build = info.buildNumber,
-            mcpSteroidPluginInstalled = false,
             managedDetail = ManagedBackendDetail(
                 managedId = info.id,
                 productKey = info.productKey,
