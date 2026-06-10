@@ -169,35 +169,59 @@ surface. Production guidance routes agents to the
 there is no dedicated MCP tool wrapping it. New context methods must
 clear the same bar.
 
-## Tenet 5 — the devrig↔plugin protocol is additive-only
+## Tenet 5 — the devrig↔plugin WIRE is additive-only (the devrig-computed output is not)
 
 **The wire between `devrig` and the in-IDE plugin must stay forward AND
 backward compatible at all times. No breaking changes — ever.** A given
 devrig binary talks to many plugin versions and vice-versa (Tenet 3:
-devrig is reconstructable, not migratable). Therefore every change to a
-wire-crossing shape — the JSON-RPC tool-call params devrig POSTs to the
-bridge, the `/windows` and `/projects/stream` responses, and the
-`@Serializable` DTOs they (de)serialize — is **additive and optional**:
+devrig is reconstructable, not migratable).
+
+**Scope this precisely.** The additive-only contract binds the
+**devrig↔IDE wire ONLY**: the `/projects/stream` and `/windows`
+responses, the JSON-RPC `/tools/call` params devrig POSTs to the bridge,
+and the `@Serializable` DTOs they (de)serialize (`NpxStreamEnvelope`,
+`NpxBridgeWindowsResponse`, `PidMarker`, `ToolCallResult`, `ProjectInfo`).
+Every change to one of those shapes is **additive and optional**:
 
 - New fields are optional with a safe default (`= null` / `= ""` /
   `= false` / a defaulted enum). An older peer that omits them still
   decodes; a newer peer that ignores them still works.
 - Never remove, rename, or retype an existing field. Enums must degrade
   on an unknown value, not throw.
+
+**The devrig-computed MCP/CLI output is devrig-owned and outside this
+contract — free to reshape.** `steroid_list_projects` results
+(`ListProjectsResponse`, `BackendInfo`, `ListedProject`) and the devrig
+CLI `backend`/`project --json` output are built by devrig from its own
+routing snapshot and returned to one freshly-attached agent or user —
+devrig **never fetches** the IDE's `steroid_list_projects`, so these
+types never cross the wire. They may be renamed, restructured, or
+re-keyed at will; only the wire above is frozen.
+
 - **Prefer resolving new behavior inside devrig over extending the
   wire.** The `backend_name` routing parameter is the canonical example:
-  it is an MCP-surface parameter that devrig resolves locally to a target
-  IDE and **never forwards** to the bridge, so the `steroid_open_project`
-  bridge call stayed byte-identical while the agent gained backend
-  selection. The only wire-crossing addition was an optional
-  `ProjectInfo.backend: String? = null` carried over `/projects/stream`.
-- Every wire change ships with a cross-version compatibility test (see
-  `WireCompatBackendFieldTest`, `DevrigToolBridgeClientTest`) and a
-  one-line entry in the `ij-plugin/CLAUDE.md` wire-contract table.
+  it is an MCP-surface parameter that devrig resolves **locally** to a
+  target IDE and **never forwards** to the bridge, so the
+  `steroid_open_project` bridge call stayed byte-identical while the
+  agent gained backend selection. `backend_name` is resolved locally,
+  never forwarded.
+- Because the per-project backend reference now lives on the
+  devrig-owned `ListedProject` (not on the wire), the wire `ProjectInfo`
+  was **reverted to pristine `{name, path}`**. `ProjectsStreamService`
+  only ever builds `ProjectInfo(name, path)`, so this reversion changes
+  **zero emitted bytes** on `/projects/stream`.
+- Every wire change ships with a cross-version compatibility test (the
+  wire-pristineness guard `WirePristinenessTest` asserts the wire never
+  serializes the devrig-only `backend_name`/`project_name`/`BackendInfo`/
+  `ListedProject` keys; `DevrigToolBridgeClientTest` pins the forwarded
+  params) and a one-line entry in the `ij-plugin/CLAUDE.md` wire-contract
+  table.
 
 **Why:** the protocol is the one thing two independently-versioned
 binaries share; a breaking change there strands every mismatched pair.
 Additive-only is what makes "delete devrig, reinstall any version" safe.
+Conversely, the devrig-computed output answers a single live agent and
+need not carry that burden.
 
 ---
 

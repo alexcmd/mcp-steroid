@@ -156,15 +156,24 @@ request. This parameter is **devrig-only** — on a direct in-IDE
 connection (one MCP server == one IDE) it is not advertised, and if sent
 anyway it is logged and ignored.
 
+`steroid_list_projects` **self-describes on both surfaces**: the devrig
+response lists one `backends[]` entry per discovered IDE, and a
+direct in-IDE response lists exactly one entry (the IDE you are connected
+to). Both shapes are identical.
+
 To pick a value:
 
 1. Call `steroid_list_projects` and read `backends[]`. Each entry carries
-   `id` (the value to pass as `backend_name`, e.g. `"pid-1234"`),
-   `displayName` (human label, not unique across same-product IDEs),
-   `locator` (disambiguator, e.g. `"build IU-261.x, pid 1234"`),
-   `openProjects[]` (`{ name, path }` for each project open in that
-   backend), and `managed` (true for the devrig-managed sandbox). Each
-   `projects[]` entry also carries a `backend` field with its owning id.
+   `backend_name` (the value to pass as `backend_name`, an opaque id like
+   `"iu-9fk2a0xQ"`), `displayName` (human label, not unique across
+   same-product IDEs), `locator` (disambiguator, e.g.
+   `"build IU-261.x, pid 1234"`), `routable` (true only for IDEs you can
+   actually open into), `mcpSteroidPluginInstalled` (true when the MCP
+   Steroid plugin is present), `openProjects[]` (`{ project_name, name,
+   path, backend_name }` for each project open in that backend), and
+   `managed` (true for the devrig-managed sandbox). Each `projects[]`
+   entry carries `project_name`, the raw folder `name`, `path`, and a
+   `backend_name` naming its owning backend.
 2. **Prefer the backend that already has the same project — or another
    git worktree of the same repository — open.** Worktrees of one repo
    share build/index/VCS context, so reusing that IDE keeps it warm and
@@ -172,18 +181,20 @@ To pick a value:
    `backends[].openProjects[].path` against the repo you are opening
    (same repo root / shared `.git`); if none matches, prefer a `managed`
    backend, else any listed backend.
-3. Pass the chosen `id` as `backend_name`.
+3. Pass the chosen `backend_name` to `steroid_open_project`.
 
 Rules:
 - `backend_name` is a **devrig-only** parameter; it has no effect on a
   direct in-IDE connection.
-- Only **routable** backends are valid — `backends[]` lists exactly the
-  running IDEs with the MCP Steroid plugin (`pid-<n>`). The `port-<n>` /
-  managed-slug ids that `devrig backend --json` may show are not routable
-  for `open_project`; an unknown `backend_name` returns a self-correcting
-  error listing the routable ids.
-- Backend ids are **not stable across IDE restarts** (the pid changes) —
-  **re-read `steroid_list_projects` rather than caching** a `backend_name`.
+- Only **routable** backends are valid — `backends[]` advertises only the
+  running IDEs with the MCP Steroid plugin (`routable: true`,
+  `mcpSteroidPluginInstalled: true`). Backends `devrig backend --json` may
+  show that are not running with the plugin are not routable for
+  `open_project`; an unknown `backend_name` returns a self-correcting
+  error listing the routable `backend_name`s.
+- A `backend_name` is **not stable across IDE restarts** (it is derived
+  from the pid) — **re-read `steroid_list_projects` rather than caching**
+  it.
 
 See also: `mcp-steroid://open-project/managing-backends`.
 
