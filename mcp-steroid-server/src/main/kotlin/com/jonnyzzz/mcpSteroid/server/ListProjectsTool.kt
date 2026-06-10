@@ -84,6 +84,12 @@ data class BackendInfo(
     val routable: Boolean,
     /** True when discovery-reachable. */
     val reachable: Boolean,
+    /**
+     * True when this devrig instance owns the backend's lifecycle (`devrig backend start`) — the
+     * documented tier-2 pick for open_project when no worktree match exists. Orthogonal to [source]:
+     * a RUNNING managed backend appears as `source="marker"` with `managed=true`; `source="managed"`
+     * covers installed-but-not-running rows only.
+     */
     val managed: Boolean = false,
     /** Listed for humans/disambiguation; NOT encoded into [backendName]. */
     val pid: Long? = null,

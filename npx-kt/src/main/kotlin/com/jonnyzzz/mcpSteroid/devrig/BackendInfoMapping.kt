@@ -27,7 +27,9 @@ fun backendNameForManaged(managedId: String, build: String?): String =
 fun backendNameForRow(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> backendNameForMarker(row.ide.pid, row.ide.marker.ide.build)
     is BackendRow.FromPort -> backendNameForPort(row.ide.port, row.ide.buildNumber)
-    is BackendRow.FromManaged -> backendNameForManaged(row.info.id, row.info.buildNumber)
+    // Managed buildNumbers come without the product prefix ("261.x"); re-attach the known productCode
+    // so the backend_name carries the product hint ("pc-...") instead of the "ide-" fallback.
+    is BackendRow.FromManaged -> backendNameForManaged(row.info.id, "${row.info.productCode}-${row.info.buildNumber ?: ""}")
 }
 
 /**
