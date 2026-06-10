@@ -164,13 +164,41 @@ class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
-        // Prefer a devrig-managed backend if the agent has one running; otherwise route to the newest
-        // discovered IDE instead of failing. Every discovered IDE runs the MCP Steroid plugin.
+        val requestedBackend = openProjectParams.backendName?.trim()?.takeIf { it.isNotEmpty() }
+
+        // When the agent named a backend (devrig surface, where backend_name is REQUIRED), resolve it to
+        // that exact IDE. When it is absent (direct-handler / E2E callers pass null), keep the existing
+        // auto-pick: prefer a devrig-managed backend, else the newest discovered IDE.
         // Off the call dispatcher: the managed-pid lookup scans the local backends dir + checks pid liveness.
-        val ide = withContext(Dispatchers.IO) { bridge.routing.openProjectTargetIde() }
-            ?: return ToolCallResult.errorResult(
-                "steroid_open_project requires at least one discovered IDE with the MCP Steroid plugin; start an IDE or call steroid_list_projects"
-            )
+        val ide = withContext(Dispatchers.IO) {
+            if (requestedBackend != null) {
+                bridge.routing.resolveBackend(requestedBackend)
+            } else {
+                bridge.routing.openProjectTargetIde()
+            }
+        }
+
+        if (ide == null) {
+            return if (requestedBackend != null) {
+                // The id is now an opaque hash (R3.3) — no prefix to key a hint off. resolveBackend only ever
+                // returns routable marker IDEs, so a miss means the requested name is not a currently-routable
+                // backend. Self-correct by listing the routable backend_names; the agent likely copied a
+                // non-routable id (a port-only or not-yet-running managed backend) from `devrig backend --json`.
+                val routable = bridge.routing.discoveredBackends().map { it.first }
+                ToolCallResult.errorResult(
+                    "Unknown backend_name '$requestedBackend'. Only running IDEs with the MCP Steroid plugin " +
+                        "are routable for open_project; port-only and not-yet-running managed backends listed by " +
+                        "'devrig backend --json' are not. " +
+                        if (routable.isEmpty()) "No routable IDE backends are currently discovered; start an IDE or call steroid_list_projects."
+                        else "Routable backends: ${routable.joinToString(", ")}. Call steroid_list_projects to refresh."
+                )
+            } else {
+                ToolCallResult.errorResult(
+                    "steroid_open_project requires at least one discovered IDE with the MCP Steroid plugin; start an IDE or call steroid_list_projects"
+                )
+            }
+        }
+
         val route = ProjectRoute(
             idePid = ide.pid,
             bridgeBaseUrl = ide.rpcBaseUrl,

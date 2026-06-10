@@ -72,20 +72,6 @@ class NpxBridgeService {
         products = listOf(ProductInfo())
     )
 
-    suspend fun buildProjects(mcpUrl: String): NpxBridgeProjectsResponse {
-        val seq = nextSeq()
-        val projects = service<ListProjectsToolHandler>().collectListProjectsResponse()
-        return NpxBridgeProjectsResponse(
-            projects = projects.projects,
-            pid = projects.pid,
-            mcpUrl = mcpUrl,
-            instanceId = instanceId,
-            seq = seq,
-            schemaVersion = schemaVersion,
-            updatedAt = nowIso()
-        )
-    }
-
     suspend fun buildWindows(mcpUrl: String): NpxBridgeWindowsResponse {
         val seq = nextSeq()
         val windows = service<ListWindowsToolHandler>().collectListWindowsResponse()
@@ -94,23 +80,6 @@ class NpxBridgeService {
             backgroundTasks = windows.backgroundTasks,
             pid = windows.pid,
             mcpUrl = mcpUrl,
-            instanceId = instanceId,
-            seq = seq,
-            schemaVersion = schemaVersion,
-            updatedAt = nowIso()
-        )
-    }
-
-    suspend fun buildSummary(mcpUrl: String): NpxBridgeSummaryResponse {
-        val seq = nextSeq()
-        val metadata = buildMetadata(mcpUrl)
-        val projects = service<ListProjectsToolHandler>().collectListProjectsResponse().projects
-        val windows = service<ListWindowsToolHandler>().collectListWindowsResponse()
-        return NpxBridgeSummaryResponse(
-            metadata = metadata,
-            projects = projects,
-            windows = windows.windows,
-            backgroundTasks = windows.backgroundTasks,
             instanceId = instanceId,
             seq = seq,
             schemaVersion = schemaVersion,
@@ -285,29 +254,6 @@ data class NpxBridgeMetadataResponse(
     val plugin: PluginInfo,
     val paths: ServerPathInfo,
     val executable: ServerExecutableInfo,
-    val instanceId: String,
-    val seq: Long,
-    val schemaVersion: String,
-    val updatedAt: String
-)
-
-@Serializable
-data class NpxBridgeProjectsResponse(
-    val projects: List<ProjectInfo>,
-    val pid: Long,
-    val mcpUrl: String,
-    val instanceId: String,
-    val seq: Long,
-    val schemaVersion: String,
-    val updatedAt: String
-)
-
-@Serializable
-data class NpxBridgeSummaryResponse(
-    val metadata: NpxBridgeMetadataResponse,
-    val projects: List<ProjectInfo>,
-    val windows: List<WindowInfo>,
-    val backgroundTasks: List<ProgressTaskInfo>,
     val instanceId: String,
     val seq: Long,
     val schemaVersion: String,

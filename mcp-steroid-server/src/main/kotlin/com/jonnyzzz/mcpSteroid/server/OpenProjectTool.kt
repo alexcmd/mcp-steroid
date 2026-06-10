@@ -29,31 +29,17 @@ import kotlinx.serialization.Serializable
  * The tool can optionally trust the project path before opening, which allows skipping
  * the trust dialog.
  */
-class OpenProjectToolSpec(val handler: () -> OpenProjectToolHandler) : McpToolBase() {
+class OpenProjectToolSpec(
+    val includeBackendName: Boolean = false,
+    val handler: () -> OpenProjectToolHandler,
+) : McpToolBase() {
     private val logger = thisLogger()
 
     override val name = "steroid_open_project"
-    override val description = """
-        Open a project in the IDE. This tool initiates the project opening process and returns quickly.
-
-        IMPORTANT: Project opening is ASYNCHRONOUS. This tool returns immediately; you MUST poll to verify the project is fully ready before using it.
-
-        Verification Workflow:
-        1. Call steroid_open_project with the project path
-        2. Poll steroid_list_windows repeatedly (every 2-3 seconds) until:
-           - The project appears in the windows list
-           - modalDialogShowing is false (no dialogs blocking)
-           - indexingInProgress is false (indexing complete)
-           - projectInitialized is true
-        3. If modalDialogShowing is true, use steroid_take_screenshot + steroid_input to handle dialogs
-        4. Use steroid_take_screenshot to visually confirm the project is fully loaded
-        5. Verify with steroid_list_projects that the project appears
-
-        Dialog Handling:
-        - If trust_project=true (default), the trust dialog is skipped automatically
-        - Other dialogs (project type, SDK selection, etc.) may still appear
-        - Always check modalDialogShowing in steroid_list_windows response
-    """.trimIndent()
+    override val description: String = buildString {
+        append(BASE_DESCRIPTION)
+        if (includeBackendName) append("\n\n").append(BACKEND_NAME_DESCRIPTION)
+    }
 
     val projectPath = InputSchemaElement.param("project_path")
         .description("Absolute path to the project directory to open.")
@@ -70,11 +56,30 @@ class OpenProjectToolSpec(val handler: () -> OpenProjectToolHandler) : McpToolBa
         .boolean()
         .registerToSchema()
 
+    // Devrig-only and REQUIRED there (R2.1). Registered/advertised only when includeBackendName is true.
+    val backendName = if (includeBackendName) {
+        InputSchemaElement.param("backend_name")
+            .description(
+                "REQUIRED. The backend to open the project in, identified by the stable backend id from " +
+                    "steroid_list_projects (the `backend` field of each project, and the `backends[].id` " +
+                    "summary) — e.g. \"pid-1234\". First call steroid_list_projects and inspect `backends[]` " +
+                    "(displayName, locator, openProjects). PREFER the backend that already has the same " +
+                    "project — or another git worktree of the same repository — open (match " +
+                    "backends[].openProjects[].path / shared repo root): worktrees share build/index/VCS " +
+                    "context, so reusing that IDE avoids a redundant second indexing. Otherwise prefer a " +
+                    "`managed` backend, else any listed backend."
+            )
+            .string()
+            .required()
+            .registerToSchema()
+    } else null
+
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectPathStr = context[projectPath]
         context[taskId]
         context[reason]
         val trustProject = context[trustProject] ?: true
+        val backendNameValue = backendName?.let { context[it] }
 
         val requestedProjectPath = try {
             Path.of(projectPathStr).toAbsolutePath().normalize()
@@ -101,8 +106,39 @@ class OpenProjectToolSpec(val handler: () -> OpenProjectToolHandler) : McpToolBa
             OpenProjectParams(
                 projectPath = projectPath.toString(),
                 trustProject = trustProject,
+                backendName = backendNameValue,
             )
         )
+    }
+
+    private companion object {
+        const val BASE_DESCRIPTION = """Open a project in the IDE. This tool initiates the project opening process and returns quickly.
+
+IMPORTANT: Project opening is ASYNCHRONOUS. This tool returns immediately; you MUST poll to verify the project is fully ready before using it.
+
+Verification Workflow:
+1. Call steroid_open_project with the project path
+2. Poll steroid_list_windows repeatedly (every 2-3 seconds) until:
+   - The project appears in the windows list
+   - modalDialogShowing is false (no dialogs blocking)
+   - indexingInProgress is false (indexing complete)
+   - projectInitialized is true
+3. If modalDialogShowing is true, use steroid_take_screenshot + steroid_input to handle dialogs
+4. Use steroid_take_screenshot to visually confirm the project is fully loaded
+5. Verify with steroid_list_projects that the project appears
+
+Dialog Handling:
+- If trust_project=true (default), the trust dialog is skipped automatically
+- Other dialogs (project type, SDK selection, etc.) may still appear
+- Always check modalDialogShowing in steroid_list_windows response"""
+
+        const val BACKEND_NAME_DESCRIPTION = """Choosing a backend (multiple IDEs):
+This connection can route to more than one running IDE. Call steroid_list_projects first to see the
+available backends (`backends[].id`) and pass that id as backend_name to open the project in that
+specific IDE. PREFER the backend that already has the same project — or another git worktree of the
+same repository — open (match backends[].openProjects[].path / a shared repo root): worktrees share
+build/index/VCS context, so reusing that IDE keeps the context warm and avoids a redundant second
+indexing. Otherwise prefer a `managed` backend, else any listed backend."""
     }
 }
 
@@ -110,6 +146,12 @@ class OpenProjectToolSpec(val handler: () -> OpenProjectToolHandler) : McpToolBa
 data class OpenProjectParams(
     val projectPath: String,
     val trustProject: Boolean,
+    /**
+     * Optional devrig-only routing hint: the stable backend id (from steroid_list_projects
+     * `backend` field or `devrig backend --json` `id`) that should receive this open request.
+     * Null/absent everywhere except a devrig connection. Ignored (logged) by the in-IDE plugin.
+     */
+    val backendName: String? = null,
 )
 
 interface OpenProjectToolHandler {

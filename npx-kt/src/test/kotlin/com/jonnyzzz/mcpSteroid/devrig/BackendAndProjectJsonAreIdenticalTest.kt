@@ -117,21 +117,24 @@ class BackendAndProjectJsonAreIdenticalTest {
 
         val markerReachable = backends[0].jsonObject
         assertEquals("marker", markerReachable["source"]!!.jsonPrimitive.content)
-        assertEquals(true, markerReachable["pluginInstalled"]!!.jsonPrimitive.boolean)
+        assertEquals(true, markerReachable["mcpSteroidPluginInstalled"]!!.jsonPrimitive.boolean)
         assertEquals(true, markerReachable["reachable"]!!.jsonPrimitive.boolean)
 
         val markerUnreachable = backends[1].jsonObject
         assertEquals("marker", markerUnreachable["source"]!!.jsonPrimitive.content)
-        assertEquals(true, markerUnreachable["pluginInstalled"]!!.jsonPrimitive.boolean)
+        assertEquals(true, markerUnreachable["mcpSteroidPluginInstalled"]!!.jsonPrimitive.boolean)
         assertEquals(false, markerUnreachable["reachable"]!!.jsonPrimitive.boolean)
         assertEquals("timed out after 8s", markerUnreachable["error"]!!.jsonPrimitive.content)
 
         val portBackends = backends.drop(2).map { it.jsonObject }
         assertTrue(portBackends.all { it["source"]!!.jsonPrimitive.content == "port" }, "last two rows are port rows: $backends")
-        assertTrue(portBackends.all { it["pluginInstalled"]!!.jsonPrimitive.boolean == false }, "port rows have no plugin: $backends")
+        assertTrue(portBackends.all { it["mcpSteroidPluginInstalled"]!!.jsonPrimitive.boolean == false }, "port rows have no plugin: $backends")
         assertTrue(portBackends.all { it["reachable"]!!.jsonPrimitive.boolean }, "port rows are reachable because the probe succeeded: $backends")
 
+        // Both projects belong to the same (first) marker backend; project_name keeps the raw name as prefix.
+        val expectedFirstBackend = backends[0].jsonObject["backend_name"]!!.jsonPrimitive.content
         val projects = root["projects"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(listOf("pid-1", "pid-1"), projects.map { it["backend"]!!.jsonPrimitive.content })
+        assertEquals(listOf(expectedFirstBackend, expectedFirstBackend), projects.map { it["backend_name"]!!.jsonPrimitive.content })
+        assertEquals(listOf("alpha", "bravo"), projects.map { it["name"]!!.jsonPrimitive.content })
     }
 }
