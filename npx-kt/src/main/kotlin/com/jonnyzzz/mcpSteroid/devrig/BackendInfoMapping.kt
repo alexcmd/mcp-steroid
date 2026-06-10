@@ -1,0 +1,158 @@
+/* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
+package com.jonnyzzz.mcpSteroid.devrig
+
+import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
+import com.jonnyzzz.mcpSteroid.server.BackendAction
+import com.jonnyzzz.mcpSteroid.server.BackendInfo
+import com.jonnyzzz.mcpSteroid.server.ListedProject
+import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
+import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
+import com.jonnyzzz.mcpSteroid.server.base62Sha256
+
+/**
+ * R3.3 — one `backend_name`, one uniform id scheme for every source.
+ *
+ * ```
+ * backend_name = "<productCodeLower>-<hash8>"
+ *   productCodeLower = productCodeFromBuild(build)?.lowercase() ?: "ide"   // "IU" -> "iu"; fallback "ide"
+ *   hash8            = base62Sha256(sourceKey).take(8)
+ *   sourceKey        = "pid:<pid>" | "port:<port>" | "managed:<managedId>"
+ * ```
+ *
+ * The pid/port/source/routability are their own [BackendInfo] fields — never encoded into the id shape.
+ * Deterministic and round-trippable: devrig recomputes it per discovered backend to resolve
+ * `backend_name -> backend`.
+ */
+fun backendNameFor(
+    sourceKey: String,
+    build: String?,
+): String {
+    val productCodeLower = productCodeFromBuild(build)?.lowercase() ?: "ide"
+    val hash8 = base62Sha256(sourceKey).take(8)
+    return "$productCodeLower-$hash8"
+}
+
+/** Marker-IDE backend_name: keyed by the IDE's real pid. */
+fun backendNameForMarker(pid: Long, build: String?): String =
+    backendNameFor(sourceKey = "pid:$pid", build = build)
+
+/** Port-discovered backend_name: keyed by the scanned port. */
+fun backendNameForPort(port: Int, build: String?): String =
+    backendNameFor(sourceKey = "port:$port", build = build)
+
+/** Managed-backend backend_name: keyed by the managed id (works before the backend is running). */
+fun backendNameForManaged(managedId: String, build: String?): String =
+    backendNameFor(sourceKey = "managed:$managedId", build = build)
+
+/** The R3.3 backend_name for any discovery row. */
+fun backendNameForRow(row: BackendRow): String = when (row) {
+    is BackendRow.FromMarker -> backendNameForMarker(row.ide.pid, row.ide.marker.ide.build)
+    is BackendRow.FromPort -> backendNameForPort(row.ide.port, row.ide.buildNumber)
+    is BackendRow.FromManaged -> backendNameForManaged(row.info.id, row.info.buildNumber)
+}
+
+/**
+ * R3.4 — maps a discovery [BackendRow] to the single shared [BackendInfo] schema. The ONE representation
+ * backing both the MCP `steroid_list_projects` `backends[]` and the devrig CLI `backend/project --json`
+ * `backends[]`. No field of the historical hand-built `backendEntryJson` is dropped (see R3.4 inventory).
+ *
+ * @param backendName precomputed (and de-duped) id for this row — passed in so the caller controls
+ *   keep-first de-duplication; defaults to [backendNameForRow].
+ * @param openProjects the projects owned by this backend, already mapped to [ListedProject].
+ * @param managed whether this row is a devrig-managed backend (prefer it).
+ */
+fun backendInfoForRow(
+    row: BackendRow,
+    backendName: String = backendNameForRow(row),
+    openProjects: List<ListedProject> = emptyList(),
+    managed: Boolean = row.managed,
+): BackendInfo = when (row) {
+    is BackendRow.FromMarker -> {
+        val ide = row.ide
+        val reachable = row.projects != null
+        BackendInfo(
+            backendName = backendName,
+            source = "marker",
+            displayName = markerBackendDisplayName(ide),
+            locator = markerBackendLocatorLabel(ide),
+            routable = reachable,
+            reachable = reachable,
+            managed = managed,
+            pid = ide.pid,
+            ideProductCode = productCodeFromBuild(ide.marker.ide.build),
+            build = ide.marker.ide.build,
+            mcpSteroidPluginInstalled = true,
+            plugin = ide.marker.plugin,
+            error = if (!reachable) (row.errorMessage ?: "unreachable") else null,
+            ide = ide.marker.ide,
+            openProjects = openProjects,
+        )
+    }
+    is BackendRow.FromPort -> {
+        val ide = row.ide
+        BackendInfo(
+            backendName = backendName,
+            source = "port",
+            displayName = portBackendDisplayName(ide),
+            locator = portBackendLocatorLabel(ide),
+            routable = false,
+            reachable = true,
+            managed = managed,
+            port = ide.port,
+            ideProductCode = productCodeFromBuild(ide.buildNumber),
+            build = ide.buildNumber,
+            mcpSteroidPluginInstalled = false,
+            actions = portProvisionActions(ide),
+            portDetail = PortBackendDetail(
+                baseUrl = ide.baseUrl,
+                productName = ide.productName,
+                productFullName = ide.productFullName,
+                edition = ide.edition,
+                baselineVersion = ide.baselineVersion,
+                buildNumber = ide.buildNumber,
+            ),
+            openProjects = openProjects,
+        )
+    }
+    is BackendRow.FromManaged -> {
+        val info = row.info
+        BackendInfo(
+            backendName = backendName,
+            source = "managed",
+            displayName = backendDisplayName(row),
+            locator = backendLocatorLabel(row),
+            routable = false,
+            reachable = info.state == ManagedBackendState.RUNNING,
+            managed = true,
+            pid = info.runningPid,
+            ideProductCode = productCodeFromBuild(info.buildNumber) ?: info.productCode,
+            build = info.buildNumber,
+            mcpSteroidPluginInstalled = false,
+            managedDetail = ManagedBackendDetail(
+                managedId = info.id,
+                productKey = info.productKey,
+                productCode = info.productCode,
+                version = info.version,
+                buildNumber = info.buildNumber,
+                state = info.state.name.lowercase(),
+                installPath = info.installPath.toString(),
+                cachePath = info.cachePath.toString(),
+                runningPid = info.runningPid,
+            ),
+            openProjects = openProjects,
+        )
+    }
+}
+
+private fun portProvisionActions(ide: DiscoveredIdeByPort): List<BackendAction> {
+    val targetId = provisionTargetId(ide.port)
+    return listOf(
+        BackendAction(
+            id = PROVISION_ACTION_ID,
+            label = "Install MCP Steroid plugin",
+            command = provisionCommand(targetId),
+            // Canonical execution form (devrig-naming.md): pass directly to ProcessBuilder, no shell.
+            argv = listOf("devrig", "backend", "provision", targetId),
+        ),
+    )
+}

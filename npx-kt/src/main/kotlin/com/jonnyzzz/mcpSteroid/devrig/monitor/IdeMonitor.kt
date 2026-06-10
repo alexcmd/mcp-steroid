@@ -91,6 +91,8 @@ class IdeMonitorService(
                     // Spawn a worker for each newly-discovered IDE.
                     for ((pid, ide) in live) {
                         if (workers.containsKey(pid)) continue
+                        // R3.9: one stderr warning per (pid, plugin version) when devrig and the plugin differ.
+                        com.jonnyzzz.mcpSteroid.devrig.BackendVersionSkew.warnIfSkewed(ide)
                         updateState(pid) { IdeMonitorState(ide = ide, status = IdeMonitorStatus.CONNECTING) }
                         workers[pid] = launch { runConnectionLoop(ide) }
                     }

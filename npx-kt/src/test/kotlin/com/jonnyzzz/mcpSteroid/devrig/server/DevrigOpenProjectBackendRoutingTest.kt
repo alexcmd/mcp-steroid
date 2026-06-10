@@ -5,48 +5,57 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.devrig.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class DevrigOpenProjectBackendRoutingTest {
+    private val build = "IU-261.1"
+
     @Test
-    fun `resolveBackend matches the pid- stable id`() {
+    fun `resolveBackend matches the uniform-hash backend_name`() {
         val routing = routingWith(pids = listOf(42L, 43L))
-        assertEquals(42L, routing.resolveBackend("pid-42")?.pid)
-        assertEquals(43L, routing.resolveBackend("pid-43")?.pid)
+        assertEquals(42L, routing.resolveBackend(backendNameForMarker(42L, build))?.pid)
+        assertEquals(43L, routing.resolveBackend(backendNameForMarker(43L, build))?.pid)
     }
 
     @Test
     fun `resolveBackend trims surrounding whitespace`() {
         val routing = routingWith(pids = listOf(42L))
-        assertEquals(42L, routing.resolveBackend("  pid-42  ")?.pid)
+        val name = backendNameForMarker(42L, build)
+        assertEquals(42L, routing.resolveBackend("  $name  ")?.pid)
     }
 
     @Test
     fun `resolveBackend returns null for unknown name`() {
         val routing = routingWith(pids = listOf(42L))
-        assertNull(routing.resolveBackend("pid-999"))
+        assertNull(routing.resolveBackend(backendNameForMarker(999L, build)))
         assertNull(routing.resolveBackend("garbage"))
         assertNull(routing.resolveBackend(""))
     }
 
     @Test
-    fun `backendNameForIde returns the pid- form`() {
+    fun `backendNameForIde computes the uniform-hash form over the pid`() {
         val routing = routingWith(pids = listOf(7L))
         val ide = routing.newestIdeOrNull()!!
-        assertEquals("pid-7", routing.backendNameForIde(ide))
+        assertEquals(backendNameForMarker(7L, build), routing.backendNameForIde(ide))
+        assertTrue(routing.backendNameForIde(ide).startsWith("iu-"))
     }
 
     @Test
-    fun `discoveredBackends pairs every pid- id with its ide`() {
+    fun `discoveredBackends pairs every backend_name with its ide`() {
         val routing = routingWith(pids = listOf(42L, 43L))
         val backends = routing.discoveredBackends()
-        assertEquals(setOf("pid-42", "pid-43"), backends.map { it.first }.toSet())
+        assertEquals(
+            setOf(backendNameForMarker(42L, build), backendNameForMarker(43L, build)),
+            backends.map { it.first }.toSet(),
+        )
         assertEquals(setOf(42L, 43L), backends.map { it.second.pid }.toSet())
         for ((name, ide) in backends) {
             assertEquals(name, routing.backendNameForIde(ide))
@@ -64,7 +73,7 @@ class DevrigOpenProjectBackendRoutingTest {
         return DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
     }
 
-    private fun discoveredIde(pid: Long, build: String = "IU-261.1"): DiscoveredIde =
+    private fun discoveredIde(pid: Long): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl,

@@ -180,17 +180,17 @@ class DevrigOpenProjectToolHandler(
 
         if (ide == null) {
             return if (requestedBackend != null) {
-                val known = bridge.routing.discoveredBackends().map { it.first }
-                // Self-correct the common mistake of copying a non-routable id from `devrig backend --json`.
-                val looksNonRoutable = requestedBackend.startsWith("port-") || !requestedBackend.startsWith("pid-")
-                val hint = if (looksNonRoutable) {
-                    "Only running IDEs with the MCP Steroid plugin (ids of the form 'pid-<n>') are routable; " +
-                        "'port-<n>' and managed-slug ids from 'devrig backend --json' are not. "
-                } else ""
+                // The id is now an opaque hash (R3.3) — no prefix to key a hint off. resolveBackend only ever
+                // returns routable marker IDEs, so a miss means the requested name is not a currently-routable
+                // backend. Self-correct by listing the routable backend_names; the agent likely copied a
+                // non-routable id (a port-only or not-yet-running managed backend) from `devrig backend --json`.
+                val routable = bridge.routing.discoveredBackends().map { it.first }
                 ToolCallResult.errorResult(
-                    "Unknown backend_name '$requestedBackend'. " + hint +
-                        if (known.isEmpty()) "No routable IDE backends are currently discovered; start an IDE or call steroid_list_projects."
-                        else "Routable backends: ${known.joinToString(", ")}. Call steroid_list_projects to refresh."
+                    "Unknown backend_name '$requestedBackend'. Only running IDEs with the MCP Steroid plugin " +
+                        "are routable for open_project; port-only and not-yet-running managed backends listed by " +
+                        "'devrig backend --json' are not. " +
+                        if (routable.isEmpty()) "No routable IDE backends are currently discovered; start an IDE or call steroid_list_projects."
+                        else "Routable backends: ${routable.joinToString(", ")}. Call steroid_list_projects to refresh."
                 )
             } else {
                 ToolCallResult.errorResult(

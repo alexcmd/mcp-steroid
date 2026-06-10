@@ -11,8 +11,8 @@ import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
 import com.jonnyzzz.mcpSteroid.devrig.markerBackendDisplayName
 import com.jonnyzzz.mcpSteroid.devrig.markerBackendLocatorLabel
 import com.jonnyzzz.mcpSteroid.devrig.productCodeFromBuild
-import com.jonnyzzz.mcpSteroid.server.BackendProjectRef
-import com.jonnyzzz.mcpSteroid.server.BackendSummary
+import com.jonnyzzz.mcpSteroid.server.BackendInfo
+import com.jonnyzzz.mcpSteroid.server.ListedProject
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
@@ -21,7 +21,6 @@ import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
@@ -74,17 +73,35 @@ class DevrigListProjectsToolHandler(
         val first = routes.firstOrNull()
         val managedPids = routing.managedBackendPids()
         // backends[] lists ONLY routable marker IDEs (the only ones with a live bridge) — never a dead id.
-        val backends = routing.discoveredBackends().map { (id, ide) ->
-            BackendSummary(
-                id = id, // "pid-<pid>"
+        // discoveredBackends() de-dupes by backend_name (keep-first + WARN); recompute it once.
+        val discovered = routing.discoveredBackends()
+        // Each route maps to its owning backend's backend_name so projects[] and backends[] agree.
+        val backendNameByPid = discovered.associate { (name, ide) -> ide.pid to name }
+        val listedProjects = routes.mapNotNull { route ->
+            val backendName = backendNameByPid[route.idePid] ?: return@mapNotNull null
+            ListedProject(
+                projectName = route.exposedProjectName,
+                name = route.originalProjectName,
+                path = route.projectPath,
+                backendName = backendName,
+            )
+        }
+        val backends = discovered.map { (backendName, ide) ->
+            BackendInfo(
+                backendName = backendName,
+                source = "marker",
                 displayName = markerBackendDisplayName(ide),
                 locator = markerBackendLocatorLabel(ide), // "build IU-261.x, pid 1234"
-                ideProductCode = productCodeFromBuild(ide.marker.ide.build) ?: "",
+                routable = true,
+                reachable = true,
                 managed = ide.pid in managedPids,
-                openProjects = routes
-                    .filter { it.idePid == ide.pid }
-                    .map { BackendProjectRef(name = it.originalProjectName, path = it.projectPath) },
+                pid = ide.pid,
+                ideProductCode = productCodeFromBuild(ide.marker.ide.build),
+                build = ide.marker.ide.build,
+                mcpSteroidPluginInstalled = true,
+                plugin = ide.marker.plugin,
                 ide = ide.marker.ide,
+                openProjects = listedProjects.filter { it.backendName == backendName },
             )
         }
         return ListProjectsResponse(
@@ -95,13 +112,7 @@ class DevrigListProjectsToolHandler(
                 DevrigVersionMetadata.getDevrigVersion(),
             ),
             pid = first?.idePid ?: ProcessHandle.current().pid(),
-            projects = routes.map { route ->
-                ProjectInfo(
-                    name = route.exposedProjectName,
-                    path = route.projectPath,
-                    backend = "pid-${route.idePid}",
-                )
-            },
+            projects = listedProjects,
             backends = backends,
         )
     }

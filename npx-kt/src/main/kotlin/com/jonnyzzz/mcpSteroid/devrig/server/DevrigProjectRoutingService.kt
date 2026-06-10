@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.devrig.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
@@ -10,6 +11,7 @@ import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
+import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
@@ -25,6 +27,8 @@ class DevrigProjectRoutingService(
 ) {
     /** No managed-backend awareness — open_project falls back to the newest discovered IDE. */
     constructor(stateProvider: () -> Map<Long, IdeMonitorState>) : this(stateProvider, { emptySet() })
+
+    private val log = LoggerFactory.getLogger(DevrigProjectRoutingService::class.java)
 
     fun routes(): Map<String, ProjectRoute> {
         val routes = linkedMapOf<String, ProjectRoute>()
@@ -99,25 +103,49 @@ class DevrigProjectRoutingService(
 
     /**
      * The agent-facing backend id for a discovered IDE — the value an agent passes as `backend_name`
-     * to steroid_open_project. Mirrors `backendStableId(BackendRow.FromMarker)` = `"pid-<pid>"`, so the
-     * id surfaced by `steroid_list_projects` / `devrig backend --json` is the one accepted here.
+     * to steroid_open_project. Computed by the R3.3 uniform hash scheme (`<productCodeLower>-<hash8>`,
+     * hash over `"pid:<pid>"`), the same value surfaced by `steroid_list_projects` / `devrig backend
+     * --json`, so the id surfaced there is the one accepted here.
      */
-    fun backendNameForIde(ide: DiscoveredIde): String = "pid-${ide.pid}"
+    fun backendNameForIde(ide: DiscoveredIde): String =
+        backendNameForMarker(pid = ide.pid, build = ide.marker.ide.build)
 
     /**
      * Resolves a `backend_name` (as listed by steroid_list_projects / `devrig backend --json`) to its
      * discovered IDE, or null when no currently-discovered routable backend matches. Only marker IDEs
-     * (`pid-<n>`) are routable; `port-<n>` / managed-slug ids never match here.
+     * are routable; `port:`/`managed:` ids never match here because their names are computed from a
+     * different source key and no marker recomputes to them.
      */
     fun resolveBackend(backendName: String): DiscoveredIde? {
         val wanted = backendName.trim()
         if (wanted.isEmpty()) return null
-        return discoveredIdes().firstOrNull { backendNameForIde(it) == wanted }
+        return discoveredBackends().firstOrNull { it.first == wanted }?.second
     }
 
-    /** All discovered backends as (backend_name, ide) pairs, for list_projects summaries and error messages. */
-    fun discoveredBackends(): List<Pair<String, DiscoveredIde>> =
-        discoveredIdes().map { backendNameForIde(it) to it }
+    /**
+     * All discovered backends as (backend_name, ide) pairs, for list_projects summaries and error
+     * messages. De-duped by backend_name (keep-first + WARN), mirroring `backendRowsWithStableIds`.
+     */
+    fun discoveredBackends(): List<Pair<String, DiscoveredIde>> {
+        val seen = LinkedHashSet<String>()
+        val out = ArrayList<Pair<String, DiscoveredIde>>()
+        val duplicates = LinkedHashSet<String>()
+        for (ide in discoveredIdes()) {
+            val name = backendNameForIde(ide)
+            if (seen.add(name)) {
+                out += name to ide
+            } else {
+                duplicates += name
+            }
+        }
+        if (duplicates.isNotEmpty()) {
+            log.warn(
+                "Duplicate backend_name in discovered backends: {}. Keeping the first IDE for each.",
+                duplicates.joinToString(", "),
+            )
+        }
+        return out
+    }
 
     /** Pids of devrig-managed backends currently known to the routing service (a subset of discovered IDEs). */
     fun managedBackendPids(): Set<Long> = managedRunningPids()
