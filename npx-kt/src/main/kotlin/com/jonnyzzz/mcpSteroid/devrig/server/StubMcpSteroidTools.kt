@@ -6,13 +6,12 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
+import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.devrig.DevrigVersionMetadata
-import com.jonnyzzz.mcpSteroid.devrig.markerBackendDisplayName
-import com.jonnyzzz.mcpSteroid.devrig.markerBackendLocatorLabel
-import com.jonnyzzz.mcpSteroid.devrig.productCodeFromBuild
-import com.jonnyzzz.mcpSteroid.server.BackendInfo
+import com.jonnyzzz.mcpSteroid.devrig.backendInfoForRow
 import com.jonnyzzz.mcpSteroid.server.ListedProject
+import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.ExecuteFeedbackToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
@@ -86,21 +85,20 @@ class DevrigListProjectsToolHandler(
                 backendName = backendName,
             )
         }
+        // Reuse the ONE BackendRow -> BackendInfo mapping (shared with the CLI), so the MCP `backends[]`
+        // and `devrig backend --json` never diverge. A routing-discovered IDE is always reachable (its
+        // bridge answered), so the FromMarker row carries a non-null `projects` list -> routable = true.
         val backends = discovered.map { (backendName, ide) ->
-            BackendInfo(
+            val markerProjects = routes
+                .filter { it.idePid == ide.pid }
+                .map { ProjectInfo(name = it.originalProjectName, path = it.projectPath) }
+            backendInfoForRow(
+                row = BackendRow.FromMarker(
+                    ide = ide,
+                    projects = markerProjects,
+                    managed = ide.pid in managedPids,
+                ),
                 backendName = backendName,
-                source = "marker",
-                displayName = markerBackendDisplayName(ide),
-                locator = markerBackendLocatorLabel(ide), // "build IU-261.x, pid 1234"
-                routable = true,
-                reachable = true,
-                managed = ide.pid in managedPids,
-                pid = ide.pid,
-                ideProductCode = productCodeFromBuild(ide.marker.ide.build),
-                build = ide.marker.ide.build,
-                mcpSteroidPluginInstalled = true,
-                plugin = ide.marker.plugin,
-                ide = ide.marker.ide,
                 openProjects = listedProjects.filter { it.backendName == backendName },
             )
         }

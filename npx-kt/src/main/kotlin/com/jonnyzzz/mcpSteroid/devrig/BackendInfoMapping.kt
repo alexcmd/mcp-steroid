@@ -9,6 +9,7 @@ import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
 import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
 import com.jonnyzzz.mcpSteroid.server.backendNameFor
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
+import com.jonnyzzz.mcpSteroid.server.productCodeFromBuild
 
 // R3.3 — the shared backend_name formula (backendNameFor + backendNameForMarker) lives in
 // mcp-steroid-server (com.jonnyzzz.mcpSteroid.server.BackendName) so the in-IDE plugin and devrig
