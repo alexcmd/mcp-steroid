@@ -7,34 +7,12 @@ import com.jonnyzzz.mcpSteroid.server.BackendInfo
 import com.jonnyzzz.mcpSteroid.server.ListedProject
 import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
 import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
-import com.jonnyzzz.mcpSteroid.server.base62Sha256
+import com.jonnyzzz.mcpSteroid.server.backendNameFor
+import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 
-/**
- * R3.3 — one `backend_name`, one uniform id scheme for every source.
- *
- * ```
- * backend_name = "<productCodeLower>-<hash8>"
- *   productCodeLower = productCodeFromBuild(build)?.lowercase() ?: "ide"   // "IU" -> "iu"; fallback "ide"
- *   hash8            = base62Sha256(sourceKey).take(8)
- *   sourceKey        = "pid:<pid>" | "port:<port>" | "managed:<managedId>"
- * ```
- *
- * The pid/port/source/routability are their own [BackendInfo] fields — never encoded into the id shape.
- * Deterministic and round-trippable: devrig recomputes it per discovered backend to resolve
- * `backend_name -> backend`.
- */
-fun backendNameFor(
-    sourceKey: String,
-    build: String?,
-): String {
-    val productCodeLower = productCodeFromBuild(build)?.lowercase() ?: "ide"
-    val hash8 = base62Sha256(sourceKey).take(8)
-    return "$productCodeLower-$hash8"
-}
-
-/** Marker-IDE backend_name: keyed by the IDE's real pid. */
-fun backendNameForMarker(pid: Long, build: String?): String =
-    backendNameFor(sourceKey = "pid:$pid", build = build)
+// R3.3 — the shared backend_name formula (backendNameFor + backendNameForMarker) lives in
+// mcp-steroid-server (com.jonnyzzz.mcpSteroid.server.BackendName) so the in-IDE plugin and devrig
+// recompute the same id for the same input. The port/managed variants below are devrig-only sources.
 
 /** Port-discovered backend_name: keyed by the scanned port. */
 fun backendNameForPort(port: Int, build: String?): String =

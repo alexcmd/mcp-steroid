@@ -237,10 +237,11 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     }
 
     /**
-     * The shared ListProjectsResponse DTO always carries `backends` + `projects[].backend`, but on a
-     * direct in-IDE connection they must be honest empties (no devrig routing context to report).
+     * R3.6 — the direct in-IDE surface self-describes with the SAME shape devrig emits: exactly one
+     * routable backend (this IDE), and every project's `project_name == name` and `backend_name` points
+     * at that single backend. Replaces the round-2 "direct surface stays empty" guard.
      */
-    fun testDirectIdeListProjectsCarriesEmptyBackendFields(): Unit = timeoutRunBlocking(30.seconds) {
+    fun testDirectIdeListProjectsSelfDescribes(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
         server.startServerIfNeeded()
 
@@ -258,16 +259,34 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         val listProjectsResult = McpJson.decodeFromJsonElement<ToolCallResult>(listProjectsRpc.result!!)
         assertFalse("steroid_list_projects should succeed", listProjectsResult.isError)
         val projectsPayload = (listProjectsResult.content.single() as ContentItem.Text).text
-        val projects = McpJson.decodeFromString<ListProjectsResponse>(projectsPayload)
+        val response = McpJson.decodeFromString<ListProjectsResponse>(projectsPayload)
 
+        assertEquals(
+            "Direct-IDE list_projects must self-describe with exactly one backend",
+            1,
+            response.backends.size
+        )
+        val selfBackend = response.backends.single()
         assertTrue(
-            "Direct-IDE list_projects must report no backends summary",
-            projects.backends.isEmpty()
+            "The self backend must be routable",
+            selfBackend.routable
         )
         assertTrue(
-            "Direct-IDE list_projects must leave every project.backend null",
-            projects.projects.all { it.backend == null }
+            "The self backend must report the MCP Steroid plugin installed",
+            selfBackend.mcpSteroidPluginInstalled
         )
+        response.projects.forEach { project ->
+            assertEquals(
+                "Direct-IDE project_name must equal the real name",
+                project.name,
+                project.projectName
+            )
+            assertEquals(
+                "Direct-IDE project must point at the single self backend",
+                selfBackend.backendName,
+                project.backendName
+            )
+        }
     }
 
     private suspend fun initializeSession(server: SteroidsMcpServer): String {
