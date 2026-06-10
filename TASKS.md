@@ -3827,3 +3827,15 @@ Split:
 - **W4 — docs + verify.** AGENT-STEROID-GUIDE / managing-backends: responses self-describe via backends[]
   only (no top-level ide); backends[] now lists non-routable port/managed rows too (check `routable`).
   Suites green; wire-pristineness green.
+
+---
+
+# Deliverable — agent feature review (2026-06-11)
+
+Multi-agent hands-on experiment (Claude 4-lens swarm + Codex via run-agent.sh -> top-30 -> 5 validation
+iterations -> 3-lens quorum). **Result: 29 ranked, evidence-backed missing features** in
+[docs/agent-feature-review-2026-06.md](docs/agent-feature-review-2026-06.md). Top themes: verification
+recipes (red-code check, single-call test run, JPS build errors), execute_code response shape
+(structured envelope, dedup diagnostics, line-number mapping), resource discoverability (102 articles vs
+31 indexed), execution lifecycle (queue/cancel/artifacts), and reliability bugs found live (decompiler
+modal poisoning EDT, smartReadAction output duplication, write-lock invisibility).
