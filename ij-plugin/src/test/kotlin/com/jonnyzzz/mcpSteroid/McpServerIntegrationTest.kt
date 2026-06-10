@@ -210,7 +210,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
     /**
      * The direct in-IDE surface serves exactly one backend, so steroid_open_project must NOT advertise
-     * the devrig-only `backend_name` parameter (Option B). Guards the default openProjectToolSpec() seam.
+     * the devrig-only `backend_name` parameter (Option B). Guards the in-IDE
+     * `OpenProjectToolSpec(includeBackendName = false)` registration in SteroidsMcpServer.
      */
     fun testOpenProjectSchemaOmitsBackendNameOnDirectSurface(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()

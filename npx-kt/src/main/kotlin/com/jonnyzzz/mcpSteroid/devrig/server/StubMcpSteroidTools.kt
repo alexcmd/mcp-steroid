@@ -3,7 +3,6 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
-import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.prompts.Generic
 import com.jonnyzzz.mcpSteroid.prompts.PromptsContext
 import com.jonnyzzz.mcpSteroid.devrig.BackendRow
@@ -19,7 +18,6 @@ import com.jonnyzzz.mcpSteroid.server.ListProjectsToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
-import com.jonnyzzz.mcpSteroid.server.OpenProjectToolSpec
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
@@ -51,12 +49,6 @@ class StubMcpSteroidTools(
         }
         return type.cast(handler)
     }
-
-    // Devrig routes to one of several discovered IDEs, so it advertises the optional `backend_name`
-    // routing parameter (REQUIRED on this surface). The in-IDE plugin keeps the default single-backend
-    // surface (no `backend_name`).
-    override fun openProjectToolSpec(): McpToolBase =
-        OpenProjectToolSpec(includeBackendName = true) { handler<OpenProjectToolHandler>() }
 
     private fun unsupportedHandler(type: Class<*>): Nothing =
         throw UnsupportedOperationException(
