@@ -147,9 +147,6 @@ class DevrigProjectRoutingService(
         return out
     }
 
-    /** Pids of devrig-managed backends currently known to the routing service (a subset of discovered IDEs). */
-    fun managedBackendPids(): Set<Long> = managedRunningPids()
-
     private fun discoveredIdes(): List<DiscoveredIde> =
         stateProvider().values.map { it.ide }.distinctBy { it.pid }
 

@@ -8,8 +8,12 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
+import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
+import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendInfo
+import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendState
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.server.hasMcpSteroid
 import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
@@ -566,20 +570,25 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
-        val routing = routingService(
-            managedPids = setOf(43L),
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = homeA, build = "IU-261.1"),
-                status = IdeMonitorStatus.CONNECTED,
-                lastSnapshot = listOf(ProjectInfo("alpha", homeA.toString())),
-            ),
-            IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = homeB, build = "IU-253.9"),
-                status = IdeMonitorStatus.CONNECTED,
-                lastSnapshot = listOf(ProjectInfo("beta", homeB.toString())),
+        val stateA = IdeMonitorState(
+            ide = discoveredIde(pid = 42, projectHome = homeA, build = "IU-261.1"),
+            status = IdeMonitorStatus.CONNECTED,
+            lastSnapshot = listOf(ProjectInfo("alpha", homeA.toString())),
+        )
+        val stateB = IdeMonitorState(
+            ide = discoveredIde(pid = 43, projectHome = homeB, build = "IU-253.9"),
+            status = IdeMonitorStatus.CONNECTED,
+            lastSnapshot = listOf(ProjectInfo("beta", homeB.toString())),
+        )
+        val routing = routingService(managedPids = setOf(43L), stateA, stateB)
+        // The managed flag on backends[] comes from the inventory's managed list correlating by pid.
+        val handler = DevrigListProjectsToolHandler(
+            routing,
+            testInventory(
+                states = listOf(stateA, stateB),
+                managed = listOf(managedBackendInfo(tempDir, runningPid = 43L, state = ManagedBackendState.RUNNING)),
             ),
         )
-        val handler = DevrigListProjectsToolHandler(routing)
 
         val response = handler.collectListProjectsResponse()
 
@@ -620,18 +629,16 @@ class DevrigToolBridgeClientTest {
         // A real directory so toRealPath() (used by both code paths to salt the hash) succeeds identically.
         val projectHome = Files.createDirectories(tempDir.resolve("my-app"))
         val ide = discoveredIde(pid = 4242L, projectHome = projectHome, build = "IU-261.1")
-        val routing = DevrigProjectRoutingService {
-            mapOf(
-                4242L to IdeMonitorState(
-                    ide = ide,
-                    status = IdeMonitorStatus.CONNECTED,
-                    lastSnapshot = listOf(ProjectInfo("my-app", projectHome.toString())),
-                ),
-            )
-        }
+        val state = IdeMonitorState(
+            ide = ide,
+            status = IdeMonitorStatus.CONNECTED,
+            lastSnapshot = listOf(ProjectInfo("my-app", projectHome.toString())),
+        )
+        val routing = DevrigProjectRoutingService { mapOf(4242L to state) }
 
         // MCP surface.
-        val mcpResponse = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
+        val mcpResponse = DevrigListProjectsToolHandler(routing, testInventory(listOf(state)))
+            .collectListProjectsResponse()
         val mcpProjectName = mcpResponse.projects.single().projectName
 
         // CLI surface — the same marker + project rendered by `devrig project --json`.
@@ -878,6 +885,33 @@ class DevrigToolBridgeClientTest {
         assertEquals(false, result.isError)
         assertEquals("ndjson ok", (result.content.single() as ContentItem.Text).text)
     }
+
+    /** Inventory over the same monitor states the routing service sees — the MCP-mode wiring in miniature. */
+    private fun testInventory(
+        states: List<IdeMonitorState>,
+        managed: List<ManagedBackendInfo> = emptyList(),
+    ): BackendInventory = BackendInventory(
+        markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.lastSnapshot) } },
+        portIdes = { emptySet() },
+        managedBackends = { managed },
+        isProcessAlive = { true },
+    )
+
+    private fun managedBackendInfo(
+        tempDir: Path,
+        runningPid: Long?,
+        state: ManagedBackendState,
+    ): ManagedBackendInfo = ManagedBackendInfo(
+        id = "ideaIC-2026.1",
+        productKey = "ideaIC",
+        productCode = "IC",
+        version = "2026.1",
+        buildNumber = "261.1",
+        installPath = tempDir.resolve("backends/ideaIC-2026.1"),
+        cachePath = tempDir.resolve("caches/ideaIC-2026.1"),
+        runningPid = runningPid,
+        state = state,
+    )
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
