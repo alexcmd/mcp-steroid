@@ -195,11 +195,9 @@ class BackendCommandJsonRenderTest {
         assertEquals("IU", backend["ideProductCode"]?.jsonPrimitive?.contentOrNull)
         assertEquals("IU-253.21581.142", backend["build"]?.jsonPrimitive?.contentOrNull)
 
-        // Marker identity now lives under `ide` (name/version/build), not flattened on the backend.
-        val ide = backend["ide"]!!.jsonObject
-        assertEquals("IntelliJ IDEA", ide["name"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("2025.3.3", ide["version"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("IU-253.21581.142", ide["build"]?.jsonPrimitive?.contentOrNull)
+        // The marker's IdeInfo type stays on the disk/wire side: the agent schema carries the
+        // identity only as displayName/build/ideProductCode — no embedded `ide` object.
+        assertNull(backend["ide"], "agent schema must not embed the marker IdeInfo: " + backend)
 
         // plugins[] carries one entry tagged kind=mcp-steroid (replaces the old `plugin` block + flag).
         val plugin = backend["plugins"]!!.jsonArray.single().jsonObject

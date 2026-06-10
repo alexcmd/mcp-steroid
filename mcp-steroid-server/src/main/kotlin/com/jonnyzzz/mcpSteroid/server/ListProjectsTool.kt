@@ -108,8 +108,6 @@ data class BackendInfo(
     val portDetail: PortBackendDetail? = null,
     /** Managed-only extras. */
     val managedDetail: ManagedBackendDetail? = null,
-    /** Marker identity (name/version/build). */
-    val ide: IdeInfo? = null,
     val openProjects: List<ListedProject> = emptyList(),
 )
 
@@ -212,7 +210,6 @@ fun markerBackendInfo(
     build = ide.build,
     plugins = plugins,
     error = error,
-    ide = ide,
     openProjects = openProjects,
 )
 
