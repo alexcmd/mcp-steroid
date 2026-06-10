@@ -60,10 +60,11 @@ class OpenProjectToolSpec(
     val backendName = if (includeBackendName) {
         InputSchemaElement.param("backend_name")
             .description(
-                "REQUIRED. The backend to open the project in, identified by the stable backend id from " +
-                    "steroid_list_projects (the `backend` field of each project, and the `backends[].id` " +
-                    "summary) — e.g. \"pid-1234\". First call steroid_list_projects and inspect `backends[]` " +
-                    "(displayName, locator, openProjects). PREFER the backend that already has the same " +
+                "REQUIRED. The backend to open the project in, identified by its `backend_name` from " +
+                    "steroid_list_projects (the `backend_name` of each project, and of each `backends[]` " +
+                    "entry) — an opaque id like \"iu-9fk2a0xQ\". First call steroid_list_projects and inspect " +
+                    "`backends[]` (displayName, locator, routable, openProjects); only `routable: true` " +
+                    "entries are valid here. PREFER the backend that already has the same " +
                     "project — or another git worktree of the same repository — open (match " +
                     "backends[].openProjects[].path / shared repo root): worktrees share build/index/VCS " +
                     "context, so reusing that IDE avoids a redundant second indexing. Otherwise prefer a " +
@@ -133,9 +134,9 @@ Dialog Handling:
 - Always check modalDialogShowing in steroid_list_windows response"""
 
         const val BACKEND_NAME_DESCRIPTION = """Choosing a backend (multiple IDEs):
-This connection can route to more than one running IDE. Call steroid_list_projects first to see the
-available backends (`backends[].id`) and pass that id as backend_name to open the project in that
-specific IDE. PREFER the backend that already has the same project — or another git worktree of the
+This connection can route to more than one running IDE. Call steroid_list_projects first: `backends[]`
+lists ALL backends (including non-routable ones); pass a `routable: true` entry's `backend_name` to
+open the project in that specific IDE. PREFER the backend that already has the same project — or another git worktree of the
 same repository — open (match backends[].openProjects[].path / a shared repo root): worktrees share
 build/index/VCS context, so reusing that IDE keeps the context warm and avoids a redundant second
 indexing. Otherwise prefer a `managed` backend, else any listed backend.
