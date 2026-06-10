@@ -111,6 +111,10 @@ data class BackendInfo(
  * One plugin observed on a [BackendInfo]. MCP/CLI-surface only. [kind] classifies the plugin so consumers
  * can find the MCP Steroid one without matching on id strings: [MCP_STEROID_PLUGIN_KIND] for our plugin,
  * `"other"` for everything else (room for e.g. `"intellij-native-mcp"` later).
+ *
+ * Today only the MCP Steroid plugin can appear: the marker carries exactly one [PluginInfo]. Enumerating
+ * further plugins (e.g. the IDE's built-in MCP server as `"intellij-native-mcp"`) needs an additive
+ * `PidMarker.plugins` wire extension — tracked on GH issue #88.
  */
 @Serializable
 data class BackendPlugin(
