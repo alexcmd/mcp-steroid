@@ -119,7 +119,9 @@ To pick a value:
    - `routable` — `true` only for IDEs you can actually open into.
    - `plugins[]` — the IDE's relevant plugins, each `{ id, name, version,
      kind }`. A `kind: "mcp-steroid"` entry means the MCP Steroid plugin
-     is installed (what makes a backend routable).
+     is installed (required for a backend to be routable; check `routable`
+     for the final answer — an unreachable IDE keeps the plugin entry but
+     is not routable).
    - `openProjects[]` — `{ project_name, name, path, backend_name }` for
      every project already open in that backend.
    - `managed` — `true` if this is the devrig-managed sandbox.

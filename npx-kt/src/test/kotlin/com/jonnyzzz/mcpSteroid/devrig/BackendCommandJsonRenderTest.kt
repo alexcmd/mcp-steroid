@@ -320,6 +320,8 @@ class BackendCommandJsonRenderTest {
         assertEquals("managed", backend["source"]?.jsonPrimitive?.contentOrNull)
         assertEquals(true, backend["managed"]?.jsonPrimitive?.boolean)
         assertEquals(false, backend["routable"]?.jsonPrimitive?.boolean)
+        // Managed rows carry no plugin info (no marker yet) — plugins[] must be empty, not absent-by-luck.
+        assertEquals(0, backend["plugins"]!!.jsonArray.size)
         val detail = backend["managedDetail"]!!.jsonObject
         assertEquals("idea-community-2025.2.6.2", detail["managedId"]?.jsonPrimitive?.contentOrNull)
         assertEquals("2025.2.6.2", detail["version"]?.jsonPrimitive?.contentOrNull)
