@@ -2,12 +2,17 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 
-/** R3.9: version-skew warnings go to STDERR (never stdout) and de-dupe per (pid, plugin version). */
+/**
+ * Version-skew warnings compare **version bases** (`major.minor`, the `version-base` notion from
+ * `version.json`), fire on every exec_code call (no de-dup), and go to STDERR (never stdout).
+ */
 class BackendVersionSkewTest {
     private fun captureStderr(block: () -> Unit): String {
         val original = System.err
@@ -22,28 +27,58 @@ class BackendVersionSkewTest {
     }
 
     @Test
-    fun `warns on stderr when versions differ and de-dupes per pid+version`() {
-        // A unique pid keeps the process-global de-dup set independent of other tests.
-        val pid = 918_273_001L
-        val stderr = captureStderr {
-            BackendVersionSkew.warnIfSkewed(pid = pid, pluginVersion = "0.100", devrigVersion = "0.101")
-            // Same (pid, version) again: must NOT warn a second time.
-            BackendVersionSkew.warnIfSkewed(pid = pid, pluginVersion = "0.100", devrigVersion = "0.101")
-        }
-        val warnings = stderr.lines().filter { it.contains("versions differ") }
-        assertEquals(1, warnings.size, stderr)
-        assertTrue(warnings.single().startsWith("WARN:"), warnings.single())
-        assertTrue(warnings.single().contains("devrig 0.101"), warnings.single())
-        assertTrue(warnings.single().contains("MCP Steroid 0.100"), warnings.single())
-        assertTrue(warnings.single().contains("pid $pid"), warnings.single())
+    fun `versionBase extracts the leading major-minor prefix`() {
+        assertEquals("0.100", BackendVersionSkew.versionBase("0.100-409f23a2"))
+        assertEquals("0.100", BackendVersionSkew.versionBase("0.100.19999-SNAPSHOT-9b6783a6"))
+        assertEquals("0.101", BackendVersionSkew.versionBase("0.101"))
+        assertEquals("1.2", BackendVersionSkew.versionBase(" 1.2.3 "))
+        assertNull(BackendVersionSkew.versionBase(""))
+        assertNull(BackendVersionSkew.versionBase("garbage"))
+        assertNull(BackendVersionSkew.versionBase("v0.100")) // no leading digits
     }
 
     @Test
-    fun `does not warn when versions match or plugin version is blank`() {
+    fun `same version base is not skewed even when suffixes differ`() {
+        // The exact strings that made the old exact-match scheme warn spuriously.
+        assertFalse(BackendVersionSkew.isSkewed("0.100.19999-SNAPSHOT-9b6783a6", "0.100-409f23a2"))
+        assertFalse(BackendVersionSkew.isSkewed("0.101", "0.101"))
+    }
+
+    @Test
+    fun `different version bases are skewed`() {
+        assertTrue(BackendVersionSkew.isSkewed("0.100-409f23a2", "0.101-deadbeef"))
+        assertTrue(BackendVersionSkew.isSkewed("1.0", "0.100"))
+    }
+
+    @Test
+    fun `unparseable versions never report skew`() {
+        assertFalse(BackendVersionSkew.isSkewed("", "0.101"))
+        assertFalse(BackendVersionSkew.isSkewed("garbage", "0.101"))
+        assertFalse(BackendVersionSkew.isSkewed("0.100", ""))
+    }
+
+    @Test
+    fun `warnOnExecCode warns on stderr on EVERY skewed call - no de-dup`() {
+        val pid = 918_273_001L
         val stderr = captureStderr {
-            BackendVersionSkew.warnIfSkewed(pid = 918_273_002L, pluginVersion = "0.101", devrigVersion = "0.101")
-            BackendVersionSkew.warnIfSkewed(pid = 918_273_003L, pluginVersion = "", devrigVersion = "0.101")
+            BackendVersionSkew.warnOnExecCode(pid = pid, pluginVersion = "0.100-aaa", devrigVersion = "0.101-bbb")
+            BackendVersionSkew.warnOnExecCode(pid = pid, pluginVersion = "0.100-aaa", devrigVersion = "0.101-bbb")
         }
-        assertEquals(emptyList<String>(), stderr.lines().filter { it.contains("versions differ") })
+        val warnings = stderr.lines().filter { it.contains("version bases differ") }
+        assertEquals(2, warnings.size, stderr)
+        assertTrue(warnings.first().startsWith("WARN:"), warnings.first())
+        assertTrue(warnings.first().contains("devrig 0.101-bbb"), warnings.first())
+        assertTrue(warnings.first().contains("MCP Steroid 0.100-aaa"), warnings.first())
+        assertTrue(warnings.first().contains("pid $pid"), warnings.first())
+        assertTrue(warnings.first().contains("0.101 vs 0.100"), warnings.first())
+    }
+
+    @Test
+    fun `warnOnExecCode is silent when bases match or version is unparseable`() {
+        val stderr = captureStderr {
+            BackendVersionSkew.warnOnExecCode(pid = 1L, pluginVersion = "0.101.5-SNAPSHOT", devrigVersion = "0.101-abc")
+            BackendVersionSkew.warnOnExecCode(pid = 2L, pluginVersion = "", devrigVersion = "0.101")
+        }
+        assertEquals(emptyList<String>(), stderr.lines().filter { it.contains("WARN:") })
     }
 }

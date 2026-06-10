@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.devrig.BackendVersionSkew
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.DevrigServices
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
@@ -91,6 +92,8 @@ class DevrigExecuteCodeToolHandler(
         callProgress: McpProgressReporter,
     ): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
+        // Version-base skew check on every routed exec_code call (devrig scenario only; stderr).
+        BackendVersionSkew.warnOnExecCode(pid = route.idePid, pluginVersion = route.plugin.version)
         val result = bridge.callTool(route, "steroid_execute_code", callProgress) {
             put("project_name", route.originalProjectName)
             put("code", execCodeParams.code)

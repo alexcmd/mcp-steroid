@@ -526,8 +526,6 @@ suspend fun collectMarkerSnapshots(
     perIdeTimeout: Duration,
     clientInfo: NpxStreamClientInfo = backendCommandClientInfo(),
 ): List<BackendRow.FromMarker> = coroutineScope {
-    // R3.9: one stderr warning per (pid, plugin version) when devrig and the plugin versions differ.
-    ides.forEach { BackendVersionSkew.warnIfSkewed(it) }
     ides.map { ide ->
         async { fetchSnapshotForIde(httpClient, ide, perIdeTimeout, clientInfo) }
     }.awaitAll()
