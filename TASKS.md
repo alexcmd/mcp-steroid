@@ -3789,3 +3789,41 @@ to reshape per PHILOSOPHY.md Tenet 5) or internal registration/docs. `WirePristi
   `java`/`JAVA_HOME` is older.
 - **E — verify.** `:mcp-steroid-server:test` + `:npx-kt:test` green; `:ij-plugin` compiles +
   `McpServerIntegrationTest` green; `WirePristinenessTest` green (wire unaffected). Full diff audit.
+
+---
+
+# Active focus — #89: backend-attributed list_projects/list_windows, no top-level ide header (2026-06-10)
+
+User-decided design (supersedes the earlier options list):
+- **No `ide`/`plugin`/`pid` header block** on `ListProjectsResponse` / `ListWindowsResponse` — devrig's own
+  identity is already in the MCP server info; per-entry attribution replaces the header entirely.
+- Both responses carry **`backends[]`** (shared `BackendInfo`), and every project/window/background-task
+  entry is bound to its backend via `backend_name`.
+- **All backends are listed** in `backends[]` — including port-only / managed-not-running and marker IDEs
+  with zero open projects (b1).
+- No "ran in:" echo in tool results (rejected — `backend_name` is already the key, info already reported).
+
+Split:
+- **W1 — mcp-steroid-server reshape.** `ListProjectsResponse { projects, backends }` (drop ide/plugin/pid);
+  `ListWindowsResponse { windows: List<ListedWindow>, backgroundTasks: List<ListedBackgroundTask>,
+  backends: List<BackendInfo> }` (drop ide/plugin/pid). New MCP-only `ListedWindow` (WindowInfo fields +
+  `@SerialName("backend_name") backendName`) and `ListedBackgroundTask` (ProgressTaskInfo fields +
+  backend_name). WIRE STAYS PRISTINE: `WindowInfo`/`ProgressTaskInfo`/`NpxBridgeWindowsResponse` (8
+  required fields incl. pid) unchanged — extend `WirePristinenessTest`.
+- **W2 — devrig BackendInventory + handlers.** One service scanning the whole model (markers + managed +
+  port), shared by the CLI (`collectBackendRows` delegates) and MCP handlers. MCP mode: markers from the
+  monitor's cached state (no re-fetch); CLI mode: scanOnce + snapshot fetch (today's behavior). Managed
+  rows: check `runningPid` liveness before any HTTP. Port scan: bounded ~1s. `DevrigListProjectsToolHandler`
+  backends[] = ALL inventory rows via `backendInfoForRow`; `DevrigListWindowsToolHandler` binds each
+  window/task via `backendNameForMarker(pid, build)` (the wire response already carries the pid) + same
+  backends[]. Performance optimization only if it hurts (no caching yet).
+- **W3 — ij-plugin.** Drop the header fields; windows handler binds every window/task to the self
+  backend_name and emits backends[] = [self] (reuse `markerBackendInfo`). REFACTOR SEAM: `NpxBridgeService
+  .buildWindows` currently builds the WIRE response from the MCP handler's output — split so the wire path
+  gets raw `WindowInfo`/`ProgressTaskInfo` + self pid (byte-identical wire) and the MCP handler wraps them.
+  Migrate test-integration infra consumers of the dropped header pid (`intelliJ-window.kt` listWindows
+  `it.pid`, `DialogKillerIntegrationTest` pid filters, the mcp-steroid.kt helper) to per-window
+  backend_name → backends[].pid resolution.
+- **W4 — docs + verify.** AGENT-STEROID-GUIDE / managing-backends: responses self-describe via backends[]
+  only (no top-level ide); backends[] now lists non-routable port/managed rows too (check `routable`).
+  Suites green; wire-pristineness green.
