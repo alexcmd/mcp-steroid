@@ -16,6 +16,31 @@ started. Every command supports `--json` (stable, pretty-printed) and
 returns exit code `0` on success or `64` on a user/validation/lock
 error — always pass `--json` and check the exit code.
 
+## Running the devrig CLI
+
+The CLI is the **same `devrig`** you are already running as your MCP
+server, invoked with a `backend` subcommand:
+
+- `devrig backend` — list installed + running backends.
+- `devrig backend download <id>` — fetch an IDE.
+- `devrig backend start <id>` / `devrig backend stop <id>` — run / stop one.
+- `devrig backend provision <id>` — install the MCP Steroid plugin into
+  a backend so it becomes routable.
+
+The `<id>` values come from `devrig backend --json` (the
+`backends[].backend_name` field — see Step 1).
+
+**Launcher path.** On **macOS / Linux** run `devrig` (or, if it is not on
+`PATH`, `<install>/bin/devrig`). On **Windows** the launcher is
+`devrig.bat`; run it through `cmd.exe` — e.g.
+`cmd.exe /c devrig.bat backend --json` or
+`cmd.exe /c devrig.bat backend download idea-ultimate --json`.
+
+**Java 25 is required.** devrig launches on Java 25. If the `java` on
+`PATH` or `JAVA_HOME` points at an older JDK, set `DEVRIG_JAVA_HOME` to a
+JDK/JRE 25 home for the devrig process (it takes precedence over
+`JAVA_HOME` for devrig) before invoking any `devrig backend` command.
+
 ## Step 1 — See what IDEs are available
 
 Two read-only commands give you the full decision context. Run them

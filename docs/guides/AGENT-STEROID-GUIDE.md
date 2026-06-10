@@ -196,6 +196,22 @@ Rules:
   from the pid) — **re-read `steroid_list_projects` rather than caching**
   it.
 
+**Managing backends from the agent.** To list, provision, or run
+backends, call the `devrig` CLI directly — the *same* devrig you run as
+your MCP server:
+
+- `devrig backend` — list installed + running backends.
+- `devrig backend download <id>` — fetch an IDE.
+- `devrig backend start <id>` / `devrig backend stop <id>` — run/stop one.
+- `devrig backend provision <id>` — install the MCP Steroid plugin into it.
+
+The backend ids come from `devrig backend --json` (the
+`backends[].backend_name` field). Launcher path: on **macOS/Linux** run
+`devrig` (or `<install>/bin/devrig`); on **Windows** run `devrig.bat` via
+`cmd.exe /c devrig.bat backend ...`. devrig needs **Java 25** — if
+`java` / `JAVA_HOME` is not 25, set `DEVRIG_JAVA_HOME` to a JDK/JRE 25
+home for the devrig process.
+
 See also: `mcp-steroid://open-project/managing-backends`.
 
 ## Critical Rules
