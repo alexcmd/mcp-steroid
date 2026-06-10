@@ -72,13 +72,18 @@ class NpxBridgeService {
         products = listOf(ProductInfo())
     )
 
+    /**
+     * The `/windows` WIRE response (devrig<->IDE) — built from the raw [IdeWindowsCollector] snapshot
+     * (pristine [WindowInfo]/[ProgressTaskInfo] + this IDE's own pid), NOT from the MCP
+     * [ListWindowsResponse] (which is backend-attributed and never crosses the wire).
+     */
     suspend fun buildWindows(mcpUrl: String): NpxBridgeWindowsResponse {
         val seq = nextSeq()
-        val windows = service<ListWindowsToolHandler>().collectListWindowsResponse()
+        val snapshot = IdeWindowsCollector.collect()
         return NpxBridgeWindowsResponse(
-            windows = windows.windows,
-            backgroundTasks = windows.backgroundTasks,
-            pid = windows.pid,
+            windows = snapshot.windows,
+            backgroundTasks = snapshot.backgroundTasks,
+            pid = ProcessHandle.current().pid(),
             mcpUrl = mcpUrl,
             instanceId = instanceId,
             seq = seq,
