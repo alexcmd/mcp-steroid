@@ -79,8 +79,10 @@ first with `devrig backend stop <id> --json`.
 ## Step 4 — Wait until the backend is discoverable, then open
 
 The IDE is not routable until its plugin writes a marker (≈5–15 s after
-start). Poll `steroid_list_projects` until the new IDE appears, then call
-`steroid_open_project` with the absolute project path.
+start). The new backend may already show up in `backends[]` during that
+window (managed rows are listed even before they are reachable), so poll
+`steroid_list_projects` until its entry reports `routable: true`, then
+call `steroid_open_project` with the absolute project path.
 
 `steroid_open_project` prefers a **running devrig-managed backend** over
 any other (even newer) IDE when you let it auto-pick — so once your
@@ -93,7 +95,9 @@ backend. To target a **specific** IDE among several running ones, pass
 After opening, poll `steroid_list_windows` (watch `modalDialogShowing`,
 `indexingInProgress`, `projectInitialized`) and use
 `steroid_take_screenshot` + `steroid_input` for any dialogs, exactly as
-in the normal open-project flow.
+in the normal open-project flow. When several IDEs are running, each
+`windows[]` / `backgroundTasks[]` entry carries a `backend_name` — match
+it against your backend's entry in `backends[]` to watch the right IDE.
 
 ## Choosing a backend (the `backend_name` parameter)
 
@@ -102,10 +106,14 @@ which one to open the project in by passing `backend_name`. This is a
 **devrig-only** parameter — it has no effect on a direct in-IDE MCP
 connection (one MCP server == one IDE), where it is logged and ignored.
 
-`steroid_list_projects` **self-describes on both surfaces**: the devrig
-response lists one `backends[]` entry per discovered IDE; a direct
-in-IDE response lists exactly one entry (the IDE you are connected to).
-Both have identical shape.
+`steroid_list_projects` and `steroid_list_windows` **self-describe on
+both surfaces**: neither response carries a top-level `ide`/`plugin`/
+`pid` header — each carries `backends[]` instead, and every
+`projects[]`, `windows[]`, and `backgroundTasks[]` entry names its
+owning backend via `backend_name`. The devrig response lists one
+`backends[]` entry per discovered backend (including non-routable ones
+— see below); a direct in-IDE response lists exactly one entry (the IDE
+you are connected to). Both have identical shape.
 
 To pick a value:
 
@@ -138,12 +146,18 @@ To pick a value:
 Each `projects[]` entry also carries `project_name`, the raw folder
 `name`, `path`, and a `backend_name` naming its owning backend.
 
-**Only routable backends are valid.** `backends[]` advertises only the
-running IDEs that have the MCP Steroid plugin (`routable: true`, with a
-`plugins[]` entry of `kind: "mcp-steroid"`). Backends that `devrig backend --json`
-may show but that are not running with the plugin are **not** routable
-for `open_project` — passing one returns a self-correcting error that
-lists the currently-routable `backend_name`s.
+**Only routable backends are valid — but `backends[]` lists ALL
+backends.** The list includes marker IDEs (even with zero open
+projects), port-only IDEs running **without** the MCP Steroid plugin,
+and devrig-managed backends that are **not running**. Only entries with
+`routable: true` (a running IDE with a live MCP Steroid bridge — a
+`plugins[]` entry of `kind: "mcp-steroid"`) accept `open_project` —
+**always check `routable` before passing a `backend_name`**.
+Non-routable rows are provision/start targets: bring them up with
+`devrig backend provision <id>` (install the plugin) and/or
+`devrig backend start <id>`. Passing a non-routable or unknown
+`backend_name` returns a self-correcting error that lists the
+currently-routable `backend_name`s.
 
 **A `backend_name` is not stable across IDE restarts** (it is derived
 from the pid), exactly like the pid-salted `project_name`. **Re-read
