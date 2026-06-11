@@ -3839,3 +3839,13 @@ recipes (red-code check, single-call test run, JPS build errors), execute_code r
 (structured envelope, dedup diagnostics, line-number mapping), resource discoverability (102 articles vs
 31 indexed), execution lifecycle (queue/cancel/artifacts), and reliability bugs found live (decompiler
 modal poisoning EDT, smartReadAction output duplication, write-lock invisibility).
+
+## Status close-out (2026-06-11)
+
+- Epic **#91** filed: 29 evidence-backed agent-experience gaps from the dogfooding experiment, themed
+  checklist linking [docs/agent-feature-review-2026-06.md](docs/agent-feature-review-2026-06.md).
+  **#90** (response payload de-duplication) complements its response-shape theme.
+- All session work CI-green on `origin/main` @ `bef9a015`. **Pending**: `jb-merge` for
+  `fb7ab68f..bef9a015` (TeamCity builds stale until then); devrig local redeploy to serve the
+  newest schema (actions[]/ide-field drops landed after the deployed `ddf8027a` build);
+  managed-backend/test-dir cleanup (see MEMORY.md 2026-06-11 environment handoff).
