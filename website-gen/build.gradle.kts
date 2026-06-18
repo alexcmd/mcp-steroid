@@ -39,14 +39,16 @@ val websiteGenMain = "com.jonnyzzz.mcpSteroid.websitegen.WebsiteArtifactsKt"
 // on this module's classes (no project() deps), so it never builds the rest of the project — fast.
 val generateWebsite by tasks.registering(JavaExec::class) {
     group = "website"
-    description = "Generate ALL website static files (version.json + updatePlugins.xml + install.sh + install.ps1) into website/static."
+    description = "Generate ALL website static files (version.json + updatePlugins.xml + install.sh + install.ps1 + EULA + LICENSE) into website/build/generated-static."
     mainClass.set(websiteGenMain)
     classpath = sourceSets["main"].runtimeClasspath
     // The website Make contract is a SINGLE task that produces every static file. This task writes
-    // version.json + updatePlugins.xml; the installer scripts come from :installer-gen:generateInstaller,
-    // which writes into the same website/static dir — so depend on it (both run under `generateWebsite`).
+    // version.json + updatePlugins.xml (+ copies EULA/LICENSE below); the installer scripts come from
+    // :installer-gen:generateInstaller, which writes into the same dir — so depend on it.
     dependsOn(":installer-gen:generateInstaller")
 
+    val eula = rootProject.layout.projectDirectory.file("EULA")
+    val license = rootProject.layout.projectDirectory.file("LICENSE")
     val versionFile = rootProject.layout.projectDirectory.file("VERSION")
     // Generated static files go into website/build/ (a `build/` dir → already gitignored, never the
     // tracked source tree), which Hugo merges via its `staticDir` list. Adding a new generated file needs
@@ -68,6 +70,13 @@ val generateWebsite by tasks.registering(JavaExec::class) {
             resolved += listOf("--notes", notes.absolutePath)
         }
         args = resolved
+    }
+    // Own EULA + LICENSE too, so ALL served static files come from this one task (single source of truth),
+    // not an out-of-band Makefile copy into a Gradle-owned dir. Copied from the repo root, served verbatim.
+    doLast {
+        outDir.asFile.mkdirs()
+        eula.asFile.copyTo(outDir.file("EULA").asFile, overwrite = true)
+        license.asFile.copyTo(outDir.file("LICENSE").asFile, overwrite = true)
     }
 }
 

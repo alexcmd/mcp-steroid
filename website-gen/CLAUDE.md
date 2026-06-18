@@ -9,15 +9,18 @@ Read the [root CLAUDE.md](../CLAUDE.md) too (project-wide rules).
 
 - **Website artifacts** (`WebsiteArtifacts.kt`, task `generateWebsite`) — resolves the published GitHub
   release and writes `version.json` + `updatePlugins.xml` (the IntelliJ custom-plugin-repository XML)
-  into `website/static`. The task knows all paths (VERSION + release notes from the project layout);
-  CI/Makefile invoke it with no args. The plugin version + `since-build` come from the ACTUAL published
-  artifact (the release ZIP's `ij-plugin-*.jar` `META-INF/plugin.xml`), never a literal.
+  into `website/build/generated-static`, and copies `EULA` + `LICENSE` there too. The task knows all
+  paths (VERSION + release notes from the project layout); CI/Makefile invoke it with no args. The plugin
+  version + `since-build` come from the ACTUAL published artifact (the release ZIP's `ij-plugin-*.jar`
+  `META-INF/plugin.xml`), never a literal.
 
 **The website Make contract is a SINGLE task.** `make update-config` runs only `:website-gen:generateWebsite`,
-and that task emits EVERY static file the site serves. So `generateWebsite` **dependsOn
-`:installer-gen:generateInstaller`** (which writes `install.sh` + `install.ps1` into the same
-`website/static`). Adding a new generated static file = make `generateWebsite` depend on the task that
-produces it; never add a second task to the Makefile.
+and that task emits EVERY static file the site serves — into `website/build/generated-static` (a `build/`
+dir, gitignored, merged by Hugo via its `staticDir` list). So `generateWebsite` **dependsOn
+`:installer-gen:generateInstaller`** (which writes `install.sh` + `install.ps1` into the same dir) and
+copies `EULA`/`LICENSE` itself. Adding a new generated static file = make `generateWebsite` depend on the
+task that produces it (or copy it in `generateWebsite`); never add a second task to the Makefile, and
+never write generated files into the tracked `website/static`.
 
 ## Dependencies
 

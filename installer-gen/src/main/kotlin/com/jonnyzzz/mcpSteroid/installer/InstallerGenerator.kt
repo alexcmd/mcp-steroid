@@ -61,8 +61,23 @@ internal fun validateScriptTable(table: Map<String, JdkScriptEntry>) {
         require(e.sha256.matches(Regex("[0-9a-f]{64}"))) { "$key: sha256 must be 64 lowercase hex, got '${e.sha256}'" }
         require(e.format in setOf("zip", "tar.gz")) { "$key: unexpected archive format '${e.format}'" }
         require(e.javaHome.isNotBlank() && !e.javaHome.startsWith("/")) { "$key: bad javaHome '${e.javaHome}'" }
+        require(e.url.startsWith("https://") || e.url.startsWith("http://")) { "$key: url must be absolute http(s), got '${e.url}'" }
+        requireShellSafe("$key url", e.url)
+        requireShellSafe("$key javaHome", e.javaHome)
     }
 }
+
+// Vendor-controlled values (url, javaHome) are baked VERBATIM into single-quoted shell / PowerShell strings
+// in a script users run via `curl … | sh` / `irm … | iex`. A single quote (or other quote/expansion
+// metachar, backslash, control char) would break out of that string. Today's Corretto/Azul values are
+// clean, but reject them at generation time as defense-in-depth — a vendor URL change or a crafted archive
+// entry name can't silently produce a broken/injectable installer.
+private val SHELL_UNSAFE_CHARS = charArrayOf('\'', '"', '`', '$', '\\')
+
+private fun requireShellSafe(label: String, value: String) =
+    require(value.none { it in SHELL_UNSAFE_CHARS || it.isISOControl() }) {
+        "$label contains a shell-unsafe character: '$value'"
+    }
 
 /** Reject placeholder/malformed devrig coordinates so the generator never bakes a broken download URL. */
 internal fun validateDevrig(e: DevrigEntry) {
@@ -73,6 +88,7 @@ internal fun validateDevrig(e: DevrigEntry) {
     }
     require(e.sha256.matches(Regex("[0-9a-f]{64}"))) { "devrig sha256 must be 64 lowercase hex, got '${e.sha256}'" }
     require(e.format == "zip") { "devrig: unexpected format '${e.format}'" }
+    requireShellSafe("devrig url", e.url)
 }
 
 /** POSIX `case` arms for the install.sh baked table (single-quoted values; sha256/url carry no quotes). */

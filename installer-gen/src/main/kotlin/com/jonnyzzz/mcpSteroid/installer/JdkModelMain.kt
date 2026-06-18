@@ -25,7 +25,7 @@ fun main(argv: Array<String>) {
 
     out.parent?.let { Files.createDirectories(it) }
     Files.writeString(out, prettyJson.encodeToString(model))
-    System.err.println("[website-gen] wrote ${model.jdks.size} JDK entries to $out (cache=$cacheDir)")
+    System.err.println("[installer-gen] wrote ${model.jdks.size} JDK entries to $out (cache=$cacheDir)")
 }
 
 private fun parseFlags(argv: Array<String>): Map<String, String> {

@@ -99,16 +99,17 @@ if (-not (Test-Path (Join-Path $jdkHome 'bin\java.exe'))) {
   if (-not (Test-Path (Join-Path $jdkHome 'bin/java'))) { Fail "java not found inside $jdkHome" }
 }
 
-# ── write launchers (paths relative to the install root) ──
-$launcherRel = $launcher.Substring($InstallRoot.Length).TrimStart('\','/')
-$jdkHomeRel  = $jdkHome.Substring($InstallRoot.Length).TrimStart('\','/')
-
+# ── write launchers ──
 # devrig.cmd — a SELF-CONTAINED batch launcher (no PowerShell at launch; PS is only this installer).
-# Always pins the bundled JDK via DEVRIG_JAVA_HOME, then call's the bundled devrig.bat.
+# Always pins the bundled JDK via DEVRIG_JAVA_HOME, then calls the bundled devrig.bat.
 # Writes nothing to stdout (the MCP stdio channel): @echo off + set/call only.
-$cmd = "@echo off`r`nset `"DEVRIG_JAVA_HOME=%USERPROFILE%\$jdkHomeRel`"`r`ncall `"%USERPROFILE%\$launcherRel`" %*`r`n"
+# Bake the RESOLVED absolute install paths (backslash-normalized for cmd.exe) — NOT %USERPROFILE%, which
+# can differ from the home we actually resolved ($InstallRoot via USERPROFILE -> HOME -> GetFolderPath).
+$jdkHomeWin  = $jdkHome.Replace('/', '\')
+$launcherWin = $launcher.Replace('/', '\')
+$cmd = "@echo off`r`nset `"DEVRIG_JAVA_HOME=$jdkHomeWin`"`r`ncall `"$launcherWin`" %*`r`n"
 Set-Content -Path (Join-Path $BinDir 'devrig.cmd') -Value $cmd -NoNewline:$false
-Write-Log "launcher: $BinDir\devrig.cmd -> $launcherRel (DEVRIG_JAVA_HOME=$jdkHomeRel)"
+Write-Log "launcher: $BinDir\devrig.cmd -> $launcherWin (DEVRIG_JAVA_HOME=$jdkHomeWin)"
 
 # ── make devrig reachable on PATH: symlink devrig.cmd into a writable PATH dir under the profile ──
 # Always create the symlink (we do not special-case $BinDir being on PATH). Never edit the

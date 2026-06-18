@@ -41,9 +41,50 @@ class InstallerBootstrapTest {
     private val version = "0.0.0-test"
     private val nginxImage = "nginx:alpine"
     private val installImage = "ubuntu:24.04"
+    private val muslImage = "alpine:3.21"
 
     /** HOME with a space catches quoting bugs in install.sh / the launcher wrapper. */
     private val homeDir = "/home/tester one"
+
+    /**
+     * The project's defining platform constraint: musl/Alpine is NOT supported (the IntelliJ IDEs need
+     * glibc). The generated install.sh must DETECT musl and fail fast — before any download — with a clear
+     * message. Run it in a real Alpine (musl) container and assert the rejection. No nginx/fixtures needed:
+     * the musl guard fires before the table lookup / preflight / download.
+     */
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES)
+    fun `generated install_sh refuses musl (alpine)`() = runWithCloseableStack { lifetime ->
+        val genDir = createWorkDir("installer-musl-gen")
+        // A minimal valid model (nothing is downloaded on the musl-reject path) → renders a real install.sh.
+        val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk") }
+        writeInstallerScripts(genDir.toPath(), table, DevrigEntry("https://example.com/devrig.zip", "b".repeat(64)), version)
+        makeWorldReadable(genDir)
+
+        val install = startDockerContainerAndDispose(
+            lifetime,
+            StartContainerRequest()
+                .image(muslImage)
+                // The test-helper docker-exec transport runs `bash`, absent on Alpine — install it. (The
+                // installer itself is still invoked as `sh`, exercising musl/busybox; bash is only the
+                // harness's exec shell.)
+                .logPrefix("installer-musl")
+                .volumes(ContainerVolume(genDir, "/gen", "ro"))
+                .entryPoint("sh", "-c", "apk add --no-cache bash >/dev/null 2>&1; mkdir -p \"$homeDir\"; sleep 3000"),
+        )
+        awaitBashReady(install)
+
+        // No DEVRIG_OS/CPU: Alpine auto-detects linux + musl, so install.sh must refuse before any download.
+        val r = install.startProcessInContainer {
+            args("sh", "/gen/install.sh").timeoutSeconds(120).description("install.sh on alpine/musl")
+                .extraEnv(mapOf("HOME" to homeDir))
+        }.awaitForProcessFinish()
+
+        require(r.exitCode != 0) { "install.sh must FAIL on musl/Alpine, but exited 0:\n$r" }
+        r.assertOutputContains("musl libc (Alpine) is not supported", message = "must explain the musl rejection")
+        r.assertNoMessageInOutput("downloading") // refused before any download
+        log("musl/Alpine rejection verified (exit ${r.exitCode})")
+    }
 
     @Test
     @Timeout(value = 15, unit = TimeUnit.MINUTES)
@@ -148,6 +189,17 @@ class InstallerBootstrapTest {
         c.startProcessInContainer {
             args("sh", "-c", script).timeoutSeconds(120).description("sh -c").extraEnv(env)
         }.awaitForProcessFinish()
+
+    /** Wait until the docker-exec transport (which runs `bash`) works — i.e. `apk add bash` finished. */
+    private fun awaitBashReady(c: ContainerDriver) {
+        val deadline = System.currentTimeMillis() + 4 * 60_000
+        while (System.currentTimeMillis() < deadline) {
+            val r = try { sh(c, "echo BASH_READY") } catch (e: Exception) { null }
+            if (r != null && r.exitCode == 0 && "BASH_READY" in r.stdout) { log("bash present in alpine"); return }
+            Thread.sleep(2_000)
+        }
+        error("bash was not installed in the alpine container within the timeout (apk failed?)")
+    }
 
     private fun awaitToolsInstalled(c: ContainerDriver) {
         val deadline = System.currentTimeMillis() + 4 * 60_000
