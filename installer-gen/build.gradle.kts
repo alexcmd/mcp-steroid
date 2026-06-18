@@ -64,3 +64,32 @@ val generateJdkModel by tasks.registering(JavaExec::class) {
         )
     }
 }
+
+// Generate install.sh + install.ps1 into website/static. Resolves the 5 JDKs (cached, PGP-verified) and
+// the devrig coordinates (latest GitHub release by default), then bakes the per-platform table into the
+// scripts. Knows all paths from the project layout — callers invoke it with no args. No project() deps.
+val generateInstaller by tasks.registering(JavaExec::class) {
+    group = "installer"
+    description = "Generate install.sh + install.ps1 into website/static (JDKs PGP-verified + cached; devrig from the latest release)."
+    mainClass.set("com.jonnyzzz.mcpSteroid.installer.InstallerGeneratorKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    maxHeapSize = "2g" // resolveAllJdks holds one ~230 MB archive at a time
+
+    val versionFile = rootProject.layout.projectDirectory.file("VERSION")
+    val outDir = rootProject.layout.projectDirectory.dir("website/static")
+    inputs.file(versionFile)
+    // Always re-run: the published devrig release + the live JDK builds can change without VERSION changing.
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        val version = versionFile.asFile.readText().trim()
+        require(version.isNotEmpty()) { "VERSION file (${versionFile.asFile}) is empty" }
+        outDir.asFile.mkdirs()
+        jdkDownloadCacheDir.mkdirs()
+        args = listOf(
+            "--out-dir", outDir.asFile.absolutePath,
+            "--version", version,
+            "--cache-dir", jdkDownloadCacheDir.absolutePath,
+        )
+    }
+}

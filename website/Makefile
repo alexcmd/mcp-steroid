@@ -41,6 +41,8 @@ update-config: ensure-public-repo copy-root-files
 	@sed -i.bak 's/version = ".*"/version = "$(VERSION)"/' hugo.toml && rm -f hugo.toml.bak
 	@echo "Generating version.json + updatePlugins.xml via :website-gen (Kotlin)"
 	@cd .. && ./gradlew --console=plain --info --stacktrace :website-gen:generateWebsite
+	@echo "Generating install.sh + install.ps1 via :installer-gen (Kotlin)"
+	@cd .. && ./gradlew --console=plain --info --stacktrace :installer-gen:generateInstaller
 	@mkdir -p mcp-steroid-public/mcp-steroid-plugin
 
 # Start development server with live reload
