@@ -1,5 +1,12 @@
 # TODO — npx bootstrapper, per-user lazy-fetch architecture
 
+> **NOTE (2026-06-18): the `:jdk-downloader` module referenced below has been REMOVED.**
+> It was dead — its only output, the npx-kt `version.json` manifest, was never published or
+> consumed (devrig uses Java on PATH; the in-IDE update checker reads the *website* `version.json`).
+> The download → PGP-verify → extract Gradle pattern survives in git history, and the installer epic's
+> `:site-gen` (branch `installer/version-json-driven`) carries the live JDK-pinning. If this bootstrapper
+> is built, revive the pattern from there rather than expecting `:jdk-downloader` to exist.
+
 ## 2026-05-28 — Design phase complete; spec at v7 (commit b403efb7)
 
 **Authoritative design:**
