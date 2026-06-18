@@ -107,7 +107,7 @@ main() {
   fi
 
   # ── BAKED-IN per-platform JDK table (devrig coordinates are universal, set above) ──
-  jdk_url=''; jdk_sha256=''; jdk_format=''; jdk_javahome=''; devrig_binsub=''
+  jdk_url=''; jdk_sha256=''; jdk_format=''; jdk_javahome=''
   case "$key" in
 @@PLATFORM_CASE_SH@@
     macos-x64) fail "Intel macOS (x86_64) is not supported — MCP Steroid ships an Apple-silicon (arm64) JDK only. Use an arm64 Mac." ;;

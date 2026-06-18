@@ -194,12 +194,17 @@ class InstallerBootstrapTest {
     /** Wait until the docker-exec transport (which runs `bash`) works — i.e. `apk add bash` finished. */
     private fun awaitBashReady(c: ContainerDriver) {
         val deadline = System.currentTimeMillis() + 4 * 60_000
+        // Early probes are EXPECTED to fail (apk is still installing bash), so we retry rather than
+        // rethrow per-iteration — but never silently: keep the last failure and surface it if we time
+        // out, so a genuine docker/transport fault is diagnosable instead of hidden behind "apk failed?".
+        var lastError: Exception? = null
         while (System.currentTimeMillis() < deadline) {
-            val r = try { sh(c, "echo BASH_READY") } catch (e: Exception) { null }
+            val r = try { sh(c, "echo BASH_READY") } catch (e: Exception) { lastError = e; null }
             if (r != null && r.exitCode == 0 && "BASH_READY" in r.stdout) { log("bash present in alpine"); return }
             Thread.sleep(2_000)
         }
-        error("bash was not installed in the alpine container within the timeout (apk failed?)")
+        error("bash was not installed in the alpine container within the timeout (apk failed?)" +
+            (lastError?.let { "; last probe error: $it" } ?: ""))
     }
 
     private fun awaitToolsInstalled(c: ContainerDriver) {

@@ -71,7 +71,11 @@ internal fun validateScriptTable(table: Map<String, JdkScriptEntry>) {
     table.forEach { (key, e) ->
         require(e.sha256.matches(Regex("[0-9a-f]{64}"))) { "$key: sha256 must be 64 lowercase hex, got '${e.sha256}'" }
         require(e.format in setOf("zip", "tar.gz")) { "$key: unexpected archive format '${e.format}'" }
-        require(e.javaHome.isNotBlank() && !e.javaHome.startsWith("/")) { "$key: bad javaHome '${e.javaHome}'" }
+        // javaHome is archive-relative with NO leading OR trailing slash (installer-gen/CLAUDE.md). A
+        // trailing slash would yield a double-slash in the install path; enforce the full contract.
+        require(e.javaHome.isNotBlank() && !e.javaHome.startsWith("/") && !e.javaHome.endsWith("/")) {
+            "$key: bad javaHome (must be non-blank, no leading/trailing slash): '${e.javaHome}'"
+        }
         require(e.url.startsWith("https://") || e.url.startsWith("http://")) { "$key: url must be absolute http(s), got '${e.url}'" }
         requireShellSafe("$key url", e.url)
         requireShellSafe("$key javaHome", e.javaHome)
@@ -100,6 +104,11 @@ internal fun validateDevrig(e: DevrigEntry) {
     require(e.sha256.matches(Regex("[0-9a-f]{64}"))) { "devrig sha256 must be 64 lowercase hex, got '${e.sha256}'" }
     require(e.format == "zip") { "devrig: unexpected format '${e.format}'" }
     requireShellSafe("devrig url", e.url)
+    // The launcher subpaths are derived from devrig-zip ENTRY NAMES (attacker-controlled if the zip is
+    // crafted) and baked into the single-quoted DEVRIG_BINSUB assignment in both scripts — validate them
+    // the same way as the vendor URLs.
+    requireShellSafe("devrig launcherPosix", e.launcherPosix)
+    requireShellSafe("devrig launcherWindows", e.launcherWindows)
 }
 
 // The devrig launcher subpath is UNIVERSAL (one dist zip for all platforms), so it is baked once as
@@ -180,6 +189,11 @@ internal fun resolveDevrig(flags: Map<String, List<String>>, http: HttpFetcher):
     } ?: run {
         val version = flags["devrig-version"]?.firstOrNull()
         val u = if (version != null) {
+            // Guard the version token before it shapes a GitHub URL: a `..`/`@`/`%2F` could repoint the
+            // download to a different release/path. The bytes are still sha-verified, but against a hash
+            // the generator computes from THIS download — so a repointed URL would silently embed the
+            // wrong artifact. Restrict to release-tag-safe characters.
+            require(version.matches(Regex("[A-Za-z0-9._+-]+"))) { "--devrig-version has unsafe characters: '$version'" }
             "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$version/devrig-$version.zip"
         } else {
             resolveLatestDevrigZipUrl(http)
@@ -229,6 +243,10 @@ data class InstallerScripts(val sh: String, val ps: String)
 internal fun renderInstallerScripts(table: Map<String, JdkScriptEntry>, devrig: DevrigEntry, version: String): InstallerScripts {
     validateScriptTable(table)
     validateDevrig(devrig)
+    // version (from --version) is baked into both scripts and used UNQUOTED in install.sh path
+    // construction — reject shell metacharacters here too (it is not vendor-sourced, but the same
+    // generation-time defense-in-depth applies).
+    requireShellSafe("version", version)
     val common = mapOf(
         "VERSION" to version,
         "DEVRIG_URL" to devrig.url,

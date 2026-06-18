@@ -81,11 +81,17 @@ function Install-Artifact([string]$kind, [string]$url, [string]$sha, [string]$fm
 
   New-Item -ItemType Directory -Force -Path $tmpUnpack | Out-Null
   Expand-Archive -Path $tmpZip -DestinationPath $tmpUnpack -Force
-  if (Test-Path $target) {
-    Write-Log "another install finished first; using existing tree"
-    Remove-Item -Recurse -Force $tmpUnpack
-  } else {
-    Move-Item -Path $tmpUnpack -Destination $target
+  # Promote the staging tree into its content-addressed target, tolerating a concurrent install winning
+  # the race (mirrors install.sh's promote_tree). NB: unlike POSIX `mv`, PowerShell Move-Item nests the
+  # source INTO an existing destination dir rather than failing, so after a move that succeeded we must
+  # detect+clean the nested result (the TOCTOU between Test-Path and Move-Item).
+  $nested = Join-Path $target (Split-Path $tmpUnpack -Leaf)
+  try {
+    Move-Item -Path $tmpUnpack -Destination $target -ErrorAction Stop
+    if (Test-Path $nested) { Write-Log "another install finished first; using existing tree"; Remove-Item -Recurse -Force $nested }
+  } catch {
+    if (Test-Path $target) { Write-Log "another install finished first; using existing tree"; Remove-Item -Recurse -Force $tmpUnpack -ErrorAction SilentlyContinue }
+    else { Fail "could not move unpacked tree into place: $target" }
   }
   Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
   return $target
