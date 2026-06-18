@@ -17,7 +17,9 @@ dependencies {
     implementation("io.ktor:ktor-client-core:3.3.2")
     implementation("io.ktor:ktor-client-cio:3.3.2")
     // BouncyCastle PGP: verify the detached OpenPGP signatures (Corretto .sig, Azul signature-binary).
-    implementation("org.bouncycastle:bcpg-jdk18on:1.79")
+    // Pin the latest (1.84) — past the 1.77/1.78-era CVEs (CVE-2024-29857/30171/30172/34447); bcpg pulls
+    // bcprov-jdk18on transitively at the same version.
+    implementation("org.bouncycastle:bcpg-jdk18on:1.84")
     // Apache Commons Compress: stream tar.gz / zip entries to locate each JDK's inner JAVA_HOME (bin/java).
     implementation("org.apache.commons:commons-compress:1.27.1")
 
