@@ -10,10 +10,13 @@ repositories {
 }
 
 dependencies {
-    // Only kotlinx-serialization (GitHub API JSON + version.json). Everything else — HTTP, ZIP, XML — is
+    // kotlinx-serialization (GitHub API JSON + version.json) + the Ktor CIO client (HTTP). ZIP/XML stay
     // JDK built-in. NO project() dependencies on purpose: `generateWebsite` must compile only THIS module,
-    // never the rest of the build.
+    // never the rest of the build. (Ktor is the repo's standard HTTP stack — used more in later PRs.)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("io.ktor:ktor-client-core:3.3.2")
+    implementation("io.ktor:ktor-client-cio:3.3.2")
 
     testImplementation(kotlin("test"))
     testImplementation(platform("org.junit:junit-bom:5.11.4"))

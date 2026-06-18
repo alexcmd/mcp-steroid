@@ -1,18 +1,22 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.websitegen
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.w3c.dom.Document
 import java.io.ByteArrayInputStream
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Duration
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.OutputKeys
@@ -45,24 +49,33 @@ fun interface UrlBytesFetcher {
     fun fetch(url: String): ByteArray
 }
 
-private fun httpClient() = HttpClient.newBuilder()
-    .connectTimeout(Duration.ofSeconds(30))
-    .followRedirects(HttpClient.Redirect.NORMAL)
-    .build()
+// Ktor CIO client (the repo's standard HTTP stack). Lazy + process-lifetime — this is a short-lived CLI,
+// so we don't close it. followRedirects handles the GitHub release → S3 hop; the long request timeout
+// covers the (large) plugin ZIP download.
+private val ktorClient by lazy {
+    HttpClient(CIO) {
+        followRedirects = true
+        install(HttpTimeout) {
+            connectTimeoutMillis = 30_000
+            requestTimeoutMillis = 300_000
+        }
+    }
+}
 
 val HttpTextFetcher = UrlTextFetcher { url ->
-    val req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60))
-        .header("Accept", "application/vnd.github+json").GET().build()
-    val resp = httpClient().send(req, HttpResponse.BodyHandlers.ofString())
-    require(resp.statusCode() == 200) { "GET $url failed: HTTP ${resp.statusCode()}" }
-    resp.body()
+    runBlocking {
+        val resp = ktorClient.get(url) { header("Accept", "application/vnd.github+json") }
+        require(resp.status.isSuccess()) { "GET $url failed: HTTP ${resp.status}" }
+        resp.bodyAsText()
+    }
 }
 
 val HttpBytesFetcher = UrlBytesFetcher { url ->
-    val req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofMinutes(5)).GET().build()
-    val resp = httpClient().send(req, HttpResponse.BodyHandlers.ofByteArray())
-    require(resp.statusCode() == 200) { "GET $url failed: HTTP ${resp.statusCode()}" }
-    resp.body()
+    runBlocking {
+        val resp = ktorClient.get(url)
+        require(resp.status.isSuccess()) { "GET $url failed: HTTP ${resp.status}" }
+        resp.readRawBytes()
+    }
 }
 
 @Serializable
@@ -197,11 +210,14 @@ fun renderUpdatePluginsXml(coords: PluginCoordinates, zipUrl: String, changeNote
 
     val writer = StringWriter()
     TransformerFactory.newInstance().newTransformer().apply {
+        // Omit the transformer's own <?xml …?> — it always adds standalone="no". We write our own decl
+        // and a trailing blank line so the output matches the previously published file byte-for-byte.
+        setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes")
         setOutputProperty(OutputKeys.INDENT, "yes")
         setOutputProperty(OutputKeys.ENCODING, "UTF-8")
         setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2")
     }.transform(DOMSource(doc), StreamResult(writer))
-    return writer.toString()
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + writer.toString().trim('\n') + "\n\n"
 }
 
 private fun flags(argv: Array<String>): Map<String, String> {
