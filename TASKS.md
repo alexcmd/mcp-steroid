@@ -14,8 +14,11 @@ New PR off `origin/main` (NOT PR #113, which is parked on `installer/version-jso
   - wrapper records **ABSOLUTE** paths (no `$HOME`-relative — works from any install location incl.
     `/tmp/devrig` in tests) and always pins the bundled JDK via `DEVRIG_JAVA_HOME` (start script honors it).
   - **owns PATH reachability**: POSIX symlinks `bin/devrig` into the first writable PATH dir under `$HOME`
-    (never self-links, never clobbers a foreign devrig); Windows appends the bin dir to the **user** PATH
-    via PowerShell `[Environment]::SetEnvironmentVariable(...,'User')` (guarded; no `setx` truncation).
+    (pure Java, never self-links, never clobbers a foreign devrig, returns silently when already correct).
+    Windows: **NO PowerShell / no subprocess at startup** (per user) — the JDK cannot persist the user
+    PATH in pure Java, so it only CHECKS membership (`System.getenv("PATH")` + `File.pathSeparator`) and
+    prints a one-time manual hint if absent. Agents launch the wrapper by ABSOLUTE path, so MCP works
+    regardless of PATH.
   - **NO location guard** — the only safety is the gate below (per the "always on each start" contract).
 - `DevrigUserLauncher.kt` — single source of truth for the wrapper path + how to invoke it
   (`cmd.exe /d /c "…devrig.cmd" …` on Windows; direct exec on POSIX; no JAVA_HOME at the call site).
@@ -30,15 +33,21 @@ New PR off `origin/main` (NOT PR #113, which is parked on `installer/version-jso
   + wrapper-actually-runs with opt-in; default-off without) + updated `CliInstallIntegrationTest`
   (opt-in env + asserts wrapper registration + wrapper written). All green. IDE inspections = 0 WARNING+.
 
+## Done (cont.)
+
+- **eugene-x220 (Windows 10, Corretto 25) live test — PASSED.** SSH works as `jonnyzzz@eugene-x220.local`
+  (cmd.exe shell). Deployed a fresh SNAPSHOT dist, ran `devrig version` with
+  `DEVRIG_BIN_NO_AUTO_REGISTER=no`: `%USERPROFILE%\.mcp-steroid\bin\devrig.cmd` written with the correct
+  absolute `call` + `DEVRIG_JAVA_HOME` pin; the wrapper itself launched devrig; a 2nd start was idempotent
+  (no rewrite); NO PowerShell at startup. Test artifacts cleaned up afterward (a dangling
+  `%USERPROFILE%\.mcp-steroid\bin` user-PATH entry remains — harmless).
+- 3× adversarial quorum: GO (correctness=GO, safety=GO, tests=GO_WITH_CHANGES, no blocking issues). Its
+  non-blocking notes applied: symlink already-correct fast-path, writeAtomically temp-file cleanup.
+- **Committed** `926763f9` on `devrig/bin-launcher` (author Eugene Petrenko). NOT pushed — confirm with user.
+
 ## Pending
 
-- **eugene-x220 (Windows host) live test** — BLOCKED on SSH auth (`eugene-x220.local` resolves via mDNS
-  but rejects my pubkey for all users). Need: user authorizes key OR runs the deploy+run via `!`. Goal:
-  copy a fresh `devrig` dist, run `devrig version` with `DEVRIG_BIN_NO_AUTO_REGISTER=no`, confirm
-  `%USERPROFILE%\.mcp-steroid\bin\devrig.cmd` is written + the bin dir is on the user PATH, then
-  `devrig install <agent>` registers the `cmd.exe /d /c …devrig.cmd` command.
-- 3× adversarial quorum running (Workflow `wf_4c531b7e-a96`); commit after GO.
-- Not yet committed/pushed — confirm push with the user.
+- Push `devrig/bin-launcher` + open PR (awaiting user confirmation).
 
 # Active focus — 0.96 release quality check: devrig + ij-plugin (2026-05-29)
 
