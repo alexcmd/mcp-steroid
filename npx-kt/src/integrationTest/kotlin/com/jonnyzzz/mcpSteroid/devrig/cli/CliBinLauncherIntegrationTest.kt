@@ -18,7 +18,6 @@ import kotlin.test.assertTrue
  * Runs the REAL devrig dist inside a throwaway Linux container (see [startDevrigCliContainer]); never on
  * the host, which would create the developer's real `~/.mcp-steroid`.
  */
-@Suppress("FunctionName")
 class CliBinLauncherIntegrationTest {
     private val lifetime = CloseableStackHost()
 
@@ -31,10 +30,20 @@ class CliBinLauncherIntegrationTest {
     fun `with the opt-in, every start writes bin devrig, symlinks it onto PATH, and the wrapper runs`() {
         val devrig = lifetime.startDevrigCliContainer()
         // One shell: make a PATH dir under HOME, opt in, start devrig once (self-heal fires), then prove
-        // the launcher was written, symlinked, and the symlinked wrapper actually launches devrig.
+        // the launcher was written, symlinked, and the symlinked wrapper actually launches devrig — and
+        // that the wrapper's DEVRIG_JAVA_HOME is the SOLE JDK source (no ambient java masking it).
+        //
+        // The proof for the JDK pin (PR #117 review): the container has a system `java` (the image's
+        // temurin), which the FIRST run needs (the dist bundles no JDK — chicken-and-egg). So we seed the
+        // wrapper with that system java, then for the proof run we POISON `java` on PATH with a stub that
+        // exits 97 and UNSET JAVA_HOME. The wrapper exports DEVRIG_JAVA_HOME and the install-tree start
+        // script resolves `$JAVA_HOME/bin/java` by absolute path, so it must NOT touch the poisoned PATH
+        // java. If the wrapper ever stopped pinning DEVRIG_JAVA_HOME, JAVA_HOME would be empty → the start
+        // script falls back to PATH `java` → the stub fires (exit 97, no version) → this test fails.
+        // /usr/bin:/bin stay on PATH because the start script needs coreutils (dirname/uname/basename).
         val script = """
             set -eu
-            mkdir -p "${'$'}HOME/.local/bin"
+            mkdir -p "${'$'}HOME/.local/bin" "${'$'}HOME/poison"
             export PATH="${'$'}HOME/.local/bin:${'$'}PATH"
             export DEVRIG_BIN_NO_AUTO_REGISTER=false
             "${devrig.launcher}" version >/dev/null 2>&1 || true
@@ -42,20 +51,24 @@ class CliBinLauncherIntegrationTest {
             echo "SYMLINK_TARGET=${'$'}(readlink "${'$'}HOME/.local/bin/devrig" 2>/dev/null || echo none)"
             echo "===WRAPPER==="
             cat "${'$'}HOME/.mcp-steroid/bin/devrig"
-            echo "===RUN_VIA_SYMLINK==="
-            devrig version 2>/dev/null | head -1
+            printf '#!/bin/sh\necho AMBIENT_JAVA_USED >&2\nexit 97\n' > "${'$'}HOME/poison/java"
+            chmod +x "${'$'}HOME/poison/java"
+            echo "===RUN_VIA_SYMLINK_NO_AMBIENT_JAVA==="
+            env -u JAVA_HOME PATH="${'$'}HOME/poison:${'$'}HOME/.local/bin:/usr/bin:/bin" devrig version 2>/dev/null | head -1
         """.trimIndent()
 
         val out = devrig.runShell(script).assertExitCode(0, "bin-launcher self-heal").stdout
 
         assertTrue(out.contains("WRAPPER_EXISTS=yes"), out)
         assertTrue(Regex("SYMLINK_TARGET=.*/\\.mcp-steroid/bin/devrig").containsMatchIn(out), out)
-        // The wrapper pins the bundled JDK itself and execs the install-tree launcher (absolute path).
+        // The wrapper pins the JDK devrig runs under (via DEVRIG_JAVA_HOME) and execs the install-tree
+        // launcher by absolute path.
         assertTrue(out.contains("DEVRIG_JAVA_HOME="), out)
         assertTrue(out.contains("exec \"${devrig.launcher}\""), out)
-        // The whole chain works: invoking the PATH symlink (→ wrapper → DEVRIG_JAVA_HOME → devrig) runs
-        // `devrig version`, which prints a real version string (here a SNAPSHOT dist).
-        val ranVersion = out.substringAfter("===RUN_VIA_SYMLINK===")
+        // The whole chain works AND DEVRIG_JAVA_HOME is the sole JDK source: invoking the PATH symlink
+        // (→ wrapper → DEVRIG_JAVA_HOME → devrig) prints a real version even with PATH `java` poisoned and
+        // JAVA_HOME unset. A version means the poisoned ambient java was never used.
+        val ranVersion = out.substringAfter("===RUN_VIA_SYMLINK_NO_AMBIENT_JAVA===")
         assertTrue(Regex("\\d+\\.\\d+").containsMatchIn(ranVersion), "the symlinked wrapper should launch devrig:\n$out")
     }
 

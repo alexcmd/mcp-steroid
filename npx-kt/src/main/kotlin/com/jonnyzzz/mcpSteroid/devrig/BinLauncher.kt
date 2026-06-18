@@ -137,20 +137,20 @@ internal fun ensureBinLauncher(
     }
 }
 
-/** The POSIX wrapper: pins the bundled JDK via DEVRIG_JAVA_HOME, then execs the install-tree launcher. */
+/** The POSIX wrapper: pins the JDK devrig runs under via DEVRIG_JAVA_HOME, then execs the install-tree launcher. */
 internal fun renderPosixLauncher(launcher: Path, jdkHome: Path): String =
     "#!/bin/sh\n" +
         "# devrig launcher — managed by the devrig binary. Writes nothing to stdout (MCP stdio channel).\n" +
-        "# Always pins the bundled JDK via DEVRIG_JAVA_HOME (the bundled runtime is the supported one),\n" +
-        "# then hands off to the devrig binary.\n" +
+        "# Pins the JDK devrig runs under via DEVRIG_JAVA_HOME (its supported runtime), then hands off to\n" +
+        "# the install-tree devrig launcher.\n" +
         "DEVRIG_JAVA_HOME=\"$jdkHome\"; export DEVRIG_JAVA_HOME\n" +
         "exec \"$launcher\" \"\$@\"\n"
 
 /**
- * The self-contained Windows launcher: pure batch, NO PowerShell at launch. It ALWAYS pins the bundled
- * JDK via DEVRIG_JAVA_HOME (the bundled runtime is the supported one), then `call`s the bundled
- * devrig.bat. STDOUT cleanliness (the MCP JSON-RPC channel): `@echo off` + `set`/`call` emit nothing to
- * stdout; only the inner devrig.bat → java does. The agent invokes this via `cmd.exe /d /c` — see
+ * The self-contained Windows launcher: pure batch, NO PowerShell at launch. It ALWAYS pins the JDK devrig
+ * runs under via DEVRIG_JAVA_HOME (its supported runtime), then `call`s the install-tree devrig.bat.
+ * STDOUT cleanliness (the MCP JSON-RPC channel): `@echo off` + `set`/`call` emit nothing to stdout; only
+ * the inner devrig.bat → java does. The agent invokes this via `cmd.exe /d /c` — see
  * [DevrigUserLauncher.invocation].
  */
 internal fun renderWindowsCmd(launcher: Path, jdkHome: Path): String =
