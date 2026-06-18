@@ -344,6 +344,7 @@ val ciBuildPromptsTests by tasks.registering {
  */
 val ciIntegrationTestTaskPaths = listOf(
     ":test-helper:test",
+    ":installer-gen:installerIntegrationTest", // Docker (nginx + ubuntu), light — runs the generated install.sh
     ":ij-plugin:integrationTest",
     ":test-integration:test",
 )

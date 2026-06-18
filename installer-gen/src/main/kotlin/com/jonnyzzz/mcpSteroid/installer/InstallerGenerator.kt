@@ -196,8 +196,9 @@ internal fun renderInstallerScripts(table: Map<String, JdkScriptEntry>, devrig: 
     return InstallerScripts(sh, ps)
 }
 
-/** Render the scripts and write them (newline-terminated) into [outDir]. */
-internal fun writeInstallerScripts(outDir: Path, table: Map<String, JdkScriptEntry>, devrig: DevrigEntry, version: String) {
+/** Render the scripts and write them (newline-terminated) into [outDir]. Public so the integration test
+ * can drive it with a synthetic table (nginx-served fixtures) instead of resolving real JDKs. */
+fun writeInstallerScripts(outDir: Path, table: Map<String, JdkScriptEntry>, devrig: DevrigEntry, version: String) {
     val scripts = renderInstallerScripts(table, devrig, version)
     Files.createDirectories(outDir)
     outDir.resolve("install.sh").writeText(if (scripts.sh.endsWith("\n")) scripts.sh else scripts.sh + "\n")

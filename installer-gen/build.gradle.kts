@@ -25,6 +25,9 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // The installerIntegrationTest source set drives Docker via :test-helper (flows in via
+    // testRuntimeClasspath, which the source set extends below).
+    testImplementation(project(":test-helper"))
 }
 
 kotlin {
@@ -34,6 +37,39 @@ kotlin {
 tasks.test {
     useJUnitPlatform()
 }
+
+// HEAVY Docker installer-bootstrap suite: runs the GENERATED install.sh end-to-end against an nginx
+// side-car (no real JDK download — synthetic model + tiny fixtures). Isolated in its own source set so
+// it is NOT swept into the parallel plugin test matrix (mirrors :test-integration's discipline).
+val installerIntegrationTestSourceSet = sourceSets.create("installerIntegrationTest") {
+    compileClasspath += sourceSets["main"].output + sourceSets["test"].output + configurations["testRuntimeClasspath"]
+    runtimeClasspath += output + compileClasspath
+}
+
+val installerIntegrationTest by tasks.registering(Test::class) {
+    group = "verification"
+    description = "Docker-backed installer bootstrap test — runs the generated install.sh end-to-end."
+    useJUnitPlatform()
+    testClassesDirs = installerIntegrationTestSourceSet.output.classesDirs
+    classpath = installerIntegrationTestSourceSet.runtimeClasspath
+    // Never run two Docker test JVMs at once (RAM/CPU OOM guard, repo-wide :test-integration discipline).
+    maxParallelForks = 1
+    testLogging { showStandardStreams = true }
+    systemProperty("junit.jupiter.execution.timeout.default", "15m")
+
+    // Heavyweight (Docker): require an explicit invocation so plain root `./gradlew test`/`check` never
+    // boots Docker. Mirrors :test-integration:test's onlyIf guard.
+    onlyIf("Requires explicit :installer-gen:installerIntegrationTest or ciIntegrationTests invocation — needs Docker") {
+        gradle.startParameter.taskNames.any {
+            it.contains(":installer-gen:installerIntegrationTest") || it == "installerIntegrationTest" ||
+                it == "ciIntegrationTests" || it.endsWith(":ciIntegrationTests")
+        }
+    }
+}
+
+// Compile the heavy lane as part of `check` (without running it) so the merge-gate compile check + a
+// plain build still catch breakage even when Docker isn't available to run it.
+tasks.named("check") { dependsOn(installerIntegrationTestSourceSet.classesTaskName) }
 
 // The JDK download cache MUST live outside any `build/` folder so the multi-hundred-MB JDK archives
 // survive `clean` and are shared across runs/branches. The Gradle user home is the natural home; the
