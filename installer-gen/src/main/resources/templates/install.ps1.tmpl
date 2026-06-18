@@ -136,12 +136,9 @@ if (-not $linked) {
   Write-Log ""
 }
 
-# ── finalize: let devrig register itself with the available agents (opt out: DEVRIG_NO_AUTO_INSTALL) ──
-if ($env:DEVRIG_NO_AUTO_INSTALL) {
-  Write-Log "DEVRIG_NO_AUTO_INSTALL set — skipping 'devrig install'. Register agents later: $BinDir\devrig.cmd install"
-} else {
-  Write-Log "finalizing: running 'devrig install'..."
-  try { & (Join-Path $BinDir 'devrig.cmd') install }
-  catch { Write-Log "WARNING: 'devrig install' did not finish — run '$BinDir\devrig.cmd install' manually" }
-}
-Write-Log "devrig installed."
+# ── done. We do NOT auto-register devrig with agents — that edits agent configs, so it is an
+#    explicit user step. Just report that the binary is ready and how to register it. ──
+Write-Log "devrig binary is ready: $BinDir\devrig.cmd"
+Write-Log ""
+Write-Log "To register devrig with your agents (Claude, Codex, Gemini), run:"
+Write-Log "    devrig install"

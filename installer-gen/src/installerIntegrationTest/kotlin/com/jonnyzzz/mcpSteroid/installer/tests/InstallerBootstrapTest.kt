@@ -32,8 +32,10 @@ import java.util.zip.ZipOutputStream
  * JdkModel pointing at the side-car (via the public [writeInstallerScripts] seam — no real 200 MB JDK
  * download), runs the GENERATED install.sh inside an ubuntu container, and asserts the full
  * download -> sha256-verify -> unpack-verbatim -> content-address -> launcher -> PATH-symlink ->
- * auto-install pipeline. The minimal-but-meaningful lane (glibc/ubuntu); the per-vendor model + the
- * render contract are covered by the hermetic unit tests.
+ * ready-prompt pipeline. The installer does NOT auto-register devrig with agents (that edits agent
+ * configs — an explicit `devrig install` step); it just reports the binary is ready. The
+ * minimal-but-meaningful lane (glibc/ubuntu); the per-vendor model + render contract are covered by the
+ * hermetic unit tests.
  */
 class InstallerBootstrapTest {
     private val version = "0.0.0-test"
@@ -98,11 +100,13 @@ class InstallerBootstrapTest {
         sh(install, "mkdir -p \"$homeBin\"").assertExitCode(0) { "could not create $homeBin:\n$this" }
         val runPath = "$homeBin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-        // ── run #1: default (auto-install ON), clean HOME → must DOWNLOAD both + auto-run 'devrig install' ──
-        runInstall(install, mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "PATH" to runPath))
+        // ── run #1: clean HOME → must DOWNLOAD both, report the binary is ready, and tell the user to run
+        //    'devrig install' WITHOUT auto-registering (registration edits agent configs — a user step). ──
+        val run1 = runInstall(install, mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "PATH" to runPath))
             .assertExitCode(0) { "install.sh run #1 failed:\n$this" }
-            .assertOutputContains("DEVRIG_INSTALL_CALLED", message = "run #1 must auto-run 'devrig install'")
             .assertOutputContains("downloading devrig", "downloading jdk", message = "run #1 (clean HOME) must download both")
+            .assertOutputContains("devrig binary is ready", "devrig install", message = "must report the binary is ready + how to register with agents")
+        run1.assertNoMessageInOutput("DEVRIG_INSTALL_CALLED") // installer must NOT auto-run 'devrig install'
 
         // (a) content-addressed dirs exist
         sh(install, "ls -1 \"$homeDir/.mcp-steroid/binaries\"")
@@ -129,14 +133,6 @@ class InstallerBootstrapTest {
             .assertOutputContains("already installed: $devrigKey", "already installed: $jdkKey", message = "re-run must report 'already installed'")
         reRun.assertNoMessageInOutput("downloading jdk")
         reRun.assertNoMessageInOutput("downloading devrig")
-
-        // (f) DEVRIG_NO_AUTO_INSTALL on a fresh HOME must NOT auto-install
-        val freshHome = "/home/tester two"
-        sh(install, "mkdir -p \"$freshHome\"").assertExitCode(0) { "could not create fresh HOME:\n$this" }
-        runInstall(install, mapOf("HOME" to freshHome, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "DEVRIG_NO_AUTO_INSTALL" to "1"))
-            .assertExitCode(0) { "DEVRIG_NO_AUTO_INSTALL run failed:\n$this" }
-            .assertNoMessageInOutput("DEVRIG_INSTALL_CALLED")
-            .assertOutputContains("DEVRIG_NO_AUTO_INSTALL set", "skipping", message = "must log that auto-install was skipped")
 
         log("ALL INSTALLER ASSERTIONS PASSED on ubuntu (glibc)")
     }

@@ -209,19 +209,12 @@ EOF
     log ""
   fi
 
-  # ── finalize: let devrig register itself with the available agents ──
-  # The wrapper sets DEVRIG_JAVA_HOME, so this runs under the bundled JDK. Opt out via
-  # DEVRIG_NO_AUTO_INSTALL (e.g. CI / unattended provisioning).
-  if [ -n "${DEVRIG_NO_AUTO_INSTALL:-}" ]; then
-    log "DEVRIG_NO_AUTO_INSTALL set — skipping 'devrig install'. Register agents later with:"
-    log "    $BIN_DIR/devrig install"
-  else
-    log "finalizing: running 'devrig install'..."
-    "$BIN_DIR/devrig" install \
-      || log "WARNING: 'devrig install' did not finish cleanly — run '$BIN_DIR/devrig install' manually"
-  fi
-
-  log "devrig installed."
+  # ── done. We do NOT auto-register devrig with agents — that edits agent configs, so it is an
+  #    explicit user step. Just report that the binary is ready and how to register it. ──
+  log "devrig binary is ready: $BIN_DIR/devrig"
+  log ""
+  log "To register devrig with your agents (Claude, Codex, Gemini), run:"
+  log "    devrig install"
 }
 
 main "$@"
