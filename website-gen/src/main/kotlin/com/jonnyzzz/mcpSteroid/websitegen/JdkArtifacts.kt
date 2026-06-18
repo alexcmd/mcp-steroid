@@ -76,9 +76,16 @@ internal fun archiveEntryNames(bytes: ByteArray, archive: ArchiveType): List<Str
  */
 internal fun findJavaHome(bytes: ByteArray, archive: ArchiveType): String {
     val names = archiveEntryNames(bytes, archive).map { it.trimEnd('/') }
-    val launcher = names.firstOrNull {
+    val launchers = names.filter {
         it == "bin/java" || it == "bin/java.exe" || it.endsWith("/bin/java") || it.endsWith("/bin/java.exe")
-    } ?: error("Archive has no bin/java[.exe] entry; cannot compute JAVA_HOME (first entries=${names.take(8)})")
+    }
+    require(launchers.isNotEmpty()) {
+        "Archive has no bin/java[.exe] entry; cannot compute JAVA_HOME (first entries=${names.take(8)})"
+    }
+    // A JDK may bundle a nested JRE (`<root>/jre/bin/java`) whose entry can appear before the real
+    // launcher; pick the SHALLOWEST `bin/java` (fewest path segments) so we get the JDK root, not its
+    // nested jre — independent of archive entry order.
+    val launcher = launchers.minBy { it.count { c -> c == '/' } }
 
     val idx = launcher.lastIndexOf("/bin/")
     return if (idx < 0) "" else launcher.substring(0, idx)
@@ -88,6 +95,9 @@ internal fun findJavaHome(bytes: ByteArray, archive: ArchiveType): String {
 
 private const val CORRETTO_KEY_URL = "https://apt.corretto.aws/corretto.key"
 private const val CORRETTO_LATEST = "https://corretto.aws/downloads/latest"
+// Pinned fingerprint of the Amazon Corretto release key (RSA-4096). The key is fetched live over HTTPS,
+// so we bind verification to this constant rather than trusting whatever the key endpoint serves.
+const val CORRETTO_KEY_FINGERPRINT = "6dc3636dae534049c8b94623a122542ab04f24e3"
 
 private data class CorrettoSpec(val platform: JdkPlatform, val archive: ArchiveType, val alias: String)
 
@@ -104,7 +114,13 @@ private val CORRETTO_SPECS = listOf(
 
 private val CORRETTO_VERSION_RE = Regex("""amazon-corretto-(\d[\d.]*\d)""")
 
-private fun resolveCorretto(spec: CorrettoSpec, cache: Cache, http: HttpFetcher, correttoKey: ByteArray): JdkArtifact {
+private fun resolveCorretto(
+    spec: CorrettoSpec,
+    cache: Cache,
+    http: HttpFetcher,
+    correttoKey: ByteArray,
+    keyFingerprint: String,
+): JdkArtifact {
     val aliasUrl = "$CORRETTO_LATEST/${spec.alias}"
     // The versioned URL behind the `latest` redirect — recorded in the model so installs are reproducible.
     val versionedUrl = http.head(aliasUrl).resolvedUrl
@@ -116,7 +132,7 @@ private fun resolveCorretto(spec: CorrettoSpec, cache: Cache, http: HttpFetcher,
 
     // Vendor-natural validation: verify the detached .sig against the Amazon Corretto release key.
     val signature = http.getBytes("$aliasUrl.sig")
-    PgpVerifier.verifyDetached(data = bytes, signature = signature, publicKey = correttoKey)
+    PgpVerifier.verifyDetached(bytes, signature, correttoKey, keyFingerprint)
 
     return JdkArtifact(
         platform = spec.platform,
@@ -136,6 +152,8 @@ private const val AZUL_PACKAGES = "https://api.azul.com/metadata/v1/zulu/package
 // Azul's package signing key (RSA-4096, fingerprint 27BC…B1998361219BD9C9) — the key that signs the
 // `signature-binary` detached OpenPGP signatures the Metadata API advertises for each package.
 private const val AZUL_KEY_URL = "https://repos.azul.com/azul-repo.key"
+// Pinned fingerprint of the Azul package signing key (RSA-4096) — same rationale as Corretto's.
+const val AZUL_KEY_FINGERPRINT = "27bc0c8cb3d81623f59bdadcb1998361219bd9c9"
 
 @Serializable
 private data class AzulPackage(
@@ -165,7 +183,7 @@ private fun compareVersionLists(a: List<Int>, b: List<Int>): Int {
     return 0
 }
 
-private fun resolveAzulWindowsArm(cache: Cache, http: HttpFetcher): JdkArtifact {
+private fun resolveAzulWindowsArm(cache: Cache, http: HttpFetcher, keyFingerprint: String): JdkArtifact {
     // Resolve the LATEST GA JDK 25 for Windows/aarch64 via the Azul Metadata API — no hardcoded URL.
     val listUrl = AZUL_PACKAGES + "?java_version=25&os=windows&arch=aarch64&archive_type=zip" +
             "&java_package_type=jdk&javafx_bundled=false&latest=true&release_status=ga" +
@@ -184,7 +202,7 @@ private fun resolveAzulWindowsArm(cache: Cache, http: HttpFetcher): JdkArtifact 
     // Azul package signing key. Run every resolve (cheap) so a cache hit is validated too.
     val openpgp = detail.signatures.firstOrNull { it.type.equals("openpgp", ignoreCase = true) }
         ?: error("Azul package ${latest.packageUuid} advertises no OpenPGP signature: ${detail.signatures}")
-    PgpVerifier.verifyDetached(data = bytes, signature = http.getBytes(openpgp.url), publicKey = http.getBytes(AZUL_KEY_URL))
+    PgpVerifier.verifyDetached(bytes, http.getBytes(openpgp.url), http.getBytes(AZUL_KEY_URL), keyFingerprint)
 
     return JdkArtifact(
         platform = JdkPlatform(JdkOs.WINDOWS, JdkArch.AARCH64),
@@ -207,9 +225,14 @@ private fun resolveAzulWindowsArm(cache: Cache, http: HttpFetcher): JdkArtifact 
  * OpenPGP signatures (Corretto `.sig`, Azul Metadata API `signature-binary`), verified here against the
  * vendor's signing key — and cached through [cache], so re-runs reuse unchanged builds.
  */
-fun resolveAllJdks(cache: Cache, http: HttpFetcher = KtorHttpFetcher): JdkModel {
+fun resolveAllJdks(
+    cache: Cache,
+    http: HttpFetcher = KtorHttpFetcher,
+    correttoKeyFingerprint: String = CORRETTO_KEY_FINGERPRINT,
+    azulKeyFingerprint: String = AZUL_KEY_FINGERPRINT,
+): JdkModel {
     val correttoKey = http.getBytes(CORRETTO_KEY_URL)
-    val corretto = CORRETTO_SPECS.map { resolveCorretto(it, cache, http, correttoKey) }
-    val azul = resolveAzulWindowsArm(cache, http)
+    val corretto = CORRETTO_SPECS.map { resolveCorretto(it, cache, http, correttoKey, correttoKeyFingerprint) }
+    val azul = resolveAzulWindowsArm(cache, http, azulKeyFingerprint)
     return JdkModel(corretto + azul)
 }

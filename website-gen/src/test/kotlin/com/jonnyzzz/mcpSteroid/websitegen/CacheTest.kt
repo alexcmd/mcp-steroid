@@ -155,4 +155,22 @@ class CacheTest {
         }
         assertTrue(ex.message!!.contains("sha256 mismatch"), ex.message!!)
     }
+
+    @Test
+    fun `downloadVerifyingSha256 re-verifies on a cache hit and rejects a corrupted cache file`(@TempDir root: Path) {
+        val body = "good-jdk-bytes".encodeToByteArray()
+        val sha = sha256Hex(body)
+        val url = "https://cdn.example.com/jdk.zip"
+        val http = CountingFetcher(body)
+
+        assertContentEquals(body, Cache.onDisk(root).downloadVerifyingSha256(url, sha, http)) // populate cache
+        // Simulate a corrupted/tampered shared cache file, then read through a fresh cache (a hit).
+        val cachedFile = Files.list(root).use { it.toList() }.single()
+        Files.write(cachedFile, "tampered".encodeToByteArray())
+
+        val ex = assertFailsWith<IllegalArgumentException> {
+            Cache.onDisk(root).downloadVerifyingSha256(url, sha, http)
+        }
+        assertTrue(ex.message!!.contains("sha256 mismatch"), ex.message!!)
+    }
 }

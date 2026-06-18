@@ -21,7 +21,7 @@ fun main(argv: Array<String>) {
     val out = Path.of(requireNotNull(args["--out"]) { "--out is required" })
 
     val cache = Cache.onDisk(cacheDir)
-    val model = resolveAllJdks(cache)
+    val model = KtorHttpFetcher.use { resolveAllJdks(cache, it) }
 
     out.parent?.let { Files.createDirectories(it) }
     Files.writeString(out, prettyJson.encodeToString(model))

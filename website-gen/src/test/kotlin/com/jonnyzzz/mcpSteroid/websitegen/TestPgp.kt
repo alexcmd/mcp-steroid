@@ -27,6 +27,8 @@ import java.util.Date
  */
 class TestPgp private constructor(
     val publicKeyRing: ByteArray,
+    /** Hex fingerprint of the signing key — pass to [PgpVerifier.verifyDetached] / resolveAllJdks. */
+    val fingerprint: String,
     private val secretKey: PGPSecretKey,
     private val passphrase: CharArray,
 ) {
@@ -67,7 +69,8 @@ class TestPgp private constructor(
                 JcePBESecretKeyEncryptorBuilder(SymmetricKeyAlgorithmTags.AES_256, sha1).setProvider("BC").build(passphrase),
             )
             val pubRing = PGPPublicKeyRing(secretKey.publicKey.encoded, JcaKeyFingerprintCalculator())
-            return TestPgp(pubRing.encoded, secretKey, passphrase)
+            val fingerprint = secretKey.publicKey.fingerprint.joinToString("") { "%02x".format(it) }
+            return TestPgp(pubRing.encoded, fingerprint, secretKey, passphrase)
         }
     }
 }

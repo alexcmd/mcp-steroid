@@ -32,6 +32,18 @@ class JdkArtifactsTest {
         assertEquals("jdk25.0.3.9.1", findJavaHome(bytes, ArchiveType.ZIP))
     }
 
+    @Test
+    fun `findJavaHome prefers the JDK root over a nested jre, regardless of entry order`() {
+        // Nested jre/bin/java listed FIRST — must not be mistaken for JAVA_HOME.
+        val bytes = tarGz(
+            linkedMapOf(
+                "jdk-25/jre/bin/java" to "ELF".encodeToByteArray(),
+                "jdk-25/bin/java" to "ELF".encodeToByteArray(),
+            )
+        )
+        assertEquals("jdk-25", findJavaHome(bytes, ArchiveType.TAR_GZ))
+    }
+
     // ── resolveAllJdks: full model assembly, hermetic (synthetic archives + fake HTTP) ───────────
 
     @Test
@@ -40,7 +52,8 @@ class JdkArtifactsTest {
         val fixtures = JdkFixtures(keys)
         val cache = Cache.inMemory()
 
-        val model = resolveAllJdks(cache, fixtures)
+        // The fixtures serve the test key for BOTH vendor key URLs, so pin to its fingerprint.
+        val model = resolveAllJdks(cache, fixtures, keys.fingerprint, keys.fingerprint)
         val jdks = model.jdks
 
         // 7 Corretto (linux/alpine x64+aarch64, macOS x64+aarch64, windows x64) + 1 Azul windows/aarch64.
@@ -86,8 +99,31 @@ class JdkArtifactsTest {
 
     @Test
     fun `resolveAllJdks fails when the Corretto signature does not verify`() {
-        val fixtures = JdkFixtures(TestPgp.generate(), tamperCorrettoSig = true)
-        assertFailsWith<IllegalStateException> { resolveAllJdks(Cache.inMemory(), fixtures) }
+        val keys = TestPgp.generate()
+        val fixtures = JdkFixtures(keys, tamperCorrettoSig = true)
+        assertFailsWith<IllegalStateException> {
+            resolveAllJdks(Cache.inMemory(), fixtures, keys.fingerprint, keys.fingerprint)
+        }
+    }
+
+    @Test
+    fun `resolveAllJdks fails when the Azul signature does not verify`() {
+        val keys = TestPgp.generate()
+        val fixtures = JdkFixtures(keys, tamperAzulSig = true)
+        assertFailsWith<IllegalStateException> {
+            resolveAllJdks(Cache.inMemory(), fixtures, keys.fingerprint, keys.fingerprint)
+        }
+    }
+
+    @Test
+    fun `resolveAllJdks fails when the Corretto key fingerprint is not the pinned one`() {
+        val keys = TestPgp.generate()
+        val fixtures = JdkFixtures(keys)
+        // Production default pins the real Amazon fingerprint, which the test key cannot match.
+        val ex = assertFailsWith<IllegalArgumentException> {
+            resolveAllJdks(Cache.inMemory(), fixtures) // defaults -> real pinned fingerprints
+        }
+        assertTrue(ex.message!!.contains("does not match the pinned"), ex.message!!)
     }
 }
 
@@ -99,6 +135,7 @@ class JdkArtifactsTest {
 private class JdkFixtures(
     private val keys: TestPgp,
     private val tamperCorrettoSig: Boolean = false,
+    private val tamperAzulSig: Boolean = false,
 ) : HttpFetcher {
     val linuxTarGz = tarGz(mapOf("amazon-corretto-25.0.3.9.1-linux-x64/bin/java" to "ELF".encodeToByteArray()))
     val macosTarGz = tarGz(mapOf("amazon-corretto-25.jdk/Contents/Home/bin/java" to "ELF".encodeToByteArray()))
@@ -139,7 +176,8 @@ private class JdkFixtures(
 
         url.startsWith("$azulPackages?") -> azulListJson().encodeToByteArray()
         url == "$azulPackages$azulUuid" -> azulDetailJson().encodeToByteArray()
-        url == azulSigUrl -> keys.signDetached(azulZip)
+        url == azulSigUrl ->
+            if (tamperAzulSig) keys.signDetached("other".encodeToByteArray()) else keys.signDetached(azulZip)
         url == azulDownload -> azulZip
 
         else -> error("unexpected GET: $url")

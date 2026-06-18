@@ -109,18 +109,26 @@ fun Cache.downloadWithEtag(url: String, http: HttpFetcher = KtorHttpFetcher): By
  * Download [url] and cache it content-addressed by a KNOWN-good [sha256] (e.g. a checksum published by
  * the vendor's metadata API). This is the right tool when the host exposes no usable HEAD `ETag` but
  * does publish a trusted hash — the hash is both the cache key (byte-identical content -> same key ->
- * cache hit) and the integrity check. The freshly downloaded bytes are verified against [sha256] before
- * being stored; a cache hit needs no re-verification because the key IS the verified hash.
+ * cache hit) and the integrity check. The bytes are verified against [sha256] on download and again on
+ * every return (see below), so a corrupted/tampered cache file is caught even on a cache hit.
  */
-fun Cache.downloadVerifyingSha256(url: String, sha256: String, http: HttpFetcher = KtorHttpFetcher): ByteArray =
-    getOrComputeBytes("sha256:${sha256.lowercase()}") {
-        val bytes = http.getBytes(url)
-        val actual = sha256Hex(bytes)
-        require(actual.equals(sha256, ignoreCase = true)) {
-            "sha256 mismatch for $url: expected $sha256 but downloaded bytes hash to $actual"
-        }
-        bytes
+fun Cache.downloadVerifyingSha256(url: String, sha256: String, http: HttpFetcher = KtorHttpFetcher): ByteArray {
+    val bytes = getOrComputeBytes("sha256:${sha256.lowercase()}") {
+        http.getBytes(url).also { verifySha256(url, it, sha256) }
     }
+    // Re-check on every return, including cache hits: the on-disk cache is a long-lived shared directory
+    // this code does not exclusively own, so re-hashing (cheap vs the download) catches a corrupted or
+    // tampered cache file.
+    verifySha256(url, bytes, sha256)
+    return bytes
+}
+
+private fun verifySha256(url: String, bytes: ByteArray, expected: String) {
+    val actual = sha256Hex(bytes)
+    require(actual.equals(expected, ignoreCase = true)) {
+        "sha256 mismatch for $url: expected $expected but bytes hash to $actual"
+    }
+}
 
 private class InMemoryCache : Cache {
     private val map = ConcurrentHashMap<String, ByteArray>()
@@ -159,9 +167,9 @@ private class OnDiskCache(private val root: Path) : Cache {
 internal fun sha256Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
-/** Default [HttpFetcher] over the Ktor CIO client (the repo's HTTP stack). */
-val KtorHttpFetcher: HttpFetcher = object : HttpFetcher {
-    private val client by lazy {
+/** Default [HttpFetcher] over the Ktor CIO client (the repo's HTTP stack). [close] it when done. */
+object KtorHttpFetcher : HttpFetcher, AutoCloseable {
+    private val clientLazy = lazy {
         HttpClient(CIO) {
             followRedirects = true
             install(HttpTimeout) {
@@ -169,6 +177,12 @@ val KtorHttpFetcher: HttpFetcher = object : HttpFetcher {
                 requestTimeoutMillis = 600_000 // JDK archives are large
             }
         }
+    }
+    private val client get() = clientLazy.value
+
+    /** Release the CIO connection/thread pools. No-op if no request was ever made. */
+    override fun close() {
+        if (clientLazy.isInitialized()) clientLazy.value.close()
     }
 
     override fun head(url: String): UrlKey = runBlocking {
