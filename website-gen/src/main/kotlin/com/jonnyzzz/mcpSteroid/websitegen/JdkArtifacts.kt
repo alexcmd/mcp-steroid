@@ -17,9 +17,9 @@ enum class JdkOs { LINUX, ALPINE_LINUX, MACOS, WINDOWS }
 @Serializable
 enum class JdkArch { X64, AARCH64 }
 
-/** Archive container the JDK ships in. */
+/** Archive container the JDK ships in. [extension] is the conventional file-name suffix. */
 @Serializable
-enum class ArchiveType { TAR_GZ, ZIP }
+enum class ArchiveType(val extension: String) { TAR_GZ("tar.gz"), ZIP("zip") }
 
 /** The (os, arch) a JDK build targets. */
 @Serializable
@@ -28,22 +28,30 @@ data class JdkPlatform(val os: JdkOs, val arch: JdkArch)
 /**
  * A fully-resolved JDK build, ready for #113's installer-script generation. Every field is COMPUTED
  * from the live vendor sources — none are hand-pinned:
- *  - [url]      — the resolved, version-pinned download URL (e.g. Corretto's `latest` alias followed
- *                 to its versioned resource);
- *  - [size]     — the byte length of the downloaded archive;
- *  - [sha256]   — computed over the downloaded bytes (for Azul, also cross-checked against the
- *                 vendor's published hash);
- *  - [javaHome] — the archive-relative path to `JAVA_HOME` (the directory whose `bin/` holds `java`),
- *                 discovered by scanning the archive entries — so macOS's `…/Contents/Home` and the
- *                 Linux/Windows top-level dir are handled uniformly.
+ *  - [version]        — the vendor-native version string. NOT comparable across vendors: Corretto reports
+ *                       the 5-part Amazon build (`25.0.3.9.1`), Azul the 3-part Java version (`25.0.3`).
+ *  - [featureVersion] — the Java feature version (e.g. `25`). Comparable across vendors; use this, not
+ *                       [version], for "is this JDK 25?" checks.
+ *  - [url]            — the resolved, version-pinned download URL (e.g. Corretto's `latest` alias
+ *                       followed to its versioned resource).
+ *  - [fileName]       — the archive's file name (the [url] basename), e.g. for `curl -o <fileName>`.
+ *  - [size]           — the byte length of the downloaded archive.
+ *  - [sha256]         — lowercase hex over the downloaded bytes (Azul also cross-checks the published hash).
+ *  - [javaHome]       — the path to `JAVA_HOME` (the directory whose `bin/` holds `java`), discovered by
+ *                       scanning the archive entries, so macOS's `…/Contents/Home` and the Linux/Windows
+ *                       top-level dir are handled uniformly. Always **archive-relative, forward-slash, no
+ *                       leading or trailing slash** (ZIP/TAR entries are `/`-separated even for Windows
+ *                       builds) — Windows consumers translate separators.
  */
 @Serializable
 data class JdkArtifact(
     val platform: JdkPlatform,
     val vendor: String,
     val version: String,
+    val featureVersion: Int,
     val archive: ArchiveType,
     val url: String,
+    val fileName: String,
     val size: Long,
     val sha256: String,
     val javaHome: String,
@@ -54,6 +62,9 @@ data class JdkArtifact(
 data class JdkModel(val jdks: List<JdkArtifact>)
 
 private val jdkJson = Json { ignoreUnknownKeys = true }
+
+/** The archive file name = the URL basename, minus any query string. */
+private fun fileNameOf(url: String): String = url.substringAfterLast('/').substringBefore('?')
 
 // ── archive scanning: compute JAVA_HOME ──────────────────────────────────────────────────────────
 
@@ -138,8 +149,10 @@ private fun resolveCorretto(
         platform = spec.platform,
         vendor = "corretto",
         version = version,
+        featureVersion = version.substringBefore('.').toInt(),
         archive = spec.archive,
         url = versionedUrl,
+        fileName = fileNameOf(versionedUrl),
         size = bytes.size.toLong(),
         sha256 = sha256Hex(bytes),
         javaHome = findJavaHome(bytes, spec.archive),
@@ -204,12 +217,15 @@ private fun resolveAzulWindowsArm(cache: Cache, http: HttpFetcher, keyFingerprin
         ?: error("Azul package ${latest.packageUuid} advertises no OpenPGP signature: ${detail.signatures}")
     PgpVerifier.verifyDetached(bytes, http.getBytes(openpgp.url), http.getBytes(AZUL_KEY_URL), keyFingerprint)
 
+    require(detail.javaVersion.isNotEmpty()) { "Azul package ${latest.packageUuid} has no java_version" }
     return JdkArtifact(
         platform = JdkPlatform(JdkOs.WINDOWS, JdkArch.AARCH64),
         vendor = "azul-zulu",
         version = detail.javaVersion.joinToString("."),
+        featureVersion = detail.javaVersion.first(),
         archive = ArchiveType.ZIP,
         url = detail.downloadUrl,
+        fileName = fileNameOf(detail.downloadUrl),
         size = bytes.size.toLong(),
         sha256 = detail.sha256Hash.lowercase(),
         javaHome = findJavaHome(bytes, ArchiveType.ZIP),

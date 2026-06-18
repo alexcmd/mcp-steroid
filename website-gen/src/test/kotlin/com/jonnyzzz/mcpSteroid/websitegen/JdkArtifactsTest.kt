@@ -82,6 +82,9 @@ class JdkArtifactsTest {
             assertEquals(fixtures.linuxTarGz.size.toLong(), it.size)
             assertTrue(it.url.contains("amazon-corretto-25.0.3.9.1"), "records the version-pinned URL: ${it.url}")
             assertEquals(ArchiveType.TAR_GZ, it.archive)
+            assertEquals(25, it.featureVersion)
+            assertEquals(it.url.substringAfterLast('/'), it.fileName)
+            assertTrue(it.fileName.endsWith(".tar.gz"), it.fileName)
         }
         corretto.first { it.platform == JdkPlatform(JdkOs.WINDOWS, JdkArch.X64) }.let {
             assertEquals(ArchiveType.ZIP, it.archive)
@@ -91,8 +94,10 @@ class JdkArtifactsTest {
         val azul = jdks.single { it.vendor == "azul-zulu" }
         assertEquals(JdkPlatform(JdkOs.WINDOWS, JdkArch.AARCH64), azul.platform)
         assertEquals("25.0.3", azul.version)
+        assertEquals(25, azul.featureVersion)
         assertEquals(ArchiveType.ZIP, azul.archive)
         assertEquals("zulu25.34.17-ca-jdk25.0.3-win_aarch64", azul.javaHome)
+        assertEquals("zulu25.34.17-ca-jdk25.0.3-win_aarch64.zip", azul.fileName)
         assertEquals(sha256Hex(fixtures.azulZip), azul.sha256)
         assertEquals("https://cdn.azul.com/zulu/bin/zulu25.34.17-ca-jdk25.0.3-win_aarch64.zip", azul.url)
     }
