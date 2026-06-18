@@ -58,7 +58,11 @@ class InstallerBootstrapTest {
         val genDir = createWorkDir("installer-musl-gen")
         // A minimal valid model (nothing is downloaded on the musl-reject path) → renders a real install.sh.
         val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("https://example.com/jdk.tar.gz", "a".repeat(64), "tar.gz", "jdk") }
-        writeInstallerScripts(genDir.toPath(), table, DevrigEntry("https://example.com/devrig.zip", "b".repeat(64)), version)
+        writeInstallerScripts(
+            genDir.toPath(), table,
+            DevrigEntry("https://example.com/devrig.zip", "b".repeat(64), "d/bin/devrig", "d/bin/devrig.bat"),
+            version,
+        )
         makeWorldReadable(genDir)
 
         val install = startDockerContainerAndDispose(
@@ -112,7 +116,11 @@ class InstallerBootstrapTest {
         //       (javaHome="jdk"), served by the side-car. This is the new seam — no real JDK download. ──
         val genDir = createWorkDir("installer-gen-out")
         val table = ALL_PLATFORMS.associateWith { JdkScriptEntry("http://$nginxIp/jdk.tar.gz", jdkSha, "tar.gz", "jdk") }
-        val devrig = DevrigEntry(url = "http://$nginxIp/devrig.zip", sha256 = devrigSha)
+        // The fixture zip unpacks to devrig-<version>/, so that's the computed+asserted launcher subpath.
+        val devrig = DevrigEntry(
+            url = "http://$nginxIp/devrig.zip", sha256 = devrigSha,
+            launcherPosix = "devrig-$version/bin/devrig", launcherWindows = "devrig-$version/bin/devrig.bat",
+        )
         writeInstallerScripts(genDir.toPath(), table, devrig, version)
         require(File(genDir, "install.sh").isFile) { "did not produce install.sh in $genDir" }
         makeWorldReadable(genDir)
@@ -135,19 +143,22 @@ class InstallerBootstrapTest {
 
         val devrigKey = "devrig-linux-x64-$version-${devrigSha.take(12)}"
         val jdkKey = "jdk-linux-x64-$version-${jdkSha.take(12)}"
+        val expectedLauncher = "$homeDir/.mcp-steroid/binaries/$devrigKey/devrig-$version/bin/devrig"
+        val expectedJdkHome = "$homeDir/.mcp-steroid/binaries/$jdkKey/jdk"
 
-        // install.sh only symlinks into a writable PATH dir UNDER $HOME; pre-create one + put it on PATH.
-        val homeBin = "$homeDir/.local/bin"
-        sh(install, "mkdir -p \"$homeBin\"").assertExitCode(0) { "could not create $homeBin:\n$this" }
-        val runPath = "$homeBin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
-        // ── run #1: clean HOME → must DOWNLOAD both, report the binary is ready, and tell the user to run
-        //    'devrig install' WITHOUT auto-registering (registration edits agent configs — a user step). ──
-        val run1 = runInstall(install, mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64", "PATH" to runPath))
+        // ── run #1: clean HOME → DOWNLOAD both, then DELEGATE launcher+PATH registration to
+        //    `devrig install devrig` (the script no longer writes the wrapper). The fake devrig records the
+        //    delegation; the real ensureBinLauncher is covered by npx-kt's own tests. ──
+        val run1 = runInstall(install, mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
             .assertExitCode(0) { "install.sh run #1 failed:\n$this" }
             .assertOutputContains("downloading devrig", "downloading jdk", message = "run #1 (clean HOME) must download both")
-            .assertOutputContains("devrig binary is ready", "devrig install", message = "must report the binary is ready + how to register with agents")
-        run1.assertNoMessageInOutput("DEVRIG_INSTALL_CALLED") // installer must NOT auto-run 'devrig install'
+            // The script ran the UNPACKED devrig with the correct, computed launcher path + bundled JDK.
+            .assertOutputContains(
+                "DEVRIG_INSTALL_DEVRIG", "--install-script=$expectedLauncher", "--jdk-home=$expectedJdkHome",
+                message = "install.sh must delegate to 'devrig install devrig' with the computed launcher + jdk-home",
+            )
+            .assertOutputContains("devrig binary is ready", "devrig install", message = "must report ready + how to register with agents")
+        run1.assertNoMessageInOutput("DEVRIG_INSTALL_CALLED") // must NOT auto-register with an AGENT
 
         // (a) content-addressed dirs exist
         sh(install, "ls -1 \"$homeDir/.mcp-steroid/binaries\"")
@@ -158,24 +169,14 @@ class InstallerBootstrapTest {
         sh(install, "test -x \"$homeDir/.mcp-steroid/binaries/$jdkKey/jdk/bin/java\" && echo JDK_JAVA_OK")
             .assertOutputContains("JDK_JAVA_OK", message = "JDK bin/java missing — not downloaded/unpacked")
 
-        // (c) bin/devrig wrapper exists and, when run, sets DEVRIG_JAVA_HOME to the bundled jdk
-        val expectedJavaHome = "$homeDir/.mcp-steroid/binaries/$jdkKey/jdk"
-        sh(install, "\"$homeDir/.mcp-steroid/bin/devrig\" mcp")
-            .assertExitCode(0) { "running the devrig wrapper failed:\n$this" }
-            .assertOutputContains("DEVRIG_RAN mcp", message = "wrapper did not exec the real devrig")
-            .assertOutputContains("DEVRIG_JAVA_HOME=$expectedJavaHome", message = "wrapper must set DEVRIG_JAVA_HOME to the bundled jdk")
-
-        // (d) PATH symlink created under HOME + resolvable via command -v devrig
-        assertSymlinkCreated(install, homeBin, runPath)
-
-        // (e) idempotent re-run reuses the content-addressed dirs and DOWNLOADS NOTHING
+        // (c) idempotent re-run reuses the content-addressed dirs and DOWNLOADS NOTHING
         val reRun = runInstall(install, mapOf("HOME" to homeDir, "DEVRIG_OS" to "linux", "DEVRIG_CPU" to "x64"))
             .assertExitCode(0) { "idempotent re-run failed:\n$this" }
             .assertOutputContains("already installed: $devrigKey", "already installed: $jdkKey", message = "re-run must report 'already installed'")
         reRun.assertNoMessageInOutput("downloading jdk")
         reRun.assertNoMessageInOutput("downloading devrig")
 
-        log("ALL INSTALLER ASSERTIONS PASSED on ubuntu (glibc)")
+        log("ALL INSTALLER ASSERTIONS PASSED on ubuntu (glibc) — download + delegate to devrig install devrig")
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -219,18 +220,6 @@ class InstallerBootstrapTest {
         log("mock server serves $path")
     }
 
-    private fun assertSymlinkCreated(c: ContainerDriver, homeBin: String, runPath: String) {
-        sh(
-            c,
-            "set -e; test -L \"$homeBin/devrig\"; tgt=\$(readlink \"$homeBin/devrig\"); " +
-                "[ \"\$tgt\" = \"\$HOME/.mcp-steroid/bin/devrig\" ] && echo \"SYMLINK_OK \$tgt\"; " +
-                "command -v devrig >/dev/null 2>&1 && echo CMDV_OK",
-            env = mapOf("HOME" to homeDir, "PATH" to runPath),
-        )
-            .assertExitCode(0) { "PATH symlink check failed in $homeBin:\n$this" }
-            .assertOutputContains("SYMLINK_OK", "CMDV_OK", message = "PATH symlink not created / not resolvable via command -v devrig")
-    }
-
     private fun log(msg: String) = println("[InstallerBootstrapTest] $msg")
 
     private fun createWorkDir(prefix: String): File {
@@ -268,8 +257,14 @@ class InstallerBootstrapTest {
      *  - `mcp` / other → prints `DEVRIG_RAN <args>` AND `DEVRIG_JAVA_HOME=<the env it sees>`.
      */
     private fun buildFakeDevrigZip(target: File) {
+        // Records what install.sh delegated: `install devrig …` (the new flow) vs `install <agent>` (the
+        // would-be auto-register, which install.sh must NOT do) vs anything else.
         val script = buildString {
             append("#!/bin/sh\n")
+            append("if [ \"\$1\" = \"install\" ] && [ \"\$2\" = \"devrig\" ]; then\n")
+            append("  echo \"DEVRIG_INSTALL_DEVRIG \$*\"\n")
+            append("  exit 0\n")
+            append("fi\n")
             append("case \"\$1\" in\n")
             append("  install)\n")
             append("    echo \"DEVRIG_INSTALL_CALLED jdk=\${DEVRIG_JAVA_HOME:-}\"\n")

@@ -25,7 +25,18 @@ val ALL_PLATFORMS = POSIX_PLATFORMS + WINDOWS_PLATFORMS
 /** The per-platform values baked into the scripts (derived from a [JdkArtifact]). */
 data class JdkScriptEntry(val url: String, val sha256: String, val format: String, val javaHome: String)
 
-data class DevrigEntry(val url: String, val sha256: String, val format: String = "zip")
+data class DevrigEntry(
+    val url: String,
+    val sha256: String,
+    /**
+     * The two devrig launcher subpaths INSIDE the dist zip — COMPUTED from the real archive and ASSERTED
+     * to exist, never assumed from the version: the zip's top dir is `devrig-<version>-<hash>`, NOT
+     * `devrig-<version>`, so a hardcoded `devrig-<version>/bin/devrig` is wrong (caught on eugene-x220).
+     */
+    val launcherPosix: String,
+    val launcherWindows: String,
+    val format: String = "zip",
+)
 
 private val ghJson = Json { ignoreUnknownKeys = true }
 
@@ -91,12 +102,15 @@ internal fun validateDevrig(e: DevrigEntry) {
     requireShellSafe("devrig url", e.url)
 }
 
-/** POSIX `case` arms for the install.sh baked table (single-quoted values; sha256/url carry no quotes). */
-private fun renderShCase(table: Map<String, JdkScriptEntry>, version: String): String = buildString {
+// The devrig launcher subpath is UNIVERSAL (one dist zip for all platforms), so it is baked once as
+// DEVRIG_BINSUB (computed + asserted in resolveDevrig), not per-platform. The per-platform table carries
+// only the JDK coordinates.
+
+/** POSIX `case` arms for the install.sh baked JDK table (single-quoted values; sha256/url carry no quotes). */
+private fun renderShCase(table: Map<String, JdkScriptEntry>): String = buildString {
     for (key in POSIX_PLATFORMS) {
         val j = table.getValue(key)
         appendLine("  $key)")
-        appendLine("    devrig_binsub='devrig-$version/bin/devrig'")
         appendLine("    jdk_url='${j.url}'")
         appendLine("    jdk_sha256='${j.sha256}'")
         appendLine("    jdk_format='${j.format}'")
@@ -105,12 +119,11 @@ private fun renderShCase(table: Map<String, JdkScriptEntry>, version: String): S
     }
 }.trimEnd('\n')
 
-/** PowerShell hashtable literal for the install.ps1 baked table. */
-private fun renderPsTable(table: Map<String, JdkScriptEntry>, version: String): String = buildString {
+/** PowerShell hashtable literal for the install.ps1 baked JDK table. */
+private fun renderPsTable(table: Map<String, JdkScriptEntry>): String = buildString {
     for (key in WINDOWS_PLATFORMS) {
         val j = table.getValue(key)
         appendLine("  '$key' = @{")
-        appendLine("    DevrigBinSub = 'devrig-$version/bin/devrig.bat'")
         appendLine("    JdkUrl = '${j.url}'")
         appendLine("    JdkSha256 = '${j.sha256}'")
         appendLine("    JdkFormat = '${j.format}'")
@@ -159,19 +172,34 @@ private fun resolveLatestDevrigZipUrl(http: HttpFetcher): String {
  * by default, the latest GitHub release — and compute sha from the bytes.
  */
 internal fun resolveDevrig(flags: Map<String, List<String>>, http: HttpFetcher): DevrigEntry {
-    flags["devrig-zip"]?.firstOrNull()?.let { zip ->
-        val url = flags["devrig-url"]?.firstOrNull() ?: error("--devrig-url is required with --devrig-zip")
+    val (url, bytes) = flags["devrig-zip"]?.firstOrNull()?.let { zip ->
+        val u = flags["devrig-url"]?.firstOrNull() ?: error("--devrig-url is required with --devrig-zip")
         val file = Path.of(zip)
         require(Files.isRegularFile(file)) { "missing devrig package: $file" }
-        return DevrigEntry(url = url, sha256 = sha256Hex(Files.readAllBytes(file)))
+        u to Files.readAllBytes(file)
+    } ?: run {
+        val version = flags["devrig-version"]?.firstOrNull()
+        val u = if (version != null) {
+            "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$version/devrig-$version.zip"
+        } else {
+            resolveLatestDevrigZipUrl(http)
+        }
+        u to http.getBytes(u)
     }
-    val version = flags["devrig-version"]?.firstOrNull()
-    val url = if (version != null) {
-        "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$version/devrig-$version.zip"
-    } else {
-        resolveLatestDevrigZipUrl(http)
-    }
-    return DevrigEntry(url = url, sha256 = sha256Hex(http.getBytes(url)))
+    val (posix, win) = devrigLaunchers(bytes)
+    return DevrigEntry(url = url, sha256 = sha256Hex(bytes), launcherPosix = posix, launcherWindows = win)
+}
+
+/**
+ * The two devrig launcher subpaths inside the dist zip — found by scanning the real archive entries and
+ * ASSERTED to exist. Returns (POSIX `…/bin/devrig`, Windows `…/bin/devrig.bat`). Fixes the brittle
+ * `devrig-<version>` assumption: the actual top dir carries the build hash (`devrig-<version>-<hash>`).
+ */
+private fun devrigLaunchers(zipBytes: ByteArray): Pair<String, String> {
+    val names = archiveEntryNames(zipBytes, ArchiveType.ZIP).map { it.trimEnd('/') }
+    fun find(leaf: String) = names.firstOrNull { it == "bin/$leaf" || it.endsWith("/bin/$leaf") }
+        ?: error("devrig zip has no */bin/$leaf launcher (entries=${names.take(8)})")
+    return find("devrig") to find("devrig.bat")
 }
 
 fun main(argv: Array<String>) {
@@ -201,14 +229,30 @@ data class InstallerScripts(val sh: String, val ps: String)
 internal fun renderInstallerScripts(table: Map<String, JdkScriptEntry>, devrig: DevrigEntry, version: String): InstallerScripts {
     validateScriptTable(table)
     validateDevrig(devrig)
-    val devrigSubs = mapOf(
+    val common = mapOf(
         "VERSION" to version,
         "DEVRIG_URL" to devrig.url,
         "DEVRIG_SHA256" to devrig.sha256,
         "DEVRIG_FORMAT" to devrig.format,
     )
-    val sh = render(loadResource("/templates/install.sh.tmpl"), devrigSubs + ("PLATFORM_CASE_SH" to renderShCase(table, version)))
-    val ps = render(loadResource("/templates/install.ps1.tmpl"), devrigSubs + ("PLATFORM_TABLE_PS" to renderPsTable(table, version)))
+    // DEVRIG_BINSUB differs per OS (POSIX `…/bin/devrig` vs Windows `…/bin/devrig.bat`), so it is injected
+    // per-template from the computed+asserted launcher subpaths.
+    val sh = render(
+        loadResource("/templates/install.sh.tmpl"),
+        common + ("DEVRIG_BINSUB" to devrig.launcherPosix) + ("PLATFORM_CASE_SH" to renderShCase(table)),
+    )
+    val ps = render(
+        loadResource("/templates/install.ps1.tmpl"),
+        common + ("DEVRIG_BINSUB" to devrig.launcherWindows) + ("PLATFORM_TABLE_PS" to renderPsTable(table)),
+    )
+    // Windows PowerShell 5.1 reads a BOM-less .ps1 as the ANSI codepage, NOT UTF-8 — a non-ASCII byte
+    // (e.g. an em dash in a string) is mojibake'd into characters that break parsing (caught on
+    // eugene-x220). Keep install.ps1 strictly ASCII; fail generation if a template/baked value sneaks in.
+    val nonAscii = ps.indexOfFirst { it.code >= 128 }
+    require(nonAscii < 0) {
+        "install.ps1 must be ASCII-only (PowerShell 5.1 misreads UTF-8); first non-ASCII at index $nonAscii: " +
+            "'${ps[nonAscii]}' (U+${ps[nonAscii].code.toString(16).padStart(4, '0').uppercase()})"
+    }
     return InstallerScripts(sh, ps)
 }
 

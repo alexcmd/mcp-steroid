@@ -63,7 +63,11 @@ class InstallerGeneratorTest {
 
     // ── render pipeline: scripts bake the table + carry the musl guard, no leftover placeholders ─
 
-    private val devrig = DevrigEntry(url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64))
+    // Launcher subpaths carry the build hash (devrig-<version>-<hash>), the way the real zip unpacks.
+    private val devrig = DevrigEntry(
+        url = "https://example.com/devrig-1.0.zip", sha256 = "b".repeat(64),
+        launcherPosix = "devrig-1.0-abc1234/bin/devrig", launcherWindows = "devrig-1.0-abc1234/bin/devrig.bat",
+    )
 
     @Test
     fun `renderInstallerScripts bakes every platform and leaves no placeholder`() {
@@ -73,28 +77,33 @@ class InstallerGeneratorTest {
         // No unresolved @@…@@ placeholders survived.
         assertTrue(!scripts.sh.contains("@@") && !scripts.ps.contains("@@"), "placeholders left unresolved")
 
-        // install.sh: the 3 POSIX platform arms + the musl-fail guard + the devrig coordinates.
+        // install.sh: the 3 POSIX platform arms + the musl-fail guard + the COMPUTED devrig launcher subpath
+        // + the delegation to `devrig install devrig`.
         listOf("macos-arm64)", "linux-arm64)", "linux-x64)").forEach {
             assertTrue(scripts.sh.contains(it), "install.sh missing arm $it")
         }
         assertTrue(scripts.sh.contains("musl libc (Alpine) is not supported"), "install.sh missing musl guard")
-        assertTrue(scripts.sh.contains("devrig-1.2.3/bin/devrig"), "install.sh missing devrig binsub")
+        assertTrue(scripts.sh.contains("DEVRIG_BINSUB='devrig-1.0-abc1234/bin/devrig'"), "install.sh missing computed binsub")
+        assertTrue(scripts.sh.contains("install devrig --install-script="), "install.sh must delegate to 'devrig install devrig'")
         assertTrue(scripts.sh.contains("DEVRIG_URL='https://example.com/devrig-1.0.zip'"), "install.sh missing devrig url")
 
-        // install.ps1: the 2 Windows entries + devrig.bat binsub.
+        // install.ps1: the 2 Windows entries + the COMPUTED .bat launcher subpath + the delegation.
         listOf("'windows-x64' = @{", "'windows-arm64' = @{").forEach {
             assertTrue(scripts.ps.contains(it), "install.ps1 missing entry $it")
         }
-        assertTrue(scripts.ps.contains("devrig-1.2.3/bin/devrig.bat"), "install.ps1 missing devrig binsub")
+        assertTrue(scripts.ps.contains("\$DevrigBinSub = 'devrig-1.0-abc1234/bin/devrig.bat'"), "install.ps1 missing computed binsub")
+        assertTrue(scripts.ps.contains("install devrig"), "install.ps1 must delegate to 'devrig install devrig'")
     }
 
     // ── devrig resolution: local override path (no network) ──────────────────────────────────────
 
     @Test
-    fun `resolveDevrig from a local zip computes its sha256 and records the public url`(@TempDir dir: Path) {
+    fun `resolveDevrig from a local zip computes sha256 + the asserted launcher subpaths`(@TempDir dir: Path) {
         val zip = dir.resolve("devrig.zip")
+        // Top dir carries the build hash (devrig-<version>-<hash>), like the real release zip.
         ZipOutputStream(Files.newOutputStream(zip)).use { z ->
-            z.putNextEntry(ZipEntry("devrig-1.0/bin/devrig")); z.write("#!/bin/sh".encodeToByteArray()); z.closeEntry()
+            z.putNextEntry(ZipEntry("devrig-1.0-abc1234/bin/devrig")); z.write("#!/bin/sh".encodeToByteArray()); z.closeEntry()
+            z.putNextEntry(ZipEntry("devrig-1.0-abc1234/bin/devrig.bat")); z.write("@echo off".encodeToByteArray()); z.closeEntry()
         }
         val flags = mapOf("devrig-zip" to listOf(zip.toString()), "devrig-url" to listOf("https://example.com/devrig-1.0.zip"))
 
@@ -105,13 +114,35 @@ class InstallerGeneratorTest {
         val devrig = resolveDevrig(flags, noNetwork)
         assertEquals("https://example.com/devrig-1.0.zip", devrig.url)
         assertEquals(sha256Hex(Files.readAllBytes(zip)), devrig.sha256)
+        // Computed + asserted from the real zip (NOT assumed devrig-<version>).
+        assertEquals("devrig-1.0-abc1234/bin/devrig", devrig.launcherPosix)
+        assertEquals("devrig-1.0-abc1234/bin/devrig.bat", devrig.launcherWindows)
         validateDevrig(devrig) // must pass
+    }
+
+    @Test
+    fun `resolveDevrig fails when the zip has no devrig_bat launcher`(@TempDir dir: Path) {
+        val zip = dir.resolve("devrig.zip")
+        ZipOutputStream(Files.newOutputStream(zip)).use { z ->
+            z.putNextEntry(ZipEntry("devrig-1.0-abc1234/bin/devrig")); z.write("#!/bin/sh".encodeToByteArray()); z.closeEntry()
+        }
+        val flags = mapOf("devrig-zip" to listOf(zip.toString()), "devrig-url" to listOf("https://example.com/devrig.zip"))
+        val ex = assertFailsWith<IllegalStateException> {
+            resolveDevrig(flags, object : HttpFetcher {
+                override fun head(url: String) = error("no network")
+                override fun getBytes(url: String) = error("no network")
+            })
+        }
+        assertTrue(ex.message!!.contains("devrig.bat"), ex.message!!)
     }
 
     @Test
     fun `validateDevrig rejects a placeholder url`() {
         assertFailsWith<IllegalArgumentException> {
-            validateDevrig(DevrigEntry(url = "https://example.com/PLACEHOLDER.zip", sha256 = "b".repeat(64)))
+            validateDevrig(DevrigEntry(
+                url = "https://example.com/PLACEHOLDER.zip", sha256 = "b".repeat(64),
+                launcherPosix = "d/bin/devrig", launcherWindows = "d/bin/devrig.bat",
+            ))
         }
     }
 }
