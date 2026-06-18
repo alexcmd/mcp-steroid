@@ -55,9 +55,29 @@ New PR off `origin/main` (NOT PR #113, which is parked on `installer/version-jso
   tests + re-verified live on Windows. Commit `4eb6cfa3`.
 - **PR opened: https://github.com/jonnyzzz/mcp-steroid/pull/117** (`devrig/bin-launcher` → `main`), pushed to origin.
 
+## Done (cont. 3) — PR #117 author-comment review loop
+
+Author left 3 inline comments on PR #117; fed them through the run-agent.sh loop (round 3 → HOLD, round 4
+→ unanimous PASS_WITH_NOTES). Resolutions:
+- **C1** (`@Suppress("FunctionName")` on CliBinLauncherIntegrationTest): removed; live IDE CodeSmellDetector
+  = 0 warnings (backtick @Test names aren't flagged). Done.
+- **C2** ("container must not have JAVA installed"): the Docker test leaned on the container's system java,
+  never proving DEVRIG_JAVA_HOME is the SOLE JDK source. A literal no-Java image is infeasible (dist bundles
+  no JDK; first run needs java). Fix: after seeding the wrapper, the proof run poisons `java` on PATH
+  (exit-97 stub, first on PATH) + `env -u JAVA_HOME`, then runs the symlinked wrapper and asserts a version
+  still prints — proving the start script used `$DEVRIG_JAVA_HOME/bin/java` (absolute), not ambient java.
+  Docker-validated. Commit `c7b8de15`.
+- **C3** ("not looking for writable PATH on Windows?"): KEEP — all 3 reviewers confirm the HKCU user-PATH
+  registry approach is the correct Windows idiom (no ~/.local/bin convention; symlinks need admin). No change.
+- Also fixed loose "bundled JDK" wording (devrig pins the JDK it runs under) — commit `e686c7bd`.
+
+PR #117 commits now: 926763f9, b270101d, 978f8bf9, 4eb6cfa3, c7b8de15, e686c7bd (+ TASKS bookkeeping).
+
 ## Pending
 
-- PR #117 review/merge. Windows PATH registration is user-scope only (not system); fine per design.
+- PR #117 review/merge. Known non-blocking notes (deferred, not raised by the author): Windows PATH dedup
+  compares literal strings so `%USERPROFILE%`-spelled / trailing-slash variants could survive (codex r2);
+  the "no writable PATH dir" POSIX hint can false-alarm when binDir itself is on PATH.
 
 # Active focus — 0.96 release quality check: devrig + ij-plugin (2026-05-29)
 
