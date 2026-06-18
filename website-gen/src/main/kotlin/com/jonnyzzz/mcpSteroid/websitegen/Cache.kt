@@ -68,6 +68,8 @@ data class UrlKey(
     val size: Long,
     val lastModified: String?,
     val etag: String?,
+    /** Final URL after following redirects (e.g. Corretto's `latest` alias -> the versioned resource). */
+    val resolvedUrl: String = url,
 ) {
     private val lastName: String get() = url.substringAfterLast('/').ifEmpty { "blob" }.replace("?", "_")
 
@@ -102,6 +104,23 @@ fun Cache.downloadWithEtag(url: String, http: HttpFetcher = KtorHttpFetcher): By
     }
     return getOrComputeBytes(head.cacheKey) { http.getBytes(url) }
 }
+
+/**
+ * Download [url] and cache it content-addressed by a KNOWN-good [sha256] (e.g. a checksum published by
+ * the vendor's metadata API). This is the right tool when the host exposes no usable HEAD `ETag` but
+ * does publish a trusted hash — the hash is both the cache key (byte-identical content -> same key ->
+ * cache hit) and the integrity check. The freshly downloaded bytes are verified against [sha256] before
+ * being stored; a cache hit needs no re-verification because the key IS the verified hash.
+ */
+fun Cache.downloadVerifyingSha256(url: String, sha256: String, http: HttpFetcher = KtorHttpFetcher): ByteArray =
+    getOrComputeBytes("sha256:${sha256.lowercase()}") {
+        val bytes = http.getBytes(url)
+        val actual = sha256Hex(bytes)
+        require(actual.equals(sha256, ignoreCase = true)) {
+            "sha256 mismatch for $url: expected $sha256 but downloaded bytes hash to $actual"
+        }
+        bytes
+    }
 
 private class InMemoryCache : Cache {
     private val map = ConcurrentHashMap<String, ByteArray>()
@@ -160,6 +179,7 @@ val KtorHttpFetcher: HttpFetcher = object : HttpFetcher {
             size = resp.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: -1L,
             lastModified = resp.headers[HttpHeaders.LastModified],
             etag = resp.headers[HttpHeaders.ETag],
+            resolvedUrl = resp.call.request.url.toString(),
         )
     }
 

@@ -119,4 +119,40 @@ class CacheTest {
         assertTrue(ex.message!!.contains("no ETag"), "message should explain the missing ETag: ${ex.message}")
         assertEquals(0, http.downloads.get(), "must not download when caching can't be validated")
     }
+
+    // ── downloadVerifyingSha256 (content-addressed) ──────────────────────────────────────────────
+
+    /** Counts how many times the body was fetched, regardless of any ETag. */
+    private class CountingFetcher(val body: ByteArray) : HttpFetcher {
+        val downloads = AtomicInteger(0)
+        override fun head(url: String): UrlKey = UrlKey(url, body.size.toLong(), null, null)
+        override fun getBytes(url: String): ByteArray {
+            downloads.incrementAndGet()
+            return body
+        }
+    }
+
+    @Test
+    fun `downloadVerifyingSha256 caches by hash and downloads once`() {
+        val cache = Cache.inMemory()
+        val body = "the-jdk-bytes".encodeToByteArray()
+        val http = CountingFetcher(body)
+        val sha = sha256Hex(body)
+        val url = "https://cdn.example.com/jdk.zip"
+
+        assertContentEquals(body, cache.downloadVerifyingSha256(url, sha, http))
+        assertContentEquals(body, cache.downloadVerifyingSha256(url, sha.uppercase(), http)) // case-insensitive key
+        assertEquals(1, http.downloads.get(), "content-addressed hit must NOT re-download")
+    }
+
+    @Test
+    fun `downloadVerifyingSha256 fails when the bytes do not match the expected hash`() {
+        val cache = Cache.inMemory()
+        val http = CountingFetcher("actual-bytes".encodeToByteArray())
+
+        val ex = assertFailsWith<IllegalArgumentException> {
+            cache.downloadVerifyingSha256("https://cdn.example.com/jdk.zip", "deadbeef".repeat(8), http)
+        }
+        assertTrue(ex.message!!.contains("sha256 mismatch"), ex.message!!)
+    }
 }
