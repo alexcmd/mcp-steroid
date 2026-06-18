@@ -45,9 +45,19 @@ New PR off `origin/main` (NOT PR #113, which is parked on `installer/version-jso
   non-blocking notes applied: symlink already-correct fast-path, writeAtomically temp-file cleanup.
 - **Committed** `926763f9` on `devrig/bin-launcher` (author Eugene Petrenko). NOT pushed — confirm with user.
 
+## Done (cont. 2)
+
+- **3× independent `run-agent.sh` peer review** (2× claude PASS_WITH_NOTES, 1× codex HOLD). All findings fixed:
+  (A, consensus) `devrig install` could register a wrapper it never wrote on SNAPSHOT → now `force=true`
+  writes it (explicit opt-out still wins) + warns if absent; (D, codex HOLD) `writeIfChanged` now restores
+  a lost `+x` bit; (B) relative pre-existing symlink resolved via `resolveSibling`; (C) PowerShell PATH
+  registration no longer runs on the `devrig mcp` hot path (`registerWindowsPath=false` for MCP). New unit
+  tests + re-verified live on Windows. Commit `4eb6cfa3`.
+- **PR opened: https://github.com/jonnyzzz/mcp-steroid/pull/117** (`devrig/bin-launcher` → `main`), pushed to origin.
+
 ## Pending
 
-- Push `devrig/bin-launcher` + open PR (awaiting user confirmation).
+- PR #117 review/merge. Windows PATH registration is user-scope only (not system); fine per design.
 
 # Active focus — 0.96 release quality check: devrig + ij-plugin (2026-05-29)
 
