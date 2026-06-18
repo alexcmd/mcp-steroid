@@ -7,6 +7,7 @@ import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 import kotlin.io.path.readText
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -39,6 +40,21 @@ class BinLauncherTest {
             "test build version should be a SNAPSHOT: ${DevrigVersionMetadata.getDevrigVersion()}")
         assertFalse(binAutoRegisterEnabled(null))
         assertFalse(binAutoRegisterEnabled("garbage-unrecognized"))
+    }
+
+    @Test
+    fun `explicit install (force) writes even on a SNAPSHOT build, but an opt-out still wins`() {
+        // force = explicit `devrig install`: it must write the wrapper despite the SNAPSHOT default-off,
+        // so it never registers a path it didn't create...
+        assertTrue(shouldWriteLauncher(null, force = true))
+        assertTrue(shouldWriteLauncher("garbage", force = true))
+        // ...but a passive start on this SNAPSHOT build still does nothing without an opt-in.
+        assertFalse(shouldWriteLauncher(null, force = false))
+        // ...and an explicit opt-out wins even over force.
+        assertFalse(shouldWriteLauncher("yes", force = true))
+        assertFalse(shouldWriteLauncher("true", force = true))
+        // An explicit opt-in enables both paths.
+        assertTrue(shouldWriteLauncher("no", force = false))
     }
 
     // ── launcher rendering ──────────────────────────────────────────────────────────────────────
@@ -103,6 +119,27 @@ class BinLauncherTest {
         assertEquals(first, home.binDir.resolve("devrig").readText())
     }
 
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `restores a lost executable bit even when the content is unchanged`(@TempDir tmp: Path) {
+        val userHome = tmp.resolve("home")
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        val ownRoot = tmp.resolve("opt/devrig")
+        val ownJava = tmp.resolve("opt/jdk-25")
+        fun run() = ensureBinLauncher(home, isWin = false, ownRoot = ownRoot, ownJava = ownJava, userHome = userHome, pathDirs = emptyList())
+
+        run()
+        val launcher = home.binDir.resolve("devrig")
+        // Drop the executable bit (e.g. a copy/restore that lost perms) — content stays identical.
+        val perms = Files.getPosixFilePermissions(launcher).toMutableSet()
+        perms.removeAll(setOf(PosixFilePermission.OWNER_EXECUTE, PosixFilePermission.GROUP_EXECUTE, PosixFilePermission.OTHERS_EXECUTE))
+        Files.setPosixFilePermissions(launcher, perms)
+        assertFalse(Files.isExecutable(launcher), "precondition: +x removed")
+
+        run()
+        assertTrue(Files.isExecutable(launcher), "self-heal must restore +x even when bytes are unchanged")
+    }
+
     // ── PATH symlink (POSIX) ────────────────────────────────────────────────────────────────────
 
     @DisabledOnOs(OS.WINDOWS)
@@ -142,5 +179,28 @@ class BinLauncherTest {
 
         assertFalse(Files.isSymbolicLink(foreign), "a foreign devrig must be left untouched")
         assertTrue(foreign.readText().contains("a different devrig"))
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    fun `recognizes a pre-existing RELATIVE symlink that points at our launcher`(@TempDir userHome: Path) {
+        val home = HomePaths(userHome.resolve(".mcp-steroid"))
+        val localBin = Files.createDirectories(userHome.resolve(".local/bin"))
+        // A symlink whose target is RELATIVE (resolved against the link's own dir, not the process CWD)
+        // but points at our launcher — an older install.sh could have created exactly this.
+        val relTarget = Path.of("../../.mcp-steroid/bin/devrig")
+        val link = Files.createSymbolicLink(localBin.resolve("devrig"), relTarget)
+
+        ensureBinLauncher(
+            home, isWin = false,
+            ownRoot = home.home.resolve("binaries/devrig-abc"),
+            ownJava = home.home.resolve("binaries/jdk-abc"),
+            userHome = userHome,
+            pathDirs = listOf(localBin.toString()),
+        )
+
+        // It must be recognized as ours and left exactly as-is (still the relative target), not recreated.
+        assertTrue(Files.isSymbolicLink(link))
+        assertEquals(relTarget, Files.readSymbolicLink(link), "the relative symlink should be left untouched")
     }
 }

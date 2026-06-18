@@ -32,10 +32,22 @@ internal const val ENV_BIN_NO_AUTO_REGISTER = "DEVRIG_BIN_NO_AUTO_REGISTER"
  * The build version is read straight from the generated [DevrigVersionMetadata]; only the env value is a
  * parameter, so the env-override branches stay unit-testable without faking the version.
  */
-internal fun binAutoRegisterEnabled(envValue: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER)): Boolean {
-    parseBinAutoRegisterOptOut(envValue)?.let { optedOut -> return !optedOut }
-    return !DevrigVersionMetadata.getDevrigVersion().contains("SNAPSHOT", ignoreCase = true)
-}
+internal fun binAutoRegisterEnabled(envValue: String? = System.getenv(ENV_BIN_NO_AUTO_REGISTER)): Boolean =
+    shouldWriteLauncher(envValue, force = false)
+
+/**
+ * Whether to (re)write the launcher. Explicit env wins both ways. With no env: a passive start follows
+ * the SNAPSHOT default (off for dev/test, on for release); an explicit `devrig install` ([force]) writes
+ * regardless of that default — install is explicit user intent, so it must never leave a dangling
+ * registration (a wrapper path registered for the agent but never written) on a dev/SNAPSHOT dist. An
+ * explicit opt-out (`DEVRIG_BIN_NO_AUTO_REGISTER=yes`) still wins, even over [force].
+ */
+internal fun shouldWriteLauncher(envValue: String?, force: Boolean): Boolean =
+    when (parseBinAutoRegisterOptOut(envValue)) {
+        true -> false
+        false -> true
+        null -> force || !DevrigVersionMetadata.getDevrigVersion().contains("SNAPSHOT", ignoreCase = true)
+    }
 
 /** `true` = opt-out (disable), `false` = opt-in (enable), `null` = unset/unrecognized (use the default). */
 private fun parseBinAutoRegisterOptOut(value: String?): Boolean? = when (value?.trim()?.lowercase()) {
@@ -53,20 +65,25 @@ private fun parseBinAutoRegisterOptOut(value: String?): Boolean? = when (value?.
  *     at devrig's OWN current install tree and the JDK it is running under — so the launcher self-heals
  *     if it is missing or stale (e.g. after an upgrade repointed the install tree).
  *  2. that launcher is reachable on PATH — POSIX symlinks it into a writable PATH dir under `$HOME`
- *     (pure Java, no subprocess); Windows cannot persist the user PATH from pure Java and must not spawn
- *     a process on the startup path, so it only checks membership and prints a one-time manual hint when
- *     the bin dir is absent (agents launch the wrapper by absolute path, so MCP works regardless).
+ *     (pure Java, no subprocess). Windows registers the bin dir on the user PATH via a marker-gated
+ *     PowerShell call, but only when [registerWindowsPath] is true — callers pass false for the
+ *     `devrig mcp` start so PowerShell never blocks the latency-sensitive MCP serve path (the agent
+ *     launches the wrapper by absolute path anyway); interactive/`install` invocations pass true.
  *
  * The launcher is rewritten ONLY when its content actually changed (normalized comparison), never on
  * every launch — and writes are atomic (temp file + atomic move), so a concurrent agent that is mid-read
- * of the file (the contract: it can change WHILE the binary runs) never sees a torn launcher.
+ * of the file (the contract: it can change WHILE the binary runs) never sees a torn launcher. When the
+ * content already matches, a lost executable bit is still repaired.
+ *
+ * [force] = an explicit `devrig install`: write regardless of the SNAPSHOT/dev passive-start default
+ * (but still honoring an explicit opt-out), so install never registers a wrapper it didn't write.
  *
  * Best-effort: any failure to resolve devrig's root, write the launcher, or touch PATH is logged to
  * stderr and swallowed — it must never prevent `devrig mcp` from serving. All output goes to stderr;
  * stdout is the MCP JSON-RPC channel.
  */
-fun ensureBinLauncher(home: HomePaths) {
-    if (!binAutoRegisterEnabled()) {
+fun ensureBinLauncher(home: HomePaths, force: Boolean = false, registerWindowsPath: Boolean = true) {
+    if (!shouldWriteLauncher(System.getenv(ENV_BIN_NO_AUTO_REGISTER), force)) {
         return
     }
     try {
@@ -77,6 +94,7 @@ fun ensureBinLauncher(home: HomePaths) {
             ownJava = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize(),
             userHome = Path.of(System.getProperty("user.home")).toAbsolutePath().normalize(),
             pathDirs = (System.getenv("PATH") ?: "").split(File.pathSeparatorChar),
+            registerWindowsPath = registerWindowsPath,
         )
     } catch (e: Exception) {
         System.err.println("[mcp-steroid] could not (re)write the devrig launcher: $e")
@@ -100,6 +118,7 @@ internal fun ensureBinLauncher(
     ownJava: Path,
     userHome: Path,
     pathDirs: List<String>,
+    registerWindowsPath: Boolean = true,
 ) {
     val ownBin = ownRoot.resolve("bin").resolve(if (isWin) "devrig.bat" else "devrig").toAbsolutePath().normalize()
     val jdkHome = ownJava.toAbsolutePath().normalize()
@@ -108,7 +127,9 @@ internal fun ensureBinLauncher(
         // needed by the install SCRIPT, not the launcher.
         val cmd = home.binDir.resolve("devrig.cmd")
         writeIfChanged(home.binDir, cmd, renderWindowsCmd(ownBin, jdkHome), executable = false, ownBin = ownBin)
-        ensureWindowsPathEntry(home.binDir)
+        // PATH registration spawns PowerShell, so skip it on the `devrig mcp` hot path (registerWindowsPath
+        // = false) — it would block the first serve until the marker exists. Interactive/install pass true.
+        if (registerWindowsPath) ensureWindowsPathEntry(home.binDir)
     } else {
         val devrig = home.binDir.resolve("devrig")
         writeIfChanged(home.binDir, devrig, renderPosixLauncher(ownBin, jdkHome), executable = true, ownBin = ownBin)
@@ -146,7 +167,15 @@ private fun writeIfChanged(dir: Path, target: Path, desired: String, executable:
         System.err.println("[mcp-steroid] existing launcher $target is unreadable ($e); rewriting it")
         null
     }
-    if (current != null && normalizeLauncher(current) == normalizeLauncher(desired)) return
+    if (current != null && normalizeLauncher(current) == normalizeLauncher(desired)) {
+        // Content already correct — but a launcher that lost its executable bit (e.g. a copy that dropped
+        // perms) must still self-heal, so re-set +x in place without rewriting the bytes.
+        if (executable && !Files.isExecutable(target)) {
+            setExecutable(target)
+            System.err.println("[mcp-steroid] restored the executable bit on $target")
+        }
+        return
+    }
     writeAtomically(dir, target, desired, executable)
     System.err.println("[mcp-steroid] (re)wrote $target -> $ownBin")
 }
@@ -181,8 +210,9 @@ internal fun ensurePosixPathSymlink(binDir: Path, binDevrig: Path, userHome: Pat
         // NotLinkException; a rare IO error bubbles to ensureBinLauncher's best-effort catch (logged).
         if (Files.isSymbolicLink(link)) {
             // Already OUR symlink → nothing to do; return silently so we don't churn the FS or log on
-            // every start (the on-each-start contract means this is the steady-state path).
-            if (Files.readSymbolicLink(link).toAbsolutePath().normalize() == target) return
+            // every start (the on-each-start contract means this is the steady-state path). resolveSibling
+            // handles a RELATIVE link target (resolve against the link's own dir, not the process CWD).
+            if (link.resolveSibling(Files.readSymbolicLink(link)).normalize() == target) return
             continue // foreign symlink — do not clobber
         }
         if (link.exists()) continue // foreign real file — do not clobber

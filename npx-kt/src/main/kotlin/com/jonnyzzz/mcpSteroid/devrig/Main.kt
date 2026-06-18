@@ -88,7 +88,9 @@ suspend fun DevrigServices.mainImpl2(
     // The devrig binary owns ~/.mcp-steroid/bin/devrig: (re)create/update it on EVERY start so it
     // self-heals and always points at this running install + JDK. Best-effort and stderr-only — never
     // blocks serving. It writes atomically, so an agent mid-read of the launcher never sees a torn file.
-    ensureBinLauncher(homePaths)
+    // For `devrig mcp` we skip the Windows user-PATH registration (it spawns PowerShell and would delay
+    // the first serve); that runs on interactive/`install` invocations instead.
+    ensureBinLauncher(homePaths, registerWindowsPath = command !is DevrigCommand.MCP)
 
     // For the MCP command, the running McpServerCore becomes available once the
     // stdio server is built; the update check broadcasts its notice over it (in

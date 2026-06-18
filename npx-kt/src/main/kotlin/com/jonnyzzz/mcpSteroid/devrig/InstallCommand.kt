@@ -9,6 +9,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.mcpAddStdioInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpListInvocation
 import com.jonnyzzz.mcpSteroid.aiAgents.mcpRemoveInvocation
 import java.io.PrintStream
+import kotlin.io.path.isRegularFile
 
 private const val DEVRIG_MCP_SERVER_NAME = "mcp-steroid"
 private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
@@ -16,16 +17,25 @@ private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
 /**
  * Registers the **user-facing launcher** (`~/.mcp-steroid/bin/devrig`) as the agent's MCP server. We
  * register that stable wrapper — never the content-addressed install tree, which changes on every
- * upgrade — so an upgrade repoints the launcher underneath without re-registering the agent, and we
- * first call [ensureBinLauncher] so the wrapper definitely exists at the path we are about to register.
- * The wrapper pins the bundled JDK via `DEVRIG_JAVA_HOME`, so the registered command carries no
- * `JAVA_HOME`.
+ * upgrade — so an upgrade repoints the launcher underneath without re-registering the agent. `install`
+ * is explicit user intent, so we call [ensureBinLauncher] with `force = true`: the wrapper is written
+ * even on a SNAPSHOT/dev dist (where the passive on-each-start self-heal is off by default), so we never
+ * register a path that does not exist. The wrapper pins the bundled JDK via `DEVRIG_JAVA_HOME`, so the
+ * registered command carries no `JAVA_HOME`. If an explicit opt-out still left the wrapper absent, we
+ * warn loudly rather than silently registering a dead path.
  */
 fun DevrigServices.runInstallCommand(
     command: DevrigCommand.DevrigCommandInstall,
     runner: AiAgentCliRunner = ProcessAiAgentCliRunner(),
 ): Int {
-    ensureBinLauncher(homePaths)
+    ensureBinLauncher(homePaths, force = true, registerWindowsPath = true)
+    val launcher = DevrigUserLauncher.path(homePaths)
+    if (!launcher.isRegularFile()) {
+        System.err.println(
+            "[mcp-steroid] WARNING: the launcher $launcher does not exist (DEVRIG_BIN_NO_AUTO_REGISTER " +
+                "opt-out?). Registering it anyway, but the MCP server will not start until it is created.",
+        )
+    }
     return runInstallCommand(
         command = command,
         mcpCommand = DevrigUserLauncher.invocation(homePaths, listOf("mcp")),
