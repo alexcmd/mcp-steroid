@@ -108,7 +108,7 @@ internal fun ensureBinLauncher(
         // needed by the install SCRIPT, not the launcher.
         val cmd = home.binDir.resolve("devrig.cmd")
         writeIfChanged(home.binDir, cmd, renderWindowsCmd(ownBin, jdkHome), executable = false, ownBin = ownBin)
-        ensureWindowsPathEntry(home.binDir, pathDirs)
+        ensureWindowsPathEntry(home.binDir)
     } else {
         val devrig = home.binDir.resolve("devrig")
         writeIfChanged(home.binDir, devrig, renderPosixLauncher(ownBin, jdkHome), executable = true, ownBin = ownBin)
@@ -202,35 +202,53 @@ internal fun ensurePosixPathSymlink(binDir: Path, binDevrig: Path, userHome: Pat
 }
 
 /**
- * Make `bin/devrig.cmd` discoverable for INTERACTIVE Windows use. We do **NOT** spawn anything from the
- * startup path (no PowerShell, no `setx`) and never touch the registry — the JDK cannot persist the user
- * PATH in pure Java, and spawning a process on every `devrig mcp` start is exactly what we must avoid.
- * Agents launch the wrapper by ABSOLUTE path (see [DevrigUserLauncher.invocation]), so PATH membership is
- * only a human convenience, never a correctness requirement. So this just CHECKS membership against the
- * process PATH (`System.getenv("PATH")` split by [File.pathSeparatorChar], passed in as [pathDirs]) and,
- * if the bin dir is absent, prints a one-time manual hint to stderr (guarded by a marker so it is not
- * repeated on every start). The POSIX side actively symlinks (pure Java, no subprocess); Windows cannot,
- * so it informs instead.
+ * Register `bin/devrig.cmd` on the **user** PATH so `devrig` is runnable directly from a terminal
+ * (the POSIX side does the equivalent with a symlink). The JDK cannot persist the user environment in
+ * pure Java, so we use PowerShell to update `HKCU\Environment\Path` — but **only once per install**: a
+ * marker file gates it so we do NOT spawn PowerShell on every `devrig mcp` / `version` / `install` start
+ * (the bin dir is stable across upgrades, so one registration lasts). The PowerShell **deduplicates**:
+ * it strips every existing entry equal to the bin dir and appends exactly one, so re-runs (or a stale
+ * entry from an earlier install) never accumulate duplicates. No `setx` (it truncates PATH at 1024
+ * chars). stdout is discarded (the MCP JSON-RPC channel); it narrates to stderr. Agents launch the
+ * wrapper by ABSOLUTE path (see [DevrigUserLauncher.invocation]), so MCP works even before a new shell
+ * picks up the updated PATH. Best-effort: a missing marker re-runs it; any failure is logged and ignored.
  */
-internal fun ensureWindowsPathEntry(binDir: Path, pathDirs: List<String>) {
+internal fun ensureWindowsPathEntry(binDir: Path) {
     val binDirNorm = binDir.toAbsolutePath().normalize()
-    if (pathDirs.any { it.isNotBlank() && pathEntryEquals(it, binDirNorm) }) return
-    val marker = binDirNorm.resolve(".path-hint-shown")
+    val marker = binDirNorm.resolve(".user-path-registered")
     if (Files.exists(marker)) return
-    System.err.println(
-        "[mcp-steroid] $binDirNorm is not on your PATH. To run 'devrig' directly from a terminal, add it " +
-            "via System Properties -> Environment Variables (User PATH). Agents use the full path, so MCP " +
-            "works regardless.",
-    )
+    val bin = binDirNorm.toString()
+    // De-dup: drop blanks and any existing == bin entry, then append exactly one bin entry.
+    val script =
+        "\$d = '${bin.replace("'", "''")}'; " +
+            "\$p = [Environment]::GetEnvironmentVariable('Path','User'); if (\$null -eq \$p) { \$p = '' }; " +
+            "\$parts = @(\$p -split ';' | Where-Object { \$_ -ne '' -and \$_ -ne \$d }); " +
+            "\$new = (\$parts + \$d) -join ';'; " +
+            "[Environment]::SetEnvironmentVariable('Path', \$new, 'User'); " +
+            "[Console]::Error.WriteLine('[mcp-steroid] registered ' + \$d + ' on the user PATH (1 entry; open a new terminal to use it)')"
     try {
-        Files.writeString(marker, binDirNorm.toString())
+        val exit = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+            .redirectErrorStream(false)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD) // keep the MCP JSON-RPC channel clean
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
+            .start()
+            .waitFor()
+        if (exit == 0) {
+            try {
+                Files.writeString(marker, bin)
+            } catch (e: Exception) {
+                System.err.println("[mcp-steroid] could not write the user-PATH marker $marker: $e")
+            }
+        } else {
+            System.err.println("[mcp-steroid] PowerShell PATH registration exited $exit; will retry next start")
+        }
     } catch (e: Exception) {
-        System.err.println("[mcp-steroid] could not write the PATH-hint marker $marker: $e")
+        System.err.println(
+            "[mcp-steroid] could not register $bin on the user PATH ($e); add it manually via " +
+                "System Properties -> Environment Variables (User PATH), or run devrig by full path",
+        )
     }
 }
-
-private fun pathEntryEquals(entry: String, dir: Path): Boolean =
-    runCatching { Path.of(entry).toAbsolutePath().normalize() }.getOrNull() == dir
 
 private fun writeAtomically(dir: Path, target: Path, content: String, executable: Boolean) {
     Files.createDirectories(dir)
