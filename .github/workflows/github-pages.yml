@@ -46,8 +46,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # `make update-config` now runs :website-gen:generateWebsite (Kotlin) to produce version.json +
-      # updatePlugins.xml, replacing the former Python/uv pipeline — so the build needs a JDK, not uv.
+      # `make update-config` runs the single :website-gen:generateWebsite task (Kotlin), which writes ALL
+      # generated static files — version.json + updatePlugins.xml + install.sh + install.ps1 (the last two
+      # via its dependency on :installer-gen:generateInstaller) — into website/build/generated-static,
+      # which Hugo merges via its staticDir list. So the build needs a JDK, not uv.
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:

@@ -39,12 +39,19 @@ val websiteGenMain = "com.jonnyzzz.mcpSteroid.websitegen.WebsiteArtifactsKt"
 // on this module's classes (no project() deps), so it never builds the rest of the project — fast.
 val generateWebsite by tasks.registering(JavaExec::class) {
     group = "website"
-    description = "Generate version.json + updatePlugins.xml into website/static (resolves the GitHub release)."
+    description = "Generate ALL website static files (version.json + updatePlugins.xml + install.sh + install.ps1) into website/static."
     mainClass.set(websiteGenMain)
     classpath = sourceSets["main"].runtimeClasspath
+    // The website Make contract is a SINGLE task that produces every static file. This task writes
+    // version.json + updatePlugins.xml; the installer scripts come from :installer-gen:generateInstaller,
+    // which writes into the same website/static dir — so depend on it (both run under `generateWebsite`).
+    dependsOn(":installer-gen:generateInstaller")
 
     val versionFile = rootProject.layout.projectDirectory.file("VERSION")
-    val outDir = rootProject.layout.projectDirectory.dir("website/static")
+    // Generated static files go into website/build/ (a `build/` dir → already gitignored, never the
+    // tracked source tree), which Hugo merges via its `staticDir` list. Adding a new generated file needs
+    // no .gitignore edit.
+    val outDir = rootProject.layout.projectDirectory.dir("website/build/generated-static")
     val notesDir = rootProject.layout.projectDirectory.dir("release/notes")
     inputs.file(versionFile)
     // Always re-run: the published GitHub release (and its notes) can change without VERSION changing, so

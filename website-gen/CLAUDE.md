@@ -13,6 +13,12 @@ Read the [root CLAUDE.md](../CLAUDE.md) too (project-wide rules).
   CI/Makefile invoke it with no args. The plugin version + `since-build` come from the ACTUAL published
   artifact (the release ZIP's `ij-plugin-*.jar` `META-INF/plugin.xml`), never a literal.
 
+**The website Make contract is a SINGLE task.** `make update-config` runs only `:website-gen:generateWebsite`,
+and that task emits EVERY static file the site serves. So `generateWebsite` **dependsOn
+`:installer-gen:generateInstaller`** (which writes `install.sh` + `install.ps1` into the same
+`website/static`). Adding a new generated static file = make `generateWebsite` depend on the task that
+produces it; never add a second task to the Makefile.
+
 ## Dependencies
 
 - The ONLY `project()` dependency is **`:installer-gen`** — the lower build-tooling module that owns the

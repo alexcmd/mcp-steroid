@@ -114,7 +114,9 @@ val generateInstaller by tasks.registering(JavaExec::class) {
     maxHeapSize = "2g" // resolveAllJdks holds one ~230 MB archive at a time
 
     val versionFile = rootProject.layout.projectDirectory.file("VERSION")
-    val outDir = rootProject.layout.projectDirectory.dir("website/static")
+    // Same build/ output dir as generateWebsite (Hugo merges it via its `staticDir` list) — never the
+    // tracked source tree, so no per-file .gitignore is needed.
+    val outDir = rootProject.layout.projectDirectory.dir("website/build/generated-static")
     inputs.file(versionFile)
     // Always re-run: the published devrig release + the live JDK builds can change without VERSION changing.
     outputs.upToDateWhen { false }

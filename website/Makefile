@@ -24,10 +24,12 @@ setup:
 ensure-public-repo:
 	@mkdir -p mcp-steroid-public
 
-# Copy EULA and LICENSE from repository root into static/ so the website serves both
+# Copy EULA and LICENSE from repo root into the generated-static build dir (the second Hugo staticDir),
+# so they are served without landing in the tracked source tree.
 copy-root-files:
-	cp ../EULA static/EULA
-	cp ../LICENSE static/LICENSE
+	@mkdir -p build/generated-static
+	cp ../EULA build/generated-static/EULA
+	cp ../LICENSE build/generated-static/LICENSE
 
 # Update version in hugo.toml, generate version.json + updatePlugins.xml.
 #
@@ -39,10 +41,8 @@ copy-root-files:
 update-config: ensure-public-repo copy-root-files
 	@echo "Updating version to $(VERSION)"
 	@sed -i.bak 's/version = ".*"/version = "$(VERSION)"/' hugo.toml && rm -f hugo.toml.bak
-	@echo "Generating version.json + updatePlugins.xml via :website-gen (Kotlin)"
+	@echo "Generating website static files (version.json + updatePlugins.xml + install.sh + install.ps1) via :website-gen (Kotlin)"
 	@cd .. && ./gradlew --console=plain --info --stacktrace :website-gen:generateWebsite
-	@echo "Generating install.sh + install.ps1 via :installer-gen (Kotlin)"
-	@cd .. && ./gradlew --console=plain --info --stacktrace :installer-gen:generateInstaller
 	@mkdir -p mcp-steroid-public/mcp-steroid-plugin
 
 # Start development server with live reload
