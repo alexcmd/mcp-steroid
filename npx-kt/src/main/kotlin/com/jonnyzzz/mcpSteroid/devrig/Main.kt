@@ -85,6 +85,11 @@ suspend fun DevrigServices.mainImpl2(
     command: DevrigCommand,
     headliner: String,
 ): Int = coroutineScope {
+    // The devrig binary owns ~/.mcp-steroid/bin/devrig: (re)create/update it on EVERY start so it
+    // self-heals and always points at this running install + JDK. Best-effort and stderr-only — never
+    // blocks serving. It writes atomically, so an agent mid-read of the launcher never sees a torn file.
+    ensureBinLauncher(homePaths)
+
     // For the MCP command, the running McpServerCore becomes available once the
     // stdio server is built; the update check broadcasts its notice over it (in
     // addition to stderr) as a `notifications/message`. For non-MCP commands the

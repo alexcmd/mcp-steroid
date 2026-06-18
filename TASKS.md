@@ -1,4 +1,45 @@
 
+# Active focus — bin/devrig is the devrig binary's responsibility (PR `devrig/bin-launcher`, 2026-06-18)
+
+New PR off `origin/main` (NOT PR #113, which is parked on `installer/version-json-driven`). Contract: the
+**devrig BINARY** owns `~/.mcp-steroid/bin/devrig` — the install script owns none of it.
+
+## Done (implemented + validated)
+
+- `HomePaths.binDir` = `~/.mcp-steroid/bin`; created by `mkdirsAll()`.
+- `BinLauncher.kt` — `ensureBinLauncher(home)` runs on EVERY devrig start (wired at the top of
+  `Main.mainImpl2`, best-effort, stderr-only). It:
+  - (re)writes `bin/devrig` (POSIX) / `bin/devrig.cmd` (Windows, CMD-only) **atomically** (temp +
+    ATOMIC_MOVE), rewrite-only-on-change (normalized compare) — safe to change while the file is in use.
+  - wrapper records **ABSOLUTE** paths (no `$HOME`-relative — works from any install location incl.
+    `/tmp/devrig` in tests) and always pins the bundled JDK via `DEVRIG_JAVA_HOME` (start script honors it).
+  - **owns PATH reachability**: POSIX symlinks `bin/devrig` into the first writable PATH dir under `$HOME`
+    (never self-links, never clobbers a foreign devrig); Windows appends the bin dir to the **user** PATH
+    via PowerShell `[Environment]::SetEnvironmentVariable(...,'User')` (guarded; no `setx` truncation).
+  - **NO location guard** — the only safety is the gate below (per the "always on each start" contract).
+- `DevrigUserLauncher.kt` — single source of truth for the wrapper path + how to invoke it
+  (`cmd.exe /d /c "…devrig.cmd" …` on Windows; direct exec on POSIX; no JAVA_HOME at the call site).
+- `InstallCommand.kt` — `devrig install` now calls `ensureBinLauncher` first, then registers the STABLE
+  wrapper `~/.mcp-steroid/bin/devrig` (NOT the content-addressed install tree) so upgrades need no
+  re-registration. Dropped `selfMcpCommand` / `resolveDevrigLauncher` / the explicit-JAVA_HOME narration.
+- **Undocumented gate** `DEVRIG_BIN_NO_AUTO_REGISTER` (yes/true/1/on = OFF; no/false/0/off = ON). Default
+  (unset) = ON for release, **OFF for SNAPSHOT/dev/test** builds (SNAPSHOT in `DevrigVersionMetadata`),
+  so a dev/test build never clobbers the real launcher. Version read internally (no param).
+- Tests: `BinLauncherTest` (gate matrix, render, idempotent rewrite, symlink, foreign-not-clobbered),
+  updated `InstallCommandTest`/`HomePathsTest`; Docker `CliBinLauncherIntegrationTest` (self-heal + symlink
+  + wrapper-actually-runs with opt-in; default-off without) + updated `CliInstallIntegrationTest`
+  (opt-in env + asserts wrapper registration + wrapper written). All green. IDE inspections = 0 WARNING+.
+
+## Pending
+
+- **eugene-x220 (Windows host) live test** — BLOCKED on SSH auth (`eugene-x220.local` resolves via mDNS
+  but rejects my pubkey for all users). Need: user authorizes key OR runs the deploy+run via `!`. Goal:
+  copy a fresh `devrig` dist, run `devrig version` with `DEVRIG_BIN_NO_AUTO_REGISTER=no`, confirm
+  `%USERPROFILE%\.mcp-steroid\bin\devrig.cmd` is written + the bin dir is on the user PATH, then
+  `devrig install <agent>` registers the `cmd.exe /d /c …devrig.cmd` command.
+- 3× adversarial quorum running (Workflow `wf_4c531b7e-a96`); commit after GO.
+- Not yet committed/pushed — confirm push with the user.
+
 # Active focus — 0.96 release quality check: devrig + ij-plugin (2026-05-29)
 
 Scope: keep the 0.96 version; quality-check **devrig** (`:npx-kt`) and
