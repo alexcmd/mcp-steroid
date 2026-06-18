@@ -11,7 +11,7 @@ import java.nio.file.Path
  *
  * The launcher — POSIX `devrig`; Windows `devrig.cmd` (a self-contained batch, no PowerShell) — is the
  * self-healing wrapper that [ensureBinLauncher] writes on every devrig start. It always sets
- * `DEVRIG_JAVA_HOME` to the bundled JDK ITSELF, so **no caller needs to deal with JAVA_HOME**. Pointing
+ * `DEVRIG_JAVA_HOME` to the JDK devrig runs under, so **no caller needs to deal with JAVA_HOME**. Pointing
  * registrations/docs at this stable path (rather than a content-addressed install tree that changes on
  * every upgrade) is what lets the wrapper repoint underneath without re-registering the agent.
  */
@@ -24,7 +24,7 @@ object DevrigUserLauncher {
      * OS-correct command to run the user launcher with [args]. Windows runs the `.cmd` through
      * `cmd.exe /d /c` (a `.cmd` is not directly executable as a process image, and `/d` skips any
      * AutoRun script); POSIX execs the script directly. **No JAVA_HOME** — the launcher exports
-     * `DEVRIG_JAVA_HOME` for the bundled JDK.
+     * `DEVRIG_JAVA_HOME` for the JDK devrig runs under.
      */
     fun invocation(home: HomePaths, args: List<String>, windows: Boolean = isWindows()): StdioMcpCommand {
         val launcher = path(home, windows).toString()

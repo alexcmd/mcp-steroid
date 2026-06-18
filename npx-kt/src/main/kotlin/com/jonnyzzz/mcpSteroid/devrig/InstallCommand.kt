@@ -20,7 +20,7 @@ private const val DEVRIG_LEGACY_SERVER_NAME = "devrig"
  * upgrade — so an upgrade repoints the launcher underneath without re-registering the agent. `install`
  * is explicit user intent, so we call [ensureBinLauncher] with `force = true`: the wrapper is written
  * even on a SNAPSHOT/dev dist (where the passive on-each-start self-heal is off by default), so we never
- * register a path that does not exist. The wrapper pins the bundled JDK via `DEVRIG_JAVA_HOME`, so the
+ * register a path that does not exist. The wrapper pins the JDK devrig runs under via `DEVRIG_JAVA_HOME`, so the
  * registered command carries no `JAVA_HOME`. If an explicit opt-out still left the wrapper absent, we
  * warn loudly rather than silently registering a dead path.
  */
@@ -79,7 +79,7 @@ fun runInstallCommand(
         "'$DEVRIG_MCP_SERVER_NAME' registration (user scope).")
     out.println("  - ${agent.displayName} will launch this command to start it:")
     out.println("      $renderedCommand")
-    out.println("  - The launcher pins the bundled JDK itself (via DEVRIG_JAVA_HOME), so the registered")
+    out.println("  - The launcher pins the JDK devrig runs under (via DEVRIG_JAVA_HOME), so the registered")
     out.println("    command carries no JAVA_HOME and survives devrig upgrades without re-registering.")
     out.println()
     out.println("Re-running install is safe — existing devrig entries are replaced.")
