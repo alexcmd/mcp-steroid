@@ -1,4 +1,42 @@
 
+# ⏳ DEFERRED — `devrig install devrig` (install-script delegates launcher creation to the binary)
+
+**Motto: the install script passes ALL non-trivial parameters to the devrig binary** (no env-derived
+magic). To work on later.
+
+**Problem.** The generated `install.sh` / `install.ps1` currently CREATE the `~/.mcp-steroid/bin/devrig`
+launcher wrapper + the PATH symlink themselves — duplicating what the devrig binary's `BinLauncher`
+(`ensureBinLauncher`, #117) already owns. The scripts should NOT write the wrapper; they should hand the
+facts to devrig and let it register itself.
+
+**Plan (`:npx-kt` first, then wire `:installer-gen` PR #124's scripts):**
+
+1. **New CLI subcommand `devrig install devrig`** — register-only: write `~/.mcp-steroid/bin/devrig`
+   (`.cmd` on Windows) + ensure PATH, and **do nothing else** (no agent registration, no backend).
+   - `--install-script=<full path>` — the unpacked install-tree launcher the wrapper should `exec`.
+   - `--jdk-home=<full path>` — the bundled JDK the wrapper pins as `DEVRIG_JAVA_HOME` (pass it
+     explicitly per the motto, NOT via the `DEVRIG_JAVA_HOME` env).
+   - Add `DevrigCommand.DevrigCommandInstallDevrig(installScript, jdkHome)`; `install`'s `agent` arg
+     accepts `devrig`; reject `--install-script`/`--jdk-home` for the agent variants.
+2. **`BinLauncher`** — add `ensureBinLauncherForInstallScript(home, installScript, jdkHome, force=true)`
+   (drafted: extract a core taking explicit `ownBin` + `jdkHome` instead of deriving from `DevrigRoot` /
+   `java.home`). `runInstallDevrigCommand` calls it, verifies the launcher exists, reports the beacon.
+3. **Beacon** — `DevrigBeacon.capture()` is async (`scope.launch`), so a short-lived `install` process
+   can exit before the event sends. Add a **synchronous capture + flush** for all `install` subcommands
+   (install devrig + install claude/codex/gemini) so the "install executed" beacon is reliably reported
+   before process exit.
+4. **`:installer-gen` scripts (PR #124)** — `install.sh`/`install.ps1` STOP writing the wrapper + PATH
+   symlink. After unpack, run the unpacked devrig: `devrig install devrig --install-script=<launcher>
+   --jdk-home=<jdk>`; then report "devrig is ready; run `devrig install` to register with your agents".
+   Integration test: the fake devrig recorder simulates `install devrig` (creates the wrapper + symlink)
+   so install.sh's delegation is tested; real `ensureBinLauncher` stays covered by npx-kt's BinLauncher
+   tests.
+
+Decisions locked (this session): test uses the **fake-devrig-simulates** approach; the devrig-binary
+changes land as their **own `:npx-kt` PR** before #124 wires the scripts.
+
+---
+
 # ✅ devrig-launcher + website-gen epic — COMPLETE (merged to main, 2026-06-18)
 
 All of this session's work is merged to `origin/main` and synced to `jb` (so TeamCity builds it):
