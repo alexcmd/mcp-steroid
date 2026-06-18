@@ -40,16 +40,34 @@ The **installer-script generator** — everything else from #113 is now supersed
 - `fileName`, `sha256`, `url`, `javaHome` map 1:1 (javaHome is forward-slash, no leading slash — matches
   `JdkCoordinatesMetadataTest`'s assertion).
 
-## Open decisions (resolve before the integration PR)
+## Decisions (resolved 2026-06-18)
 
-- **D1 — home of the installer generator**: extend `:website-gen` (add `InstallerGenerator` + templates +
-  an `installerIntegrationTest` source set) vs. a new `:installer-gen` module depending on `:website-gen`.
-- **D2 — platform coverage**: extend the installer (`ALL_PLATFORMS` + both script templates + the
-  metadata test) to consume the new **alpine (musl) x64/arm64** and **macos-x64** entries (alpine support
-  was the stated goal), vs. ship #113's original 5 platforms first and add alpine in a follow-up.
-- **D3 — `InstallerRealArtifactsTest` source of truth**: have the test download via the `Cache` and
-  re-derive sha/javaHome from the local file (keeps the existing test shape), vs. trust the model's
-  already-PGP-verified computed `sha256`/`javaHome` and assert the model directly (simpler, no re-download).
+- **D1 — module layout**: NEW `:installer-gen` module is the **lower-level** module — it owns **JDK
+  detection** (move `JdkArtifacts`/`JdkModel`/`resolveAllJdks`, `PgpVerifier`, `Cache` + `HttpFetcher`
+  out of `:website-gen`) **and** installer-script generation. **`:website-gen` depends on
+  `:installer-gen`** and reuses its HTTP/cache infra. (Reverses the originally-assumed direction.)
+- **D2 — platform coverage: NO alpine.** IDEs can't run on musl/alpine anyway, so we do NOT ship alpine
+  JDKs. Drop the 2 alpine entries (and macos-x64) from the model → back to the **5** platforms #113 had
+  (`macos-arm64`, `linux-arm64`, `linux-x64`, `windows-x64`, `windows-arm64`). Instead, **install.sh
+  detects musl and fails fast** with a clear "not supported" message.
+- **D3 — `InstallerRealArtifactsTest`: trust the model.** It already PGP-verifies + computes
+  sha256/javaHome, and `InstallerBootstrapTest` does the real-HTTP+sha end-to-end check. Assert the
+  model directly; no re-download.
+
+## Execution plan for the `:installer-gen` PR
+
+1. New `:installer-gen` module (bcpg + commons-compress + ktor + serialization). Move JDK detection
+   (`JdkArtifacts`, `PgpVerifier`, `Cache`/`HttpFetcher`, `JdkModelMain`) + their tests there; package
+   → `com.jonnyzzz.mcpSteroid.installer`. **Trim the model to the 5 platforms** (drop alpine + macos-x64;
+   drop the `ALPINE_LINUX` enum value).
+2. `:website-gen` depends on `:installer-gen`; reuse the shared `KtorHttpFetcher`/`Cache` (drop
+   `WebsiteArtifacts`'s duplicate fetchers). `generateJdkModel` moves to `:installer-gen`.
+3. Port the generator: `InstallerGenerator` + `install.sh.tmpl` / `install.ps1.tmpl`, consuming the
+   `JdkModel` via the adapter (no more `--jdk` args / `LocalJdkArtifact` / `CoordinateResolver`). Add the
+   **musl-detect-and-fail** arm to `install.sh`.
+4. Port + adapt the installer integration tests (`InstallerBootstrapTest` nginx-sidecar real-HTTP;
+   `InstallerRealArtifactsTest` → assert the model; `JdkCoordinatesMetadataTest` → 5 platforms) into an
+   `installerIntegrationTest` source set (NOT in `ciBuildPluginTests`).
 
 ## Minor, non-blocking (from the #122 quorum review)
 
