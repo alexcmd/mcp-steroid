@@ -104,12 +104,12 @@ Download the latest ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-s
 ./gradlew deployNpx
 
 # Register `mcp-steroid` (stdio) at user scope for each agent — once per machine.
-# The first call self-installs the stable launcher at ~/.mcp-steroid/bin/devrig (also linked onto
-# PATH as `devrig`) and registers THAT, so registrations survive devrig upgrades.
+# The first call (run by full path, since devrig is not on PATH yet) self-installs the stable
+# launcher ~/.mcp-steroid/bin/devrig, links it onto PATH as `devrig`, and registers THAT — so
+# registrations survive devrig upgrades. Use `devrig` (a fresh shell picks it up) thereafter.
 ~/.mcp-steroid/devrig/bin/devrig install claude
-# Thereafter use the stable launcher (or just `devrig` once it is on PATH):
-~/.mcp-steroid/bin/devrig install codex
-~/.mcp-steroid/bin/devrig install gemini
+devrig install codex
+devrig install gemini
 ```
 
 Each `install` call delegates to the agent's own `mcp add` CLI, so the entry lands in the user-scope config (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`) and is visible from every project.

@@ -30,30 +30,9 @@ server, invoked with a `backend` subcommand:
 The `<id>` values come from `devrig backend --json` (the
 `backends[].backend_name` field — see Step 1).
 
-**Launcher path.** Use the stable launcher under `~/.mcp-steroid/bin` (the
-devrig binary keeps it up to date and links it onto `PATH` as `devrig`) — not
-the versioned install tree, which changes on every upgrade.
-
-On **macOS / Linux** run `~/.mcp-steroid/bin/devrig` — e.g.
-`~/.mcp-steroid/bin/devrig backend --json` (or just `devrig backend --json`
-when it is on `PATH`).
-
-On **Windows** the launcher is `%USERPROFILE%\.mcp-steroid\bin\devrig.cmd`.
-How you invoke it depends on whether a shell interprets the command — there
-are two cases:
-- **From a shell** (cmd.exe / PowerShell), or when `devrig` is on `PATH`: run
-  it directly — `devrig backend --json`, or
-  `"%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" backend --json`.
-- **As a bare process** (a runner that spawns the executable directly, with no
-  shell — e.g. an MCP server registration): a `.cmd` is not a directly
-  executable image, so run it through `cmd.exe`, quoting the path (a user
-  profile may contain a space) —
-  `cmd.exe /c "%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" backend --json` or
-  `cmd.exe /c "%USERPROFILE%\.mcp-steroid\bin\devrig.cmd" backend download idea-ultimate --json`.
-
-**No JAVA_HOME needed.** This launcher pins its own Java 25 runtime (it exports
-`DEVRIG_JAVA_HOME` for the devrig process), so you do **not** need to set
-`JAVA_HOME` or care which `java` is on `PATH` — just invoke the launcher above.
+**Launcher.** Run `devrig` — the stable launcher the devrig binary installs and
+keeps current on your `PATH` (it lives under `~/.mcp-steroid/bin`). E.g.
+`devrig backend --json` or `devrig backend download idea-ultimate --json`.
 
 ## Step 1 — See what IDEs are available
 

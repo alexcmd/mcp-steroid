@@ -2,6 +2,13 @@
 
 Author: Eugene Petrenko · Status: design ready for implementation
 
+> **Superseded in part (2026-06, PR #117):** the Windows user launcher is now
+> **CMD-only** — `~/.mcp-steroid/bin/devrig.cmd`, not the `devrig.ps1`
+> PowerShell wrapper described below (PowerShell is used only by the install
+> script, never the launcher). The devrig binary also now (re)writes
+> `~/.mcp-steroid/bin/devrig` on every start and owns the user-PATH entry.
+> Treat the `devrig.ps1` references in this v7 design doc as historical.
+
 > **Iteration history**: v1 in-session restart via exit 239 → v2 dropped
 > after quorum review (MCP spec) → v3 devrig.dev pattern → v4 bundled JDK +
 > curl-bootstrap + two-key sigs → v5 Corretto + binaries/ + agent wizard +
