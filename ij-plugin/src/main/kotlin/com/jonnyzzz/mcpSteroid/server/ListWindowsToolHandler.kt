@@ -4,6 +4,8 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProgressModel
@@ -28,7 +30,7 @@ import javax.swing.SwingUtilities
  */
 class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse {
-        val snapshot = IdeWindowsCollector.collect()
+        val snapshot = service<IdeWindowsCollector>().collect()
         val self = describeSelfBackend()
         return ListWindowsResponse(
             windows = snapshot.windows.map { it.listed(self.backendName) },
@@ -50,7 +52,8 @@ data class IdeWindowsSnapshot(
 )
 
 /** Collects the [IdeWindowsSnapshot] from the running IDE (EDT enumeration, modality-aware). */
-object IdeWindowsCollector {
+@Service(Service.Level.APP)
+class IdeWindowsCollector {
     private val log = logger<IdeWindowsCollector>()
 
     suspend fun collect(): IdeWindowsSnapshot {

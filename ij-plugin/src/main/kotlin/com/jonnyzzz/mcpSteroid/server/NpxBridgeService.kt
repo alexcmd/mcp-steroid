@@ -79,7 +79,7 @@ class NpxBridgeService {
      */
     suspend fun buildWindows(mcpUrl: String): NpxBridgeWindowsResponse {
         val seq = nextSeq()
-        val snapshot = IdeWindowsCollector.collect()
+        val snapshot = service<IdeWindowsCollector>().collect()
         return NpxBridgeWindowsResponse(
             windows = snapshot.windows,
             backgroundTasks = snapshot.backgroundTasks,
