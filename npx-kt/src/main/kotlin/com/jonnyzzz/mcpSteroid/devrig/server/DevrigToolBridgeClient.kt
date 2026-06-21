@@ -28,7 +28,6 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 
 class DevrigToolBridgeClient(
-    val routing: DevrigProjectRoutingService,
     private val httpClient: HttpClient,
 ) {
     /** Fetches the live window/background-task snapshot from a single IDE's bridge `/windows` endpoint. */

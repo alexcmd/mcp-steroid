@@ -197,7 +197,8 @@ class DevrigListToolHandlersTest {
             runBlocking {
                 DevrigListWindowsToolHandler(
                     states = { states },
-                    bridge = DevrigToolBridgeClient(routing, it),
+                    bridge = DevrigToolBridgeClient(it),
+                    routing = routing,
                     inventory = inventory,
                 ).collectListWindowsResponse()
             }

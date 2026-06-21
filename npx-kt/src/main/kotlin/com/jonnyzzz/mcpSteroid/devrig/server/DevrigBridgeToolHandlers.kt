@@ -32,6 +32,7 @@ import kotlinx.serialization.json.put
 class DevrigListWindowsToolHandler(
     private val states: () -> Collection<IdeMonitorState>,
     private val bridge: DevrigToolBridgeClient,
+    private val routing: DevrigProjectRoutingService,
     private val inventory: BackendInventory,
 ) : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse = coroutineScope {
@@ -44,7 +45,7 @@ class DevrigListWindowsToolHandler(
         // window/background-task is rewritten to that route's devrig-exposed project_name so it matches
         // what steroid_list_projects surfaces. The backend_name binds the entry to its source IDE — the
         // same R3.3 id the inventory computes for that IDE's marker row, so entries join backends[] by name.
-        val routesByOwner = bridge.routing.routes().values
+        val routesByOwner = routing.routes().values
             .associateBy { it.idePid to it.originalProjectName }
 
         fun exposedProjectName(idePid: Long, rawProjectName: String?): String? =
@@ -68,6 +69,7 @@ class DevrigListWindowsToolHandler(
 
 class DevrigExecuteCodeToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val routing: DevrigProjectRoutingService,
     private val beacon: DevrigBeacon,
 ) : ExecuteCodeToolHandler {
     override suspend fun executeCode(
@@ -75,7 +77,7 @@ class DevrigExecuteCodeToolHandler(
         execCodeParams: ExecCodeParams,
         callProgress: McpProgressReporter,
     ): ToolCallResult {
-        val route = bridge.routing.requireProject(projectName)
+        val route = routing.requireProject(projectName)
         // Version-base skew check on every routed exec_code call (devrig scenario only; stderr).
         BackendVersionSkew.warnOnExecCode(pid = route.idePid, pluginVersion = route.plugin.version)
         val result = bridge.callProjectTool(route, "steroid_execute_code", callProgress) {
@@ -92,10 +94,11 @@ class DevrigExecuteCodeToolHandler(
 
 class DevrigExecuteFeedbackToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val routing: DevrigProjectRoutingService,
     private val beacon: DevrigBeacon,
 ) : ExecuteFeedbackToolHandler {
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
-        val route = bridge.routing.requireProject(projectName)
+        val route = routing.requireProject(projectName)
         val result = bridge.callProjectTool(route, "steroid_execute_feedback") {
             put("task_id", params.taskId)
             put("success_rating", params.successRating)
@@ -110,13 +113,14 @@ class DevrigExecuteFeedbackToolHandler(
 
 class DevrigVisionScreenshotToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val routing: DevrigProjectRoutingService,
 ) : VisionScreenshotToolHandler {
     override suspend fun screenshotWindow(
         projectName: String,
         screenshotParams: ScreenshotParams,
         mcpProgressReporter: McpProgressReporter,
     ): ToolCallResult {
-        val route = bridge.routing.requireProject(projectName)
+        val route = routing.requireProject(projectName)
         return bridge.callProjectTool(route, "steroid_take_screenshot", mcpProgressReporter) {
             put("task_id", screenshotParams.taskId)
             put("reason", screenshotParams.reason)
@@ -128,9 +132,10 @@ class DevrigVisionScreenshotToolHandler(
 
 class DevrigVisionInputToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val routing: DevrigProjectRoutingService,
 ) : VisionInputToolHandler {
     override suspend fun handleInputSequence(projectName: String, inputParams: InputParams): ToolCallResult {
-        val route = bridge.routing.requireProject(projectName)
+        val route = routing.requireProject(projectName)
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
         return bridge.callProjectTool(route, "steroid_input") {
@@ -145,6 +150,7 @@ class DevrigVisionInputToolHandler(
 
 class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
+    private val routing: DevrigProjectRoutingService,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
         val requestedBackend = openProjectParams.backendName?.trim()?.takeIf { it.isNotEmpty() }
@@ -155,9 +161,9 @@ class DevrigOpenProjectToolHandler(
         // Off the call dispatcher: the managed-pid lookup scans the local backends dir + checks pid liveness.
         val ide = withContext(Dispatchers.IO) {
             if (requestedBackend != null) {
-                bridge.routing.resolveBackend(requestedBackend)
+                routing.resolveBackend(requestedBackend)
             } else {
-                bridge.routing.openProjectTargetIde()
+                routing.openProjectTargetIde()
             }
         }
 
@@ -167,7 +173,7 @@ class DevrigOpenProjectToolHandler(
                 // returns routable marker IDEs, so a miss means the requested name is not a currently routable
                 // backend. Self-correct by listing the routable backend_names; the agent likely copied a
                 // non-routable id (a port-only or not-yet-running managed backend) from `devrig backend --json`.
-                val routable = bridge.routing.discoveredBackends().map { it.first }
+                val routable = routing.discoveredBackends().map { it.first }
                 ToolCallResult.errorResult(
                     "Unknown backend_name '$requestedBackend'. Only running IDEs with the MCP Steroid plugin " +
                         "are routable for open_project; port-only and not-yet-running managed backends listed by " +

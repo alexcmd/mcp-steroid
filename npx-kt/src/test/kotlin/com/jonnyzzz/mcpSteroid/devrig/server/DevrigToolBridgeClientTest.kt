@@ -155,7 +155,6 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         val route = route(tempDir)
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -182,13 +181,13 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 7, projectHome = projectHome),
+                ide = discoveredIde(pid = 7),
                 status = IdeMonitorStatus.CONNECTED,
                 lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
             )
         )
         val route = routing.routes().values.single()
-        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), routing, testBeacon(tempDir))
 
         val result = handler.executeCode(
             projectName = route.exposedProjectName,
@@ -223,13 +222,13 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                ide = discoveredIde(pid = 42),
                 status = IdeMonitorStatus.CONNECTED,
                 lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
             )
         )
         val route = routing.routes().values.single()
-        val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
+        val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(httpClient),routing, testBeacon(tempDir))
 
         val result = handler.handleFeedback(
             projectName = route.exposedProjectName,
@@ -259,13 +258,13 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                ide = discoveredIde(pid = 42),
                 status = IdeMonitorStatus.CONNECTED,
                 lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
             )
         )
         val route = routing.routes().values.single()
-        val handler = DevrigVisionScreenshotToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigVisionScreenshotToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.screenshotWindow(
             projectName = route.exposedProjectName,
@@ -296,18 +295,18 @@ class DevrigToolBridgeClientTest {
         val projectB = Files.createDirectories(tempDir.resolve("project-b"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectA),
+                ide = discoveredIde(pid = 42),
                 status = IdeMonitorStatus.CONNECTED,
                 lastSnapshot = listOf(ProjectInfo("project-a", projectA.toString())),
             ),
             IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = projectB),
+                ide = discoveredIde(pid = 43),
                 status = IdeMonitorStatus.CONNECTED,
                 lastSnapshot = listOf(ProjectInfo("project-b", projectB.toString())),
             ),
         )
         val route = routing.routes().values.single { it.idePid == 43L }
-        val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleInputSequence(
             projectName = route.exposedProjectName,
@@ -336,7 +335,7 @@ class DevrigToolBridgeClientTest {
         @TempDir tempDir: Path,
     ) = runBlocking {
         val routing = routingService()
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
@@ -355,19 +354,17 @@ class DevrigToolBridgeClientTest {
     fun `open project bridge handler forwards to the newest ide when several are discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val olderHome = Files.createDirectories(tempDir.resolve("older"))
-        val newerHome = Files.createDirectories(tempDir.resolve("newer"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = olderHome, build = "IU-253.999", token = "secret-older"),
+                ide = discoveredIde(pid = 42, build = "IU-253.999", token = "secret-older"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
             IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = newerHome, build = "IU-261.1", token = "secret-newer"),
+                ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-newer"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
@@ -387,20 +384,18 @@ class DevrigToolBridgeClientTest {
     fun `open project bridge handler prefers the running managed backend over a newer ide`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val userHome = Files.createDirectories(tempDir.resolve("user"))
-        val managedHome = Files.createDirectories(tempDir.resolve("managed"))
         val routing = routingService(
             managedPids = setOf(43L),
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = userHome, build = "IU-261.9", token = "secret-user"),
+                ide = discoveredIde(pid = 42, build = "IU-261.9", token = "secret-user"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
             IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = managedHome, build = "IU-253.1", token = "secret-managed"),
+                ide = discoveredIde(pid = 43, build = "IU-253.1", token = "secret-managed"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
@@ -418,15 +413,14 @@ class DevrigToolBridgeClientTest {
     fun `open project bridge handler forwards request when exactly one ide is discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                ide = discoveredIde(pid = 42),
                 status = IdeMonitorStatus.CONNECTED,
             )
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
@@ -450,21 +444,19 @@ class DevrigToolBridgeClientTest {
     fun `open project routes to the backend named by backend_name and does not forward it`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val homeA = Files.createDirectories(tempDir.resolve("a"))
-        val homeB = Files.createDirectories(tempDir.resolve("b"))
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             // pid 43 is the newer build (auto-pick would choose it); the backend_name for pid 42 must override.
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = homeA, build = "IU-253.1", token = "secret-42"),
+                ide = discoveredIde(pid = 42, build = "IU-253.1", token = "secret-42"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
             IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = homeB, build = "IU-261.1", token = "secret-43"),
+                ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-43"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
@@ -492,20 +484,18 @@ class DevrigToolBridgeClientTest {
     fun `open project with unknown backend_name returns an error listing routable backends`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val homeA = Files.createDirectories(tempDir.resolve("a"))
-        val homeB = Files.createDirectories(tempDir.resolve("b"))
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = homeA, token = "secret-42"),
+                ide = discoveredIde(pid = 42, token = "secret-42"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
             IdeMonitorState(
-                ide = discoveredIde(pid = 43, projectHome = homeB, token = "secret-43"),
+                ide = discoveredIde(pid = 43, token = "secret-43"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val unknown = backendNameForMarker(999L, "IU-261.1")
         val result = handler.handleOpenProject(
@@ -531,15 +521,14 @@ class DevrigToolBridgeClientTest {
     fun `open project with a non-routable backend_name explains only running plugin IDEs are routable`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val homeA = Files.createDirectories(tempDir.resolve("a"))
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = homeA, token = "secret-42"),
+                ide = discoveredIde(pid = 42, token = "secret-42"),
                 status = IdeMonitorStatus.CONNECTED,
             ),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(routing, httpClient))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         // A backend_name the agent might have copied from `devrig backend --json` for a port-only / managed
         // backend: it is not a routable marker, so resolveBackend misses and the error self-corrects.
@@ -568,12 +557,12 @@ class DevrigToolBridgeClientTest {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
         val stateA = IdeMonitorState(
-            ide = discoveredIde(pid = 42, projectHome = homeA, build = "IU-261.1"),
+            ide = discoveredIde(pid = 42, build = "IU-261.1"),
             status = IdeMonitorStatus.CONNECTED,
             lastSnapshot = listOf(ProjectInfo("alpha", homeA.toString())),
         )
         val stateB = IdeMonitorState(
-            ide = discoveredIde(pid = 43, projectHome = homeB, build = "IU-253.9"),
+            ide = discoveredIde(pid = 43, build = "IU-253.9"),
             status = IdeMonitorStatus.CONNECTED,
             lastSnapshot = listOf(ProjectInfo("beta", homeB.toString())),
         )
@@ -625,7 +614,7 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         // A real directory so toRealPath() (used by both code paths to salt the hash) succeeds identically.
         val projectHome = Files.createDirectories(tempDir.resolve("my-app"))
-        val ide = discoveredIde(pid = 4242L, projectHome = projectHome, build = "IU-261.1")
+        val ide = discoveredIde(pid = 4242L, build = "IU-261.1")
         val state = IdeMonitorState(
             ide = ide,
             status = IdeMonitorStatus.CONNECTED,
@@ -640,7 +629,7 @@ class DevrigToolBridgeClientTest {
 
         // CLI surface — the same marker + project rendered by `devrig project --json`.
         val rows = listOf(
-            com.jonnyzzz.mcpSteroid.devrig.BackendRow.FromMarker(
+            BackendRow.FromMarker(
                 ide = ide,
                 projects = listOf(ProjectInfo("my-app", projectHome.toString())),
             ),
@@ -673,14 +662,14 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                ide = discoveredIde(pid = 42, projectHome = projectHome),
+                ide = discoveredIde(pid = 42),
                 status = IdeMonitorStatus.CONNECTED,
                 lastSnapshot = listOf(ProjectInfo("original-project", projectHome.toString())),
             )
         )
         val route = routing.routes().values.single()
         val progressMessages = mutableListOf<String>()
-        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(routing, httpClient), testBeacon(tempDir))
+        val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), routing, testBeacon(tempDir))
 
         val result = handler.executeCode(
             projectName = route.exposedProjectName,
@@ -717,7 +706,6 @@ class DevrigToolBridgeClientTest {
             holdStreamEntered = CompletableDeferred()
             holdStreamRelease = CompletableDeferred()
             val bridge = DevrigToolBridgeClient(
-                routing = DevrigProjectRoutingService { emptyMap() },
                 httpClient = httpClient,
             )
             val result = async {
@@ -752,7 +740,6 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         streamResponse = "{not json}\n"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -770,7 +757,6 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         streamResponse = """{"type":"error","message":"upstream failed"}""" + "\n"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -789,7 +775,6 @@ class DevrigToolBridgeClientTest {
         httpStatus = HttpStatusCode.Unauthorized
         httpBody = "bad token"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -810,7 +795,6 @@ class DevrigToolBridgeClientTest {
         httpStatus = HttpStatusCode.InternalServerError
         httpBody = "bridge exploded"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -829,7 +813,6 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         streamResponse = """{"type":"result"}""" + "\n"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -847,7 +830,6 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         streamResponse = """{"type":"progress","message":"still running"}""" + "\n"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -871,7 +853,6 @@ class DevrigToolBridgeClientTest {
                 """{"type":"future","message":"ignored"}""" + "\n" +
                 """{"type":"result","result": ${McpJson.encodeToJsonElement(ToolCallResult.serializer(), resultBody)}}""" + "\n"
         val bridge = DevrigToolBridgeClient(
-            routing = DevrigProjectRoutingService { emptyMap() },
             httpClient = httpClient,
         )
 
@@ -921,7 +902,6 @@ class DevrigToolBridgeClientTest {
 
     private fun discoveredIde(
         pid: Long,
-        projectHome: Path,
         build: String = "IU-261.1",
         token: String = "secret-token",
     ): DiscoveredIde =
