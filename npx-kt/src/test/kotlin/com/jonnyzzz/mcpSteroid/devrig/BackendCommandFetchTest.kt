@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.server.NPX_NDJSON_MIME_TYPE
@@ -39,6 +37,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.isActive
 
 /**
  * Wire-level coverage for the `backend` subcommand's fetcher. Spins up an
@@ -79,7 +78,7 @@ class BackendCommandFetchTest {
                         // Hold the connection open until cancelled — that's what the
                         // real IDE does, and the backend command must close the
                         // connection itself the moment it has the snapshot.
-                        while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                        while (isActive) {
                             delay(50.milliseconds)
                         }
                     }
@@ -124,26 +123,13 @@ class BackendCommandFetchTest {
 
     private fun ide(token: String = "deadbeef", overrideUrl: String? = null): DiscoveredIde {
         val mcpUrl = overrideUrl ?: "http://127.0.0.1:$port/mcp"
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = 1234L,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = mcpUrl,
-                headers = mapOf("Authorization" to "Bearer $token"),
-            ),
-            devrigEndpoint = testDevrigEndpoint(mcpUrl, mapOf("Authorization" to "Bearer $token")),
-            ide = IdeInfo("FakeIDE", "x", "y"),
-            plugin = PluginInfo("x", "y", "z"),
-            createdAt = "1970-01-01T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = 1234L,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
-            markerPath = "/tmp/1234.mcp-steroid",
-            marker = marker,
+            ide = IdeInfo("FakeIDE", "x", "y"),
+            plugin = PluginInfo("x", "y", "z"),
+            backendName = "mock-backend-name",
         )
     }
 

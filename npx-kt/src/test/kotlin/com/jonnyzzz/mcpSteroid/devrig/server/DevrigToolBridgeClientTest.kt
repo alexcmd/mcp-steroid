@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
@@ -932,21 +930,9 @@ class DevrigToolBridgeClientTest {
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
-            markerPath = projectHome.resolve("$pid.mcp-steroid").toString(),
-            marker = PidMarker(
-                schema = PidMarker.SCHEMA_VERSION,
-                pid = pid,
-                mcpSteroidServer = McpSteroidServerInfo(
-                    mcpUrl = "http://127.0.0.1:$port/mcp",
-                    headers = mapOf("Authorization" to "Bearer $token"),
-                ),
-                devrigEndpoint = testDevrigEndpoint("http://127.0.0.1:$port/mcp", mapOf("Authorization" to "Bearer $token")),
-                ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
-                plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-                createdAt = "2026-05-17T00:00:00Z",
-                intellijWebServer = null,
-                intellijMcpServer = null,
-            ),
+            ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
+            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+            backendName = "mock-backend-name",
         )
 
     private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =

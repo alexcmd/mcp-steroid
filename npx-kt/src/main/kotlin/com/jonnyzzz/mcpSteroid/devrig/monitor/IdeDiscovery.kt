@@ -1,8 +1,11 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.monitor
 
+import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -27,24 +30,33 @@ import kotlin.time.Duration.Companion.seconds
  * (pid + mcpUrl) so [IdeDiscoveryService] can compare snapshots cheaply.
  */
 data class DiscoveredIde(
+    val backendName: String,
+
+    @Deprecated("Use backend_name")
     val pid: Long,
+
     /**
-     * Full base URL of the IDE's devrig bridge, read verbatim from the marker's
-     * [PidMarker.devrigEndpoint] (`rpcBaseUrl`). devrig appends only operation suffixes
-     * (`/tools/call/stream`, `/projects/stream`, `/windows`) — it never derives this from the MCP URL
-     * and never touches the `/mcp` MCP-client endpoint.
+     * Full base URL of the IDE's devrig bridge that support MCP Steroid communication
      */
     val rpcBaseUrl: String,
+
     /** Headers the bridge requires on every request, from [PidMarker.devrigEndpoint] (auth-scheme-agnostic). */
     val bridgeHeaders: Map<String, String>,
-    /** Filename of the marker, useful when logging which file we picked up. */
-    val markerPath: String,
-    /** The full decoded marker — kept around for the IDE's [PidMarker.ide] / [PidMarker.plugin] metadata. */
-    val marker: PidMarker,
+
+    /**
+     * Information of the IDE instance of this backend
+     */
+    val ide: IdeInfo,
+
+    /**
+     * Information of the MCP Streroid plugin instance of this backend
+     */
+    val plugin: PluginInfo,
 ) {
     /** Stable, human-friendly identifier used in logs (`IntelliJ IDEA pid=12345`). */
+    @Deprecated("Use backend_name")
     val label: String
-        get() = "${marker.ide.name} pid=$pid"
+        get() = "${ide.name} pid=$pid"
 }
 
 /**
@@ -100,7 +112,9 @@ class IdeDiscoveryService(
             if (!file.isRegularFile()) continue
             val pid = PidMarker.pidFromFileName(file.name) ?: continue
             if (!ProcessHandle.of(pid).isPresent) continue
-            val text = try { file.readText() } catch (e: Exception) {
+            val text = try {
+                file.readText()
+            } catch (e: Exception) {
                 log.warn("Failed to read marker file {}: {}", file, e.message)
                 continue
             }
@@ -130,11 +144,14 @@ class IdeDiscoveryService(
                 continue
             }
             out += DiscoveredIde(
+                backendName = backendNameForMarker(pid, marker.ide.build),
+
                 pid = pid,
+
                 rpcBaseUrl = devrigEndpoint.rpcBaseUrl,
                 bridgeHeaders = devrigEndpoint.headers,
-                markerPath = file.toString(),
-                marker = marker,
+                ide = marker.ide,
+                plugin = marker.plugin,
             )
         }
         return out

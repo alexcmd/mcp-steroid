@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.ideDownloader.HostOs
 import com.jonnyzzz.mcpSteroid.devrig.monitor.AboutResponse
@@ -418,26 +416,13 @@ class BackendProvisionTest {
         build: String = "IU-261.23567.138",
         mcpUrl: String = "http://localhost:6315/mcp",
     ): DiscoveredIde {
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = mcpUrl,
-                headers = emptyMap(),
-            ),
-            devrigEndpoint = testDevrigEndpoint(mcpUrl),
-            ide = IdeInfo(name = name, version = version, build = build),
-            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
-            createdAt = "1970-01-01T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = emptyMap(),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = IdeInfo(name = name, version = version, build = build),
+            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
+            backendName = "mock-backend-name",
         )
     }
 

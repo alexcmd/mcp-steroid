@@ -22,7 +22,6 @@ import java.io.PrintStream
 import java.util.UUID
 import kotlin.system.measureTimeMillis
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -33,7 +32,6 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
@@ -108,12 +106,8 @@ sealed interface BackendRow {
  *     reachable through their built-in HTTP server, including older ones
  *     that never wrote a marker.
  *
- * Renders one block per IDE on [out]. Exit status is always 0: "no IDE was
+ * Renders one block per IDE on out. Exit status is always 0: "no IDE was
  * running" is a steady state on most machines, not a CLI error.
- *
- * @param json `true` ⇒ emit a single machine-readable JSON object instead of
- *  the human-readable list. The JSON is pretty-printed so a human can
- *  still read it without `jq`; `jq` accepts both forms equally.
  */
 fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend): Int {
     val rows = collectBackendRows()
@@ -418,7 +412,7 @@ fun mergeRows(
     // Normalise both ends to the same shape before comparing — otherwise the
     // same running IDE is never deduplicated.
     val markerBuilds: Set<String> = markerRows
-        .mapNotNull { normaliseBuildForDedup(it.ide.marker.ide.build) }
+        .mapNotNull { normaliseBuildForDedup(it.ide.ide.build) }
         .toSet()
     val markerManagedIds = markerRows.associateWith { row -> matchingManagedIds(row, managedBackends) }
     val annotatedMarkerRows = markerRows.map { row ->
@@ -553,7 +547,7 @@ private suspend fun fetchFirstSnapshot(
             if (line.isBlank()) continue
             val env = try {
                 NpxStreamJson.decodeEnvelope(line)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Skip malformed envelopes; the snapshot is on a later line.
                 continue
             }
@@ -593,7 +587,7 @@ private fun backendCommandClientInfo(): NpxStreamClientInfo =
  *         (project list unavailable)
  *
  * ```
- * The list uses `[N]` index markers so it visibly is a list, and the trailing
+ * The list uses `N` index markers so it visibly is a list, and the trailing
  * blank line gives shells a clean separator.
  */
 fun renderBackendOutput(rows: List<BackendRow>, out: PrintStream) {
@@ -708,7 +702,7 @@ private fun listedProjectsForRow(backendName: String, row: BackendRow): List<Lis
 
 /**
  * Devrig-exposed disambiguated project name = `<name>-<projectHash>`, where `projectHash` salts on the
- * canonical project home + the owning IDE pid (same scheme as [DevrigProjectRoutingService]). Falls back
+ * canonical project home + the owning IDE pid (same scheme as `DevrigProjectRoutingService`). Falls back
  * to the raw folder name when the path cannot be canonicalized (e.g. an already-closed project), so the
  * CLI never crashes mid-render.
  */

@@ -11,10 +11,10 @@ import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
 import com.jonnyzzz.mcpSteroid.server.WindowInfo
+import java.io.IOException
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.time.Instant
 
 class DevrigProjectRoutingService(
     private val stateProvider: () -> Map<Long, IdeMonitorState>,
@@ -68,11 +68,6 @@ class DevrigProjectRoutingService(
         return task.copy(projectName = route.exposedProjectName)
     }
 
-    fun singleRouteOrNull(): ProjectRoute? {
-        val routes = routes().values.toList()
-        return if (routes.size == 1) routes.single() else null
-    }
-
     /**
      * Picks the IDE that should receive `steroid_open_project`.
      *
@@ -108,7 +103,7 @@ class DevrigProjectRoutingService(
      * --json`, so the id surfaced there is the one accepted here.
      */
     fun backendNameForIde(ide: DiscoveredIde): String =
-        backendNameForMarker(pid = ide.pid, build = ide.marker.ide.build)
+        backendNameForMarker(pid = ide.pid, build = ide.ide.build)
 
     /**
      * Resolves a `backend_name` (as listed by steroid_list_projects / `devrig backend --json`) to its
@@ -164,8 +159,8 @@ class DevrigProjectRoutingService(
             projectPath = project.path,
             realProjectHome = realHome,
             projectHash = projectHash,
-            ide = ide.marker.ide,
-            plugin = ide.marker.plugin,
+            ide = ide.ide,
+            plugin = ide.plugin,
         )
     }
 
@@ -189,25 +184,16 @@ class DevrigProjectRoutingService(
          */
         private val NEWEST_IDE_FIRST: Comparator<DiscoveredIde> = Comparator { left, right ->
             val byBuild = compareBackendVersions(
-                stripProductCode(left.marker.ide.build),
-                stripProductCode(right.marker.ide.build),
+                stripProductCode(left.ide.build),
+                stripProductCode(right.ide.build),
             )
             if (byBuild != 0) return@Comparator byBuild
-            val byCreatedAt = compareValuesBy(left, right) { parseCreatedAtOrMin(it.marker.createdAt) }
-            if (byCreatedAt != 0) return@Comparator byCreatedAt
             left.pid.compareTo(right.pid)
         }
 
         private val PRODUCT_CODE_PREFIX = Regex("^[A-Za-z]+-")
 
         private fun stripProductCode(build: String): String = build.replaceFirst(PRODUCT_CODE_PREFIX, "")
-
-        private fun parseCreatedAtOrMin(value: String): Instant =
-            try {
-                Instant.parse(value)
-            } catch (e: Exception) {
-                Instant.MIN
-            }
 
         /**
          * Canonicalizes a project home for routing/hash purposes. `toRealPath()` resolves symlinks but
@@ -219,7 +205,7 @@ class DevrigProjectRoutingService(
             val path = Path.of(projectHome)
             return try {
                 path.toRealPath()
-            } catch (e: java.io.IOException) {
+            } catch (_: IOException) {
                 path.toAbsolutePath().normalize()
             }
         }

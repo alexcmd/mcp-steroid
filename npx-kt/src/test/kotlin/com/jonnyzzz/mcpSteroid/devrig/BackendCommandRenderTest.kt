@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
@@ -41,26 +39,13 @@ class BackendCommandRenderTest {
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = mcpUrl,
-                headers = emptyMap(),
-            ),
-            devrigEndpoint = testDevrigEndpoint(mcpUrl),
-            ide = ideInfo,
-            plugin = pluginInfo,
-            createdAt = "1970-01-01T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = emptyMap(),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = ideInfo,
+            plugin = pluginInfo,
+            backendName = "mock-backend-name",
         )
     }
 
@@ -286,7 +271,7 @@ class BackendCommandRenderTest {
         val text = render(rows)
         // Port-discovered IDEs surface productFullName as the display header
         // (it already carries the marketing version from /api/about). The build
-        // number lives in the locator parens so the line doesn't double up on
+        // number lives in the locator parens, so the line doesn't double up on
         // version-like tokens.
         assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342) (run: devrig backend provision port-63342)"),
             "expected the full IDE header line; got:\n$text")
@@ -306,7 +291,7 @@ class BackendCommandRenderTest {
     @Test
     fun `port-discovered IDE drops build segment from the locator when buildNumber is null`() {
         // When the IDE doesn't expose a build number (some older builds), the
-        // locator should NOT print an empty `build , port N`. Just port.
+        // locator should NOT print an empty `build, port N`. Just port.
         val rows = listOf(BackendRow.FromPort(portIde(buildNumber = null)))
         val text = render(rows)
         assertTrue(text.contains("(port 63342) (run: devrig backend provision port-63342)"),
@@ -351,7 +336,7 @@ class BackendCommandRenderTest {
         // Numbered entries with an exclusive blank-line separator between them.
         val entry1 = text.indexOf("[1]")
         val entry2 = text.indexOf("[2]")
-        assertTrue(entry1 >= 0 && entry2 > entry1, "expected two numbered entries; got:\n$text")
+        assertTrue(entry1 in 0..<entry2, "expected two numbered entries; got:\n$text")
         val between = text.substring(entry1, entry2)
         assertTrue(between.contains("\n\n"),
             "expected at least one blank line between [1] and [2]; got slice:\n$between")

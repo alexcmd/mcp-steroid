@@ -6,8 +6,6 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
@@ -83,26 +81,13 @@ class BackendCommandJsonRenderTest {
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
-        val marker = PidMarker(
-            schema = PidMarker.SCHEMA_VERSION,
-            pid = pid,
-            mcpSteroidServer = McpSteroidServerInfo(
-                mcpUrl = mcpUrl,
-                headers = mapOf("Authorization" to "Bearer $token"),
-            ),
-            devrigEndpoint = testDevrigEndpoint(mcpUrl, mapOf("Authorization" to "Bearer $token")),
-            ide = ideInfo,
-            plugin = pluginInfo,
-            createdAt = "1970-01-01T00:00:00Z",
-            intellijWebServer = null,
-            intellijMcpServer = null,
-        )
         return DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = ideInfo,
+            plugin = pluginInfo,
+            backendName = "mock-backend-name",
         )
     }
 
@@ -197,7 +182,7 @@ class BackendCommandJsonRenderTest {
 
         // The marker's IdeInfo type stays on the disk/wire side: the agent schema carries the
         // identity only as displayName/build/ideProductCode — no embedded `ide` object.
-        assertNull(backend["ide"], "agent schema must not embed the marker IdeInfo: " + backend)
+        assertNull(backend["ide"], "agent schema must not embed the marker IdeInfo: $backend")
 
         // plugins[] carries one entry tagged kind=mcp-steroid (replaces the old `plugin` block + flag).
         val plugin = backend["plugins"]!!.jsonArray.single().jsonObject

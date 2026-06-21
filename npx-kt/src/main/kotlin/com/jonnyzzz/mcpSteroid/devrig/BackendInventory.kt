@@ -80,7 +80,7 @@ fun cliBackendInventory(services: DevrigServices): BackendInventory = BackendInv
     markerRows = {
         services.ideDiscovery.scanOnce()
         val ides = services.ideDiscovery.ides.value
-            .sortedWith(compareBy({ it.marker.ide.name }, { it.pid }))
+            .sortedWith(compareBy({ it.ide.name }, { it.pid }))
         collectMarkerSnapshots(
             httpClient = services.commandHttpClient,
             ides = ides,
@@ -99,7 +99,7 @@ fun cliBackendInventory(services: DevrigServices): BackendInventory = BackendInv
 fun monitorBackendInventory(services: DevrigServices): BackendInventory = BackendInventory(
     markerRows = {
         services.ideMonitor.states.value.values
-            .sortedWith(compareBy({ it.ide.marker.ide.name }, { it.ide.pid }))
+            .sortedWith(compareBy({ it.ide.ide.name }, { it.ide.pid }))
             .map { state -> BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot) }
     },
     portIdes = { boundedPortScan(services.portDiscovery) },

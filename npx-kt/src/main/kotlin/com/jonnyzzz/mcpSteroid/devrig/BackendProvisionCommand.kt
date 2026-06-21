@@ -156,7 +156,7 @@ fun filterAlreadyProvisionedTargets(
     markerRows: Set<DiscoveredIde>,
 ): List<ProvisionTarget> {
     val markerBuilds = markerRows
-        .mapNotNull { normaliseBuildForDedup(it.marker.ide.build) }
+        .mapNotNull { normaliseBuildForDedup(it.ide.build) }
         .toSet()
     return targets.filter { target ->
         val build = normaliseBuildForDedup(target.ide.buildNumber)

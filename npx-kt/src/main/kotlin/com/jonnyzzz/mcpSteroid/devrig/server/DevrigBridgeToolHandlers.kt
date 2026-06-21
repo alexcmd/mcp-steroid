@@ -48,7 +48,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 
 class DevrigListWindowsToolHandler(
     private val states: () -> Collection<IdeMonitorState>,
@@ -78,11 +77,11 @@ class DevrigListWindowsToolHandler(
         // the inventory computes for that IDE's marker row, so entries join backends[] by name.
         ListWindowsResponse(
             windows = responses.flatMap { (state, response) ->
-                val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
+                val backendName = backendNameForMarker(state.ide.pid, state.ide.ide.build)
                 response.windows.map { routing.rewriteWindow(state.ide.pid, it).listed(backendName) }
             },
             backgroundTasks = responses.flatMap { (state, response) ->
-                val backendName = backendNameForMarker(state.ide.pid, state.ide.marker.ide.build)
+                val backendName = backendNameForMarker(state.ide.pid, state.ide.ide.build)
                 response.backgroundTasks.map { routing.rewriteBackgroundTask(state.ide.pid, it).listed(backendName) }
             },
             backends = inventory.collectBackendInfos(),
@@ -219,8 +218,8 @@ class DevrigOpenProjectToolHandler(
             projectPath = "",
             realProjectHome = java.nio.file.Path.of(".").toAbsolutePath().normalize(),
             projectHash = "",
-            ide = ide.marker.ide,
-            plugin = ide.marker.plugin,
+            ide = ide.ide,
+            plugin = ide.plugin,
         )
         return bridge.callTool(route, "steroid_open_project") {
             put("project_path", openProjectParams.projectPath)
@@ -302,8 +301,6 @@ class JsonObjectBuilder(private val target: kotlinx.serialization.json.JsonObjec
     fun put(key: String, value: Double) = target.put(key, value)
     fun put(key: String, value: Boolean) = target.put(key, value)
     fun put(key: String, value: JsonElement) = target.put(key, value)
-    fun putJsonArray(key: String, builder: kotlinx.serialization.json.JsonArrayBuilder.() -> Unit) =
-        target.putJsonArray(key, builder)
 }
 
 suspend fun readNdjson(

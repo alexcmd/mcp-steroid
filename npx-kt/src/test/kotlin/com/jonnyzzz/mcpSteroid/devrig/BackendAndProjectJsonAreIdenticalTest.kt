@@ -66,8 +66,9 @@ class BackendAndProjectJsonAreIdenticalTest {
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = emptyMap(),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = marker,
+            ide = ideInfo,
+            plugin = pluginInfo,
+            backendName = "mock-backend-name"
         )
     }
 

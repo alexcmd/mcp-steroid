@@ -2,8 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
-import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
@@ -529,20 +527,8 @@ class DevrigProjectRoutingServiceTest {
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer secret-$pid"),
-            markerPath = "/tmp/$pid.mcp-steroid",
-            marker = PidMarker(
-                schema = PidMarker.SCHEMA_VERSION,
-                pid = pid,
-                mcpSteroidServer = McpSteroidServerInfo(
-                    mcpUrl = "http://127.0.0.1:4343/mcp",
-                    headers = mapOf("Authorization" to "Bearer secret-$pid"),
-                ),
-                devrigEndpoint = testDevrigEndpoint("http://127.0.0.1:4343/mcp", mapOf("Authorization" to "Bearer secret-$pid")),
-                ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
-                plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-                createdAt = createdAt,
-                intellijWebServer = null,
-                intellijMcpServer = null,
-            ),
+            ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
+            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+            backendName = "mock-backend-name",
         )
 }

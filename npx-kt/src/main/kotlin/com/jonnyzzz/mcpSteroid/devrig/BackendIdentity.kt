@@ -10,13 +10,11 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-const val BACKEND_TYPE_INTELLIJ = "intellij"
-
 fun markerBackendDisplayName(ide: DiscoveredIde): String =
-    markerDisplayName(ide.marker.ide)
+    markerDisplayName(ide.ide)
 
 fun markerBackendLocatorLabel(ide: DiscoveredIde): String =
-    markerLocator(ide.marker.ide.build, ide.pid)
+    markerLocator(ide.ide.build, ide.pid)
 
 fun portBackendDisplayName(ide: DiscoveredIdeByPort): String =
     ide.productFullName ?: ide.productName ?: "(unknown JetBrains IDE)"
@@ -40,7 +38,7 @@ fun backendLocatorLabel(row: BackendRow): String = when (row) {
 
 fun backendPluginStatusText(row: BackendRow): String = when (row) {
     is BackendRow.FromMarker -> {
-        val plugin = row.ide.marker.plugin
+        val plugin = row.ide.plugin
         "${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}"
     }
     is BackendRow.FromPort,
