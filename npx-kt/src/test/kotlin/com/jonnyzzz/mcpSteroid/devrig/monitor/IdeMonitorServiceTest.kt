@@ -7,6 +7,7 @@ import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
+import com.jonnyzzz.mcpSteroid.devrig.waitForValue
 import com.jonnyzzz.mcpSteroid.server.NPX_NDJSON_MIME_TYPE
 import com.jonnyzzz.mcpSteroid.server.NPX_PROJECTS_STREAM_PATH
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
@@ -31,7 +32,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
@@ -49,12 +49,13 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.isActive
 
 /**
  * End-to-end round-trip: a tiny Ktor server stands in for the IDE, we point
  * an [IdeDiscoveryService] at a fake `~/.mcp-steroid/markers/<pid>.mcp-steroid` marker, and
  * verify that [IdeMonitorService] connects, receives the IDE's snapshot
- * envelopes, and updates [IdeMonitorService.states].
+ * envelopes, and updates [IdeMonitorService.stateSnapshot].
  */
 class IdeMonitorServiceTest {
 
@@ -93,7 +94,7 @@ class IdeMonitorServiceTest {
                         // Hold the connection open until cancelled — production
                         // semantics are "stream stays open forever". The test
                         // tears the server down to drop the connection.
-                        while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                        while (isActive) {
                             delay(50.milliseconds)
                         }
                     }
@@ -146,11 +147,12 @@ class IdeMonitorServiceTest {
         discovery.start(scope)
         monitor.start(scope)
 
-        val state = withTimeout(10.seconds) {
-            monitor.states.first { it[ourPid]?.lastSnapshot?.isNotEmpty() == true }
+        val ide = waitForValue(10.seconds.inWholeMilliseconds) {
+            monitor.stateSnapshot().firstOrNull {
+                it.ide.pid == ourPid && it.lastSnapshot.isNotEmpty()
+            }
         }
 
-        val ide = state.getValue(ourPid)
         assertEquals(IdeMonitorStatus.CONNECTED, ide.status)
         assertEquals(listOf(ProjectInfo("alpha", "/p/alpha")), ide.lastSnapshot)
         assertEquals(instanceId, ide.ideInstanceId)
@@ -196,13 +198,12 @@ class IdeMonitorServiceTest {
         // reconnectBackoff plus client/server warmup, 10s left no slack.
         // 30s is still well under the JUnit suite default and matches the
         // other tests in this class.
-        val finalState = withTimeout(30.seconds) {
-            monitor.states.first { state ->
-                val snap = state[ourPid]?.lastSnapshot
-                snap?.singleOrNull()?.name == "b"
+        val finalState = waitForValue(30.seconds.inWholeMilliseconds) {
+            monitor.stateSnapshot().firstOrNull { state ->
+                state.ide.pid == ourPid && state.lastSnapshot.singleOrNull()?.name == "b"
             }
         }
-        assertEquals(listOf(ProjectInfo("b", "/p/b")), finalState.getValue(ourPid).lastSnapshot)
+        assertEquals(listOf(ProjectInfo("b", "/p/b")), finalState.lastSnapshot)
     }
 
     private fun writeMarker(homeDir: Path, port: Int, token: String = "deadbeef") {

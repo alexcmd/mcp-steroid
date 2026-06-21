@@ -68,7 +68,7 @@ class DevrigOpenProjectBackendRoutingTest {
                 lastSnapshot = emptyList(),
             )
         }
-        return DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+        return DevrigProjectRoutingService ({ states }, {emptySet()})
     }
 
     private fun discoveredIde(pid: Long): DiscoveredIde =

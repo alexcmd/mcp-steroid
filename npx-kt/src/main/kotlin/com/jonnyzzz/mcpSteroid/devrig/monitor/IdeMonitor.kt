@@ -25,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
@@ -32,7 +33,7 @@ import org.slf4j.LoggerFactory
 enum class IdeMonitorStatus { CONNECTING, CONNECTED, RECONNECTING }
 
 /**
- * Per-IDE monitoring state held by [IdeMonitorService.states].
+ * Per-IDE monitoring state held by [IdeMonitorService.stateSnapshot].
  * Re-emitted on every status / snapshot change.
  */
 data class IdeMonitorState(
@@ -58,7 +59,7 @@ data class IdeMonitorState(
  *  - When an IDE is removed from the discovery set, its child coroutine is
  *    cancelled (its connection drops).
  *  - On any connection error, the child loops with [reconnectBackoff].
- *  - State is exposed via [states] keyed by pid.
+ *  - State is exposed via [stateSnapshot] keyed by pid.
  */
 class IdeMonitorService(
     private val httpClient: HttpClient,
@@ -72,7 +73,10 @@ class IdeMonitorService(
     private val log = LoggerFactory.getLogger(IdeMonitorService::class.java)
 
     private val _states = MutableStateFlow<Map<Long, IdeMonitorState>>(emptyMap())
-    val states: StateFlow<Map<Long, IdeMonitorState>> = _states.asStateFlow()
+
+    fun stateSnapshot() : List<IdeMonitorState> {
+        return _states.value.values.toList()
+    }
 
     fun start(scope: CoroutineScope): Job {
         val workers: MutableMap<Long, Job> = mutableMapOf()

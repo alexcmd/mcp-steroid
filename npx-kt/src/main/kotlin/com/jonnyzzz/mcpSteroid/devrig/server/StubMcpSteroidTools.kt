@@ -28,7 +28,7 @@ class StubMcpSteroidTools(
 
     private val listWindows by lazy {
         DevrigListWindowsToolHandler(
-            states = { services.ideMonitor.states.value.values },
+            states = { services.ideMonitor.stateSnapshot() },
             bridge = bridge,
             inventory = services.backendInventory,
             routing = services.projectRouting,

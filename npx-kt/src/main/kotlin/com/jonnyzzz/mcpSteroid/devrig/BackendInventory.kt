@@ -98,7 +98,7 @@ fun cliBackendInventory(services: DevrigServices): BackendInventory = BackendInv
  */
 fun monitorBackendInventory(services: DevrigServices): BackendInventory = BackendInventory(
     markerRows = {
-        services.ideMonitor.states.value.values
+        services.ideMonitor.stateSnapshot()
             .sortedWith(compareBy({ it.ide.ide.name }, { it.ide.pid }))
             .map { state -> BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot) }
     },

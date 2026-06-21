@@ -27,7 +27,7 @@ class DevrigListWindowsToolHandler(
         // what steroid_list_projects surfaces. The backend_name binds the entry to its source IDE — the
         // same R3.3 id the inventory computes for that IDE's marker row, so entries join backends[] by name.
         val routesByOwner = routing.routes().values
-            .associateBy { it.idePid to it.originalProjectName }
+            .associateBy { it.route.pid to it.originalProjectName }
 
         fun exposedProjectName(idePid: Long, rawProjectName: String?): String? =
             rawProjectName?.let { routesByOwner[idePid to it]?.exposedProjectName ?: it }

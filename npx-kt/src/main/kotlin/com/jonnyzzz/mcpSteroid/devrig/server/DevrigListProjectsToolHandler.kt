@@ -18,7 +18,7 @@ class DevrigListProjectsToolHandler(
         // inventory computes for its marker rows (both use backendNameForMarker(pid, build)).
         val backendNameByPid = routing.discoveredBackends().associate { (name, ide) -> ide.pid to name }
         val listedProjects = routes.mapNotNull { route ->
-            val backendName = backendNameByPid[route.idePid] ?: return@mapNotNull null
+            val backendName = backendNameByPid[route.route.pid] ?: return@mapNotNull null
             ListedProject(
                 projectName = route.exposedProjectName,
                 name = route.originalProjectName,

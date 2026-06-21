@@ -15,7 +15,7 @@ import java.nio.file.Path
 import java.security.MessageDigest
 
 class DevrigProjectRoutingService(
-    private val stateProvider: () -> Map<Long, IdeMonitorState>,
+    private val stateProvider: () -> Collection<IdeMonitorState>,
     /**
      * Pids of IDEs started and owned by devrig as managed backends (`devrig backend start`).
      * Used by [openProjectTargetIde] to land open_project in the agent's own backend rather than
@@ -23,16 +23,14 @@ class DevrigProjectRoutingService(
      */
     private val managedRunningPids: () -> Set<Long>,
 ) {
-    /** No managed-backend awareness — open_project falls back to the newest discovered IDE. */
-    constructor(stateProvider: () -> Map<Long, IdeMonitorState>) : this(stateProvider, { emptySet() })
 
     private val log = LoggerFactory.getLogger(DevrigProjectRoutingService::class.java)
 
     fun routes(): Map<String, ProjectRoute> {
         val routes = linkedMapOf<String, ProjectRoute>()
-        for ((pid, state) in stateProvider()) {
+        for (state in stateProvider()) {
             for (project in state.lastSnapshot) {
-                val route = projectRoute(pid, state.ide, project)
+                val route = projectRoute(state.ide.pid, state.ide, project)
                 routes[route.exposedProjectName] = route
             }
         }
@@ -121,7 +119,7 @@ class DevrigProjectRoutingService(
     }
 
     private fun discoveredIdes(): List<DiscoveredIde> =
-        stateProvider().values.map { it.ide }.distinctBy { it.pid }
+        stateProvider().map { it.ide }.distinctBy { it.pid }
 
     private fun newestOf(ides: List<DiscoveredIde>): DiscoveredIde? = ides.maxWithOrNull(NEWEST_IDE_FIRST)
 
@@ -191,13 +189,7 @@ data class ProjectRoute(
     val originalProjectName: String,
     val exposedProjectName: String,
     val projectPath: String,
-) {
-    val idePid: Long get() = route.pid
-    val plugin: PluginInfo get() = route.plugin
-    val headers: Map<String, String> get() = route.bridgeHeaders
-    val bridgeBaseUrl: String get() = route.rpcBaseUrl
-    val ide: IdeInfo get() = route.ide
-}
+)
 
 class ProjectRouteNotFoundException(projectName: String) : IllegalArgumentException(
     "project_name '$projectName' is no longer present; call steroid_list_projects to refresh"

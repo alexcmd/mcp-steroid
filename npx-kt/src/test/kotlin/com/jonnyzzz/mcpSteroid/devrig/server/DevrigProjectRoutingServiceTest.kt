@@ -113,8 +113,8 @@ class DevrigProjectRoutingServiceTest {
         val route = service.routes().values.single()
 
         assertEquals("mcp-steroid", route.originalProjectName)
-        assertEquals(testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl, route.bridgeBaseUrl)
-        assertEquals(mapOf("Authorization" to "Bearer secret-42"), route.headers)
+        assertEquals(testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl, route.route.rpcBaseUrl)
+        assertEquals(mapOf("Authorization" to "Bearer secret-42"), route.route.bridgeHeaders)
         assertEquals(route, service.requireProject(route.exposedProjectName))
     }
 
@@ -138,7 +138,7 @@ class DevrigProjectRoutingServiceTest {
         assertEquals(2, routes.size)
         assertEquals(2, routes.map { it.exposedProjectName }.distinct().size)
         assertEquals(setOf("mcp-steroid"), routes.map { it.originalProjectName }.toSet())
-        assertEquals(setOf(42L, 43L), routes.map { it.idePid }.toSet())
+        assertEquals(setOf(42L, 43L), routes.map { it.route.pid }.toSet())
         for (route in routes) {
             assertEquals(route, service.requireProject(route.exposedProjectName))
         }
@@ -186,13 +186,11 @@ class DevrigProjectRoutingServiceTest {
                 pid = 99,
                 projects = listOf(ProjectInfo("a", projectA.toString())),
                 build = "IU-253.24374.151",
-                createdAt = "2026-05-20T00:00:00Z",
             ),
             state(
                 pid = 1,
                 projects = listOf(ProjectInfo("b", projectB.toString())),
                 build = "IU-261.1",
-                createdAt = "2026-05-10T00:00:00Z",
             ),
         )
 
@@ -208,13 +206,11 @@ class DevrigProjectRoutingServiceTest {
                 pid = 1,
                 projects = listOf(ProjectInfo("a", projectA.toString())),
                 build = "IU-261.24374.151",
-                createdAt = "2026-05-10T00:00:00Z",
             ),
             state(
                 pid = 2,
                 projects = listOf(ProjectInfo("b", projectB.toString())),
                 build = "IU-261.24374.151",
-                createdAt = "2026-05-20T00:00:00Z",
             ),
         )
 
@@ -231,13 +227,11 @@ class DevrigProjectRoutingServiceTest {
                 pid = 1,
                 projects = listOf(ProjectInfo("a", projectA.toString())),
                 build = "IU-253.1",
-                createdAt = "2026-05-20T00:00:00Z",
             ),
             state(
                 pid = 2,
                 projects = listOf(ProjectInfo("b", projectB.toString())),
                 build = "GO-261.1",
-                createdAt = "2026-05-10T00:00:00Z",
             ),
         )
 
@@ -379,21 +373,20 @@ class DevrigProjectRoutingServiceTest {
     }
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
-        DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+        DevrigProjectRoutingService({ states.toList() }, {emptySet()})
 
     private fun routingService(
         managedPids: Set<Long>,
         vararg states: IdeMonitorState,
     ): DevrigProjectRoutingService =
-        DevrigProjectRoutingService({ states.associateBy { it.ide.pid } }, { managedPids })
+        DevrigProjectRoutingService({ states.toList() }, { managedPids })
 
     private fun state(
         pid: Long,
         projects: List<ProjectInfo>,
         build: String = "IU-261.1",
-        createdAt: String = "2026-05-17T00:00:00Z",
     ): IdeMonitorState {
-        val ide = discoveredIde(pid, build, createdAt)
+        val ide = discoveredIde(pid, build)
         return IdeMonitorState(
             ide = ide,
             status = IdeMonitorStatus.CONNECTED,
@@ -401,7 +394,7 @@ class DevrigProjectRoutingServiceTest {
         )
     }
 
-    private fun discoveredIde(pid: Long, build: String, createdAt: String = "2026-05-17T00:00:00Z"): DiscoveredIde =
+    private fun discoveredIde(pid: Long, build: String): DiscoveredIde =
         DiscoveredIde(
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl,

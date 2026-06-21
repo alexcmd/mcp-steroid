@@ -9,7 +9,7 @@ class DevrigPromptsContextHandler(
 ) : PromptsContextHandler {
     override suspend fun buildPromptsContext(projectName: String): PromptsContext {
         val route = routing.requireProject(projectName)
-        return promptsContextFromBuild(route.ide.build)
+        return promptsContextFromBuild(route.route.ide.build)
     }
 
     companion object {

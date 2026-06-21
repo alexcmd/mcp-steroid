@@ -75,7 +75,7 @@ class DevrigListToolHandlersTest {
             buildNumber = "261.5555.1",
         )
         val managed = managedBackendInfo(tempDir, runningPid = null, state = ManagedBackendState.INSTALLED)
-        val routing = DevrigProjectRoutingService { mapOf(42L to state) }
+        val routing = DevrigProjectRoutingService ({ listOf(state) }, {emptySet() })
         val inventory = BackendInventory(
             markerRows = { listOf(BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot)) },
             portIdes = { setOf(portIde) },
@@ -121,7 +121,7 @@ class DevrigListToolHandlersTest {
         // before any HTTP — here neither the marker nor the port source can do HTTP at all, so the only
         // way to a green assertion is the inventory's own ProcessHandle-style liveness downgrade.
         val managed = managedBackendInfo(tempDir, runningPid = 99999L, state = ManagedBackendState.RUNNING)
-        val routing = DevrigProjectRoutingService { emptyMap() }
+        val routing = DevrigProjectRoutingService ({ emptyList() }, {emptySet()})
         val inventory = BackendInventory(
             markerRows = { emptyList() },
             portIdes = { emptySet() },
@@ -177,7 +177,7 @@ class DevrigListToolHandlersTest {
             lastSnapshot = listOf(ProjectInfo("project-43", homeB.toString())),
         )
         val states = listOf(stateA, stateB)
-        val routing = DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+        val routing = DevrigProjectRoutingService ({ states }, {emptySet()})
         val inventory = BackendInventory(
             markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.lastSnapshot) } },
             portIdes = { emptySet() },
@@ -218,7 +218,7 @@ class DevrigListToolHandlersTest {
         // Each window's project name is rewritten to the devrig-exposed form of ITS OWN backend's route.
         for (window in response.windows) {
             val pid = if (window.backendName == name42) 42L else 43L
-            val route = routing.routes().values.single { it.idePid == pid }
+            val route = routing.routes().values.single { it.route.pid == pid }
             assertEquals(route.exposedProjectName, window.projectName)
         }
         // backends[] joins by the same names.

@@ -305,7 +305,7 @@ class DevrigToolBridgeClientTest {
                 lastSnapshot = listOf(ProjectInfo("project-b", projectB.toString())),
             ),
         )
-        val route = routing.routes().values.single { it.idePid == 43L }
+        val route = routing.routes().values.single { it.route.pid == 43L }
         val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleInputSequence(
@@ -620,7 +620,7 @@ class DevrigToolBridgeClientTest {
             status = IdeMonitorStatus.CONNECTED,
             lastSnapshot = listOf(ProjectInfo("my-app", projectHome.toString())),
         )
-        val routing = DevrigProjectRoutingService { mapOf(4242L to state) }
+        val routing = DevrigProjectRoutingService ({ listOf(state) }, {emptySet()})
 
         // MCP surface.
         val mcpResponse = DevrigListProjectsToolHandler(routing, testInventory(listOf(state)))
@@ -892,13 +892,13 @@ class DevrigToolBridgeClientTest {
     )
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
-        DevrigProjectRoutingService { states.associateBy { it.ide.pid } }
+        DevrigProjectRoutingService({ states.toList() }, {emptySet()})
 
     private fun routingService(
         managedPids: Set<Long>,
         vararg states: IdeMonitorState,
     ): DevrigProjectRoutingService =
-        DevrigProjectRoutingService({ states.associateBy { it.ide.pid } }, { managedPids })
+        DevrigProjectRoutingService({ states.toList() }, { managedPids })
 
     private fun discoveredIde(
         pid: Long,
