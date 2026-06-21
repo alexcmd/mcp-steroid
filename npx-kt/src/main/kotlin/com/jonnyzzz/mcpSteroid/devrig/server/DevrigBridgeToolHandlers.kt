@@ -1,14 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
 import com.jonnyzzz.mcpSteroid.devrig.BackendVersionSkew
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
-import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
@@ -18,35 +16,17 @@ import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
-import com.jonnyzzz.mcpSteroid.server.NpxBridgeToolCallRequest
-import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 import com.jonnyzzz.mcpSteroid.server.listed
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.request.headers
-import io.ktor.client.request.preparePost
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 class DevrigListWindowsToolHandler(
@@ -211,114 +191,3 @@ class DevrigOpenProjectToolHandler(
     }
 }
 
-class DevrigToolBridgeClient(
-    val routing: DevrigProjectRoutingService,
-    private val httpClient: HttpClient,
-) {
-    /** Fetches the live window/background-task snapshot from a single IDE's bridge `/windows` endpoint. */
-    suspend fun fetchWindows(ide: DiscoveredIde): NpxBridgeWindowsResponse {
-        val url = "${ide.rpcBaseUrl}/windows"
-        val response = httpClient.get(url) {
-            headers {
-                for ((name, value) in ide.bridgeHeaders) {
-                    append(name, value)
-                }
-            }
-        }
-        if (response.status.value !in 200..299) {
-            error("HTTP ${response.status.value} from ${ide.backendName} bridge /windows: ${response.bodyAsText()}")
-        }
-        return McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), response.bodyAsText())
-    }
-
-    suspend fun callProjectTool(
-        route: ProjectRoute,
-        toolName: String,
-        progress: McpProgressReporter? = null,
-        arguments: JsonObjectBuilder.() -> Unit,
-    ): ToolCallResult {
-        return callTool(route.route, toolName, progress) {
-            put("project_name", route.originalProjectName)
-            arguments()
-        }
-    }
-
-    suspend fun callTool(
-        route: DiscoveredIde,
-        toolName: String,
-        progress: McpProgressReporter? = null,
-        arguments: JsonObjectBuilder.() -> Unit,
-    ): ToolCallResult {
-        val args = buildJsonObject { JsonObjectBuilder(this).arguments() }
-        val requestBody = McpJson.encodeToString(
-            NpxBridgeToolCallRequest.serializer(),
-            NpxBridgeToolCallRequest(name = toolName, arguments = args),
-        )
-        val url = "${route.rpcBaseUrl}/tools/call/stream"
-        var result: ToolCallResult? = null
-        var errorMessage: String? = null
-
-        httpClient.preparePost(url) {
-            headers {
-                append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                for ((name, value) in route.bridgeHeaders) {
-                    append(name, value)
-                }
-            }
-            setBody(requestBody)
-        }.execute { response ->
-            if (response.status.value !in 200..299) {
-                errorMessage = "HTTP ${response.status.value} from $url: ${response.bodyAsText()}"
-                return@execute
-            }
-            readNdjson(response.bodyAsChannel()) { line ->
-                if (errorMessage != null) return@readNdjson
-                val json = try {
-                    McpJson.parseToJsonElement(line).jsonObject
-                } catch (e: Exception) {
-                    errorMessage = "Malformed NDJSON data from $url: ${e.javaClass.simpleName}: ${e.message}; data=${line.take(200)}"
-                    return@readNdjson
-                }
-                when (json["type"]?.jsonPrimitive?.contentOrNull) {
-                    "progress" -> json["message"]?.jsonPrimitive?.contentOrNull?.let { progress?.report(it) }
-                    "result" -> {
-                        val resultElement = json["result"]
-                        if (resultElement == null) {
-                            errorMessage = "NDJSON result message did not include result from $url"
-                            return@readNdjson
-                        }
-                        result = try {
-                            McpJson.decodeFromJsonElement(ToolCallResult.serializer(), resultElement)
-                        } catch (e: Exception) {
-                            errorMessage = "Malformed NDJSON result from $url: ${e.javaClass.simpleName}: ${e.message}; data=${line.take(200)}"
-                            return@readNdjson
-                        }
-                    }
-                    "error" -> errorMessage = json["message"]?.jsonPrimitive?.contentOrNull ?: "Tool call failed"
-                }
-            }
-        }
-
-        errorMessage?.let { return ToolCallResult.errorResult(it) }
-        return result ?: ToolCallResult.errorResult("No result received from $url")
-    }
-}
-
-class JsonObjectBuilder(private val target: kotlinx.serialization.json.JsonObjectBuilder) {
-    fun put(key: String, value: String) = target.put(key, value)
-    fun put(key: String, value: Int) = target.put(key, value)
-    fun put(key: String, value: Double) = target.put(key, value)
-    fun put(key: String, value: Boolean) = target.put(key, value)
-    fun put(key: String, value: JsonElement) = target.put(key, value)
-}
-
-suspend fun readNdjson(
-    channel: ByteReadChannel,
-    emit: suspend (line: String) -> Unit,
-) {
-    while (!channel.isClosedForRead) {
-        val line = channel.readUTF8Line() ?: break
-        if (line.isBlank()) continue
-        emit(line)
-    }
-}
