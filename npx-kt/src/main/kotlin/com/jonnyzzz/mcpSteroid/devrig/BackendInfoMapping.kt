@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.server.BackendInfo
-import com.jonnyzzz.mcpSteroid.server.ListedBackendInfo
 import com.jonnyzzz.mcpSteroid.server.ListedProject
 import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
 import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
@@ -31,44 +30,6 @@ fun backendNameForRow(row: BackendRow): String = when (row) {
     // Managed buildNumbers come without the product prefix ("261.x"); re-attach the known productCode
     // so the backend_name carries the product hint ("pc-...") instead of the "ide-" fallback.
     is BackendRow.FromManaged -> backendNameForManaged(row.info.id, "${row.info.productCode}-${row.info.buildNumber ?: ""}")
-}
-
-/**
- * The whole inventory as slim [ListedBackendInfo]s for the MCP `steroid_list_projects` /
- * `steroid_list_windows` `backends[]`: every row (marker + port + managed), keep-first de-duplicated by
- * `backend_name` (mirrors `backend --json`), each mapped via [listedBackendInfoForRow].
- */
-suspend fun BackendInventory.collectListedBackends(): List<ListedBackendInfo> =
-    backendRowsWithStableIds(collectRows()).map { (backendName, row) -> listedBackendInfoForRow(row, backendName) }
-
-/**
- * Maps a discovery [BackendRow] to the slim [ListedBackendInfo] carried by the MCP `steroid_list_projects`
- * / `steroid_list_windows` `backends[]`. Unlike [backendInfoForRow] (the rich CLI/`--json` schema) this
- * surfaces only the identity an agent needs to pick a backend: its `backend_name`, display name, and
- * version/build. Every inventory source (marker, port, managed) is represented.
- */
-fun listedBackendInfoForRow(
-    row: BackendRow,
-    backendName: String = backendNameForRow(row),
-): ListedBackendInfo = when (row) {
-    is BackendRow.FromMarker -> ListedBackendInfo(
-        backendName = backendName,
-        displayName = row.ide.ide.name,
-        version = row.ide.ide.version,
-        build = row.ide.ide.build,
-    )
-    is BackendRow.FromPort -> ListedBackendInfo(
-        backendName = backendName,
-        displayName = portBackendDisplayName(row.ide),
-        version = null,
-        build = row.ide.buildNumber,
-    )
-    is BackendRow.FromManaged -> ListedBackendInfo(
-        backendName = backendName,
-        displayName = row.displayName,
-        version = row.info.version,
-        build = row.info.buildNumber,
-    )
 }
 
 /**

@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.server.ListedBackendInfo
 import com.jonnyzzz.mcpSteroid.server.base36FixedWidth
 import java.io.IOException
 import java.nio.file.Path
@@ -50,6 +51,21 @@ class DevrigProjectRoutingService(
      * messages. De-duped by backend_name (keep-first + WARN), mirroring `backendRowsWithStableIds`.
      */
     fun discoveredBackends(): List<DiscoveredIde> = stateProvider().map { it.ide }.distinctBy { it.backendName }
+
+    /**
+     * The backends exposed on the MCP `steroid_list_projects` / `steroid_list_windows` `backends[]`:
+     * exactly the routing-discovered IDEs (the open_project-routable backends), each as a slim
+     * [ListedBackendInfo]. Port-only / managed backends are intentionally NOT here — those are a CLI
+     * concern (`devrig backend`), kept out of the agent-facing MCP surface.
+     */
+    fun listedBackends(): List<ListedBackendInfo> = discoveredBackends().map { ide ->
+        ListedBackendInfo(
+            backendName = ide.backendName,
+            displayName = ide.ide.name,
+            version = ide.ide.version,
+            build = ide.ide.build,
+        )
+    }
 
     companion object {
         /**

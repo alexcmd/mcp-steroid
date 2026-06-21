@@ -6,7 +6,6 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
 import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
@@ -523,7 +522,7 @@ class DevrigToolBridgeClientTest {
             projects = listOf(IdeProjectState("beta", homeB.toString())),
         )
         val routing = routingService(stateA, stateB)
-        val handler = DevrigListProjectsToolHandler(routing, inventoryFor(routing))
+        val handler = DevrigListProjectsToolHandler(routing)
 
         val response = handler.collectListProjectsResponse()
 
@@ -565,7 +564,7 @@ class DevrigToolBridgeClientTest {
         val routing = DevrigProjectRoutingService { listOf(state) }
 
         // MCP surface.
-        val mcpResponse = DevrigListProjectsToolHandler(routing, inventoryFor(routing))
+        val mcpResponse = DevrigListProjectsToolHandler(routing)
             .collectListProjectsResponse()
         val mcpProjectName = mcpResponse.projects.single().projectName
 
@@ -808,10 +807,6 @@ class DevrigToolBridgeClientTest {
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.toList() }
-
-    /** Inventory over the same routing the handler sees — markers only (no port/managed) for these tests. */
-    private fun inventoryFor(routing: DevrigProjectRoutingService): BackendInventory =
-        BackendInventory(routing = routing, portDiscovery = { emptySet() }, managedBackends = { emptyList() })
 
     private fun discoveredIde(
         pid: Long,

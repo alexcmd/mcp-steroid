@@ -1,14 +1,11 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
-import com.jonnyzzz.mcpSteroid.devrig.collectListedBackends
 import com.jonnyzzz.mcpSteroid.server.ListProjectsResponse
 import com.jonnyzzz.mcpSteroid.server.ListProjectsToolHandler
 import com.jonnyzzz.mcpSteroid.server.ListedProject
 
 class DevrigListProjectsToolHandler(
     private val routing: DevrigProjectRoutingService,
-    private val inventory: BackendInventory,
 ) : ListProjectsToolHandler {
     override suspend fun collectListProjectsResponse(): ListProjectsResponse {
         val routes = routing.routes()
@@ -21,12 +18,11 @@ class DevrigListProjectsToolHandler(
             )
         }
 
-        // backends[] = the whole inventory (markers + port-discovered + managed) through the ONE shared
-        // BackendRow id + mapping, so the MCP `backends[]` and `devrig backend --json` never diverge on
-        // which backends exist. projects[] stays marker-routed only (above).
+        // backends[] = exactly the routing-discovered backends (open_project-routable IDEs). Port-only and
+        // managed backends are a CLI concern (`devrig backend`) and are intentionally kept off this surface.
         return ListProjectsResponse(
             projects = listedProjects,
-            backends = inventory.collectListedBackends(),
+            backends = routing.listedBackends(),
         )
     }
 }

@@ -1,9 +1,6 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
-import com.jonnyzzz.mcpSteroid.devrig.collectListedBackends
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
 import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
@@ -15,7 +12,6 @@ import kotlinx.coroutines.coroutineScope
 class DevrigListWindowsToolHandler(
     private val bridge: DevrigToolBridgeClient,
     private val routing: DevrigProjectRoutingService,
-    private val inventory: BackendInventory,
 ) : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse = coroutineScope {
         val routes = routing.routes()
@@ -48,9 +44,9 @@ class DevrigListWindowsToolHandler(
                     )
                 }
             },
-            // backends[] = the whole inventory (markers + port-discovered + managed) through the ONE shared
-            // BackendRow id + mapping, so list_windows and list_projects never diverge on which backends exist.
-            backends = inventory.collectListedBackends(),
+            // backends[] = exactly the routing-discovered backends, same source as list_projects. Port-only
+            // and managed backends are a CLI concern (`devrig backend`), kept off this MCP surface.
+            backends = routing.listedBackends(),
         )
     }
 }

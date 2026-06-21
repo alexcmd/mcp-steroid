@@ -32,7 +32,7 @@ private fun JsonObjectBuilder.buildResponses(payload: ListProjectsResponse) {
                 put("name", project.name)
                 put("path", project.path)
                 put("project_name", project.projectName)
-                put("backed_name", project.backendName)
+                put("backend_name", project.backendName)
             }
         }
     }
@@ -48,7 +48,7 @@ fun Route.installNpxBridgeRoutes(
     route(DEVRIG_RPC_PATH_PREFIX) {
         post("/projects/stream") {
             if (!call.requireNpxBridgeAuthorization()) return@post
-            val payload = service<ListProjectsToolHandlerIJ>().collectListProjectsResponse()
+            val payload = service<ListProjectsToolHandler>().collectListProjectsResponse()
             val response = buildJsonObject {
                 put("type", "snapshot")
                 put("seq", "System.currentTimeMillis()")
@@ -68,7 +68,7 @@ fun Route.installNpxBridgeRoutes(
         get("projects") {
             if (!call.requireNpxBridgeAuthorization()) return@get
             //TODO: use specific payload
-            val payload = service<ListProjectsToolHandlerIJ>().collectListProjectsResponse()
+            val payload = service<ListProjectsToolHandler>().collectListProjectsResponse()
             call.respondJson {
                 buildResponses(payload)
             }
