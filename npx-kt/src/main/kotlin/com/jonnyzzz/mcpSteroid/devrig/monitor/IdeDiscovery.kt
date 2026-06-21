@@ -73,7 +73,7 @@ class IdeDiscoveryService(
     val ides: StateFlow<Set<DiscoveredIde>> = _ides.asStateFlow()
 
     fun start(scope: CoroutineScope): Job = scope.launch {
-        // Emit an initial snapshot synchronously so consumers don't have to wait
+        // Emit an initial snapshot synchronously so consumers don't have to wait for
         // a full scanInterval before the first value lands on the flow.
         scanOnce()
         while (isActive) {
@@ -104,7 +104,7 @@ class IdeDiscoveryService(
                 log.warn("Failed to read marker file {}: {}", file, e.message)
                 continue
             }
-            // Cheap legacy-format sniff: a current marker is a JSON object so the first
+            // Cheap legacy-format sniff: a current marker is a JSON object, so the first
             // non-whitespace byte is '{'. Skip non-JSON files at DEBUG; only WARN on
             // text that LOOKS like JSON but fails to parse (truncated write, bit-flip, etc.).
             if (text.trimStart().firstOrNull() != '{') {
@@ -117,7 +117,7 @@ class IdeDiscoveryService(
                 log.warn("Skipping malformed marker file {}: {}", file, e.message)
                 continue
             }
-            // devrig speaks ONLY the bridge endpoint advertised by the marker — never the /mcp MCP
+            // devrig speaks ONLY the bridge endpoint advertised by the marker — never the /mcp
             // endpoint. A marker without devrigEndpoint is from an IDE that doesn't expose the bridge
             // (e.g. an older plugin); skip it rather than fall back to the MCP server.
             val devrigEndpoint = marker.devrigEndpoint
@@ -143,7 +143,7 @@ class IdeDiscoveryService(
     private fun isAllowedHost(url: String): Boolean = try {
         val host = URI(url).host ?: return false
         allowHosts.contains(host)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         false
     }
 }
