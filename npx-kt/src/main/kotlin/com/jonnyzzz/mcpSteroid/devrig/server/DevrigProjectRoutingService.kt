@@ -7,10 +7,8 @@ import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
-import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import java.io.IOException
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
@@ -47,26 +45,6 @@ class DevrigProjectRoutingService(
     fun requireProject(exposedProjectName: String): ProjectRoute =
         routeProject(exposedProjectName)
             ?: throw ProjectRouteNotFoundException(exposedProjectName)
-
-    /**
-     * Rewrites only the project name to its exposed form. The window id is left untouched:
-     * it is unique within a single IDE and always travels together with project_name, so the
-     * IDE is resolved via project_name and the original window_id is forwarded as-is.
-     */
-    fun rewriteWindow(idePid: Long, window: WindowInfo): WindowInfo {
-        val route = routeForWindow(idePid, window) ?: return window
-        return window.copy(
-            projectName = window.projectName?.let { route.exposedProjectName },
-        )
-    }
-
-    fun rewriteBackgroundTask(idePid: Long, task: ProgressTaskInfo): ProgressTaskInfo {
-        val projectName = task.projectName ?: return task
-        val route = routes().values.firstOrNull {
-            it.idePid == idePid && it.originalProjectName == projectName
-        } ?: return task
-        return task.copy(projectName = route.exposedProjectName)
-    }
 
     /**
      * Picks the IDE that should receive `steroid_open_project`.
@@ -151,28 +129,11 @@ class DevrigProjectRoutingService(
         val realHome = canonicalProjectHome(project.path)
         val projectHash = projectHash(realHome, idePid)
         return ProjectRoute(
-            idePid = idePid,
-            bridgeBaseUrl = ide.rpcBaseUrl,
-            headers = ide.bridgeHeaders,
+            route = ide,
             originalProjectName = project.name,
             exposedProjectName = "${project.name}-$projectHash",
             projectPath = project.path,
-            realProjectHome = realHome,
-            projectHash = projectHash,
-            ide = ide.ide,
-            plugin = ide.plugin,
         )
-    }
-
-    private fun routeForWindow(idePid: Long, window: WindowInfo): ProjectRoute? {
-        val allRoutes = routes().values.filter { it.idePid == idePid }
-        val projectPath = window.projectPath
-        if (projectPath != null) {
-            val realPath = canonicalProjectHome(projectPath)
-            allRoutes.firstOrNull { it.realProjectHome == realPath }?.let { return it }
-        }
-        val projectName = window.projectName ?: return null
-        return allRoutes.firstOrNull { it.originalProjectName == projectName }
     }
 
     companion object {
@@ -225,17 +186,18 @@ class DevrigProjectRoutingService(
 }
 
 data class ProjectRoute(
-    val idePid: Long,
-    val bridgeBaseUrl: String,
-    val headers: Map<String, String>,
+    val route: DiscoveredIde,
+
     val originalProjectName: String,
     val exposedProjectName: String,
     val projectPath: String,
-    val realProjectHome: Path,
-    val projectHash: String,
-    val ide: IdeInfo,
-    val plugin: PluginInfo,
-)
+) {
+    val idePid: Long get() = route.pid
+    val plugin: PluginInfo get() = route.plugin
+    val headers: Map<String, String> get() = route.bridgeHeaders
+    val bridgeBaseUrl: String get() = route.rpcBaseUrl
+    val ide: IdeInfo get() = route.ide
+}
 
 class ProjectRouteNotFoundException(projectName: String) : IllegalArgumentException(
     "project_name '$projectName' is no longer present; call steroid_list_projects to refresh"

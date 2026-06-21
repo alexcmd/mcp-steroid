@@ -159,8 +159,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route, "steroid_execute_code") {
-            put("project_name", route.originalProjectName)
+        val result = bridge.callProjectTool(route, "steroid_execute_code") {
             put("task_id", "task")
             put("reason", "test")
             put("code", "println(1)")
@@ -722,7 +721,7 @@ class DevrigToolBridgeClientTest {
                 httpClient = httpClient,
             )
             val result = async {
-                bridge.callTool(
+                bridge.callProjectTool(
                     route(tempDir),
                     "steroid_execute_code",
                     object : McpProgressReporter {
@@ -757,7 +756,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -775,7 +774,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -794,7 +793,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -815,7 +814,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -834,7 +833,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -852,7 +851,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -876,7 +875,7 @@ class DevrigToolBridgeClientTest {
             httpClient = httpClient,
         )
 
-        val result = bridge.callTool(route(tempDir), "steroid_execute_code") {
+        val result = bridge.callProjectTool(route(tempDir), "steroid_execute_code") {
             put("project_name", "original-project")
         }
 
@@ -937,16 +936,17 @@ class DevrigToolBridgeClientTest {
 
     private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =
         ProjectRoute(
-            idePid = 42,
-            bridgeBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
-            headers = mapOf("Authorization" to "Bearer $token"),
+            route = DiscoveredIde(
+                pid = 42,
+                rpcBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
+                bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
+                ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+                plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+                backendName = "mock-backend-name",
+            ),
             originalProjectName = "original-project",
             exposedProjectName = "original-project-abcdefgh",
             projectPath = tempDir.toString(),
-            realProjectHome = tempDir.toRealPath(),
-            projectHash = "abcdefgh",
-            ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
-            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
         )
 }
 

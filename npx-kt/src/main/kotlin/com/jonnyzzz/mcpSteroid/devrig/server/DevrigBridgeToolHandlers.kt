@@ -8,6 +8,7 @@ import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
 import com.jonnyzzz.mcpSteroid.devrig.BackendVersionSkew
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
+import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
@@ -24,7 +25,6 @@ import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
-import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.server.listed
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -51,38 +51,35 @@ import kotlinx.serialization.json.put
 
 class DevrigListWindowsToolHandler(
     private val states: () -> Collection<IdeMonitorState>,
-    private val httpClient: HttpClient,
-    private val routing: DevrigProjectRoutingService,
+    private val bridge: DevrigToolBridgeClient,
     private val inventory: BackendInventory,
 ) : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse = coroutineScope {
         val monitored = states().toList()
         val responses = monitored.map { state ->
-            async {
-                val response = httpClient.get("${state.ide.rpcBaseUrl}/windows") {
-                    headers {
-                        for ((name, value) in state.ide.bridgeHeaders) {
-                            append(name, value)
-                        }
-                    }
-                }
-                if (response.status.value !in 200..299) {
-                    error("HTTP ${response.status.value} from ${state.ide.label} bridge /windows: ${response.bodyAsText()}")
-                }
-                state to McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), response.bodyAsText())
-            }
+            async { state to bridge.fetchWindows(state.ide) }
         }.awaitAll()
 
-        // Every window/background-task is bound to its source IDE via backend_name — the same R3.3 id
-        // the inventory computes for that IDE's marker row, so entries join backends[] by name.
+        // One snapshot of every routable project, keyed by (owning IDE pid, raw project name). Each
+        // window/background-task is rewritten to that route's devrig-exposed project_name so it matches
+        // what steroid_list_projects surfaces. The backend_name binds the entry to its source IDE — the
+        // same R3.3 id the inventory computes for that IDE's marker row, so entries join backends[] by name.
+        val routesByOwner = bridge.routing.routes().values
+            .associateBy { it.idePid to it.originalProjectName }
+
+        fun exposedProjectName(idePid: Long, rawProjectName: String?): String? =
+            rawProjectName?.let { routesByOwner[idePid to it]?.exposedProjectName ?: it }
+
         ListWindowsResponse(
             windows = responses.flatMap { (state, response) ->
-                val backendName = backendNameForMarker(state.ide.pid, state.ide.ide.build)
-                response.windows.map { routing.rewriteWindow(state.ide.pid, it).listed(backendName) }
+                response.windows.map { window ->
+                    window.listed(exposedProjectName(state.ide.pid, window.projectName), state.ide.backendName)
+                }
             },
             backgroundTasks = responses.flatMap { (state, response) ->
-                val backendName = backendNameForMarker(state.ide.pid, state.ide.ide.build)
-                response.backgroundTasks.map { routing.rewriteBackgroundTask(state.ide.pid, it).listed(backendName) }
+                response.backgroundTasks.map { task ->
+                    task.listed(exposedProjectName(state.ide.pid, task.projectName), state.ide.backendName)
+                }
             },
             backends = inventory.collectBackendInfos(),
         )
@@ -101,15 +98,14 @@ class DevrigExecuteCodeToolHandler(
         val route = bridge.routing.requireProject(projectName)
         // Version-base skew check on every routed exec_code call (devrig scenario only; stderr).
         BackendVersionSkew.warnOnExecCode(pid = route.idePid, pluginVersion = route.plugin.version)
-        val result = bridge.callTool(route, "steroid_execute_code", callProgress) {
-            put("project_name", route.originalProjectName)
+        val result = bridge.callProjectTool(route, "steroid_execute_code", callProgress) {
             put("code", execCodeParams.code)
             put("task_id", execCodeParams.taskId)
             put("reason", execCodeParams.reason)
             put("timeout", execCodeParams.timeout)
             put("modal", execCodeParams.modal.wire)
         }
-        beacon.capture("exec_code", mapOf("result" to if (result.isError == true) "error" else "success"))
+        beacon.capture("exec_code", mapOf("result" to if (result.isError) "error" else "success"))
         return result
     }
 }
@@ -120,8 +116,7 @@ class DevrigExecuteFeedbackToolHandler(
 ) : ExecuteFeedbackToolHandler {
     override suspend fun handleFeedback(projectName: String, params: FeedbackParams): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
-        val result = bridge.callTool(route, "steroid_execute_feedback") {
-            put("project_name", route.originalProjectName)
+        val result = bridge.callProjectTool(route, "steroid_execute_feedback") {
             put("task_id", params.taskId)
             put("success_rating", params.successRating)
             params.explanation?.let { put("explanation", it) }
@@ -142,8 +137,7 @@ class DevrigVisionScreenshotToolHandler(
         mcpProgressReporter: McpProgressReporter,
     ): ToolCallResult {
         val route = bridge.routing.requireProject(projectName)
-        return bridge.callTool(route, "steroid_take_screenshot", mcpProgressReporter) {
-            put("project_name", route.originalProjectName)
+        return bridge.callProjectTool(route, "steroid_take_screenshot", mcpProgressReporter) {
             put("task_id", screenshotParams.taskId)
             put("reason", screenshotParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
@@ -159,8 +153,7 @@ class DevrigVisionInputToolHandler(
         val route = bridge.routing.requireProject(projectName)
         val rawSequence = inputParams.rawSequence
             ?: return ToolCallResult.errorResult("Input sequence cannot be forwarded without the original sequence string")
-        return bridge.callTool(route, "steroid_input") {
-            put("project_name", route.originalProjectName)
+        return bridge.callProjectTool(route, "steroid_input") {
             put("task_id", inputParams.taskId)
             put("reason", inputParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
@@ -191,7 +184,7 @@ class DevrigOpenProjectToolHandler(
         if (ide == null) {
             return if (requestedBackend != null) {
                 // The id is now an opaque hash (R3.3) — no prefix to key a hint off. resolveBackend only ever
-                // returns routable marker IDEs, so a miss means the requested name is not a currently-routable
+                // returns routable marker IDEs, so a miss means the requested name is not a currently routable
                 // backend. Self-correct by listing the routable backend_names; the agent likely copied a
                 // non-routable id (a port-only or not-yet-running managed backend) from `devrig backend --json`.
                 val routable = bridge.routing.discoveredBackends().map { it.first }
@@ -209,19 +202,7 @@ class DevrigOpenProjectToolHandler(
             }
         }
 
-        val route = ProjectRoute(
-            idePid = ide.pid,
-            bridgeBaseUrl = ide.rpcBaseUrl,
-            headers = ide.bridgeHeaders,
-            originalProjectName = "",
-            exposedProjectName = "",
-            projectPath = "",
-            realProjectHome = java.nio.file.Path.of(".").toAbsolutePath().normalize(),
-            projectHash = "",
-            ide = ide.ide,
-            plugin = ide.plugin,
-        )
-        return bridge.callTool(route, "steroid_open_project") {
+        return bridge.callTool(ide, "steroid_open_project") {
             put("project_path", openProjectParams.projectPath)
             put("trust_project", openProjectParams.trustProject)
             put("task_id", "open-project")
@@ -234,8 +215,36 @@ class DevrigToolBridgeClient(
     val routing: DevrigProjectRoutingService,
     private val httpClient: HttpClient,
 ) {
-    suspend fun callTool(
+    /** Fetches the live window/background-task snapshot from a single IDE's bridge `/windows` endpoint. */
+    suspend fun fetchWindows(ide: DiscoveredIde): NpxBridgeWindowsResponse {
+        val url = "${ide.rpcBaseUrl}/windows"
+        val response = httpClient.get(url) {
+            headers {
+                for ((name, value) in ide.bridgeHeaders) {
+                    append(name, value)
+                }
+            }
+        }
+        if (response.status.value !in 200..299) {
+            error("HTTP ${response.status.value} from ${ide.backendName} bridge /windows: ${response.bodyAsText()}")
+        }
+        return McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), response.bodyAsText())
+    }
+
+    suspend fun callProjectTool(
         route: ProjectRoute,
+        toolName: String,
+        progress: McpProgressReporter? = null,
+        arguments: JsonObjectBuilder.() -> Unit,
+    ): ToolCallResult {
+        return callTool(route.route, toolName, progress) {
+            put("project_name", route.originalProjectName)
+            arguments()
+        }
+    }
+
+    suspend fun callTool(
+        route: DiscoveredIde,
         toolName: String,
         progress: McpProgressReporter? = null,
         arguments: JsonObjectBuilder.() -> Unit,
@@ -245,14 +254,14 @@ class DevrigToolBridgeClient(
             NpxBridgeToolCallRequest.serializer(),
             NpxBridgeToolCallRequest(name = toolName, arguments = args),
         )
-        val url = "${route.bridgeBaseUrl}/tools/call/stream"
+        val url = "${route.rpcBaseUrl}/tools/call/stream"
         var result: ToolCallResult? = null
         var errorMessage: String? = null
 
         httpClient.preparePost(url) {
             headers {
                 append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                for ((name, value) in route.headers) {
+                for ((name, value) in route.bridgeHeaders) {
                     append(name, value)
                 }
             }

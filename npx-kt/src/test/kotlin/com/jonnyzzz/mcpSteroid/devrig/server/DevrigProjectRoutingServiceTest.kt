@@ -7,9 +7,7 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
-import com.jonnyzzz.mcpSteroid.server.ProgressTaskInfo
 import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import com.jonnyzzz.mcpSteroid.server.WindowInfo
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -73,7 +71,7 @@ class DevrigProjectRoutingServiceTest {
 
     @Test
     fun `canonical path degrades to normalized absolute path when the directory vanished`() {
-        // A deleted project (e.g. a test project removed while its IDE snapshot is still cached)
+        // A deleted project (e.g., a test project removed while its IDE snapshot is still cached)
         // must not throw — toRealPath() would — or one vanished path breaks routing for everyone.
         val vanished = tempDir.resolve("gone").resolve("..").resolve("gone-project")
         assertEquals(
@@ -114,7 +112,6 @@ class DevrigProjectRoutingServiceTest {
 
         val route = service.routes().values.single()
 
-        assertEquals("mcp-steroid-${route.projectHash}", route.exposedProjectName)
         assertEquals("mcp-steroid", route.originalProjectName)
         assertEquals(testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl, route.bridgeBaseUrl)
         assertEquals(mapOf("Authorization" to "Bearer secret-42"), route.headers)
@@ -159,124 +156,6 @@ class DevrigProjectRoutingServiceTest {
             "project_name 'missing-project-abcdefgh' is no longer present; call steroid_list_projects to refresh",
             error.message,
         )
-    }
-
-    @Test
-    fun `window project name is rewritten and window id is preserved`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-
-        val window = WindowInfo(
-            projectName = "mcp-steroid",
-            projectPath = projectHome.toString(),
-            title = "MCP Steroid",
-            isActive = true,
-            isVisible = true,
-            bounds = null,
-            windowId = "frame-1",
-        )
-
-        val rewritten = service.rewriteWindow(42, window)
-        val route = service.routes().values.single()
-
-        assertEquals(route.exposedProjectName, rewritten.projectName)
-        assertEquals("frame-1", rewritten.windowId)
-    }
-
-    @Test
-    fun `window routing uses project path to disambiguate duplicate original project names`() {
-        val sharedProject = Files.createDirectories(tempDir.resolve("shared-project"))
-        val otherProject = Files.createDirectories(tempDir.resolve("other-project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", sharedProject.toString())),
-            ),
-            state(
-                pid = 43,
-                projects = listOf(
-                    ProjectInfo("mcp-steroid", otherProject.toString()),
-                    ProjectInfo("mcp-steroid", sharedProject.toString()),
-                ),
-            ),
-        )
-
-        val rewritten = service.rewriteWindow(
-            43,
-            WindowInfo(
-                projectName = "mcp-steroid",
-                projectPath = sharedProject.toString(),
-                title = "MCP Steroid",
-                isActive = true,
-                isVisible = true,
-                bounds = null,
-                windowId = "frame-1",
-            ),
-        )
-        val sharedRealProject = sharedProject.toRealPath()
-        val otherRealProject = otherProject.toRealPath()
-        val samePidOtherRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == otherRealProject }
-        val samePidPathRoute = service.routes().values.single { it.idePid == 43L && it.realProjectHome == sharedRealProject }
-
-        // The window resolves to the same-pid route whose path matches; window id is preserved.
-        assertEquals(samePidPathRoute.exposedProjectName, rewritten.projectName)
-        assertNotEquals(samePidOtherRoute.exposedProjectName, rewritten.projectName)
-        assertEquals("frame-1", rewritten.windowId)
-    }
-
-    @Test
-    fun `window without project name or path is left unchanged`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-        val window = WindowInfo(
-            projectName = null,
-            projectPath = null,
-            title = "Welcome",
-            isActive = true,
-            isVisible = true,
-            bounds = null,
-            windowId = "welcome-frame",
-        )
-
-        val rewritten = service.rewriteWindow(42, window)
-
-        assertEquals(window, rewritten)
-    }
-
-    @Test
-    fun `background task project name is rewritten to exposed project name`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(
-                pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
-            )
-        )
-
-        val rewritten = service.rewriteBackgroundTask(
-            42,
-            ProgressTaskInfo(
-                title = "Indexing",
-                text = "",
-                text2 = "",
-                fraction = null,
-                isIndeterminate = true,
-                isCancellable = false,
-                projectName = "mcp-steroid",
-            )
-        )
-
-        assertEquals(service.routes().values.single().exposedProjectName, rewritten.projectName)
     }
 
     @Test
@@ -406,8 +285,8 @@ class DevrigProjectRoutingServiceTest {
     @Test
     fun `open_project target ignores a managed pid that is not yet discovered`() {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        // The managed backend was started (pid 99) but its marker has not appeared yet, so it is
-        // not among discovered IDEs. Selection must fall back to the discovered newest, not error.
+        // The managed backend was started (pid 99), but its marker has not appeared yet, so it is
+        // not among discovered IDEs. Selection must fall back to the discovered newest, not an error.
         val service = routingService(
             managedPids = setOf(99L),
             state(pid = 1, projects = listOf(ProjectInfo("a", projectHome.toString())), build = "IU-261.1"),

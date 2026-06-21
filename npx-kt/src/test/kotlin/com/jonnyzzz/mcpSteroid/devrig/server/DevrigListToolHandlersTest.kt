@@ -61,7 +61,7 @@ class DevrigListToolHandlersTest {
     ) = runBlocking {
         val projectHome = Files.createDirectories(tempDir.resolve("alpha"))
         val state = IdeMonitorState(
-            ide = discoveredIde(pid = 42, build = "IU-261.1", projectHome = projectHome),
+            ide = discoveredIde(pid = 42, build = "IU-261.1"),
             status = IdeMonitorStatus.CONNECTED,
             lastSnapshot = listOf(ProjectInfo("alpha", projectHome.toString())),
         )
@@ -167,12 +167,12 @@ class DevrigListToolHandlersTest {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
         val stateA = IdeMonitorState(
-            ide = discoveredIde(pid = 42, build = "IU-261.1", projectHome = homeA, port = port, token = "token-42"),
+            ide = discoveredIde(pid = 42, build = "IU-261.1", port = port, token = "token-42"),
             status = IdeMonitorStatus.CONNECTED,
             lastSnapshot = listOf(ProjectInfo("project-42", homeA.toString())),
         )
         val stateB = IdeMonitorState(
-            ide = discoveredIde(pid = 43, build = "IU-253.9", projectHome = homeB, port = port, token = "token-43"),
+            ide = discoveredIde(pid = 43, build = "IU-253.9", port = port, token = "token-43"),
             status = IdeMonitorStatus.CONNECTED,
             lastSnapshot = listOf(ProjectInfo("project-43", homeB.toString())),
         )
@@ -197,8 +197,7 @@ class DevrigListToolHandlersTest {
             runBlocking {
                 DevrigListWindowsToolHandler(
                     states = { states },
-                    httpClient = it,
-                    routing = routing,
+                    bridge = DevrigToolBridgeClient(routing, it),
                     inventory = inventory,
                 ).collectListWindowsResponse()
             }
@@ -278,7 +277,6 @@ class DevrigListToolHandlersTest {
     private fun discoveredIde(
         pid: Long,
         build: String,
-        projectHome: Path,
         port: Int = 0,
         token: String = "token-$pid",
     ): DiscoveredIde = DiscoveredIde(
@@ -287,7 +285,7 @@ class DevrigListToolHandlersTest {
         bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
         ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
         plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-        backendName = "mock-backend-name",
+        backendName = backendNameForMarker(pid, build),
     )
 }
 

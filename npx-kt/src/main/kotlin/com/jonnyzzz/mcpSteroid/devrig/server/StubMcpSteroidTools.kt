@@ -26,8 +26,7 @@ class StubMcpSteroidTools(
     private val listProjects = DevrigListProjectsToolHandler(services.projectRouting, services.backendInventory)
     private val listWindows = DevrigListWindowsToolHandler(
         states = { services.ideMonitor.states.value.values },
-        httpClient = services.commandHttpClient,
-        routing = services.projectRouting,
+        bridge = bridge,
         inventory = services.backendInventory,
     )
     val promptsContext = DevrigPromptsContextHandler(services.projectRouting)
