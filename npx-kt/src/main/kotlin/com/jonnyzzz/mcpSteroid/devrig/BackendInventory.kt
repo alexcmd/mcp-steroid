@@ -100,7 +100,7 @@ fun monitorBackendInventory(services: DevrigServices): BackendInventory = Backen
     markerRows = {
         services.ideMonitor.stateSnapshot()
             .sortedWith(compareBy({ it.ide.ide.name }, { it.ide.pid }))
-            .map { state -> BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot) }
+            .map { state -> BackendRow.FromMarker(ide = state.ide, projects = state.projects) }
     },
     portIdes = { boundedPortScan(services.portDiscovery) },
     managedBackends = { services.backendManager.list() },

@@ -63,9 +63,9 @@ class DevrigOpenProjectBackendRoutingTest {
     private fun routingWith(pids: List<Long>): DevrigProjectRoutingService {
         val states = pids.map { pid ->
             IdeMonitorState(
+                pid = pid,
                 ide = discoveredIde(pid),
-                status = IdeMonitorStatus.CONNECTED,
-                lastSnapshot = emptyList(),
+                projects = emptyList(),
             )
         }
         return DevrigProjectRoutingService ({ states }, {emptySet()})

@@ -61,9 +61,9 @@ class DevrigListToolHandlersTest {
     ) = runBlocking {
         val projectHome = Files.createDirectories(tempDir.resolve("alpha"))
         val state = IdeMonitorState(
+            pid = 42,
             ide = discoveredIde(pid = 42, build = "IU-261.1"),
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = listOf(ProjectInfo("alpha", projectHome.toString())),
+            projects = listOf(ProjectInfo("alpha", projectHome.toString())),
         )
         val portIde = DiscoveredIdeByPort(
             port = 63342,
@@ -77,7 +77,7 @@ class DevrigListToolHandlersTest {
         val managed = managedBackendInfo(tempDir, runningPid = null, state = ManagedBackendState.INSTALLED)
         val routing = DevrigProjectRoutingService ({ listOf(state) }, {emptySet() })
         val inventory = BackendInventory(
-            markerRows = { listOf(BackendRow.FromMarker(ide = state.ide, projects = state.lastSnapshot)) },
+            markerRows = { listOf(BackendRow.FromMarker(ide = state.ide, projects = state.projects)) },
             portIdes = { setOf(portIde) },
             managedBackends = { listOf(managed) },
             isProcessAlive = { true },
@@ -167,19 +167,19 @@ class DevrigListToolHandlersTest {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
         val stateA = IdeMonitorState(
+            pid = 42,
             ide = discoveredIde(pid = 42, build = "IU-261.1", port = port, token = "token-42"),
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = listOf(ProjectInfo("project-42", homeA.toString())),
+            projects = listOf(ProjectInfo("project-42", homeA.toString())),
         )
         val stateB = IdeMonitorState(
+            pid = 43,
             ide = discoveredIde(pid = 43, build = "IU-253.9", port = port, token = "token-43"),
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = listOf(ProjectInfo("project-43", homeB.toString())),
+            projects = listOf(ProjectInfo("project-43", homeB.toString())),
         )
         val states = listOf(stateA, stateB)
         val routing = DevrigProjectRoutingService ({ states }, {emptySet()})
         val inventory = BackendInventory(
-            markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.lastSnapshot) } },
+            markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.projects) } },
             portIdes = { emptySet() },
             managedBackends = { emptyList() },
             isProcessAlive = { true },

@@ -33,7 +33,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -149,14 +148,12 @@ class IdeMonitorServiceTest {
 
         val ide = waitForValue(10.seconds.inWholeMilliseconds) {
             monitor.stateSnapshot().firstOrNull {
-                it.ide.pid == ourPid && it.lastSnapshot.isNotEmpty()
+                it.ide.pid == ourPid && it.projects.isNotEmpty()
             }
         }
 
         assertEquals(IdeMonitorStatus.CONNECTED, ide.status)
-        assertEquals(listOf(ProjectInfo("alpha", "/p/alpha")), ide.lastSnapshot)
-        assertEquals(instanceId, ide.ideInstanceId)
-        assertNotNull(ide.lastSeenAt)
+        assertEquals(listOf(ProjectInfo("alpha", "/p/alpha")), ide.projects)
 
         assertTrue(receivedClientInfos.any { it.client == "test-suite" && it.clientPid == 4242L })
         assertTrue(
@@ -200,10 +197,10 @@ class IdeMonitorServiceTest {
         // other tests in this class.
         val finalState = waitForValue(30.seconds.inWholeMilliseconds) {
             monitor.stateSnapshot().firstOrNull { state ->
-                state.ide.pid == ourPid && state.lastSnapshot.singleOrNull()?.name == "b"
+                state.ide.pid == ourPid && state.projects.singleOrNull()?.name == "b"
             }
         }
-        assertEquals(listOf(ProjectInfo("b", "/p/b")), finalState.lastSnapshot)
+        assertEquals(listOf(ProjectInfo("b", "/p/b")), finalState.projects)
     }
 
     private fun writeMarker(homeDir: Path, port: Int, token: String = "deadbeef") {

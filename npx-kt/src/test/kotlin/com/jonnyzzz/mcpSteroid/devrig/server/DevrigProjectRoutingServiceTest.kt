@@ -388,9 +388,9 @@ class DevrigProjectRoutingServiceTest {
     ): IdeMonitorState {
         val ide = discoveredIde(pid, build)
         return IdeMonitorState(
+            pid = pid,
             ide = ide,
-            status = IdeMonitorStatus.CONNECTED,
-            lastSnapshot = projects,
+            projects = projects,
         )
     }
 

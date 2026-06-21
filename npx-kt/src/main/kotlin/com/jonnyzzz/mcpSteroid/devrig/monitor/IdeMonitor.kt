@@ -23,9 +23,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
@@ -37,13 +34,10 @@ enum class IdeMonitorStatus { CONNECTING, CONNECTED, RECONNECTING }
  * Re-emitted on every status / snapshot change.
  */
 data class IdeMonitorState(
+    val pid: Long,
     val ide: DiscoveredIde,
-    val status: IdeMonitorStatus,
-    val lastSnapshot: List<ProjectInfo> = emptyList(),
-    /** ISO-8601 timestamp of the most recent envelope (snapshot OR ping). */
-    val lastSeenAt: String? = null,
-    /** Server-reported instance id from the first received envelope. */
-    val ideInstanceId: String? = null,
+    val status: IdeMonitorStatus = IdeMonitorStatus.CONNECTED,
+    val projects: List<ProjectInfo> = emptyList(),
     val errorMessage: String? = null,
 )
 
@@ -95,7 +89,7 @@ class IdeMonitorService(
                     // Spawn a worker for each newly-discovered IDE.
                     for ((pid, ide) in live) {
                         if (workers.containsKey(pid)) continue
-                        updateState(pid) { IdeMonitorState(ide = ide, status = IdeMonitorStatus.CONNECTING) }
+                        updateState(pid) { IdeMonitorState(ide.pid, ide = ide, status = IdeMonitorStatus.CONNECTING) }
                         workers[pid] = launch { runConnectionLoop(ide) }
                     }
                 }
@@ -116,7 +110,7 @@ class IdeMonitorService(
                 connectAndStream(ide)
                 // Stream ended cleanly (server closed). Treat as a transient
                 // disconnect and reconnect after backoff.
-                updateState(ide.pid) { (it ?: IdeMonitorState(ide, IdeMonitorStatus.RECONNECTING)).copy(
+                updateState(ide.pid) { (it ?: IdeMonitorState(ide.pid, ide, IdeMonitorStatus.RECONNECTING)).copy(
                     status = IdeMonitorStatus.RECONNECTING,
                     errorMessage = "stream closed by server"
                 )}
@@ -124,7 +118,7 @@ class IdeMonitorService(
                 throw e
             } catch (e: Exception) {
                 log.warn("Connection to ${ide.label} failed: ${e.message}")
-                updateState(ide.pid) { (it ?: IdeMonitorState(ide, IdeMonitorStatus.RECONNECTING)).copy(
+                updateState(ide.pid) { (it ?: IdeMonitorState(ide.pid, ide, IdeMonitorStatus.RECONNECTING)).copy(
                     status = IdeMonitorStatus.RECONNECTING,
                     errorMessage = e.message,
                 )}
@@ -150,9 +144,8 @@ class IdeMonitorService(
             if (!response.status.value.let { it in 200..299 }) {
                 throw IllegalStateException("HTTP ${response.status.value} from ${ide.label}")
             }
-            updateState(ide.pid) { (it ?: IdeMonitorState(ide, IdeMonitorStatus.CONNECTED)).copy(
+            updateState(ide.pid) { (it ?: IdeMonitorState(ide.pid, ide, IdeMonitorStatus.CONNECTED)).copy(
                 status = IdeMonitorStatus.CONNECTED,
-                errorMessage = null,
             )}
             val channel: ByteReadChannel = response.bodyAsChannel()
             while (!channel.isClosedForRead) {
@@ -170,16 +163,11 @@ class IdeMonitorService(
     }
 
     private fun applyEnvelope(ide: DiscoveredIde, env: NpxStreamEnvelope) {
-        val now = nowIso()
         updateState(ide.pid) { current ->
-            val base = current ?: IdeMonitorState(ide = ide, status = IdeMonitorStatus.CONNECTED)
+            val base = current ?: IdeMonitorState(ide.pid, ide = ide, status = IdeMonitorStatus.CONNECTED)
             base.copy(
                 ide = ide,
-                status = IdeMonitorStatus.CONNECTED,
-                lastSeenAt = now,
-                ideInstanceId = base.ideInstanceId ?: env.instanceId,
-                lastSnapshot = if (env.type == "snapshot") env.projects ?: emptyList() else base.lastSnapshot,
-                errorMessage = null,
+                projects = if (env.type == "snapshot") env.projects ?: emptyList() else base.projects,
             )
         }
     }
