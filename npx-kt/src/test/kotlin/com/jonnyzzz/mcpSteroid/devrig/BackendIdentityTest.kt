@@ -6,7 +6,7 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
-import com.jonnyzzz.mcpSteroid.server.base62Sha256
+import com.jonnyzzz.mcpSteroid.server.base36FixedWidth
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -16,7 +16,7 @@ import java.nio.file.Path
 /** R3.3: one uniform `backend_name` scheme `<productCodeLower>-<hash8>` for every source. */
 class BackendIdentityTest {
     @Test
-    fun `backend_name uses the lowercased product code and an 8-char base62 hash of the source key`() {
+    fun `backend_name uses the lowercased product code and an 8-char base36 hash of the source key`() {
         val marker = backendNameForRow(BackendRow.FromMarker(markerIde(pid = 4242L), emptyList()))
         val port = backendNameForRow(BackendRow.FromPort(portIde(port = 65432)))
         val managed = backendNameForRow(BackendRow.FromManaged(managedInfo(id = "idea-community-2025.2.6.2")))
@@ -26,17 +26,17 @@ class BackendIdentityTest {
         assertTrue(port.startsWith("ic-"), port)
         assertTrue(managed.startsWith("ic-"), managed)
 
-        // hash8 is exactly 8 base62 (alphanumeric) chars.
+        // hash8 is exactly 8 base36 (alphanumeric) chars.
         for (name in listOf(marker, port, managed)) {
             val hash = name.substringAfter('-')
             assertEquals(8, hash.length, name)
             assertTrue(hash.all { it.isLetterOrDigit() }, name)
         }
 
-        // Deterministic and round-trippable: recomputing from the same source key gives the same id.
-        assertEquals("ic-" + base62Sha256("pid:4242").take(8), marker)
-        assertEquals("ic-" + base62Sha256("port:65432").take(8), port)
-        assertEquals("ic-" + base62Sha256("managed:idea-community-2025.2.6.2").take(8), managed)
+        // Deterministic and round-trippable: recomputing from the same source key + build gives the same id.
+        assertEquals("ic-" + base36FixedWidth("pid:4242", "IC-253.1").take(8), marker)
+        assertEquals("ic-" + base36FixedWidth("port:65432", "IC-253.1").take(8), port)
+        assertEquals("ic-" + base36FixedWidth("managed:idea-community-2025.2.6.2", "IC-IC-252.1").take(8), managed)
     }
 
     @Test

@@ -5,7 +5,8 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -61,6 +62,20 @@ class ProjectCommandRenderTest {
         buildNumber = buildNumber,
     )
 
+    /**
+     * A single routed project for a marker row. The renderer only reads
+     * [ProjectRoute.originalProjectName] (= [IdeProjectState.ideProjectName])
+     * and [ProjectRoute.projectPath]; the embedded [DiscoveredIde] is never
+     * inspected here, so a throwaway one keeps the fixture minimal.
+     */
+    private fun route(name: String, path: String): ProjectRoute =
+        ProjectRoute(
+            route = markerIde(name = name),
+            projectInfo = IdeProjectState(name = name, projectPath = path),
+            exposedProjectName = "$name-rendertst",
+            projectPath = path,
+        )
+
     // ------------------------------ shape ---------------------------------
 
     @Test
@@ -74,7 +89,7 @@ class ProjectCommandRenderTest {
     @Test
     fun `output ends with a trailing blank line so shells separate the prompt cleanly`() {
         val listing = ProjectListing(
-            markerRows = listOf(BackendRow.FromMarker(markerIde(), listOf(ProjectInfo("p", "/p")))),
+            markerRows = listOf(BackendRow.FromMarker(markerIde(), listOf(route("p", "/p")))),
             portRows = emptyList(),
         )
         val text = render(listing)
@@ -101,7 +116,7 @@ class ProjectCommandRenderTest {
             markerRows = listOf(
                 BackendRow.FromMarker(
                     ide = markerIde(name = "IntelliJ IDEA", version = "2025.3.3", pid = 1234L),
-                    projects = listOf(ProjectInfo(name = "my-app", path = "/Users/x/Work/my-app")),
+                    projects = listOf(route(name = "my-app", path = "/Users/x/Work/my-app")),
                 )
             ),
             portRows = emptyList(),
@@ -124,8 +139,8 @@ class ProjectCommandRenderTest {
                 BackendRow.FromMarker(
                     ide = markerIde(name = "PyCharm", version = "2025.3.1", pid = 4242L),
                     projects = listOf(
-                        ProjectInfo(name = "alpha", path = "/p/alpha"),
-                        ProjectInfo(name = "bravo-long", path = "/p/bravo"),
+                        route(name = "alpha", path = "/p/alpha"),
+                        route(name = "bravo-long", path = "/p/bravo"),
                     ),
                 )
             ),
@@ -145,11 +160,11 @@ class ProjectCommandRenderTest {
             markerRows = listOf(
                 BackendRow.FromMarker(
                     markerIde(name = "IntelliJ IDEA", version = "2025.3.3", pid = 1L),
-                    listOf(ProjectInfo("a", "/a"), ProjectInfo("b", "/b")),
+                    listOf(route("a", "/a"), route("b", "/b")),
                 ),
                 BackendRow.FromMarker(
                     markerIde(name = "PyCharm", version = "2025.3.1", pid = 2L),
-                    listOf(ProjectInfo("c", "/c")),
+                    listOf(route("c", "/c")),
                 ),
             ),
             portRows = emptyList(),
@@ -168,7 +183,7 @@ class ProjectCommandRenderTest {
     fun `IDE with no open projects is dropped from list but counted in summary`() {
         val listing = ProjectListing(
             markerRows = listOf(
-                BackendRow.FromMarker(markerIde(name = "IntelliJ IDEA", pid = 1L), listOf(ProjectInfo("a", "/a"))),
+                BackendRow.FromMarker(markerIde(name = "IntelliJ IDEA", pid = 1L), listOf(route("a", "/a"))),
                 BackendRow.FromMarker(markerIde(name = "GoLand", pid = 2L), emptyList()),
             ),
             portRows = emptyList(),
@@ -219,7 +234,7 @@ class ProjectCommandRenderTest {
     @Test
     fun `port-only IDE appears in skipped footer and not in projects list`() {
         val listing = ProjectListing(
-            markerRows = listOf(BackendRow.FromMarker(markerIde(pid = 1L), listOf(ProjectInfo("a", "/a")))),
+            markerRows = listOf(BackendRow.FromMarker(markerIde(pid = 1L), listOf(route("a", "/a")))),
             portRows = listOf(BackendRow.FromPort(portIde(port = 63342))),
         )
         val text = render(listing)

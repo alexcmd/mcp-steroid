@@ -22,6 +22,7 @@ class StubMcpSteroidTools(
     private val listProjects by lazy {
         DevrigListProjectsToolHandler(
             routing = services.projectRouting,
+            inventory = services.backendInventory,
         )
     }
 

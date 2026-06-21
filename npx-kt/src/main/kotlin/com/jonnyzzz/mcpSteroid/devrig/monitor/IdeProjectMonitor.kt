@@ -27,14 +27,14 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 data class IdeMonitorState(
     val ide: DiscoveredIde,
-    val projects: List<IdeProjectState>,
+    val projects: List<IdeProjectState> = emptyList(),
 )
 
 data class IdeProjectState(
     val name: String,
     val projectPath: String,
-    val ideBackendName: String,
-    val ideProjectName: String,
+    val ideBackendName: String = "",
+    val ideProjectName: String = name,
 )
 
 /**

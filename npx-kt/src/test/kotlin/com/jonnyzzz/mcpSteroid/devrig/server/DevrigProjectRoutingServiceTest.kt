@@ -4,15 +4,15 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
-import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
+import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
@@ -23,47 +23,13 @@ class DevrigProjectRoutingServiceTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `hash is stable, eight alphanumeric chars, and never ends with a dash`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project")).toRealPath()
-
-        val first = DevrigProjectRoutingService.projectHash(projectHome, 1234)
-        val second = DevrigProjectRoutingService.projectHash(projectHome, 1234)
-
-        assertEquals(first, second)
-        assertEquals(8, first.length)
-        assertEquals(first, first.filter { it in '0'..'9' || it in 'a'..'z' || it in 'A'..'Z' })
-        assertNotEquals('-', first.last())
-    }
-
-    @Test
-    fun `hash changes for different ide pids on the same project home`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project")).toRealPath()
-
-        assertNotEquals(
-            DevrigProjectRoutingService.projectHash(projectHome, 1234),
-            DevrigProjectRoutingService.projectHash(projectHome, 5678),
-        )
-    }
-
-    @Test
-    fun `hash changes for different canonical project homes`() {
-        val projectA = Files.createDirectories(tempDir.resolve("project-a")).toRealPath()
-        val projectB = Files.createDirectories(tempDir.resolve("project-b")).toRealPath()
-
-        assertNotEquals(
-            DevrigProjectRoutingService.projectHash(projectA, 1234),
-            DevrigProjectRoutingService.projectHash(projectB, 1234),
-        )
-    }
-
-    @Test
     fun `canonical path collapses symbolic link variants`() {
         val realProject = Files.createDirectories(tempDir.resolve("real").resolve("project"))
         val symlink = tempDir.resolve("link-project")
         Files.createSymbolicLink(symlink, realProject)
 
         assertEquals(
-            realProject.toRealPath(),
+            realProject.toRealPath().toString(),
             DevrigProjectRoutingService.canonicalProjectHome(symlink.toString()),
         )
     }
@@ -74,7 +40,7 @@ class DevrigProjectRoutingServiceTest {
         // must not throw — toRealPath() would — or one vanished path breaks routing for everyone.
         val vanished = tempDir.resolve("gone").resolve("..").resolve("gone-project")
         assertEquals(
-            vanished.toAbsolutePath().normalize(),
+            vanished.toAbsolutePath().normalize().toString(),
             DevrigProjectRoutingService.canonicalProjectHome(vanished.toString()),
         )
     }
@@ -86,13 +52,13 @@ class DevrigProjectRoutingServiceTest {
             state(
                 pid = 42,
                 projects = listOf(
-                    ProjectInfo("alive", existing.toString()),
-                    ProjectInfo("vanished", tempDir.resolve("deleted-project").toString()),
+                    IdeProjectState("alive", existing.toString()),
+                    IdeProjectState("vanished", tempDir.resolve("deleted-project").toString()),
                 ),
             )
         )
 
-        val routes = service.routes().values
+        val routes = service.routes()
         assertEquals(setOf("alive", "vanished"), routes.map { it.originalProjectName }.toSet())
         // The surviving project still resolves normally.
         val alive = routes.single { it.originalProjectName == "alive" }
@@ -105,11 +71,11 @@ class DevrigProjectRoutingServiceTest {
         val service = routingService(
             state(
                 pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+                projects = listOf(IdeProjectState("mcp-steroid", projectHome.toString())),
             )
         )
 
-        val route = service.routes().values.single()
+        val route = service.routes().single()
 
         assertEquals("mcp-steroid", route.originalProjectName)
         assertEquals(testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl, route.route.rpcBaseUrl)
@@ -124,15 +90,15 @@ class DevrigProjectRoutingServiceTest {
         val service = routingService(
             state(
                 pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectA.toString())),
+                projects = listOf(IdeProjectState("mcp-steroid", projectA.toString())),
             ),
             state(
                 pid = 43,
-                projects = listOf(ProjectInfo("mcp-steroid", projectB.toString())),
+                projects = listOf(IdeProjectState("mcp-steroid", projectB.toString())),
             ),
         )
 
-        val routes = service.routes().values.toList()
+        val routes = service.routes()
 
         assertEquals(2, routes.size)
         assertEquals(2, routes.map { it.exposedProjectName }.distinct().size)
@@ -159,20 +125,18 @@ class DevrigProjectRoutingServiceTest {
 
     @Test
     fun `newest ide returns null when no ides are discovered`() {
-        val service = routingService()
-
-        assertEquals(null, service.newestIdeOrNull())
+        assertEquals(null, routingService().newestIde())
     }
 
     @Test
     fun `newest ide returns the only discovered ide`() {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val service = routingService(
-            state(pid = 42, projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString()))),
+            state(pid = 42, projects = listOf(IdeProjectState("mcp-steroid", projectHome.toString()))),
         )
 
-        assertNotNull(service.newestIdeOrNull())
-        assertEquals(42, service.newestIdeOrNull()?.pid)
+        assertNotNull(service.newestIde())
+        assertEquals(42, service.newestIde()?.pid)
     }
 
     @Test
@@ -183,17 +147,17 @@ class DevrigProjectRoutingServiceTest {
             // Higher pid and later start time, but the older build must not win.
             state(
                 pid = 99,
-                projects = listOf(ProjectInfo("a", projectA.toString())),
+                projects = listOf(IdeProjectState("a", projectA.toString())),
                 build = "IU-253.24374.151",
             ),
             state(
                 pid = 1,
-                projects = listOf(ProjectInfo("b", projectB.toString())),
+                projects = listOf(IdeProjectState("b", projectB.toString())),
                 build = "IU-261.1",
             ),
         )
 
-        assertEquals(1, service.newestIdeOrNull()?.pid)
+        assertEquals(1, service.newestIde()?.pid)
     }
 
     @Test
@@ -203,17 +167,17 @@ class DevrigProjectRoutingServiceTest {
         val service = routingService(
             state(
                 pid = 1,
-                projects = listOf(ProjectInfo("a", projectA.toString())),
+                projects = listOf(IdeProjectState("a", projectA.toString())),
                 build = "IU-261.24374.151",
             ),
             state(
                 pid = 2,
-                projects = listOf(ProjectInfo("b", projectB.toString())),
+                projects = listOf(IdeProjectState("b", projectB.toString())),
                 build = "IU-261.24374.151",
             ),
         )
 
-        assertEquals(2, service.newestIdeOrNull()?.pid)
+        assertEquals(2, service.newestIde()?.pid)
     }
 
     @Test
@@ -224,17 +188,17 @@ class DevrigProjectRoutingServiceTest {
         val service = routingService(
             state(
                 pid = 1,
-                projects = listOf(ProjectInfo("a", projectA.toString())),
+                projects = listOf(IdeProjectState("a", projectA.toString())),
                 build = "IU-253.1",
             ),
             state(
                 pid = 2,
-                projects = listOf(ProjectInfo("b", projectB.toString())),
+                projects = listOf(IdeProjectState("b", projectB.toString())),
                 build = "GO-261.1",
             ),
         )
 
-        assertEquals(2, service.newestIdeOrNull()?.pid)
+        assertEquals(2, service.newestIde()?.pid)
     }
 
     @Test
@@ -243,67 +207,7 @@ class DevrigProjectRoutingServiceTest {
             state(pid = 7, projects = emptyList(), build = "IU-261.1"),
         )
 
-        assertEquals(7, service.newestIdeOrNull()?.pid)
-    }
-
-    @Test
-    fun `open_project target prefers a running managed backend over a newer user ide`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val service = routingService(
-            managedPids = setOf(2L),
-            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString())), build = "IU-261.1"),
-            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString())), build = "IU-253.9"),
-        )
-
-        // pid 1 is the newer build, but pid 2 is the agent's managed backend — it must win.
-        assertEquals(2, service.openProjectTargetIde()?.pid)
-        // newestIdeOrNull is unaffected and still picks the newest build.
-        assertEquals(1, service.newestIdeOrNull()?.pid)
-    }
-
-    @Test
-    fun `open_project target falls back to newest when no managed backend runs`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val service = routingService(
-            managedPids = emptySet(),
-            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString())), build = "IU-253.9"),
-            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString())), build = "IU-261.1"),
-        )
-
-        assertEquals(2, service.openProjectTargetIde()?.pid)
-    }
-
-    @Test
-    fun `open_project target ignores a managed pid that is not yet discovered`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        // The managed backend was started (pid 99), but its marker has not appeared yet, so it is
-        // not among discovered IDEs. Selection must fall back to the discovered newest, not an error.
-        val service = routingService(
-            managedPids = setOf(99L),
-            state(pid = 1, projects = listOf(ProjectInfo("a", projectHome.toString())), build = "IU-261.1"),
-        )
-
-        assertEquals(1, service.openProjectTargetIde()?.pid)
-    }
-
-    @Test
-    fun `open_project target picks the newest among several managed backends`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val service = routingService(
-            managedPids = setOf(1L, 2L),
-            state(pid = 1, projects = listOf(ProjectInfo("a", projectA.toString())), build = "IU-261.1"),
-            state(pid = 2, projects = listOf(ProjectInfo("b", projectB.toString())), build = "IU-253.9"),
-        )
-
-        assertEquals(1, service.openProjectTargetIde()?.pid)
-    }
-
-    @Test
-    fun `open_project target returns null when no ide is discovered`() {
-        assertEquals(null, routingService().openProjectTargetIde())
+        assertEquals(7, service.newestIde()?.pid)
     }
 
     @Test
@@ -312,11 +216,11 @@ class DevrigProjectRoutingServiceTest {
         val routing = routingService(
             state(
                 pid = 42,
-                projects = listOf(ProjectInfo("mcp-steroid", projectHome.toString())),
+                projects = listOf(IdeProjectState("mcp-steroid", projectHome.toString())),
                 build = "IU-261.24374.151",
             ),
         )
-        val route = routing.routes().values.single()
+        val route = routing.routes().single()
 
         val context = DevrigPromptsContextHandler(routing).buildPromptsContext(route.exposedProjectName)
 
@@ -371,35 +275,30 @@ class DevrigProjectRoutingServiceTest {
         }
     }
 
-    private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
-        DevrigProjectRoutingService({ states.toList() }, {emptySet()})
+    /** The newest discovered IDE — relocated from the removed `newestIdeOrNull()` to the kept companion. */
+    private fun DevrigProjectRoutingService.newestIde(): DiscoveredIde? =
+        DevrigProjectRoutingService.newestOf(discoveredBackends())
 
-    private fun routingService(
-        managedPids: Set<Long>,
-        vararg states: IdeMonitorState,
-    ): DevrigProjectRoutingService =
-        DevrigProjectRoutingService({ states.toList() }, { managedPids })
+    private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
+        DevrigProjectRoutingService { states.toList() }
 
     private fun state(
         pid: Long,
-        projects: List<ProjectInfo>,
+        projects: List<IdeProjectState>,
         build: String = "IU-261.1",
-    ): IdeMonitorState {
-        val ide = discoveredIde(pid, build)
-        return IdeMonitorState(
-            pid = pid,
-            ide = ide,
+    ): IdeMonitorState =
+        IdeMonitorState(
+            ide = discoveredIde(pid, build),
             projects = projects,
         )
-    }
 
     private fun discoveredIde(pid: Long, build: String): DiscoveredIde =
         DiscoveredIde(
+            backendName = backendNameForMarker(pid, build),
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer secret-$pid"),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
             plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-            backendName = "mock-backend-name",
         )
 }

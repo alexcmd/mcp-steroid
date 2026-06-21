@@ -53,9 +53,10 @@ fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
         return
     }
 
-    val reachableRows = listing.markerRows
+    val reachableRows = listing.markerRows.filter { it.projects != null }
     val projectEntries = reachableRows.flatMap { row ->
-        row.projects.map { project -> ProjectEntry(row, project) }
+        // Unreachable markers (projects == null) are excluded above; orEmpty guards the reachable-but-idle case.
+        row.projects.orEmpty().map { project -> ProjectEntry(row, project) }
     }
 
     if (projectEntries.isEmpty()) {
@@ -70,7 +71,7 @@ fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
     val padWidth = projectEntries.maxOf { it.project.exposedProjectName.codePointWidth() }.coerceAtMost(40)
     for ((index, entry) in projectEntries.withIndex()) {
         val paddedName = entry.project.exposedProjectName.padEndCodePoints(padWidth)
-        out.println("  [${index + 1}] $paddedName  →  ${entry.project.exposedProjectName}")
+        out.println("  [${index + 1}] $paddedName  →  ${entry.project.projectPath}")
         out.println("        ${backendDisplayName(entry.row)} (${backendLocatorLabel(entry.row)})")
         out.println("        ${backendPluginStatusText(entry.row)}")
         if (index < projectEntries.lastIndex) out.println()
@@ -114,7 +115,7 @@ private fun renderSkippedProjectFooter(
     listing: ProjectListing,
     out: PrintStream,
 ) {
-    val unreachableRows = listing.markerRows
+    val unreachableRows = listing.markerRows.filter { it.projects == null }
     val portRows = listing.portRows
     if (unreachableRows.isEmpty() && portRows.isEmpty()) return
 

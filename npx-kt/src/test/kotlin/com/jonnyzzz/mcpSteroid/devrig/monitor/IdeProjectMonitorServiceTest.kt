@@ -9,11 +9,6 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.devrig.waitForValue
 import com.jonnyzzz.mcpSteroid.server.DEVRIG_RPC_PATH_PREFIX
-import com.jonnyzzz.mcpSteroid.server.NPX_NDJSON_MIME_TYPE
-import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
-import com.jonnyzzz.mcpSteroid.server.NpxStreamEnvelope
-import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -23,15 +18,13 @@ import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.ktor.server.request.receiveText
-import io.ktor.server.response.respondTextWriter
-import io.ktor.server.routing.post
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -41,35 +34,28 @@ import java.io.File
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
-import java.time.format.DateTimeFormatter
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.isActive
 
 /**
  * End-to-end round-trip: a tiny Ktor server stands in for the IDE, we point
  * an [IdePidDiscoveryService] at a fake `~/.mcp-steroid/markers/<pid>.mcp-steroid` marker, and
- * verify that [IdeProjectMonitorService] connects, receives the IDE's snapshot
- * envelopes, and updates [IdeProjectMonitorService.stateSnapshot].
+ * verify that [IdeProjectMonitorService] connects, fetches the IDE's project
+ * snapshot via `GET <rpcBaseUrl>/projects`, and surfaces it on
+ * [IdeProjectMonitorService.stateSnapshot].
  */
 class IdeProjectMonitorServiceTest {
 
     private val ourPid = ProcessHandle.current().pid()
-    private val seq = AtomicLong(0)
-    private val instanceId = "fake-ide-test"
 
     private lateinit var server: EmbeddedServer<*, *>
     private lateinit var httpClient: HttpClient
     private lateinit var scope: CoroutineScope
-    private val receivedClientInfos = mutableListOf<NpxStreamClientInfo>()
     private var port: Int = 0
 
-    /** Per-test handle that tells the server which envelopes to emit and when. */
-    private val script = mutableListOf<NpxStreamEnvelope>()
+    /** Per-test handle for the project list the fake server returns from `/projects`. */
+    private val projectsJson = StringBuilder()
 
     /** Authorization headers seen by the fake server, indexed by request. */
     private val receivedAuthHeaders = mutableListOf<String?>()
@@ -79,24 +65,9 @@ class IdeProjectMonitorServiceTest {
         port = freePort()
         server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
             routing {
-                post("$DEVRIG_RPC_PATH_PREFIX/projects/stream") {
+                get("$DEVRIG_RPC_PATH_PREFIX/projects") {
                     receivedAuthHeaders += call.request.headers["Authorization"]
-                    val body = call.receiveText()
-                    val info = NpxStreamJson.decodeClientInfo(body)
-                    receivedClientInfos += info
-                    call.respondTextWriter(ContentType.parse(NPX_NDJSON_MIME_TYPE)) {
-                        for (env in script) {
-                            write(NpxStreamJson.encodeEnvelope(env))
-                            write("\n")
-                            flush()
-                        }
-                        // Hold the connection open until cancelled — production
-                        // semantics are "stream stays open forever". The test
-                        // tears the server down to drop the connection.
-                        while (isActive) {
-                            delay(50.milliseconds)
-                        }
-                    }
+                    call.respondText(projectsJson.toString(), ContentType.Application.Json)
                 }
             }
         }.also { it.start(wait = false) }
@@ -122,14 +93,14 @@ class IdeProjectMonitorServiceTest {
     }
 
     @Test
-    fun `monitor receives the IDE's first snapshot and surfaces it on states`(
+    fun `monitor receives the IDE's snapshot and surfaces it on states`(
         @TempDir homeDir: Path,
     ) = runBlocking {
         // Marker pointing the discovery layer at our fake IDE.
         writeMarker(homeDir, port)
 
-        // Pre-load one snapshot the server will emit on connect.
-        script += snapsxhot(listOf(ProjectInfo("alpha", "/p/alpha")))
+        // The project list the fake IDE will return on /projects.
+        projectsJson.append(projectsResponse(listOf(project("alpha", "/p/alpha"))))
 
         val discovery = IdePidDiscoveryService(
             markersDir = PidMarker.markerDirectory(homeDir),
@@ -138,8 +109,6 @@ class IdeProjectMonitorServiceTest {
         val monitor = IdeProjectMonitorService(
             httpClient = httpClient,
             discovery = discovery,
-            clientInfo = NpxStreamClientInfo(client = "test-suite", clientPid = 4242L),
-            reconnectBackoff = 200.milliseconds,
         )
 
         val ide = waitForValue(10.seconds.inWholeMilliseconds) {
@@ -148,50 +117,12 @@ class IdeProjectMonitorServiceTest {
             }
         }
 
-        assertEquals(listOf(ProjectInfo("alpha", "/p/alpha")), ide.projects)
+        assertEquals(listOf(IdeProjectState("alpha", "/p/alpha")), ide.projects)
 
-        assertTrue(receivedClientInfos.any { it.client == "test-suite" && it.clientPid == 4242L })
         assertTrue(
             receivedAuthHeaders.any { it == "Bearer deadbeef" },
             "expected the monitor to send Authorization: Bearer <token>; saw: $receivedAuthHeaders"
         )
-    }
-
-    @Test
-    fun `monitor follows multiple snapshot envelopes from the IDE`(
-        @TempDir homeDir: Path,
-    ) = runBlocking {
-        writeMarker(homeDir, port)
-
-        script += snapshot(listOf(ProjectInfo("a", "/p/a")))
-        script += snapshot(listOf(ProjectInfo("a", "/p/a"), ProjectInfo("b", "/p/b")))
-        script += snapshot(listOf(ProjectInfo("b", "/p/b")))
-
-        val discovery = IdePidDiscoveryService(
-            markersDir = PidMarker.markerDirectory(homeDir),
-            allowHosts = listOf("127.0.0.1"),
-        )
-        val monitor = IdeProjectMonitorService(
-            httpClient = httpClient,
-            discovery = discovery,
-            clientInfo = NpxStreamClientInfo(client = "test-suite"),
-            reconnectBackoff = 200.milliseconds,
-        )
-
-        // 30s timeout (was 10s) — observed a single JobCancellationException
-        // flake after the coroutines 1.10.2 bump under heavy parallel CI load.
-        // The race is between discovery.start populating + monitor.start
-        // connecting to the fake server + the server emitting all three
-        // snapshots in script order; with 200ms scanInterval and 200ms
-        // reconnectBackoff plus client/server warmup, 10s left no slack.
-        // 30s is still well under the JUnit suite default and matches the
-        // other tests in this class.
-        val finalState = waitForValue(30.seconds.inWholeMilliseconds) {
-            monitor.stateSnapshot().firstOrNull { state ->
-                state.ide.pid == ourPid && state.projects.singleOrNull()?.name == "b"
-            }
-        }
-        assertEquals(listOf(ProjectInfo("b", "/p/b")), finalState.projects)
     }
 
     private fun writeMarker(homeDir: Path, port: Int, token: String = "deadbeef") {
@@ -215,14 +146,12 @@ class IdeProjectMonitorServiceTest {
             .writeText(PidMarkerJson.encode(marker))
     }
 
-    private fun snapshot(projects: List<ProjectInfo>) = NpxStreamEnvelope(
-        type = "snapshot",
-        seq = seq.incrementAndGet(),
-        sentAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
-        instanceId = instanceId,
-        pid = 99999L,
-        projects = projects,
-    )
+    /** One project entry in the shape the monitor's `/projects` parser expects. */
+    private fun project(name: String, path: String): String =
+        """{"name":"$name","path":"$path","backend_name":"","project_name":"$name"}"""
+
+    private fun projectsResponse(projects: List<String>): String =
+        """{"projects":[${projects.joinToString(",")}]}"""
 
     private fun freePort(): Int = ServerSocket(0).use { it.localPort }
 }

@@ -8,6 +8,7 @@ import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendInfo
 import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendState
 import com.jonnyzzz.mcpSteroid.devrig.backendNameForRow
+import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
 import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
@@ -82,7 +83,7 @@ class DevrigListToolHandlersTest {
             isProcessAlive = { true },
         )
 
-        val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
+        val response = DevrigListProjectsToolHandler(routing, inventory).collectListProjectsResponse()
 
         val markerName = backendNameForMarker(42L, "IU-261.1")
         val portName = backendNameForPort(63342, "261.5555.1")
@@ -103,16 +104,31 @@ class DevrigListToolHandlersTest {
     }
 
     @Test
-    fun `managed backend with dead pid is listed as not runni3ng without any http fetch`(
+    fun `managed backend with a dead pid degrades to unreachable without any http fetch`(
         @TempDir tempDir: Path,
     ): Unit = runBlocking {
         // RUNNING per its (stale) pid file, but the process is dead. The liveness check must settle this
-        // before any HTTP — here neither the marker nor the port source can do HTTP at all, so the only
-        // way to a green assertion is the inventory's own ProcessHandle-style liveness downgrade.
-        val routing = DevrigProjectRoutingService { emptyList() }
-        val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
+        // BEFORE any HTTP — there is no marker or port source to fetch from, so the only path to a
+        // not-running verdict is the inventory's own ProcessHandle-style liveness downgrade. Asserted on
+        // the inventory's rich BackendInfo (the `devrig backend --json` surface): the slim
+        // ListedBackendInfo on `steroid_list_projects` carries no reachability field to observe here.
+        val managed = managedBackendInfo(tempDir, runningPid = 99999L, state = ManagedBackendState.RUNNING)
+        val inventory = BackendInventory(
+            routing = DevrigProjectRoutingService { emptyList() },
+            portDiscovery = { emptySet() },
+            managedBackends = { listOf(managed) },
+            isProcessAlive = { false },
+        )
 
-        response.backends.single()
+        val backend = inventory.collectBackendInfos().single()
+
+        assertEquals("managed", backend.source)
+        assertEquals(false, backend.reachable)
+        assertEquals(false, backend.routable)
+        assertEquals(null, backend.pid)
+        val detail = backend.managedDetail ?: error("managed row must carry managedDetail: $backend")
+        assertEquals("unreachable", detail.state)
+        assertEquals(null, detail.runningPid)
     }
 
     @Test

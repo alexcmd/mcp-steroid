@@ -1,7 +1,7 @@
 package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
-import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
+import com.jonnyzzz.mcpSteroid.devrig.collectListedBackends
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.server.ListWindowsResponse
@@ -48,8 +48,9 @@ class DevrigListWindowsToolHandler(
                     )
                 }
             },
-            //TODO: resolve backends here too
-            backends = listOf()
+            // backends[] = the whole inventory (markers + port-discovered + managed) through the ONE shared
+            // BackendRow id + mapping, so list_windows and list_projects never diverge on which backends exist.
+            backends = inventory.collectListedBackends(),
         )
     }
 }

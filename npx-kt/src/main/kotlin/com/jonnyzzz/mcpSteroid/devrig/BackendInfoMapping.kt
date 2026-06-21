@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.server.BackendInfo
+import com.jonnyzzz.mcpSteroid.server.ListedBackendInfo
 import com.jonnyzzz.mcpSteroid.server.ListedProject
 import com.jonnyzzz.mcpSteroid.server.ManagedBackendDetail
 import com.jonnyzzz.mcpSteroid.server.PortBackendDetail
@@ -33,6 +34,44 @@ fun backendNameForRow(row: BackendRow): String = when (row) {
 }
 
 /**
+ * The whole inventory as slim [ListedBackendInfo]s for the MCP `steroid_list_projects` /
+ * `steroid_list_windows` `backends[]`: every row (marker + port + managed), keep-first de-duplicated by
+ * `backend_name` (mirrors `backend --json`), each mapped via [listedBackendInfoForRow].
+ */
+suspend fun BackendInventory.collectListedBackends(): List<ListedBackendInfo> =
+    backendRowsWithStableIds(collectRows()).map { (backendName, row) -> listedBackendInfoForRow(row, backendName) }
+
+/**
+ * Maps a discovery [BackendRow] to the slim [ListedBackendInfo] carried by the MCP `steroid_list_projects`
+ * / `steroid_list_windows` `backends[]`. Unlike [backendInfoForRow] (the rich CLI/`--json` schema) this
+ * surfaces only the identity an agent needs to pick a backend: its `backend_name`, display name, and
+ * version/build. Every inventory source (marker, port, managed) is represented.
+ */
+fun listedBackendInfoForRow(
+    row: BackendRow,
+    backendName: String = backendNameForRow(row),
+): ListedBackendInfo = when (row) {
+    is BackendRow.FromMarker -> ListedBackendInfo(
+        backendName = backendName,
+        displayName = row.ide.ide.name,
+        version = row.ide.ide.version,
+        build = row.ide.ide.build,
+    )
+    is BackendRow.FromPort -> ListedBackendInfo(
+        backendName = backendName,
+        displayName = portBackendDisplayName(row.ide),
+        version = null,
+        build = row.ide.buildNumber,
+    )
+    is BackendRow.FromManaged -> ListedBackendInfo(
+        backendName = backendName,
+        displayName = row.displayName,
+        version = row.info.version,
+        build = row.info.buildNumber,
+    )
+}
+
+/**
  * R3.4 — maps a discovery [BackendRow] to the single shared [BackendInfo] schema. The ONE representation
  * backing both the MCP `steroid_list_projects` `backends[]` and the devrig CLI `backend/project --json`
  * `backends[]`. No field of the historical hand-built `backendEntryJson` is dropped (see R3.4 inventory).
@@ -60,7 +99,9 @@ fun backendInfoForRow(
             managed = managed,
             routable = reachable,
             reachable = reachable,
-            error = null,
+            // An unreachable marker (projects == null) must carry a non-null reason; fall back when the
+            // fetch failure left no message. A reachable marker has no error.
+            error = if (reachable) null else (row.errorMessage ?: "unreachable"),
             locator = backendLocatorLabel(row),
         )
     }

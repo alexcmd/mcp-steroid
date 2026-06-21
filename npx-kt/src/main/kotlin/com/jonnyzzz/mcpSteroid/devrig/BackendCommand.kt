@@ -52,7 +52,12 @@ sealed interface BackendRow {
 
     data class FromMarker(
         val ide: DiscoveredIde,
-        val projects: List<ProjectRoute>,
+        /**
+         * The backend's open projects, or `null` when the marker is **unreachable** (its bridge did not
+         * answer). `null` and an empty list are distinct: `emptyList()` is a reachable IDE with nothing
+         * open; `null` drives `reachable=false` in [backendInfoForRow] and the `(unreachable: …)` render.
+         */
+        val projects: List<ProjectRoute>? = null,
         val errorMessage: String? = null,
         override val managed: Boolean = false,
     ) : BackendRow {
@@ -550,7 +555,7 @@ fun renderBackendJson(rows: List<BackendRow>, out: PrintStream) {
 
 /**
  * Pairs every row with its R3.3 `backend_name`, de-duplicating by keep-first + WARN. Shared by
- * `backend/project --json` and the MCP handlers' `backends[]` (via `collectBackendInfos`).
+ * `backend/project --json` and the MCP handlers' `backends[]` (via `collectListedBackends`).
  */
 fun backendRowsWithStableIds(rows: List<BackendRow>): List<Pair<String, BackendRow>> {
     val rowsWithIds = rows.map { row -> backendNameForRow(row) to row }
@@ -581,7 +586,8 @@ private fun listedProjectsForRow(backendName: String, row: BackendRow): List<Lis
     // The exposed `project_name` and the salted hash are computed once, in DevrigProjectRoutingService,
     // and carried on each ProjectRoute. Here we only project that route onto the serializable schema —
     // no hashing is recomputed. The raw folder name is preserved in `name` for `jq '.projects[].name'`.
-    return row.projects.map { route ->
+    // An unreachable marker (projects == null) contributes no project rows.
+    return row.projects.orEmpty().map { route ->
         ListedProject(
             projectName = route.exposedProjectName,
             name = route.originalProjectName,
@@ -592,18 +598,26 @@ private fun listedProjectsForRow(backendName: String, row: BackendRow): List<Lis
 }
 
 private fun renderMarkerProjects(row: BackendRow.FromMarker, out: PrintStream) {
-    if (row.projects.isEmpty()) {
-        out.println("        (no open projects)")
-        return
-    }
-    // Right-pad project names so `→` arrows line up — turns the inner
-    // list into a small two-column table when more than one project
-    // is open. Cap the pad so a single unusually long name doesn't
-    // push every other row's path off the screen.
-    val padWidth = row.projects.maxOf { it.originalProjectName.codePointWidth() }.coerceAtMost(40)
-    for (p in row.projects) {
-        val paddedName = p.originalProjectName.padEndCodePoints(padWidth)
-        out.println("        $paddedName  →  ${p.projectPath}")
+    val projects = row.projects
+    when {
+        // null == the bridge never answered: flag it as unreachable with the captured reason, so the
+        // operator can tell "IDE is up but idle" (empty list, below) from "IDE didn't respond".
+        projects == null -> {
+            val reason = row.errorMessage ?: "unreachable"
+            out.println("        (unreachable: $reason)")
+        }
+        projects.isEmpty() -> out.println("        (no open projects)")
+        else -> {
+            // Right-pad project names so `→` arrows line up — turns the inner
+            // list into a small two-column table when more than one project
+            // is open. Cap the pad so a single unusually long name doesn't
+            // push every other row's path off the screen.
+            val padWidth = projects.maxOf { it.originalProjectName.codePointWidth() }.coerceAtMost(40)
+            for (p in projects) {
+                val paddedName = p.originalProjectName.padEndCodePoints(padWidth)
+                out.println("        $paddedName  →  ${p.projectPath}")
+            }
+        }
     }
 }
 

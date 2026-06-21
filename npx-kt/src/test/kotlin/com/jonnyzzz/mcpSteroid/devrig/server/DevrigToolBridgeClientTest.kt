@@ -10,10 +10,7 @@ import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
 import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
-import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendInfo
-import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendState
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
-import com.jonnyzzz.mcpSteroid.server.hasMcpSteroid
 import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
@@ -25,7 +22,7 @@ import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -180,12 +177,11 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 7,
                 ide = discoveredIde(pid = 7),
-                projects = listOf(ProjectInfo("original-project", projectHome.toString())),
+                projects = listOf(IdeProjectState("original-project", projectHome.toString())),
             )
         )
-        val route = routing.routes().values.single()
+        val route = routing.routes().single()
         val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), routing, testBeacon(tempDir))
 
         val result = handler.executeCode(
@@ -221,12 +217,11 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42),
-                projects = listOf(ProjectInfo("original-project", projectHome.toString())),
+                projects = listOf(IdeProjectState("original-project", projectHome.toString())),
             )
         )
-        val route = routing.routes().values.single()
+        val route = routing.routes().single()
         val handler = DevrigExecuteFeedbackToolHandler(DevrigToolBridgeClient(httpClient),routing, testBeacon(tempDir))
 
         val result = handler.handleFeedback(
@@ -257,12 +252,11 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42),
-                projects = listOf(ProjectInfo("original-project", projectHome.toString())),
+                projects = listOf(IdeProjectState("original-project", projectHome.toString())),
             )
         )
-        val route = routing.routes().values.single()
+        val route = routing.routes().single()
         val handler = DevrigVisionScreenshotToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.screenshotWindow(
@@ -294,17 +288,15 @@ class DevrigToolBridgeClientTest {
         val projectB = Files.createDirectories(tempDir.resolve("project-b"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42),
-                projects = listOf(ProjectInfo("project-a", projectA.toString())),
+                projects = listOf(IdeProjectState("project-a", projectA.toString())),
             ),
             IdeMonitorState(
-                pid = 43,
                 ide = discoveredIde(pid = 43),
-                projects = listOf(ProjectInfo("project-b", projectB.toString())),
+                projects = listOf(IdeProjectState("project-b", projectB.toString())),
             ),
         )
-        val route = routing.routes().values.single { it.route.pid == 43L }
+        val route = routing.routes().single { it.route.pid == 43L }
         val handler = DevrigVisionInputToolHandler(DevrigToolBridgeClient(httpClient), routing)
 
         val result = handler.handleInputSequence(
@@ -355,11 +347,9 @@ class DevrigToolBridgeClientTest {
     ) = runBlocking {
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42, build = "IU-253.999", token = "secret-older"),
             ),
             IdeMonitorState(
-                pid = 43,
                 ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-newer"),
             ),
         )
@@ -379,34 +369,9 @@ class DevrigToolBridgeClientTest {
         assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
     }
 
-    @Test
-    fun `open project bridge handler prefers the running managed backend over a newer ide`(
-        @TempDir tempDir: Path,
-    ) = runBlocking {
-        val routing = routingService(
-            managedPids = setOf(43L),
-            IdeMonitorState(
-                pid = 42,
-                ide = discoveredIde(pid = 42, build = "IU-261.9", token = "secret-user"),
-            ),
-            IdeMonitorState(
-                pid = 43,
-                ide = discoveredIde(pid = 43, build = "IU-253.1", token = "secret-managed"),
-            ),
-        )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
-
-        val result = handler.handleOpenProject(
-            OpenProjectParams(
-                projectPath = tempDir.resolve("target").toString(),
-                trustProject = true,
-            )
-        )
-
-        assertEquals(false, result.isError)
-        // pid 42 is the newer build, but pid 43 is the devrig-managed backend — its token must be used.
-        assertEquals("Bearer secret-managed", receivedAuth)
-    }
+    // NOTE: the former `prefers the running managed backend over a newer ide` test was removed with the
+    // managed-pid open_project preference (DevrigProjectRoutingService.openProjectTargetIde / managedRunningPids).
+    // open_project now picks the newest discovered IDE, or the IDE named by an explicit backend_name.
 
     @Test
     fun `open project bridge handler forwards request when exactly one ide is discovered`(
@@ -415,7 +380,6 @@ class DevrigToolBridgeClientTest {
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42),
             )
         )
@@ -447,11 +411,9 @@ class DevrigToolBridgeClientTest {
         val routing = routingService(
             // pid 43 is the newer build (auto-pick would choose it); the backend_name for pid 42 must override.
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42, build = "IU-253.1", token = "secret-42"),
             ),
             IdeMonitorState(
-                pid = 43,
                 ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-43"),
             ),
         )
@@ -486,11 +448,9 @@ class DevrigToolBridgeClientTest {
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42, token = "secret-42"),
             ),
             IdeMonitorState(
-                pid = 43,
                 ide = discoveredIde(pid = 43, token = "secret-43"),
             ),
         )
@@ -523,7 +483,6 @@ class DevrigToolBridgeClientTest {
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42, token = "secret-42"),
             ),
         )
@@ -556,24 +515,15 @@ class DevrigToolBridgeClientTest {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
         val stateA = IdeMonitorState(
-            pid = 42,
             ide = discoveredIde(pid = 42, build = "IU-261.1"),
-            projects = listOf(ProjectInfo("alpha", homeA.toString())),
+            projects = listOf(IdeProjectState("alpha", homeA.toString())),
         )
         val stateB = IdeMonitorState(
-            pid = 43,
             ide = discoveredIde(pid = 43, build = "IU-253.9"),
-            projects = listOf(ProjectInfo("beta", homeB.toString())),
+            projects = listOf(IdeProjectState("beta", homeB.toString())),
         )
-        val routing = routingService(managedPids = setOf(43L), stateA, stateB)
-        // The managed flag on backends[] comes from the inventory's managed list correlating by pid.
-        val handler = DevrigListProjectsToolHandler(
-            routing,
-            testInventory(
-                states = listOf(stateA, stateB),
-                managed = listOf(managedBackendInfo(tempDir, runningPid = 43L, state = ManagedBackendState.RUNNING)),
-            ),
-        )
+        val routing = routingService(stateA, stateB)
+        val handler = DevrigListProjectsToolHandler(routing, inventoryFor(routing))
 
         val response = handler.collectListProjectsResponse()
 
@@ -590,21 +540,14 @@ class DevrigToolBridgeClientTest {
         // Each project also carries the devrig-exposed project_name (and the raw name for jq consumers).
         assertEquals(setOf("alpha", "beta"), response.projects.map { it.name }.toSet())
         assertTrue(response.projects.all { it.projectName.isNotBlank() })
+        // Each listed backend carries the routable IDE's identity (display name + build/version).
         for (backend in response.backends) {
-            assertTrue(backend.locator.isNotBlank(), "locator must disambiguate: $backend")
-            assertEquals("IU", backend.ideProductCode)
-            assertEquals(true, backend.routable)
-            assertTrue(backend.hasMcpSteroid())
-            // openProjects matches exactly the routes for that backend (paths included for worktree matching).
-            val expectedPaths = response.projects
-                .filter { it.backendName == backend.backendName }
-                .map { it.path }
-                .toSet()
-            assertEquals(expectedPaths, backend.openProjects.map { it.path }.toSet())
+            assertEquals("IntelliJ IDEA", backend.displayName, "display name identifies the IDE: $backend")
+            assertTrue(!backend.version.isNullOrBlank(), "version must be populated: $backend")
+            assertTrue(!backend.build.isNullOrBlank(), "build must be populated: $backend")
         }
-        // The managed pid (43) is flagged so the agent can prefer it.
-        assertEquals(true, response.backends.single { it.backendName == name43 }.managed)
-        assertEquals(false, response.backends.single { it.backendName == name42 }.managed)
+        assertEquals("IU-261.1", response.backends.single { it.backendName == name42 }.build)
+        assertEquals("IU-253.9", response.backends.single { it.backendName == name43 }.build)
     }
 
     @Test
@@ -616,22 +559,22 @@ class DevrigToolBridgeClientTest {
         val pid = 4242L
         val ide = discoveredIde(pid = pid, build = "IU-261.1")
         val state = IdeMonitorState(
-            pid = pid,
             ide = ide,
-            projects = listOf(ProjectInfo("my-app", projectHome.toString())),
+            projects = listOf(IdeProjectState("my-app", projectHome.toString())),
         )
-        val routing = DevrigProjectRoutingService ({ listOf(state) }, {emptySet()})
+        val routing = DevrigProjectRoutingService { listOf(state) }
 
         // MCP surface.
-        val mcpResponse = DevrigListProjectsToolHandler(routing, testInventory(listOf(state)))
+        val mcpResponse = DevrigListProjectsToolHandler(routing, inventoryFor(routing))
             .collectListProjectsResponse()
         val mcpProjectName = mcpResponse.projects.single().projectName
 
-        // CLI surface — the same marker + project rendered by `devrig project --json`.
+        // CLI surface — the same marker + project rendered by `devrig project --json`. Build the row from
+        // the SAME routing the MCP surface used, so both sides carry identical ProjectRoutes by construction.
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = ide,
-                projects = listOf(ProjectInfo("my-app", projectHome.toString())),
+                projects = routing.routes(),
             ),
         )
         val cliJson = java.io.ByteArrayOutputStream().let { buf ->
@@ -662,12 +605,11 @@ class DevrigToolBridgeClientTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
             IdeMonitorState(
-                pid = 42,
                 ide = discoveredIde(pid = 42),
-                projects = listOf(ProjectInfo("original-project", projectHome.toString())),
+                projects = listOf(IdeProjectState("original-project", projectHome.toString())),
             )
         )
-        val route = routing.routes().values.single()
+        val route = routing.routes().single()
         val progressMessages = mutableListOf<String>()
         val handler = DevrigExecuteCodeToolHandler(DevrigToolBridgeClient(httpClient), routing, testBeacon(tempDir))
 
@@ -864,41 +806,12 @@ class DevrigToolBridgeClientTest {
         assertEquals("ndjson ok", (result.content.single() as ContentItem.Text).text)
     }
 
-    /** Inventory over the same monitor states the routing service sees — the MCP-mode wiring in miniature. */
-    private fun testInventory(
-        states: List<IdeMonitorState>,
-        managed: List<ManagedBackendInfo> = emptyList(),
-    ): BackendInventory = BackendInventory(
-        routing = DevrigProjectRoutingService { states },
-        portDiscovery = { emptySet() },
-        managedBackends = { managed },
-        isProcessAlive = { true },
-    )
-
-    private fun managedBackendInfo(
-        tempDir: Path,
-        runningPid: Long?,
-        state: ManagedBackendState,
-    ): ManagedBackendInfo = ManagedBackendInfo(
-        id = "ideaIC-2026.1",
-        productKey = "ideaIC",
-        productCode = "IC",
-        version = "2026.1",
-        buildNumber = "261.1",
-        installPath = tempDir.resolve("backends/ideaIC-2026.1"),
-        cachePath = tempDir.resolve("caches/ideaIC-2026.1"),
-        runningPid = runningPid,
-        state = state,
-    )
-
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
-        DevrigProjectRoutingService({ states.toList() }, {emptySet()})
+        DevrigProjectRoutingService { states.toList() }
 
-    private fun routingService(
-        managedPids: Set<Long>,
-        vararg states: IdeMonitorState,
-    ): DevrigProjectRoutingService =
-        DevrigProjectRoutingService({ states.toList() }, { managedPids })
+    /** Inventory over the same routing the handler sees — markers only (no port/managed) for these tests. */
+    private fun inventoryFor(routing: DevrigProjectRoutingService): BackendInventory =
+        BackendInventory(routing = routing, portDiscovery = { emptySet() }, managedBackends = { emptyList() })
 
     private fun discoveredIde(
         pid: Long,
@@ -906,25 +819,25 @@ class DevrigToolBridgeClientTest {
         token: String = "secret-token",
     ): DiscoveredIde =
         DiscoveredIde(
+            backendName = backendNameForMarker(pid, build),
             pid = pid,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
             plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-            backendName = "mock-backend-name",
         )
 
     private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =
         ProjectRoute(
             route = DiscoveredIde(
+                backendName = backendNameForMarker(42L, "IU-261.1"),
                 pid = 42,
                 rpcBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
                 bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
                 ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
                 plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-                backendName = "mock-backend-name",
             ),
-            originalProjectName = "original-project",
+            projectInfo = IdeProjectState("original-project", tempDir.toString()),
             exposedProjectName = "original-project-abcdefgh",
             projectPath = tempDir.toString(),
         )

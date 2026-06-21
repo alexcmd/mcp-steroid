@@ -71,10 +71,9 @@ fun interface PortDiscovery {
  * Server plugin uses the same 20-port fallback scheme on top of
  * `DEFAULT_MCP_PORT = 64342`).
  *
- * **Parallelism is bounded by a dedicated daemon-thread pool**
- * (`mcp-steroid-port-scan-<n>`). Probes run on that pool, never on the
- * coroutine dispatcher driving the rest of the process, so a single
- * slow TCP connect cannot stall the stdio MCP server or marker
+ * **Parallelism is bounded** via `Dispatchers.IO.limitedParallelism([parallelism])`. Probes run on
+ * IO's daemon worker threads, and each probe is independently capped by [probeTimeout]
+ * ([withTimeoutOrNull]), so a single slow TCP connect cannot stall the stdio MCP server or marker
  * discovery.
  */
 class IntelliJPortDiscovery(

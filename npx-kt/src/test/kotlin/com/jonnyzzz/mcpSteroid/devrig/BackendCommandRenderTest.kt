@@ -5,7 +5,8 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -66,6 +67,21 @@ class BackendCommandRenderTest {
         buildNumber = buildNumber,
     )
 
+    /**
+     * A single routed project for a marker row. The renderer only reads
+     * [ProjectRoute.originalProjectName] (= [IdeProjectState.ideProjectName])
+     * and [ProjectRoute.projectPath], plus [ProjectRoute.exposedProjectName]
+     * in the JSON form; the embedded [DiscoveredIde] is never inspected here,
+     * so a throwaway one keeps the fixture minimal.
+     */
+    private fun route(name: String, path: String): ProjectRoute =
+        ProjectRoute(
+            route = markerIde(name = name, version = "1", pid = 0L),
+            projectInfo = IdeProjectState(name = name, projectPath = path),
+            exposedProjectName = "$name-rendertst",
+            projectPath = path,
+        )
+
     // ------------------------------ shape ---------------------------------
 
     @Test
@@ -79,7 +95,7 @@ class BackendCommandRenderTest {
     @Test
     fun `output ends with a trailing blank line so shells separate the prompt cleanly`() {
         val rows = listOf(
-            BackendRow.FromMarker(markerIde("IntelliJ IDEA", "1", 1L), listOf(ProjectInfo("p", "/p")))
+            BackendRow.FromMarker(markerIde("IntelliJ IDEA", "1", 1L), listOf(route("p", "/p")))
         )
         val text = render(rows)
         assertTrue(text.endsWith("\n\n"),
@@ -115,7 +131,7 @@ class BackendCommandRenderTest {
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L),
-                projects = listOf(ProjectInfo(name = "my-app", path = "/Users/x/Work/my-app")),
+                projects = listOf(route(name = "my-app", path = "/Users/x/Work/my-app")),
             )
         )
         val text = render(rows)
@@ -134,7 +150,7 @@ class BackendCommandRenderTest {
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = markerIde("IntelliJ IDEA 2026.1.4", "2026.1.4", pid = 1234L, build = "IU-261.1"),
-                projects = listOf(ProjectInfo(name = "my-app", path = "/Users/x/Work/my-app")),
+                projects = listOf(route(name = "my-app", path = "/Users/x/Work/my-app")),
             )
         )
         val text = render(rows)
@@ -148,8 +164,8 @@ class BackendCommandRenderTest {
             BackendRow.FromMarker(
                 ide = markerIde("PyCharm", "2025.3.1", pid = 4242L),
                 projects = listOf(
-                    ProjectInfo(name = "alpha", path = "/p/alpha"),
-                    ProjectInfo(name = "bravo", path = "/p/bravo"),
+                    route(name = "alpha", path = "/p/alpha"),
+                    route(name = "bravo", path = "/p/bravo"),
                 ),
             )
         )
@@ -169,8 +185,8 @@ class BackendCommandRenderTest {
             BackendRow.FromMarker(
                 ide = markerIde("PyCharm", "2025.3.1", pid = 4242L),
                 projects = listOf(
-                    ProjectInfo(name = "🚀 app", path = "/p/rocket"),
-                    ProjectInfo(name = "plain", path = "/p/plain"),
+                    route(name = "🚀 app", path = "/p/rocket"),
+                    route(name = "plain", path = "/p/plain"),
                 ),
             )
         )
@@ -191,8 +207,8 @@ class BackendCommandRenderTest {
     @Test
     fun `multiple IDE entries are numbered sequentially and separated by blank lines`() {
         val rows = listOf(
-            BackendRow.FromMarker(markerIde("IntelliJ IDEA", "2025.3.3", 1L), listOf(ProjectInfo("a", "/a"))),
-            BackendRow.FromMarker(markerIde("PyCharm", "2025.3.1", 2L), listOf(ProjectInfo("b", "/b"))),
+            BackendRow.FromMarker(markerIde("IntelliJ IDEA", "2025.3.3", 1L), listOf(route("a", "/a"))),
+            BackendRow.FromMarker(markerIde("PyCharm", "2025.3.1", 2L), listOf(route("b", "/b"))),
         )
         val text = render(rows)
         assertTrue(text.contains("Discovered 2 backends:"),
@@ -253,7 +269,7 @@ class BackendCommandRenderTest {
         val rows = listOf(
             BackendRow.FromMarker(
                 ide = markerIde("IntelliJ IDEA Ultimate", "2025.3.3 EAP", 1L),
-                projects = listOf(ProjectInfo("p", "/p")),
+                projects = listOf(route("p", "/p")),
             )
         )
         val text = render(rows)
@@ -316,7 +332,7 @@ class BackendCommandRenderTest {
     @Test
     fun `mixed list renders marker rows first, then port rows`() {
         val rows = listOf(
-            BackendRow.FromMarker(markerIde("PyCharm", "2025.3.1", 1L), listOf(ProjectInfo("p", "/p"))),
+            BackendRow.FromMarker(markerIde("PyCharm", "2025.3.1", 1L), listOf(route("p", "/p"))),
             BackendRow.FromPort(portIde(port = 63342, productFullName = "GoLand")),
         )
         val text = render(rows)
