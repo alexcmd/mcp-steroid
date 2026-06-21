@@ -96,15 +96,15 @@ class IdeDiscoveryService(
 
     /** One-shot scan — exposed for test code and for manual refresh after a connection error. */
     fun scanOnce() {
-        _ides.value = scanDirectory(markersDir).associateByTo(linkedMapOf()) { it.pid }.values.toSet()
+        _ides.value = scanDirectory().associateByTo(linkedMapOf()) { it.pid }.values.toSet()
     }
 
-    private fun scanDirectory(dir: Path): List<DiscoveredIde> {
-        if (!Files.isDirectory(dir)) return emptyList()
+    private fun scanDirectory(): List<DiscoveredIde> {
+        if (!Files.isDirectory(markersDir)) return emptyList()
         val files = try {
-            Files.list(dir).use { it.toList() }
+            Files.list(markersDir).use { it.toList() }
         } catch (e: Exception) {
-            log.warn("Failed to list marker directory {}: {}", dir, e.message)
+            log.warn("Failed to list marker directory {}: {}", markersDir, e.message)
             return emptyList()
         }
         val out = mutableListOf<DiscoveredIde>()
