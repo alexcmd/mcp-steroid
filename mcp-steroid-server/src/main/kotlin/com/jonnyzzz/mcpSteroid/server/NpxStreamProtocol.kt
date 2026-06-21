@@ -55,6 +55,9 @@ object NpxStreamJson {
         encodeDefaults = true
     }
 
+    fun encodeJsonObject(obj: JsonObject): String =
+        json.encodeToString(JsonObject.serializer(), obj)
+
     fun encodeEnvelope(envelope: NpxStreamEnvelope): String =
         json.encodeToString(NpxStreamEnvelope.serializer(), envelope)
 
