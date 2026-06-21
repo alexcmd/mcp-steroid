@@ -19,7 +19,6 @@ import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
@@ -870,8 +869,8 @@ class DevrigToolBridgeClientTest {
         states: List<IdeMonitorState>,
         managed: List<ManagedBackendInfo> = emptyList(),
     ): BackendInventory = BackendInventory(
-        markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.projects) } },
-        portIdes = { emptySet() },
+        routing = DevrigProjectRoutingService { states },
+        portDiscovery = { emptySet() },
         managedBackends = { managed },
         isProcessAlive = { true },
     )

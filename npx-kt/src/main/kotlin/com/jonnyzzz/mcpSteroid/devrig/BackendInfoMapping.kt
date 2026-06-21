@@ -60,7 +60,7 @@ fun backendInfoForRow(
             managed = managed,
             routable = reachable,
             reachable = reachable,
-            error = if (!reachable) (row.errorMessage ?: "unreachable") else null,
+            error = null,
             locator = backendLocatorLabel(row),
         )
     }

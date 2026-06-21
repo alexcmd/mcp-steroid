@@ -4,8 +4,8 @@ package com.jonnyzzz.mcpSteroid.devrig
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.server.DEVRIG_RPC_PATH_PREFIX
 import com.jonnyzzz.mcpSteroid.server.NPX_NDJSON_MIME_TYPE
-import com.jonnyzzz.mcpSteroid.server.NPX_PROJECTS_STREAM_PATH
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.server.NpxStreamEnvelope
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
@@ -65,7 +65,7 @@ class BackendCommandFetchTest {
         port = ServerSocket(0).use { it.localPort }
         server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
             routing {
-                post(NPX_PROJECTS_STREAM_PATH) {
+                post("$DEVRIG_RPC_PATH_PREFIX/projects/stream") {
                     receivedAuthHeaders += call.request.headers["Authorization"]
                     val body = call.receiveText()
                     receivedClientInfos += NpxStreamJson.decodeClientInfo(body)

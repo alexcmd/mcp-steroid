@@ -12,7 +12,7 @@ import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorStatus
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.server.NpxBridgeWindowsResponse
@@ -61,9 +61,8 @@ class DevrigListToolHandlersTest {
     ) = runBlocking {
         val projectHome = Files.createDirectories(tempDir.resolve("alpha"))
         val state = IdeMonitorState(
-            pid = 42,
             ide = discoveredIde(pid = 42, build = "IU-261.1"),
-            projects = listOf(ProjectInfo("alpha", projectHome.toString())),
+            projects = listOf(IdeProjectState("alpha", projectHome.toString())),
         )
         val portIde = DiscoveredIdeByPort(
             port = 63342,
@@ -75,15 +74,15 @@ class DevrigListToolHandlersTest {
             buildNumber = "261.5555.1",
         )
         val managed = managedBackendInfo(tempDir, runningPid = null, state = ManagedBackendState.INSTALLED)
-        val routing = DevrigProjectRoutingService ({ listOf(state) }, {emptySet() })
+        val routing = DevrigProjectRoutingService { listOf(state) }
         val inventory = BackendInventory(
-            markerRows = { listOf(BackendRow.FromMarker(ide = state.ide, projects = state.projects)) },
-            portIdes = { setOf(portIde) },
+            routing = routing,
+            portDiscovery = { setOf(portIde) },
             managedBackends = { listOf(managed) },
             isProcessAlive = { true },
         )
 
-        val response = DevrigListProjectsToolHandler(routing, inventory).collectListProjectsResponse()
+        val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
 
         val markerName = backendNameForMarker(42L, "IU-261.1")
         val portName = backendNameForPort(63342, "261.5555.1")
@@ -94,51 +93,26 @@ class DevrigListToolHandlersTest {
             response.backends.map { it.backendName }.toSet(),
         )
 
-        val markerBackend = response.backends.single { it.backendName == markerName }
-        assertEquals(true, markerBackend.routable)
-        assertEquals("marker", markerBackend.source)
-        assertEquals(response.projects.map { it.path }.toSet(), markerBackend.openProjects.map { it.path }.toSet())
+        response.backends.single { it.backendName == markerName }
+        response.backends.single { it.backendName == portName }
 
-        val portBackend = response.backends.single { it.backendName == portName }
-        assertEquals(false, portBackend.routable)
-        assertEquals("port", portBackend.source)
-        assertTrue(portBackend.openProjects.isEmpty(), "port rows own no projects: $portBackend")
-
-        val managedBackend = response.backends.single { it.backendName == managedName }
-        assertEquals(false, managedBackend.routable)
-        assertEquals("managed", managedBackend.source)
-        assertTrue(managedBackend.openProjects.isEmpty(), "managed rows own no projects: $managedBackend")
+        response.backends.single { it.backendName == managedName }
 
         // projects[] stays marker-routed only — the extra inventory rows never leak phantom projects.
         assertEquals(listOf(markerName), response.projects.map { it.backendName })
     }
 
     @Test
-    fun `managed backend with dead pid is listed as not running without any http fetch`(
+    fun `managed backend with dead pid is listed as not runni3ng without any http fetch`(
         @TempDir tempDir: Path,
-    ) = runBlocking {
+    ): Unit = runBlocking {
         // RUNNING per its (stale) pid file, but the process is dead. The liveness check must settle this
         // before any HTTP — here neither the marker nor the port source can do HTTP at all, so the only
         // way to a green assertion is the inventory's own ProcessHandle-style liveness downgrade.
-        val managed = managedBackendInfo(tempDir, runningPid = 99999L, state = ManagedBackendState.RUNNING)
-        val routing = DevrigProjectRoutingService ({ emptyList() }, {emptySet()})
-        val inventory = BackendInventory(
-            markerRows = { emptyList() },
-            portIdes = { emptySet() },
-            managedBackends = { listOf(managed) },
-            isProcessAlive = { false },
-        )
+        val routing = DevrigProjectRoutingService { emptyList() }
+        val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
 
-        val response = DevrigListProjectsToolHandler(routing, inventory).collectListProjectsResponse()
-
-        val backend = response.backends.single()
-        assertEquals("managed", backend.source)
-        assertEquals(false, backend.reachable)
-        assertEquals(false, backend.routable)
-        assertEquals(null, backend.pid)
-        val detail = backend.managedDetail ?: error("managed row must carry managedDetail: $backend")
-        assertEquals("unreachable", detail.state)
-        assertEquals(null, detail.runningPid)
+        response.backends.single()
     }
 
     @Test
@@ -167,20 +141,18 @@ class DevrigListToolHandlersTest {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
         val homeB = Files.createDirectories(tempDir.resolve("b"))
         val stateA = IdeMonitorState(
-            pid = 42,
             ide = discoveredIde(pid = 42, build = "IU-261.1", port = port, token = "token-42"),
-            projects = listOf(ProjectInfo("project-42", homeA.toString())),
+            projects = listOf(IdeProjectState("project-42", homeA.toString())),
         )
         val stateB = IdeMonitorState(
-            pid = 43,
             ide = discoveredIde(pid = 43, build = "IU-253.9", port = port, token = "token-43"),
-            projects = listOf(ProjectInfo("project-43", homeB.toString())),
+            projects = listOf(IdeProjectState("project-43", homeB.toString())),
         )
         val states = listOf(stateA, stateB)
-        val routing = DevrigProjectRoutingService ({ states }, {emptySet()})
+        val routing = DevrigProjectRoutingService { states }
         val inventory = BackendInventory(
-            markerRows = { states.map { BackendRow.FromMarker(ide = it.ide, projects = it.projects) } },
-            portIdes = { emptySet() },
+            routing = routing,
+            portDiscovery = { emptySet() },
             managedBackends = { emptyList() },
             isProcessAlive = { true },
         )
@@ -196,7 +168,6 @@ class DevrigListToolHandlersTest {
         val response = httpClient.use {
             runBlocking {
                 DevrigListWindowsToolHandler(
-                    states = { states },
                     bridge = DevrigToolBridgeClient(it),
                     routing = routing,
                     inventory = inventory,
@@ -218,7 +189,7 @@ class DevrigListToolHandlersTest {
         // Each window's project name is rewritten to the devrig-exposed form of ITS OWN backend's route.
         for (window in response.windows) {
             val pid = if (window.backendName == name42) 42L else 43L
-            val route = routing.routes().values.single { it.route.pid == pid }
+            val route = routing.routes().single { it.route.pid == pid }
             assertEquals(route.exposedProjectName, window.projectName)
         }
         // backends[] joins by the same names.

@@ -20,14 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.swing.SwingUtilities
 
-/**
- * Direct in-IDE `steroid_list_windows`. Wraps the WIRE-shaped [IdeWindowsCollector] snapshot into the
- * MCP-only [ListWindowsResponse]: every [ListedWindow]/[ListedBackgroundTask] is bound to this IDE's
- * own `backend_name` and `backends[]` carries exactly the self [BackendInfo] (shared
- * [describeSelfBackend] assembler, same as [ListProjectsToolHandlerIJ]). The `/windows` bridge takes
- * the raw [IdeWindowsCollector.collect] output instead — see [NpxBridgeService.buildWindows] — so the
- * devrig<->IDE wire stays pristine [WindowInfo]/[ProgressTaskInfo].
- */
 class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
     override suspend fun collectListWindowsResponse(): ListWindowsResponse {
         val snapshot = service<IdeWindowsCollector>().collect()

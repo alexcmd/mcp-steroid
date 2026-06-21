@@ -39,6 +39,7 @@ class DevrigToolBridgeClient(
         if (response.status.value !in 200..299) {
             error("HTTP ${response.status.value} from ${ide.backendName} bridge /windows: ${response.bodyAsText()}")
         }
+        //TODO: parse JSON here explicitly and map projects
         return McpJson.decodeFromString(NpxBridgeWindowsResponse.serializer(), response.bodyAsText())
     }
 

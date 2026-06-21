@@ -46,7 +46,6 @@ fun Route.installNpxBridgeRoutes(
     // /server-metadata, /products, /projects, /summary, /resources, /resources/read and the
     // non-streaming POST /tools/call were unused (no devrig caller) and were removed.
     route(DEVRIG_RPC_PATH_PREFIX) {
-        //TODO: just projecs, no /stream
         post("/projects/stream") {
             if (!call.requireNpxBridgeAuthorization()) return@post
             val payload = service<ListProjectsToolHandlerIJ>().collectListProjectsResponse()

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Wire-level coverage for the `backend` subcommand's port-scan integration.
@@ -85,7 +84,6 @@ class BackendCommandPortDiscoveryTest {
         IntelliJPortDiscovery(
             httpClient = httpClient,
             portRanges = ports.map { it..it },
-            scanInterval = 1.seconds,
             probeTimeout = 1500.milliseconds,
             parallelism = 4,
         )
@@ -94,8 +92,7 @@ class BackendCommandPortDiscoveryTest {
 
     @Test
     fun `collectPortDiscoveredIdes finds an IDE with NO marker via its api-about endpoint`() = runBlocking {
-        val discovery = discoveryWith(port)
-        try {
+        discoveryWith(port).use { discovery ->
             val found = collectPortDiscoveredIdes(discovery)
             assertEquals(1, found.size, "expected exactly one IDE on port $port; got: $found")
             val ide = found.single()
@@ -105,8 +102,6 @@ class BackendCommandPortDiscoveryTest {
             assertEquals("IU", ide.edition)
             assertEquals(253, ide.baselineVersion)
             assertEquals("IU-253.21581.142", ide.buildNumber)
-        } finally {
-            discovery.close()
         }
     }
 
@@ -115,12 +110,9 @@ class BackendCommandPortDiscoveryTest {
         // A free port nobody listens on. Discovery must NOT block; the
         // probeTimeout caps the scan.
         val deadPort = ServerSocket(0).use { it.localPort }
-        val discovery = discoveryWith(deadPort)
-        try {
+        discoveryWith(deadPort).use { discovery ->
             val found = collectPortDiscoveredIdes(discovery)
             assertEquals(emptySet<Any>(), found, "expected no IDE on a free port; got: $found")
-        } finally {
-            discovery.close()
         }
     }
 

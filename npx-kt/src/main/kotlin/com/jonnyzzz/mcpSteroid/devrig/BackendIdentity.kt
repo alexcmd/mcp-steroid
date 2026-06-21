@@ -3,15 +3,13 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
-import com.jonnyzzz.mcpSteroid.server.markerDisplayName
 import com.jonnyzzz.mcpSteroid.server.markerLocator
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-fun markerBackendDisplayName(ide: DiscoveredIde): String =
-    markerDisplayName(ide.ide)
+fun markerBackendDisplayName(ide: DiscoveredIde): String = ide.ide.displayName
 
 fun markerBackendLocatorLabel(ide: DiscoveredIde): String =
     markerLocator(ide.ide.build, ide.pid)

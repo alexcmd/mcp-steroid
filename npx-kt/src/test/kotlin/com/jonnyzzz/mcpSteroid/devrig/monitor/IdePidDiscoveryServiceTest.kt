@@ -15,7 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class IdeDiscoveryServiceTest {
+class IdePidDiscoveryServiceTest {
 
     private val ourPid = ProcessHandle.current().pid()
 
@@ -56,8 +56,8 @@ class IdeDiscoveryServiceTest {
         return markerDir.resolve(PidMarker.markerFileNameFor(pid)).toFile().also { it.writeText(text) }
     }
 
-    private fun service(homeDir: Path): IdeDiscoveryService =
-        IdeDiscoveryService(
+    private fun service(homeDir: Path): IdePidDiscoveryService =
+        IdePidDiscoveryService(
             markersDir = PidMarker.markerDirectory(homeDir),
             allowHosts = listOf("localhost"),
         )
@@ -67,9 +67,7 @@ class IdeDiscoveryServiceTest {
         writeMarker(homeDir, ourPid, "http://localhost:64531/mcp")
         val service = service(homeDir)
 
-        service.scanOnce()
-
-        val ides = service.ides.value
+        val ides = service.stateSnapshot()
         assertEquals(1, ides.size)
         val ide = ides.single()
         assertEquals(ourPid, ide.pid)
@@ -81,10 +79,7 @@ class IdeDiscoveryServiceTest {
     fun `scanOnce skips markers with disallowed host`(@TempDir homeDir: Path) {
         writeMarker(homeDir, ourPid, "http://malicious.example:8080/mcp")
         val service = service(homeDir)
-
-        service.scanOnce()
-
-        assertTrue(service.ides.value.isEmpty())
+        assertTrue(service.stateSnapshot().isEmpty())
     }
 
     @Test
@@ -95,9 +90,7 @@ class IdeDiscoveryServiceTest {
         writeMarker(homeDir, process.pid(), "http://localhost:1/mcp")
 
         val service = service(homeDir)
-        service.scanOnce()
-
-        assertFalse(service.ides.value.any { it.pid == process.pid() })
+        assertFalse(service.stateSnapshot().any { it.pid == process.pid() })
     }
 
     @Test
@@ -109,9 +102,7 @@ class IdeDiscoveryServiceTest {
         writeMarkerText(homeDir, 102L, "{ \"schema\": 1 }")
 
         val service = service(homeDir)
-        service.scanOnce()
-
-        val ides = service.ides.value
+        val ides = service.stateSnapshot()
         assertEquals(1, ides.size, "expected only the valid marker, got: $ides")
         assertEquals(ourPid, ides.single().pid)
     }
@@ -125,9 +116,7 @@ class IdeDiscoveryServiceTest {
         writeMarker(homeDir, ourPid, "http://localhost:64531/mcp")
 
         val service = service(homeDir)
-        service.scanOnce()
-
-        val ides = service.ides.value
+        val ides = service.stateSnapshot()
         assertEquals(1, ides.size, "expected only the valid marker, got: $ides")
         assertEquals(ourPid, ides.single().pid)
     }

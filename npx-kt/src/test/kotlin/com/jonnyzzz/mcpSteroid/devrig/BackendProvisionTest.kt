@@ -179,7 +179,7 @@ class BackendProvisionTest {
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
                 ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, productFullName = "GoLand 2026.1", productName = "GoLand", buildNumber = "GO-261.1")),
             ),
-            markers = setOf(markerIde(build = "IU-261.23567.138")),
+            markers = listOf(markerIde(build = "IU-261.23567.138")),
         )
 
         assertFalse(text.contains("port-63342"), text)
@@ -194,7 +194,7 @@ class BackendProvisionTest {
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
                 ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
             ),
-            markers = setOf(
+            markers = listOf(
                 markerIde(pid = 11, build = "IU-261.23567.138"),
                 markerIde(pid = 12, name = "GoLand", build = "GO-261.1"),
             ),
@@ -213,7 +213,7 @@ class BackendProvisionTest {
             targets = listOf(
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
             ),
-            markers = setOf(markerIde(name = "GoLand", build = "GO-261.1")),
+            markers = listOf(markerIde(name = "GoLand", build = "GO-261.1")),
         )
 
         assertTrue(text.contains("port-63342"), text)
@@ -228,7 +228,7 @@ class BackendProvisionTest {
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
                 ProvisionTarget(id = "port-63343", ide = portIde(port = 63343, buildNumber = "GO-261.1")),
             ),
-            markers = setOf(markerIde(build = "IU-261.23567.138")),
+            markers = listOf(markerIde(build = "IU-261.23567.138")),
         )
 
         val targets = root["targets"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
@@ -245,7 +245,7 @@ class BackendProvisionTest {
             targets = listOf(
                 ProvisionTarget(id = "port-63342", ide = portIde(port = 63342, buildNumber = "261.23567.138")),
             ),
-            markers = setOf(markerIde(name = "GoLand", build = "GO-261.1")),
+            markers = listOf(markerIde(name = "GoLand", build = "GO-261.1")),
         )
 
         val targets = root["targets"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
@@ -383,7 +383,7 @@ class BackendProvisionTest {
 
     private fun renderProvisionCommandText(
         targets: List<ProvisionTarget>,
-        markers: Set<DiscoveredIde> = emptySet(),
+        markers: List<DiscoveredIde> = emptyList(),
     ): String {
         val buf = ByteArrayOutputStream()
         runBackendProvisionListCommand(
@@ -397,7 +397,7 @@ class BackendProvisionTest {
 
     private fun renderProvisionCommandJson(
         targets: List<ProvisionTarget>,
-        markers: Set<DiscoveredIde> = emptySet(),
+        markers: List<DiscoveredIde> = emptyList(),
     ) = parser.parseToJsonElement(
         ByteArrayOutputStream().also { buf ->
             runBackendProvisionListCommand(

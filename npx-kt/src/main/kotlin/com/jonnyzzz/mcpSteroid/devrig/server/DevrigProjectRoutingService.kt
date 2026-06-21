@@ -1,136 +1,55 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
-import com.jonnyzzz.mcpSteroid.server.base62FixedWidth
+import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
+import com.jonnyzzz.mcpSteroid.server.base36FixedWidth
 import java.io.IOException
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
-import java.security.MessageDigest
+
+data class ProjectRoute(
+    val route: DiscoveredIde,
+    val projectInfo: IdeProjectState,
+    val exposedProjectName: String,
+    val projectPath: String,
+) {
+    val originalProjectName: String get() = projectInfo.ideProjectName
+    val exposedBackendName: String get() = route.backendName
+}
 
 class DevrigProjectRoutingService(
-    private val stateProvider: () -> Collection<IdeMonitorState>,
-    /**
-     * Pids of IDEs started and owned by devrig as managed backends (`devrig backend start`).
-     * Used by [openProjectTargetIde] to land open_project in the agent's own backend rather than
-     * an unrelated user-launched IDE. Defaults to none so plain discovery keeps its old behavior.
-     */
-    private val managedRunningPids: () -> Set<Long>,
+    private val stateProvider: () -> List<IdeMonitorState>,
 ) {
 
-    private val log = LoggerFactory.getLogger(DevrigProjectRoutingService::class.java)
-
-    fun routes(): Map<String, ProjectRoute> {
-        val routes = linkedMapOf<String, ProjectRoute>()
-        for (state in stateProvider()) {
-            for (project in state.projects) {
-                val route = projectRoute(state.ide.pid, state.ide, project)
-                routes[route.exposedProjectName] = route
+    //TODO: it should include inventory#backends
+    fun routes(): List<ProjectRoute> {
+        return stateProvider().flatMap { ide ->
+            ide.projects.map { proj ->
+                val realHome = canonicalProjectHome(proj.projectPath)
+                val projectHash = base36FixedWidth(realHome, ide.ide.backendName)
+                ProjectRoute(
+                    route = ide.ide,
+                    exposedProjectName = "${proj.name}-$projectHash",
+                    projectInfo = proj,
+                    projectPath = realHome,
+                )
             }
         }
-        return routes
     }
 
     fun routeProject(exposedProjectName: String): ProjectRoute? =
-        routes()[exposedProjectName]
+        routes().singleOrNull { it.exposedProjectName == exposedProjectName }
 
     fun requireProject(exposedProjectName: String): ProjectRoute =
-        routeProject(exposedProjectName)
-            ?: throw ProjectRouteNotFoundException(exposedProjectName)
-
-    /**
-     * Picks the IDE that should receive `steroid_open_project`.
-     *
-     * Selection is two-tier:
-     *  1. If any devrig-managed backend (`devrig backend start`) is currently running and discovered,
-     *     prefer it — that is the agent's own sandbox, and open_project must land there even when the
-     *     user has a newer IDE open. This is what aligns open_project with `devrig backend` selection:
-     *     "download/start the IDE for this project, then open the project in it" works deterministically.
-     *  2. Otherwise fall back to the newest discovered IDE.
-     *
-     * Within each tier the newest IDE wins (see [newestIdeOrNull]). Returns null only when no IDE is
-     * discovered at all.
-     */
-    fun openProjectTargetIde(): DiscoveredIde? {
-        val ides = discoveredIdes()
-        if (ides.isEmpty()) return null
-        val managedPids = managedRunningPids()
-        val managed = ides.filter { it.pid in managedPids }
-        return newestOf(managed.ifEmpty { ides })
-    }
-
-    /**
-     * Picks the newest discovered IDE: highest IDE build, ties broken by the most recently started IDE
-     * (marker `createdAt`), then by pid for full determinism. Every discovered IDE already runs the MCP
-     * Steroid plugin (found via the plugin's pid markers). Returns null when no IDE is discovered.
-     */
-    fun newestIdeOrNull(): DiscoveredIde? = newestOf(discoveredIdes())
-
-    /**
-     * The agent-facing backend id for a discovered IDE — the value an agent passes as `backend_name`
-     * to steroid_open_project. Computed by the R3.3 uniform hash scheme (`<productCodeLower>-<hash8>`,
-     * hash over `"pid:<pid>"`), the same value surfaced by `steroid_list_projects` / `devrig backend
-     * --json`, so the id surfaced there is the one accepted here.
-     */
-    fun backendNameForIde(ide: DiscoveredIde): String =
-        backendNameForMarker(pid = ide.pid, build = ide.ide.build)
-
-    /**
-     * Resolves a `backend_name` (as listed by steroid_list_projects / `devrig backend --json`) to its
-     * discovered IDE, or null when no currently-discovered routable backend matches. Only marker IDEs
-     * are routable; `port:`/`managed:` ids never match here because their names are computed from a
-     * different source key and no marker recomputes to them.
-     */
-    fun resolveBackend(backendName: String): DiscoveredIde? {
-        val wanted = backendName.trim()
-        if (wanted.isEmpty()) return null
-        return discoveredBackends().firstOrNull { it.first == wanted }?.second
-    }
+        routeProject(exposedProjectName) ?: throw ProjectRouteNotFoundException(exposedProjectName)
 
     /**
      * All discovered backends as (backend_name, ide) pairs, for list_projects summaries and error
      * messages. De-duped by backend_name (keep-first + WARN), mirroring `backendRowsWithStableIds`.
      */
-    fun discoveredBackends(): List<Pair<String, DiscoveredIde>> {
-        val seen = LinkedHashSet<String>()
-        val out = ArrayList<Pair<String, DiscoveredIde>>()
-        val duplicates = LinkedHashSet<String>()
-        for (ide in discoveredIdes()) {
-            val name = backendNameForIde(ide)
-            if (seen.add(name)) {
-                out += name to ide
-            } else {
-                duplicates += name
-            }
-        }
-        if (duplicates.isNotEmpty()) {
-            log.warn(
-                "Duplicate backend_name in discovered backends: {}. Keeping the first IDE for each.",
-                duplicates.joinToString(", "),
-            )
-        }
-        return out
-    }
-
-    private fun discoveredIdes(): List<DiscoveredIde> =
-        stateProvider().map { it.ide }.distinctBy { it.pid }
-
-    private fun newestOf(ides: List<DiscoveredIde>): DiscoveredIde? = ides.maxWithOrNull(NEWEST_IDE_FIRST)
-
-    private fun projectRoute(idePid: Long, ide: DiscoveredIde, project: ProjectInfo): ProjectRoute {
-        val realHome = canonicalProjectHome(project.path)
-        val projectHash = projectHash(realHome, idePid)
-        return ProjectRoute(
-            route = ide,
-            originalProjectName = project.name,
-            exposedProjectName = "${project.name}-$projectHash",
-            projectPath = project.path,
-        )
-    }
+    fun discoveredBackends(): List<DiscoveredIde> = stateProvider().map { it.ide }.distinctBy { it.backendName }
 
     companion object {
         /**
@@ -158,36 +77,20 @@ class DevrigProjectRoutingService(
          * project deleted while its IDE snapshot is still cached) must not break routing for every
          * other project. Fall back to the lexically-normalized absolute path in that case.
          */
-        fun canonicalProjectHome(projectHome: String): Path {
+        fun canonicalProjectHome(projectHome: String): String {
             val path = Path.of(projectHome)
             return try {
                 path.toRealPath()
             } catch (_: IOException) {
                 path.toAbsolutePath().normalize()
-            }
+            }.toString()
         }
 
-        fun projectHash(realProjectHome: Path, idePid: Long): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            digest.update(realProjectHome.toString().encodeToByteArray())
-            digest.update(0.toByte())
-            digest.update(idePid.toString().encodeToByteArray())
-            // base62 (alphanumeric) over the full salted digest, fixed 8 chars. Unlike URL-safe
-            // Base64 the alphabet has no '-'/'_', so the suffix can never contain or end with '-';
-            // the whole 256-bit digest feeds the result, nothing is truncated before hashing. The
-            // (home, pid) salting stays local; only the base62 rendering is shared (base62FixedWidth).
-            return base62FixedWidth(digest.digest(), 8)
+        fun newestOf(ides: List<DiscoveredIde>): DiscoveredIde? {
+            return ides.maxWithOrNull(NEWEST_IDE_FIRST)
         }
     }
 }
-
-data class ProjectRoute(
-    val route: DiscoveredIde,
-
-    val originalProjectName: String,
-    val exposedProjectName: String,
-    val projectPath: String,
-)
 
 class ProjectRouteNotFoundException(projectName: String) : IllegalArgumentException(
     "project_name '$projectName' is no longer present; call steroid_list_projects to refresh"

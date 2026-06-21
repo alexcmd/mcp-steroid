@@ -97,14 +97,12 @@ class IntelliJPortDiscoveryTest {
 
     @Test
     fun `scanOnce detects an IDE on the impersonated port`() = runBlocking {
-        val discovery = IntelliJPortDiscovery(
+        IntelliJPortDiscovery(
             httpClient = httpClient,
             portRanges = listOf(idePort..idePort, garbagePort..garbagePort, refusedPort..refusedPort),
             probeTimeout = 800.milliseconds,
-        )
-        try {
-            discovery.scanOnce()
-            val detected = discovery.detected.value
+        ).use { discovery ->
+            val detected = discovery.stateSnapshot()
             assertEquals(1, detected.size, "expected only the IDE port to surface, got: $detected")
             val ide = detected.single()
             assertEquals(idePort, ide.port)
@@ -114,51 +112,74 @@ class IntelliJPortDiscoveryTest {
             assertEquals(253, ide.baselineVersion)
             assertEquals("253.28294.334", ide.buildNumber)
             assertEquals("http://127.0.0.1:$idePort", ide.baseUrl)
-        } finally {
-            discovery.close()
         }
     }
 
     @Test
     fun `scanOnce rejects non-IDE responses (no productName, no name)`() = runBlocking {
-        val discovery = IntelliJPortDiscovery(
+        IntelliJPortDiscovery(
             httpClient = httpClient,
             portRanges = listOf(garbagePort..garbagePort),
             probeTimeout = 800.milliseconds,
-        )
-        try {
-            discovery.scanOnce()
-            assertTrue(discovery.detected.value.isEmpty(), "garbage port must not appear: ${discovery.detected.value}")
-        } finally {
-            discovery.close()
+        ).use { discovery ->
+            val snapshot = discovery.stateSnapshot()
+            assertTrue(snapshot.isEmpty(), "garbage port must not appear: $snapshot")
         }
     }
 
     @Test
     fun `scanOnce tolerates connection-refused without crashing`() = runBlocking {
-        val discovery = IntelliJPortDiscovery(
+        IntelliJPortDiscovery(
             httpClient = httpClient,
             portRanges = listOf(refusedPort..refusedPort),
             probeTimeout = 800.milliseconds,
-        )
+        ).use { discovery ->
+            val snapshot = discovery.stateSnapshot()
+            assertTrue(snapshot.isEmpty(), "expected empty but was $snapshot")
+        }
+    }
+
+    @Test
+    fun `a port that hangs past the probe timeout does not discard results from fast ports`() = runBlocking {
+        // A port whose /api/about never answers within probeTimeout must not
+        // cancel the whole scan: the IDE detected on a fast port must still surface.
+        val slowServer = embeddedServer(ServerCIO, port = 0, host = "127.0.0.1") {
+            routing {
+                get("/api/about") {
+                    kotlinx.coroutines.delay(10_000)
+                    call.respondText("""{"productName":"IDEA"}""", io.ktor.http.ContentType.Application.Json)
+                }
+            }
+        }.start(wait = false)
+        val slowPort = slowServer.resolvedPort()
         try {
-            discovery.scanOnce()
-            assertTrue(discovery.detected.value.isEmpty())
+            IntelliJPortDiscovery(
+                httpClient = httpClient,
+                portRanges = listOf(idePort..idePort, slowPort..slowPort),
+                probeTimeout = 400.milliseconds,
+            ).use { discovery ->
+                val detected = discovery.stateSnapshot()
+                assertEquals(
+                    setOf(idePort),
+                    detected.map { it.port }.toSet(),
+                    "the fast IDE port must surface even though $slowPort hangs; got: $detected",
+                )
+            }
         } finally {
-            discovery.close()
+            slowServer.stop(0L, 0L)
         }
     }
 
     @Test
     fun `probes run on dedicated daemon threads with the expected name prefix`() = runBlocking {
-        val discovery = IntelliJPortDiscovery(
+        IntelliJPortDiscovery(
             httpClient = httpClient,
             portRanges = listOf(idePort..idePort),
             probeTimeout = 800.milliseconds,
             parallelism = 4,
-        )
-        try {
-            discovery.scanOnce()
+        ).use { discovery ->
+            discovery.stateSnapshot()
+
             val scanThreads = Thread.getAllStackTraces().keys
                 .filter { it.name.startsWith("mcp-steroid-port-scan-") }
             assertTrue(
@@ -169,8 +190,6 @@ class IntelliJPortDiscoveryTest {
                 scanThreads.all { it.isDaemon },
                 "every scan thread must be a daemon; saw: ${scanThreads.map { it.name to it.isDaemon }}"
             )
-        } finally {
-            discovery.close()
         }
     }
 

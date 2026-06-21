@@ -42,7 +42,7 @@ data class ListWindowsResponse(
      * IDE); on devrig one entry per discovered backend. Each window/background-task entry references its
      * owning backend via `backend_name`.
      */
-    val backends: List<BackendInfo> = emptyList(),
+    val backends: List<ListedBackendInfo> = emptyList(),
 )
 
 /**

@@ -8,8 +8,8 @@ import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.devrig.waitForValue
+import com.jonnyzzz.mcpSteroid.server.DEVRIG_RPC_PATH_PREFIX
 import com.jonnyzzz.mcpSteroid.server.NPX_NDJSON_MIME_TYPE
-import com.jonnyzzz.mcpSteroid.server.NPX_PROJECTS_STREAM_PATH
 import com.jonnyzzz.mcpSteroid.server.NpxStreamClientInfo
 import com.jonnyzzz.mcpSteroid.server.NpxStreamEnvelope
 import com.jonnyzzz.mcpSteroid.server.NpxStreamJson
@@ -39,12 +39,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.net.ServerSocket
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -52,11 +52,11 @@ import kotlinx.coroutines.isActive
 
 /**
  * End-to-end round-trip: a tiny Ktor server stands in for the IDE, we point
- * an [IdeDiscoveryService] at a fake `~/.mcp-steroid/markers/<pid>.mcp-steroid` marker, and
- * verify that [IdeMonitorService] connects, receives the IDE's snapshot
- * envelopes, and updates [IdeMonitorService.stateSnapshot].
+ * an [IdePidDiscoveryService] at a fake `~/.mcp-steroid/markers/<pid>.mcp-steroid` marker, and
+ * verify that [IdeProjectMonitorService] connects, receives the IDE's snapshot
+ * envelopes, and updates [IdeProjectMonitorService.stateSnapshot].
  */
-class IdeMonitorServiceTest {
+class IdeProjectMonitorServiceTest {
 
     private val ourPid = ProcessHandle.current().pid()
     private val seq = AtomicLong(0)
@@ -79,7 +79,7 @@ class IdeMonitorServiceTest {
         port = freePort()
         server = embeddedServer(ServerCIO, port = port, host = "127.0.0.1") {
             routing {
-                post(NPX_PROJECTS_STREAM_PATH) {
+                post("$DEVRIG_RPC_PATH_PREFIX/projects/stream") {
                     receivedAuthHeaders += call.request.headers["Authorization"]
                     val body = call.receiveText()
                     val info = NpxStreamJson.decodeClientInfo(body)
@@ -129,22 +129,18 @@ class IdeMonitorServiceTest {
         writeMarker(homeDir, port)
 
         // Pre-load one snapshot the server will emit on connect.
-        script += snapshot(listOf(ProjectInfo("alpha", "/p/alpha")))
+        script += snapsxhot(listOf(ProjectInfo("alpha", "/p/alpha")))
 
-        val discovery = IdeDiscoveryService(
+        val discovery = IdePidDiscoveryService(
             markersDir = PidMarker.markerDirectory(homeDir),
             allowHosts = listOf("127.0.0.1"),
-            scanInterval = 200.milliseconds,
         )
-        val monitor = IdeMonitorService(
+        val monitor = IdeProjectMonitorService(
             httpClient = httpClient,
             discovery = discovery,
             clientInfo = NpxStreamClientInfo(client = "test-suite", clientPid = 4242L),
             reconnectBackoff = 200.milliseconds,
         )
-
-        discovery.start(scope)
-        monitor.start(scope)
 
         val ide = waitForValue(10.seconds.inWholeMilliseconds) {
             monitor.stateSnapshot().firstOrNull {
@@ -152,7 +148,6 @@ class IdeMonitorServiceTest {
             }
         }
 
-        assertEquals(IdeMonitorStatus.CONNECTED, ide.status)
         assertEquals(listOf(ProjectInfo("alpha", "/p/alpha")), ide.projects)
 
         assertTrue(receivedClientInfos.any { it.client == "test-suite" && it.clientPid == 4242L })
@@ -172,20 +167,16 @@ class IdeMonitorServiceTest {
         script += snapshot(listOf(ProjectInfo("a", "/p/a"), ProjectInfo("b", "/p/b")))
         script += snapshot(listOf(ProjectInfo("b", "/p/b")))
 
-        val discovery = IdeDiscoveryService(
+        val discovery = IdePidDiscoveryService(
             markersDir = PidMarker.markerDirectory(homeDir),
             allowHosts = listOf("127.0.0.1"),
-            scanInterval = 200.milliseconds,
         )
-        val monitor = IdeMonitorService(
+        val monitor = IdeProjectMonitorService(
             httpClient = httpClient,
             discovery = discovery,
             clientInfo = NpxStreamClientInfo(client = "test-suite"),
             reconnectBackoff = 200.milliseconds,
         )
-
-        discovery.start(scope)
-        monitor.start(scope)
 
         // 30s timeout (was 10s) — observed a single JobCancellationException
         // flake after the coroutines 1.10.2 bump under heavy parallel CI load.
@@ -219,7 +210,7 @@ class IdeMonitorServiceTest {
             intellijMcpServer = null,
         )
         val markerDir = PidMarker.markerDirectory(homeDir)
-        java.nio.file.Files.createDirectories(markerDir)
+        Files.createDirectories(markerDir)
         File(markerDir.toFile(), PidMarker.markerFileNameFor(ourPid))
             .writeText(PidMarkerJson.encode(marker))
     }

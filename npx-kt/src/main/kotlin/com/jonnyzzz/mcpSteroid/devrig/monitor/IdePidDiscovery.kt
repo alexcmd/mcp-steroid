@@ -6,14 +6,6 @@ import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -21,13 +13,11 @@ import java.nio.file.Path
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.readText
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * One IDE instance discovered through a `~/.mcp-steroid/markers/<pid>.mcp-steroid` JSON marker.
  * Equality is keyed off the marker contents that affect the connection
- * (pid + mcpUrl) so [IdeDiscoveryService] can compare snapshots cheaply.
+ * (pid + mcpUrl) so [IdePidDiscoveryService] can compare snapshots cheaply.
  */
 data class DiscoveredIde(
     val backendName: String,
@@ -64,42 +54,14 @@ data class DiscoveredIde(
  *
  * Exposes a typed [DiscoveredIde] flow and is the single source of truth for
  * the devrig monitor stack.
- *
- * Behaviour:
- *  - Scans [markersDir] every [scanInterval] and emits a fresh value on the
- *    flow whenever the discovered set changes (by [DiscoveredIde] equality).
- *  - Skips markers whose host is not in [allowHosts] — the same allowlist
- *    discipline as the legacy implementation.
- *  - Skips markers whose pid is no longer alive.
- *  - Tolerates malformed JSON: a single corrupt marker is logged and
- *    excluded; the rest of the scan continues.
  */
-class IdeDiscoveryService(
+class IdePidDiscoveryService(
     private val markersDir: Path,
     private val allowHosts: List<String>,
-    private val scanInterval: Duration = 2.seconds,
 ) {
-    private val log = LoggerFactory.getLogger(IdeDiscoveryService::class.java)
+    private val log = LoggerFactory.getLogger(IdePidDiscoveryService::class.java)
 
-    private val _ides = MutableStateFlow<Set<DiscoveredIde>>(emptySet())
-    val ides: StateFlow<Set<DiscoveredIde>> = _ides.asStateFlow()
-
-    fun start(scope: CoroutineScope): Job = scope.launch {
-        // Emit an initial snapshot synchronously so consumers don't have to wait for
-        // a full scanInterval before the first value lands on the flow.
-        scanOnce()
-        while (isActive) {
-            delay(scanInterval)
-            scanOnce()
-        }
-    }
-
-    /** One-shot scan — exposed for test code and for manual refresh after a connection error. */
-    fun scanOnce() {
-        _ides.value = scanDirectory().associateByTo(linkedMapOf()) { it.pid }.values.toSet()
-    }
-
-    private fun scanDirectory(): List<DiscoveredIde> {
+    fun stateSnapshot(): List<DiscoveredIde> {
         if (!Files.isDirectory(markersDir)) return emptyList()
         val files = try {
             Files.list(markersDir).use { it.toList() }

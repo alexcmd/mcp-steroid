@@ -1,7 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig
 
-import com.jonnyzzz.mcpSteroid.server.ProjectInfo
+import com.jonnyzzz.mcpSteroid.devrig.server.ProjectRoute
 import java.io.PrintStream
 
 data class ProjectListing(
@@ -53,30 +53,30 @@ fun renderProjectOutput(listing: ProjectListing, out: PrintStream) {
         return
     }
 
-    val reachableRows = listing.markerRows.filter { it.projects != null }
+    val reachableRows = listing.markerRows
     val projectEntries = reachableRows.flatMap { row ->
-        row.projects.orEmpty().map { project -> ProjectEntry(row, project) }
+        row.projects.map { project -> ProjectEntry(row, project) }
     }
 
     if (projectEntries.isEmpty()) {
         out.println("No open projects across ${reachableRows.size} backend(s).")
-        renderSkippedProjectFooter(listing, out, leadingBlank = true)
+        renderSkippedProjectFooter(listing, out)
         out.println()
         return
     }
 
     out.println("Listing ${projectEntries.size} open project(s) across ${reachableRows.size} backend(s):")
     out.println()
-    val padWidth = projectEntries.maxOf { it.project.name.codePointWidth() }.coerceAtMost(40)
+    val padWidth = projectEntries.maxOf { it.project.exposedProjectName.codePointWidth() }.coerceAtMost(40)
     for ((index, entry) in projectEntries.withIndex()) {
-        val paddedName = entry.project.name.padEndCodePoints(padWidth)
-        out.println("  [${index + 1}] $paddedName  →  ${entry.project.path}")
+        val paddedName = entry.project.exposedProjectName.padEndCodePoints(padWidth)
+        out.println("  [${index + 1}] $paddedName  →  ${entry.project.exposedProjectName}")
         out.println("        ${backendDisplayName(entry.row)} (${backendLocatorLabel(entry.row)})")
         out.println("        ${backendPluginStatusText(entry.row)}")
         if (index < projectEntries.lastIndex) out.println()
     }
 
-    renderSkippedProjectFooter(listing, out, leadingBlank = true)
+    renderSkippedProjectFooter(listing, out)
     out.println()
 }
 
@@ -107,19 +107,18 @@ fun renderProjectJson(listing: ProjectListing, out: PrintStream) {
 
 private data class ProjectEntry(
     val row: BackendRow.FromMarker,
-    val project: ProjectInfo,
+    val project: ProjectRoute,
 )
 
 private fun renderSkippedProjectFooter(
     listing: ProjectListing,
     out: PrintStream,
-    leadingBlank: Boolean,
 ) {
-    val unreachableRows = listing.markerRows.filter { it.projects == null }
+    val unreachableRows = listing.markerRows
     val portRows = listing.portRows
     if (unreachableRows.isEmpty() && portRows.isEmpty()) return
 
-    if (leadingBlank) out.println()
+    out.println()
 
     if (unreachableRows.isNotEmpty()) {
         out.println("Skipped ${unreachableRows.size} ${backendNoun(unreachableRows.size)} that did not return a project snapshot:")

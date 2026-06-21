@@ -22,13 +22,11 @@ class StubMcpSteroidTools(
     private val listProjects by lazy {
         DevrigListProjectsToolHandler(
             routing = services.projectRouting,
-            inventory = services.backendInventory,
         )
     }
 
     private val listWindows by lazy {
         DevrigListWindowsToolHandler(
-            states = { services.ideMonitor.stateSnapshot() },
             bridge = bridge,
             inventory = services.backendInventory,
             routing = services.projectRouting,
@@ -90,7 +88,7 @@ class StubMcpSteroidTools(
             OpenProjectToolHandler::class.java -> openProject
 
             else -> throw UnsupportedOperationException(
-                "not yet ready: handler<${type.name}>() is not wired in devrig yet for ${services.clientInfo.client}"
+                "not yet ready: handler<${type.name}>() is not wired in devrig yet"
             )
         }
         return type.cast(handler)
