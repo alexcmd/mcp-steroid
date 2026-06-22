@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -73,6 +74,7 @@ class ServerUrlWriter : Disposable {
             ide = IdeInfo.ofApplication(),
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
+            ideHome = PathManager.getHomePath(),
             intellijWebServer = buildIntelliJWebServerInfo(),
             intellijMcpServer = IntelliJMcpServerProbe.getInstanceOrNull()?.probe(),
         )

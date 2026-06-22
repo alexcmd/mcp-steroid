@@ -2138,4 +2138,20 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
         }
     }
 
+    fun testMarkerCarriesIdeHome(): Unit = timeoutRunBlocking(30.seconds) {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+        val markerDir = com.jonnyzzz.mcpSteroid.PidMarker.markerDirectory(
+            java.nio.file.Path.of(System.getProperty("user.home"))
+        )
+        val marker = com.jonnyzzz.mcpSteroid.PidMarker.markerFileNameFor(ProcessHandle.current().pid())
+        val text = markerDir.resolve(marker).toFile().readText()
+        val decoded = com.jonnyzzz.mcpSteroid.PidMarkerJson.decode(text)
+        assertEquals(
+            "marker must report the IDE install home",
+            com.intellij.openapi.application.PathManager.getHomePath(),
+            decoded.ideHome,
+        )
+    }
+
 }
