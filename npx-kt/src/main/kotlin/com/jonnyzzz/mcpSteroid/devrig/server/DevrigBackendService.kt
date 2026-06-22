@@ -88,13 +88,12 @@ class DevrigBackendService(
         starter(installed)
         val targetHome = normalizeHome(installed.ideHome)
         val result = withTimeoutOrNull(timeout) {
-            while (true) {
-                stateProvider().firstOrNull { sameHome(it.ideHome, targetHome) }
-                    ?.let { return@withTimeoutOrNull it }
-                delay(250.milliseconds)
+            var found: DiscoveredIde? = null
+            while (found == null) {
+                found = stateProvider().firstOrNull { sameHome(it.ideHome, targetHome) }
+                if (found == null) delay(250.milliseconds)
             }
-            @Suppress("UNREACHABLE_CODE")
-            null
+            found
         }
         return result
             ?: throw BackendStartTimeoutException(
