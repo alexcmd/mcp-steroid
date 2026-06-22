@@ -24,6 +24,7 @@ class IdePidDiscoveryServiceTest {
         url: String,
         ideName: String = "IntelliJ IDEA",
         ideHome: String? = null,
+        pluginPath: String? = null,
     ): PidMarker =
         PidMarker(
             schema = PidMarker.SCHEMA_VERSION,
@@ -31,6 +32,7 @@ class IdePidDiscoveryServiceTest {
             mcpSteroidServer = McpSteroidServerInfo(
                 mcpUrl = url,
                 headers = emptyMap(),
+                pluginPath = pluginPath,
             ),
             devrigEndpoint = testDevrigEndpoint(url),
             ide = IdeInfo(name = ideName, version = "x", build = "y"),
@@ -131,5 +133,28 @@ class IdePidDiscoveryServiceTest {
         val discovered = service.stateSnapshot()
         assertEquals(1, discovered.size)
         assertEquals("/opt/goland", discovered.single().ideHome)
+    }
+
+    @Test
+    fun `pluginPath from mcpSteroidServer is surfaced on DiscoveredIde`(@TempDir homeDir: Path) {
+        writeMarker(
+            homeDir,
+            marker(ourPid, "http://localhost:64531/mcp", pluginPath = "/opt/idea/plugins/mcp-steroid")
+        )
+        val service = service(homeDir)
+
+        val discovered = service.stateSnapshot()
+        assertEquals(1, discovered.size)
+        assertEquals("/opt/idea/plugins/mcp-steroid", discovered.single().pluginPath)
+    }
+
+    @Test
+    fun `pluginPath is null on DiscoveredIde when absent in marker (older plugin compat)`(@TempDir homeDir: Path) {
+        writeMarker(homeDir, marker(ourPid, "http://localhost:64531/mcp", pluginPath = null))
+        val service = service(homeDir)
+
+        val discovered = service.stateSnapshot()
+        assertEquals(1, discovered.size)
+        kotlin.test.assertNull(discovered.single().pluginPath)
     }
 }

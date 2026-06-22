@@ -45,6 +45,9 @@ data class DiscoveredIde(
 
     /** Absolute IDE install home (`PathManager.getHomePath()`), or `null` if the marker predates this field. */
     val ideHome: String? = null,
+
+    /** Absolute install folder of the mcp-steroid plugin, or `null` if the marker predates this field. */
+    val pluginPath: String? = null,
 ) {
     /** Stable, human-friendly identifier used in logs (`IntelliJ IDEA pid=12345`). */
     @Deprecated("Use backend_name")
@@ -118,6 +121,7 @@ class IdePidDiscoveryService(
                 ide = marker.ide,
                 plugin = marker.plugin,
                 ideHome = marker.ideHome,
+                pluginPath = marker.mcpSteroidServer?.pluginPath,
             )
         }
         return out

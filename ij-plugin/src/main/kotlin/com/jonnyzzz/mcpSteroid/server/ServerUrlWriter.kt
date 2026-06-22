@@ -15,6 +15,7 @@ import com.jonnyzzz.mcpSteroid.IntelliJWebServerInfo
 import com.jonnyzzz.mcpSteroid.McpSteroidServerInfo
 import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
+import com.jonnyzzz.mcpSteroid.PluginDescriptorProvider
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import org.jetbrains.ide.BuiltInServerManager
 import java.net.URLDecoder
@@ -66,6 +67,7 @@ class ServerUrlWriter : Disposable {
             mcpSteroidServer = McpSteroidServerInfo(
                 mcpUrl = serverUrl,
                 headers = bridgeHeaders,
+                pluginPath = pluginInstallPath(),
             ),
             devrigEndpoint = DevrigEndpointInfo(
                 rpcBaseUrl = "$ktorBaseUrl$DEVRIG_RPC_PATH_PREFIX",
@@ -171,6 +173,17 @@ class ServerUrlWriter : Disposable {
     companion object {
         fun getInstance(): ServerUrlWriter = service()
     }
+}
+
+/**
+ * Returns the absolute plugin install folder for the mcp-steroid plugin, or `null` if
+ * it cannot be resolved (e.g. in a test environment where no descriptor is registered).
+ * Null-safe: callers must never crash when this returns null — older markers omit the field.
+ */
+private fun pluginInstallPath(): String? = try {
+    PluginDescriptorProvider.getInstance().descriptor.pluginPath?.toString()
+} catch (e: Exception) {
+    null
 }
 
 private fun bearerHeaders(token: String): Map<String, String> =
