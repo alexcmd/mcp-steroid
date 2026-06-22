@@ -42,6 +42,9 @@ data class DiscoveredIde(
      * Information of the MCP Streroid plugin instance of this backend
      */
     val plugin: PluginInfo,
+
+    /** Absolute IDE install home (`PathManager.getHomePath()`), or `null` if the marker predates this field. */
+    val ideHome: String? = null,
 ) {
     /** Stable, human-friendly identifier used in logs (`IntelliJ IDEA pid=12345`). */
     @Deprecated("Use backend_name")
@@ -114,6 +117,7 @@ class IdePidDiscoveryService(
                 bridgeHeaders = devrigEndpoint.headers,
                 ide = marker.ide,
                 plugin = marker.plugin,
+                ideHome = marker.ideHome,
             )
         }
         return out

@@ -23,6 +23,7 @@ class IdePidDiscoveryServiceTest {
         pid: Long,
         url: String,
         ideName: String = "IntelliJ IDEA",
+        ideHome: String? = null,
     ): PidMarker =
         PidMarker(
             schema = PidMarker.SCHEMA_VERSION,
@@ -35,6 +36,7 @@ class IdePidDiscoveryServiceTest {
             ide = IdeInfo(name = ideName, version = "x", build = "y"),
             plugin = PluginInfo(id = "x", name = "y", version = "z"),
             createdAt = "2026-05-10T12:34:56Z",
+            ideHome = ideHome,
             intellijWebServer = null,
             intellijMcpServer = null,
         )
@@ -119,5 +121,15 @@ class IdePidDiscoveryServiceTest {
         val ides = service.stateSnapshot()
         assertEquals(1, ides.size, "expected only the valid marker, got: $ides")
         assertEquals(ourPid, ides.single().pid)
+    }
+
+    @Test
+    fun `ideHome from marker is surfaced on DiscoveredIde`(@TempDir homeDir: Path) {
+        writeMarker(homeDir, marker(ourPid, "http://localhost:64531/mcp", ideHome = "/opt/goland"))
+        val service = service(homeDir)
+
+        val discovered = service.stateSnapshot()
+        assertEquals(1, discovered.size)
+        assertEquals("/opt/goland", discovered.single().ideHome)
     }
 }
