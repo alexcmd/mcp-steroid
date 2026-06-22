@@ -53,8 +53,37 @@ Each consumer composes the sources it needs — directly, no sealed union, no me
 - **S2 — running non-plugin IDEs**: port scan → `DiscoveredIdeByPort`. **Detect-only**; devrig
   cannot drive or start them. **CLI-only** surface.
 - **S3 — startable managed backends**: installed under `~/.mcp-steroid/backends/` (ide info +
-  home folder + launcher), **minus** any whose `ideHome` already appears in S1 (i.e. not already
-  running). Only these are startable — other IDEs must be started manually.
+  home folder + launcher), **minus** any currently running per `BackendManager`'s pid-file
+  liveness (`runningManagedIds`). Only these are startable — other IDEs must be started manually.
+
+## Backend groups — the canonical taxonomy
+
+The three data sources above are *plumbing*; the **user-facing** model `devrig backend` presents is
+four groups. This is the authoritative list — the CLI rendering (§6), `open_project` candidates
+(§3), and the JSON shape all derive from it.
+
+| # | Group | Source / signal | In `devrig backend`? | `open_project` candidate? |
+|---|-------|-----------------|----------------------|----------------------------|
+| 1 | **Running, compatible** — can open your project now | S1 marker **with `ideHome`** (current plugin) | yes (group 1) | **yes** |
+| 2 | **Running, incompatible** — no plugin / wrong version | S1 marker **without `ideHome`**, or S2 port-scanned IDE | yes (group 2) | no |
+| 3 | **Startable fresh** — installed & managed, not running | S3 (`~/.mcp-steroid/backends/`, no live managed pid) | yes (group 3) | **yes** (start re-provisions, then opens) |
+| 4 | **Downloadable** — new IDEs we could fetch & start | catalog | **no** — advertised only (footer → `devrig backend download …`) | no |
+
+Group-specific contracts:
+
+- **Group 1** is the only set of *running* backends devrig can drive. Compatibility is signalled by
+  `DiscoveredIde.ideHome != null` (a current plugin self-reports its install home; an old plugin
+  omits the field). See Finding C.
+- **Group 2** is display-only — devrig cannot drive or start these. The group exists to *advertise
+  the `devrig backend` subcommands* (download/start) so the user can move an incompatible/plugin-less
+  IDE toward a usable state. Never an `open_project` candidate.
+- **Group 3** backends are started fresh by devrig. **Starting fresh re-provisions vmoptions and
+  plugins** before launch — this is the contract that guarantees a managed backend boots with the
+  *current* mcp-steroid plugin (and is the proper home for Finding A's "update plugin before run";
+  the `McpSteroidServerInfo.pluginPath` marker field is the hook). Excluded from startable while a
+  live managed pid exists (Finding B).
+- **Group 4** is never enumerated in the listing — the command only surfaces the install entry point
+  (`devrig backend download`). Concrete downloadable IDEs are a catalog concern, not a per-run list.
 
 ## Changes
 
@@ -103,12 +132,16 @@ Each consumer composes the sources it needs — directly, no sealed union, no me
 
 ### 6. CLI `devrig backend`
 
-Render groups directly from the three sources — no `BackendRow`:
+Render the four groups (see "Backend groups — the canonical taxonomy") directly from the three
+sources — no `BackendRow`:
 
-1. **MCP Steroid backends** (S1) — *you can work here.*
-2. **Other running IDEs** (S2) — *detected; no MCP Steroid; cannot be driven.*
-3. **Installed managed backends, not running** (S3) — *startable.*
-4. **footer** — how to install more (`devrig backend download …`).
+1. **MCP Steroid backends** (S1, `ideHome != null`) — *you can work here.*
+2. **Other IDEs (incompatible or no MCP Steroid)** (S1 `ideHome == null` + S2) — *detected; cannot
+   be driven; use the `devrig backend` subcommands to make one usable.*
+3. **Installed, not running (startable)** (S3) — *startable; a fresh start re-provisions vmoptions +
+   plugins.*
+4. **footer** — how to download/install more (`devrig backend download …`); group 4 is advertised
+   here, never enumerated.
 
 `backend --json` / `project --json` reshape from one `backends[]` (of `BackendInfo`) to the three
 explicit groups. **No back-compat shape needed** (no external consumers; output just has to be
