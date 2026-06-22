@@ -3,11 +3,11 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.devrig.InstalledBackend
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.devrig.normalizeHome
+import com.jonnyzzz.mcpSteroid.devrig.startableBackendName
 import com.jonnyzzz.mcpSteroid.devrig.startableBackends
-import com.jonnyzzz.mcpSteroid.server.backendNameFor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
-import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -30,7 +30,7 @@ sealed interface OpenProjectCandidate {
     /** A devrig-managed IDE that is installed but not yet running. */
     data class Startable(val installed: InstalledBackend) : OpenProjectCandidate {
         override val backendName: String
-            get() = backendNameFor(sourceKey = "home:" + installed.ideHome, build = installed.ide.build)
+            get() = startableBackendName(installed)
         override val displayName: String get() = installed.ide.name
     }
 }
@@ -56,12 +56,15 @@ class DevrigBackendService(
     /**
      * Returns running candidates first, followed by startable candidates (installed managed IDEs that
      * are not currently running).
+     *
+     * Running entries are deduplicated by [OpenProjectCandidate.backendName] so that a single IDE seen via
+     * multiple discovery paths (e.g. marker file + in-memory cache) does not appear twice.
      */
     fun candidates(): List<OpenProjectCandidate> {
         val running = stateProvider()
         val startable = startableBackends(installedProvider(), running)
-        return running.map { OpenProjectCandidate.Running(it) } +
-                startable.map { OpenProjectCandidate.Startable(it) }
+        return (running.map { OpenProjectCandidate.Running(it) }.distinctBy { it.backendName } +
+                startable.map { OpenProjectCandidate.Startable(it) })
     }
 
     /**
@@ -102,9 +105,6 @@ class DevrigBackendService(
     }
 
     companion object {
-        private fun normalizeHome(p: String): String =
-            Path.of(p).toAbsolutePath().normalize().toString()
-
         private fun sameHome(ideHome: String?, target: String): Boolean {
             if (ideHome == null) return false
             return normalizeHome(ideHome) == target

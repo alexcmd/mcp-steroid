@@ -3,6 +3,8 @@ package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.server.backendNameFor
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.streams.asSequence
@@ -18,7 +20,35 @@ data class InstalledBackend(
     val launcher: Path,
 )
 
-private fun normalizeHome(p: String): String = Path.of(p).toAbsolutePath().normalize().toString()
+/**
+ * Normalizes an IDE home path for dedup/comparison purposes.
+ *
+ * Mirrors [com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService.canonicalProjectHome]:
+ * `toRealPath()` resolves symlinks so a managed IDE's [InstalledBackend.ideHome] matches the value
+ * reported by the running IDE's `PathManager.getHomePath()`. Falls back to `toAbsolutePath().normalize()`
+ * when the path no longer exists (e.g. during tests with a cleaned install directory).
+ */
+fun normalizeHome(p: String): String {
+    val path = Path.of(p)
+    return try {
+        path.toRealPath()
+    } catch (_: IOException) {
+        path.toAbsolutePath().normalize()
+    }.toString()
+}
+
+/**
+ * The single source of truth for the `backend_name` of a startable (installed but not yet running) IDE.
+ *
+ * Keyed by `"home:" + normalizeHome(installed.ideHome)` so the id stays stable for the same install
+ * directory regardless of how the path was formed, and matches the marker-side `ideHome` once the IDE is
+ * running (after symlink resolution on both sides).
+ *
+ * Use this in BOTH [com.jonnyzzz.mcpSteroid.devrig.server.OpenProjectCandidate.Startable.backendName] and
+ * every CLI render that emits a `backend_name` for startable rows — never inline the formula separately.
+ */
+fun startableBackendName(installed: InstalledBackend): String =
+    backendNameFor(sourceKey = "home:" + normalizeHome(installed.ideHome), build = installed.ide.build)
 
 /**
  * Returns the subset of [installed] backends that are not already running (i.e. no [DiscoveredIde]
@@ -58,7 +88,7 @@ fun DevrigServices.installedBackends(): List<InstalledBackend> {
                     InstalledBackend(
                         id = descriptor.id,
                         ide = ide,
-                        ideHome = bundleDir.toAbsolutePath().normalize().toString(),
+                        ideHome = normalizeHome(bundleDir.toString()),
                         launcher = launcher,
                     )
                 } catch (e: Exception) {

@@ -302,13 +302,14 @@ suspend fun collectPortDiscoveredIdes(
 /**
  * Pure renderer for the 3-group backend listing.
  *
+ * Per-backend open projects are listed under `devrig project`, not `devrig backend`.
+ *
  * Output shape:
  * ```
  * MCP Steroid backends (N):
  *
  *   [1] <IDE name> (build <build>, pid <pid>)
  *         MCP Steroid: <version>
- *         <project-name>  →  <project-path>
  *
  * Other running IDEs (no MCP Steroid) (M):
  *
@@ -346,7 +347,6 @@ fun renderBackendOutput3(
             out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${markerBackendLocatorLabel(ide)})")
             val plugin = ide.plugin
             out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}")
-            // Get routes for this IDE from the routing service snapshot used by the caller
             if (index < s1.lastIndex) out.println()
         }
     }
@@ -435,7 +435,7 @@ fun renderBackendJson3(
         putJsonArray("startableBackends") {
             for (installed in s3) {
                 add(buildJsonObject {
-                    put("backend_name", backendNameForManaged(installed.id, installed.ide.build))
+                    put("backend_name", startableBackendName(installed))
                     put("displayName", "${installed.ide.name} ${installed.ide.version}")
                     put("build", installed.ide.build)
                     put("ideHome", installed.ideHome)

@@ -100,7 +100,7 @@ class DevrigServices(
 
     val devrigBackendService: DevrigBackendService by lazy {
         DevrigBackendService(
-            stateProvider = { projectRouting.discoveredBackends() },
+            stateProvider = { ideDiscovery.stateSnapshot() },
             installedProvider = { installedBackends() },
             starter = { backendManager.start(parseBackendId(it.id)) },
         )
