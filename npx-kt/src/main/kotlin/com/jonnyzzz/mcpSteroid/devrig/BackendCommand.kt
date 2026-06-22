@@ -311,9 +311,11 @@ suspend fun collectPortDiscoveredIdes(
  *   [1] <IDE name> (build <build>, pid <pid>)
  *         MCP Steroid: <version>
  *
- * Other running IDEs (no MCP Steroid) (M):
+ * Other IDEs (incompatible or no MCP Steroid) (M):
  *
- *   [1] <IDE name> (build <build>, port <port>)
+ *   [1] <IDE name> (build <build>, pid <pid>) (incompatible plugin, old version)
+ *         MCP Steroid: <version> (incompatible)
+ *   [2] <IDE name> (build <build>, port <port>)
  *         MCP Steroid: not installed
  *
  * Installed, not running (startable) (K):
@@ -323,6 +325,11 @@ suspend fun collectPortDiscoveredIdes(
  *
  * To download additional backends: devrig backend download …
  * ```
+ *
+ * Group 1 ("MCP Steroid backends") = S1 markers WITH [DiscoveredIde.ideHome] (compatible plugin).
+ * Group 2 ("Other IDEs") = S1 markers WITHOUT [DiscoveredIde.ideHome] (incompatible/old plugin) +
+ *   port-discovered IDEs, de-duplicated so a port IDE whose build matches any marker does not appear.
+ * Group 3 ("Installed, not running") = managed IDEs not yet running.
  */
 fun renderBackendOutput3(
     s1: List<DiscoveredIde>,
@@ -330,40 +337,60 @@ fun renderBackendOutput3(
     s3: List<InstalledBackend>,
     out: PrintStream,
 ) {
-    if (s1.isEmpty() && s2.isEmpty() && s3.isEmpty()) {
+    // Split S1 by compatibility: ideHome present = compatible (new plugin), absent = incompatible (old plugin)
+    val s1Compatible = s1.filter { it.ideHome != null }
+    val s1Incompatible = s1.filter { it.ideHome == null }
+
+    if (s1Compatible.isEmpty() && s1Incompatible.isEmpty() && s2.isEmpty() && s3.isEmpty()) {
         out.println(NO_BACKENDS_DETECTED_MESSAGE)
         out.println()
         return
     }
 
-    // S1: MCP Steroid backends
-    val s1Count = s1.size
+    // Dedup port IDEs: drop any whose normalised build matches any marker (compatible or incompatible).
+    // A marker already represents this IDE; showing the port entry too would be a duplicate.
+    val allMarkerBuilds = s1.mapNotNull { normaliseBuildForDedup(it.ide.build) }.toSet()
+    val s2Deduped = s2.filter { portIde ->
+        val norm = normaliseBuildForDedup(portIde.buildNumber)
+        norm == null || norm !in allMarkerBuilds
+    }
+
+    // Group 1: MCP Steroid backends (compatible only)
+    val s1Count = s1Compatible.size
     out.println("MCP Steroid backends ($s1Count):")
     out.println()
-    if (s1.isEmpty()) {
+    if (s1Compatible.isEmpty()) {
         out.println("  (none)")
     } else {
-        for ((index, ide) in s1.withIndex()) {
+        for ((index, ide) in s1Compatible.withIndex()) {
             out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${markerBackendLocatorLabel(ide)})")
             val plugin = ide.plugin
             out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}")
-            if (index < s1.lastIndex) out.println()
+            if (index < s1Compatible.lastIndex) out.println()
         }
     }
     out.println()
 
-    // S2: Other running IDEs
-    val s2Count = s2.size
-    val s2Sorted = s2.sortedBy { it.port }
-    out.println("Other running IDEs (no MCP Steroid) ($s2Count):")
+    // Group 2: incompatible markers + port-discovered IDEs
+    val group2Count = s1Incompatible.size + s2Deduped.size
+    val s2Sorted = s2Deduped.sortedBy { it.port }
+    out.println("Other IDEs (incompatible or no MCP Steroid) ($group2Count):")
     out.println()
-    if (s2Sorted.isEmpty()) {
+    if (s1Incompatible.isEmpty() && s2Sorted.isEmpty()) {
         out.println("  (none)")
     } else {
+        val totalGroup2 = s1Incompatible.size + s2Sorted.size
+        for ((index, ide) in s1Incompatible.withIndex()) {
+            out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${markerBackendLocatorLabel(ide)}) (incompatible plugin, old version)")
+            val plugin = ide.plugin
+            out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }} (incompatible)")
+            if (index < totalGroup2 - 1) out.println()
+        }
         for ((index, ide) in s2Sorted.withIndex()) {
-            out.println("  [${index + 1}] ${portBackendDisplayName(ide)} (${portBackendLocatorLabel(ide)}) (run: ${provisionCommand(provisionTargetId(ide.port))})")
+            val entryIndex = s1Incompatible.size + index + 1
+            out.println("  [$entryIndex] ${portBackendDisplayName(ide)} (${portBackendLocatorLabel(ide)}) (run: ${provisionCommand(provisionTargetId(ide.port))})")
             out.println("        MCP Steroid: not installed")
-            if (index < s2Sorted.lastIndex) out.println()
+            if (s1Incompatible.size + index < totalGroup2 - 1) out.println()
         }
     }
     out.println()
@@ -399,6 +426,13 @@ fun renderBackendOutput3(
  *   "startableBackends": [...]
  * }
  * ```
+ *
+ * `mcpSteroidBackends` contains only compatible markers (those with a non-null [DiscoveredIde.ideHome]).
+ * Compatible entries carry `"compatible": true`.
+ *
+ * `otherIdes` contains incompatible markers (`"compatible": false`) followed by port-discovered IDEs
+ * (no `compatible` field — they are never MCP-capable by definition). Port IDEs whose normalised build
+ * matches any marker build are deduplicated out to avoid double-counting.
  */
 fun renderBackendJson3(
     s1: List<DiscoveredIde>,
@@ -406,6 +440,14 @@ fun renderBackendJson3(
     s3: List<InstalledBackend>,
     out: PrintStream,
 ) {
+    val s1Compatible = s1.filter { it.ideHome != null }
+    val s1Incompatible = s1.filter { it.ideHome == null }
+    val allMarkerBuilds = s1.mapNotNull { normaliseBuildForDedup(it.ide.build) }.toSet()
+    val s2Deduped = s2.filter { portIde ->
+        val norm = normaliseBuildForDedup(portIde.buildNumber)
+        norm == null || norm !in allMarkerBuilds
+    }
+
     val json = Json { prettyPrint = true; encodeDefaults = true; explicitNulls = false }
     val payload = buildJsonObject {
         put("tool", buildJsonObject {
@@ -413,17 +455,27 @@ fun renderBackendJson3(
             put("version", DevrigVersionMetadata.getDevrigVersion())
         })
         putJsonArray("mcpSteroidBackends") {
-            for (ide in s1) {
+            for (ide in s1Compatible) {
                 add(buildJsonObject {
                     put("backend_name", ide.backendName)
                     put("displayName", markerBackendDisplayName(ide))
                     put("build", ide.ide.build)
                     put("pid", ide.pid)
+                    put("compatible", true)
                 })
             }
         }
         putJsonArray("otherIdes") {
-            for (ide in s2.sortedBy { it.port }) {
+            for (ide in s1Incompatible) {
+                add(buildJsonObject {
+                    put("backend_name", ide.backendName)
+                    put("displayName", markerBackendDisplayName(ide))
+                    put("build", ide.ide.build)
+                    put("pid", ide.pid)
+                    put("compatible", false)
+                })
+            }
+            for (ide in s2Deduped.sortedBy { it.port }) {
                 add(buildJsonObject {
                     put("backend_name", backendNameForPort(ide.port, ide.buildNumber))
                     put("displayName", portBackendDisplayName(ide))

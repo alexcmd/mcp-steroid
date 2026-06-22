@@ -226,4 +226,25 @@ class InstalledBackendsTest {
 
         assertEquals(0, backends.size, "incomplete install (missing launcher) must be skipped")
     }
+    @Test
+    fun `startable excludes installed backend with a running managed pid`() {
+        val a = installed(id = "idea-community-2026.1", home = "/b/idea")
+        val b = installed(id = "goland-2026.1", home = "/b/goland")
+        // "goland-2026.1" has a live pid file → exclude it via runningManagedIds
+        val startable = startableBackends(listOf(a, b), emptyList(), runningManagedIds = setOf("goland-2026.1"))
+        assertEquals(listOf("idea-community-2026.1"), startable.map { it.id },
+            "a managed backend with a live pid must be excluded from startable")
+    }
+
+    @Test
+    fun `startable with runningManagedIds and ideHome both in effect`() {
+        val a = installed(id = "idea-community-2026.1", home = "/b/idea")
+        val b = installed(id = "goland-2026.1", home = "/b/goland")
+        // "idea-community" excluded by ideHome match, "goland" excluded by managed pid
+        val runningIdea = discoveredIde(ideHome = "/b/idea")
+        val startable = startableBackends(listOf(a, b), listOf(runningIdea), runningManagedIds = setOf("goland-2026.1"))
+        assertTrue(startable.isEmpty(), "both exclusion paths must work together")
+    }
+
+
 }

@@ -49,6 +49,7 @@ class BackendCommandJsonRenderTest {
         pid: Long = 1234L,
         build: String = "IU-253.21581.142",
         mcpUrl: String = "http://localhost:6315/mcp",
+        ideHome: String? = "/mock/ide/home",
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
@@ -59,6 +60,7 @@ class BackendCommandJsonRenderTest {
             ide = ideInfo,
             plugin = pluginInfo,
             backendName = backendNameForMarker(pid, build),
+            ideHome = ideHome,
         )
     }
 
@@ -203,13 +205,71 @@ class BackendCommandJsonRenderTest {
 
     @Test
     fun `all three groups present with correct entries`() {
-        val s1 = listOf(markerIde(pid = 1L))
-        val s2 = setOf(portIde(port = 63342))
+        val s1 = listOf(markerIde(pid = 1L, build = "IU-253.21581.142"))
+        // Use a different build for the port IDE so it is NOT deduped out (different product/build)
+        val s2 = setOf(portIde(port = 63342, buildNumber = "GO-261.999"))
         val s3 = listOf(installedBackend())
         val root = render(s1 = s1, s2 = s2, s3 = s3)
 
         assertEquals(1, root["mcpSteroidBackends"]!!.jsonArray.size)
-        assertEquals(1, root["otherIdes"]!!.jsonArray.size)
+        assertEquals(1, root["otherIdes"]!!.jsonArray.size,
+            "port IDE with different build must not be deduped by the marker build")
         assertEquals(1, root["startableBackends"]!!.jsonArray.size)
     }
+    // -------------- Finding C: compatibility by ideHome ---------------------
+
+    @Test
+    fun `incompatible marker (no ideHome) goes to otherIdes with compatible=false`() {
+        val incompatible = markerIde(pid = 1L, build = "IU-261.1", ideHome = null)
+        val root = render(s1 = listOf(incompatible))
+        assertEquals(0, root["mcpSteroidBackends"]!!.jsonArray.size,
+            "incompatible marker must NOT be in mcpSteroidBackends")
+        assertEquals(1, root["otherIdes"]!!.jsonArray.size,
+            "incompatible marker must appear in otherIdes")
+        val entry = root["otherIdes"]!!.jsonArray.single().jsonObject
+        assertEquals(false, entry["compatible"]?.jsonPrimitive?.boolean,
+            "incompatible entry must have compatible=false")
+    }
+
+    @Test
+    fun `compatible marker (has ideHome) goes to mcpSteroidBackends with compatible=true`() {
+        val compatible = markerIde(pid = 1L, build = "IU-261.1", ideHome = "/home/idea")
+        val root = render(s1 = listOf(compatible))
+        assertEquals(1, root["mcpSteroidBackends"]!!.jsonArray.size,
+            "compatible marker must be in mcpSteroidBackends")
+        assertEquals(0, root["otherIdes"]!!.jsonArray.size,
+            "compatible marker must NOT be in otherIdes")
+        val entry = root["mcpSteroidBackends"]!!.jsonArray.single().jsonObject
+        assertEquals(true, entry["compatible"]?.jsonPrimitive?.boolean,
+            "compatible entry must have compatible=true")
+    }
+
+    // -------------- Finding B: no port duplicates ---------------------------
+
+    @Test
+    fun `port IDE matching compatible marker build is excluded from otherIdes`() {
+        val build = "IU-253.21581.142"
+        val marker = markerIde(pid = 1L, build = build, ideHome = "/home/idea")
+        val port = portIde(port = 63342, buildNumber = build)
+        val root = render(s1 = listOf(marker), s2 = setOf(port))
+        assertEquals(0, root["otherIdes"]!!.jsonArray.size,
+            "port IDE with same build as marker must be deduped from otherIdes")
+    }
+
+    @Test
+    fun `port IDE matching incompatible marker build is also excluded from otherIdes`() {
+        val build = "IU-253.21581.142"
+        val incompatible = markerIde(pid = 1L, build = build, ideHome = null)
+        val port = portIde(port = 63342, buildNumber = build)
+        val root = render(s1 = listOf(incompatible), s2 = setOf(port))
+        // otherIdes has the incompatible marker but NOT the port duplicate
+        assertEquals(1, root["otherIdes"]!!.jsonArray.size,
+            "incompatible marker in otherIdes but port IDE with same build must be deduped")
+        val entry = root["otherIdes"]!!.jsonArray.single().jsonObject
+        assertEquals(false, entry["compatible"]?.jsonPrimitive?.boolean,
+            "the single entry must be the incompatible marker (compatible=false)")
+        // Port IDEs have a "port" field; marker entries don't
+        assertNull(entry["port"], "the single entry must be the marker, not the port IDE")
+    }
+
 }

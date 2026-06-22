@@ -103,6 +103,12 @@ class DevrigServices(
             stateProvider = { ideDiscovery.stateSnapshot() },
             installedProvider = { installedBackends() },
             starter = { backendManager.start(parseBackendId(it.id)) },
+            runningManagedIdsProvider = {
+                backendManager.list()
+                    .filter { it.state == ManagedBackendState.RUNNING }
+                    .map { it.id }
+                    .toSet()
+            },
         )
     }
 

@@ -63,15 +63,24 @@ fun resolveIdeHome(bundleDir: Path): Path {
 }
 
 /**
- * Returns the subset of [installed] backends that are not already running (i.e. no [DiscoveredIde]
- * in [running] has an `ideHome` that matches the backend's `ideHome`, path-normalized).
+ * Returns the subset of [installed] backends that are not already running.
+ *
+ * An installed backend is excluded when either:
+ * - a [DiscoveredIde] in [running] has an `ideHome` that matches the backend's `ideHome`
+ *   (path-normalized), indicating the same IDE is running with a compatible plugin, OR
+ * - the backend's [InstalledBackend.id] is in [runningManagedIds], indicating a live managed
+ *   pid file exists for it (the backend was started by devrig and is currently alive).
+ *
+ * [runningManagedIds] is populated from [BackendManager.list] (the pid-file scan) by callers
+ * in [DevrigServices]; pass [emptySet] in unit tests that only test the ideHome path.
  */
 fun startableBackends(
     installed: List<InstalledBackend>,
     running: List<DiscoveredIde>,
+    runningManagedIds: Set<String> = emptySet(),
 ): List<InstalledBackend> {
     val runningHomes = running.mapNotNull { it.ideHome }.map(::normalizeHome).toSet()
-    return installed.filter { normalizeHome(it.ideHome) !in runningHomes }
+    return installed.filter { it.id !in runningManagedIds && normalizeHome(it.ideHome) !in runningHomes }
 }
 
 /**

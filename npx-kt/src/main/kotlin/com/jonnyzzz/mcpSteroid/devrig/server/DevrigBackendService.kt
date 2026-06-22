@@ -51,18 +51,26 @@ class DevrigBackendService(
     private val installedProvider: () -> List<InstalledBackend>,
     /** Launches a managed IDE; must return only after the launch command has been issued (not after the IDE is reachable). */
     private val starter: suspend (InstalledBackend) -> Unit,
+    /**
+     * Returns the set of managed backend IDs that currently have a live pid file (RUNNING state).
+     * Used to exclude running managed IDEs from the startable group so they never appear twice.
+     * Defaults to [emptySet] for backwards-compat in tests that do not wire the BackendManager.
+     */
+    private val runningManagedIdsProvider: () -> Set<String> = { emptySet() },
 ) {
 
     /**
      * Returns running candidates first, followed by startable candidates (installed managed IDEs that
      * are not currently running).
      *
-     * Running entries are deduplicated by [OpenProjectCandidate.backendName] so that a single IDE seen via
-     * multiple discovery paths (e.g. marker file + in-memory cache) does not appear twice.
+     * Running entries are filtered to compatible IDEs only (those whose pid marker carries a non-null
+     * [DiscoveredIde.ideHome] — an absent ideHome means an OLD/incompatible plugin version that cannot
+     * serve open_project). Running entries are then deduplicated by [OpenProjectCandidate.backendName]
+     * so that a single IDE seen via multiple discovery paths does not appear twice.
      */
     fun candidates(): List<OpenProjectCandidate> {
-        val running = stateProvider()
-        val startable = startableBackends(installedProvider(), running)
+        val running = stateProvider().filter { it.ideHome != null }
+        val startable = startableBackends(installedProvider(), running, runningManagedIdsProvider())
         return (running.map { OpenProjectCandidate.Running(it) }.distinctBy { it.backendName } +
                 startable.map { OpenProjectCandidate.Startable(it) })
     }

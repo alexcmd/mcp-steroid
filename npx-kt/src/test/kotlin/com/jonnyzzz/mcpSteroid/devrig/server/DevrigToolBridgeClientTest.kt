@@ -888,7 +888,7 @@ class DevrigToolBridgeClientTest {
         pid: Long,
         build: String = "IU-261.1",
         token: String = "secret-token",
-        ideHome: String? = null,
+        ideHome: String? = "/mock/ide/home/$pid",
     ): DiscoveredIde =
         DiscoveredIde(
             backendName = backendNameForMarker(pid, build),

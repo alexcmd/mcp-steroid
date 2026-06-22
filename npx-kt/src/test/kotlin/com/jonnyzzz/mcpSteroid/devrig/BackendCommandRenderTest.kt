@@ -39,6 +39,7 @@ class BackendCommandRenderTest {
         pid: Long,
         build: String = "IU-253.21581.142",
         mcpUrl: String = "http://127.0.0.1:65000/mcp",
+        ideHome: String? = "/mock/ide/home",
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
         val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
@@ -49,6 +50,7 @@ class BackendCommandRenderTest {
             ide = ideInfo,
             plugin = pluginInfo,
             backendName = "mock-backend-name",
+            ideHome = ideHome,
         )
     }
 
@@ -157,7 +159,7 @@ class BackendCommandRenderTest {
     @Test
     fun `S2 port-discovered IDE shows section header and IDE identity with provision hint`() {
         val text = render(s2 = setOf(portIde(port = 63342)))
-        assertTrue(text.contains("Other running IDEs (no MCP Steroid) (1):"),
+        assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (1):"),
             "expected S2 section header; got:\n$text")
         assertTrue(text.contains("[1] IntelliJ IDEA Ultimate (build IU-253.21581.142, port 63342) (run: devrig backend provision port-63342)"),
             "expected S2 entry with provision hint; got:\n$text")
@@ -168,7 +170,7 @@ class BackendCommandRenderTest {
     @Test
     fun `S2 section shows (none) when empty`() {
         val text = render(s1 = listOf(markerIde("IntelliJ IDEA", "2026.1", 1L)))
-        assertTrue(text.contains("Other running IDEs (no MCP Steroid) (0):"),
+        assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (0):"),
             "expected zero-count header; got:\n$text")
         assertTrue(text.contains("  (none)"), "expected (none) for empty S2; got:\n$text")
     }
@@ -242,7 +244,7 @@ class BackendCommandRenderTest {
             s3 = listOf(installedBackend()),
         )
         val s1Idx = text.indexOf("MCP Steroid backends")
-        val s2Idx = text.indexOf("Other running IDEs")
+        val s2Idx = text.indexOf("Other IDEs (incompatible or no MCP Steroid)")
         val s3Idx = text.indexOf("Installed, not running")
         val footerIdx = text.indexOf("To download additional backends")
         assertTrue(s1Idx < s2Idx, "S1 should come before S2; got:\n$text")
@@ -258,4 +260,66 @@ class BackendCommandRenderTest {
         assertTrue(text.contains("[1] IntelliJ IDEA 2026.1.4 (build IU-261.1, pid 1234)"), text)
         assertFalse(text.contains("2026.1.4 2026.1.4"), text)
     }
+    // -------------------- Finding C: compatibility by ideHome ----------------
+
+    @Test
+    fun `incompatible marker (no ideHome) renders in group 2 not group 1`() {
+        val incompatible = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L, ideHome = null)
+        val text = render(s1 = listOf(incompatible))
+        assertTrue(text.contains("MCP Steroid backends (0):"),
+            "group 1 must be empty for incompatible marker; got:\n$text")
+        assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (1):"),
+            "group 2 must have the incompatible marker; got:\n$text")
+        assertTrue(text.contains("incompatible plugin, old version"),
+            "incompatible entry must be labeled; got:\n$text")
+        assertTrue(text.contains("(incompatible)"),
+            "plugin status must append (incompatible); got:\n$text")
+    }
+
+    @Test
+    fun `compatible marker (has ideHome) renders in group 1 not group 2`() {
+        val compatible = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L, ideHome = "/home/idea")
+        val text = render(s1 = listOf(compatible))
+        assertTrue(text.contains("MCP Steroid backends (1):"),
+            "group 1 must have 1 entry for compatible marker; got:\n$text")
+        assertFalse(text.contains("incompatible plugin"),
+            "compatible IDE must not be labeled incompatible; got:\n$text")
+    }
+
+    // -------------------- Finding B: no duplicates in group 2 ----------------
+
+    @Test
+    fun `port IDE matching a compatible marker build is deduplicated out of group 2`() {
+        val build = "IU-253.21581.142"
+        val marker = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L, build = build, ideHome = "/home/idea")
+        val portWithSameBuild = portIde(port = 63342, buildNumber = build)
+        val text = render(s1 = listOf(marker), s2 = setOf(portWithSameBuild))
+        // Group 2 should have 0 entries since port IDE matches marker build
+        assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (0):"),
+            "port IDE matching marker build must be deduped; got:\n$text")
+    }
+
+    @Test
+    fun `port IDE matching an incompatible marker build is also deduplicated`() {
+        val build = "IU-253.21581.142"
+        val incompatible = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L, build = build, ideHome = null)
+        val portWithSameBuild = portIde(port = 63342, buildNumber = build)
+        val text = render(s1 = listOf(incompatible), s2 = setOf(portWithSameBuild))
+        // Group 2: 1 (incompatible marker), port IDE with same build is deduped out
+        assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (1):"),
+            "incompatible marker should be present but port IDE with same build deduped; got:\n$text")
+        assertFalse(text.contains("[2]"),
+            "only one entry expected, not two; got:\n$text")
+    }
+
+    @Test
+    fun `port IDE with different build is NOT deduplicated`() {
+        val marker = markerIde("IntelliJ IDEA", "2025.3.3", pid = 1234L, build = "IU-253.21581.142", ideHome = "/home/idea")
+        val portWithDifferentBuild = portIde(port = 63342, buildNumber = "PC-253.999")
+        val text = render(s1 = listOf(marker), s2 = setOf(portWithDifferentBuild))
+        // Group 2 must have 1 entry (the port IDE with a different build)
+        assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (1):"),
+            "port IDE with different build must NOT be deduped; got:\n$text")
+    }
+
 }

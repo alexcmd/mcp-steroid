@@ -178,3 +178,40 @@ implementation** (so docs never lead the deployed binary):
   any `backends[]` / `BackendInfo` / backend-listing references with the new model.
 - Sweep `README.md` / `website/content/docs/*` / other prompt resources for stray `backends[]`
   references and bring them in line.
+
+## Findings B and C implementation notes
+
+### C — compatibility signal: `ideHome` presence
+
+**Compatibility = `DiscoveredIde.ideHome != null`.**
+
+A marker written by a NEW (compatible) plugin carries `ideHome = PathManager.getHomePath()`.
+A marker written by an OLD plugin omits `ideHome` (the field was added in this release).
+
+Consequences:
+- **Group 1** ("MCP Steroid backends"): only S1 markers with `ideHome != null` (compatible).
+- **Group 2** ("Other IDEs (incompatible or no MCP Steroid)"): S1 markers WITH `ideHome == null`
+  (old plugin, incompatible) **plus** port-discovered IDEs. These are display-only — they cannot
+  be driven and are not `open_project` candidates.
+- **`DevrigBackendService.candidates()`**: running IDEs with `ideHome == null` are silently
+  excluded. An incompatible running IDE is never offered as an `open_project` target.
+
+### B — no duplicates in group 2
+
+**Port dedup**: a port-discovered IDE whose `normaliseBuildForDedup(buildNumber)` matches any
+marker's `normaliseBuildForDedup(ide.build)` is dropped from group 2. This applies to ALL markers
+(both compatible and incompatible) — the IDE is already represented by its marker entry.
+
+**Running managed not in startable**: `startableBackends()` accepts a `runningManagedIds: Set<String>`
+parameter. Any `InstalledBackend` whose `id` is in this set is excluded. In production, the set
+is populated by `backendManager.list().filter { it.state == RUNNING }.map { it.id }.toSet()` — the
+BackendManager scans pid files to determine liveness. A managed IDE that is running but has NOT yet
+written a marker (e.g. still booting) is therefore correctly excluded from startable before its
+marker appears.
+
+### A — plugin path (deferred)
+
+`McpSteroidServerInfo.pluginPath` carries the absolute path of the deployed mcp-steroid plugin
+folder inside the IDE's plugin directory. This field is plumbing for a future
+"update plugin before run" step (Finding A): when devrig detects an outdated plugin version at
+`pluginPath`, it can redeploy before starting. No logic reads this field yet.

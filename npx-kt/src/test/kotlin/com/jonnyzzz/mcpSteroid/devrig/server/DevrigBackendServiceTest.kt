@@ -68,6 +68,28 @@ class DevrigBackendServiceTest {
         assertTrue(e.message!!.contains("did not become reachable"))
     }
 
+
+    @Test
+    fun `candidates excludes running IDE without ideHome (incompatible plugin)`() = runTest {
+        val incompatibleIde = discoveredIde(ideHome = null)    // no ideHome = old/incompatible plugin
+        val compatibleIde = discoveredIde(ideHome = "/b/idea") // has ideHome = compatible
+        val svc = service(running = listOf(incompatibleIde, compatibleIde), installed = emptyList())
+        val candidates = svc.candidates()
+        assertEquals(1, candidates.size, "only the compatible IDE (with ideHome) should be a candidate")
+        val c = candidates.single()
+        assertTrue(c is OpenProjectCandidate.Running)
+        assertEquals("/b/idea", (c as OpenProjectCandidate.Running).ide.ideHome)
+    }
+
+    @Test
+    fun `candidates returns empty when only running IDE has no ideHome`() = runTest {
+        val incompatibleOnly = discoveredIde(ideHome = null)
+        val svc = service(running = listOf(incompatibleOnly), installed = emptyList())
+        val candidates = svc.candidates()
+        assertTrue(candidates.isEmpty(),
+            "a no-ideHome running IDE must not be an open_project candidate")
+    }
+
     // ---- helpers ----
 
     private fun installed(id: String, home: String): InstalledBackend = InstalledBackend(
