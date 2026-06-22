@@ -113,6 +113,22 @@ class PidMarkerTest {
     }
 
     @Test
+    fun `ideHome is optional and decodes when present and absent`() {
+        val withHome = PidMarkerJson.decode(
+            """{"schema":1,"pid":7,"ide":{"name":"X","version":"1","build":"IU-1"},
+               "plugin":{"id":"p","name":"P","version":"v"},"createdAt":"t",
+               "ideHome":"/opt/idea"}""".trimIndent()
+        )
+        assertEquals("/opt/idea", withHome.ideHome)
+
+        val withoutHome = PidMarkerJson.decode(
+            """{"schema":1,"pid":7,"ide":{"name":"X","version":"1","build":"IU-1"},
+               "plugin":{"id":"p","name":"P","version":"v"},"createdAt":"t"}""".trimIndent()
+        )
+        assertNull(withoutHome.ideHome)
+    }
+
+    @Test
     fun `file name parsing accepts the canonical pid layout`() {
         assertEquals("12345.mcp-steroid", PidMarker.markerFileNameFor(12345))
         assertEquals(12345L, PidMarker.pidFromFileName("12345.mcp-steroid"))
