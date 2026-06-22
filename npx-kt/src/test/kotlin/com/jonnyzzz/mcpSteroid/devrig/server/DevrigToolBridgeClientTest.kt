@@ -812,6 +812,68 @@ class DevrigToolBridgeClientTest {
         assertEquals(targetProject.toString(), arguments["project_path"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `open project returns error when starter throws RuntimeException`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val ideHome = tempDir.resolve("ide-home-fail").toString()
+        val installed = installedBackend(id = "idea-community-2025.3.3", home = ideHome)
+        val backends = DevrigBackendService(
+            stateProvider = { emptyList() },
+            installedProvider = { listOf(installed) },
+            starter = { throw RuntimeException("boom") },
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = startableBackendName(installed),
+            )
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("boom"), "error message should contain 'boom': ${result.errorText()}")
+        // The bridge was never called — the error happened before forwarding.
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
+    @Test
+    fun `open project returns error when starter throws ManagedBackendLockException`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val ideHome = tempDir.resolve("ide-home-locked").toString()
+        val installed = installedBackend(id = "idea-community-2025.3.3", home = ideHome)
+        val backends = DevrigBackendService(
+            stateProvider = { emptyList() },
+            installedProvider = { listOf(installed) },
+            starter = {
+                throw com.jonnyzzz.mcpSteroid.devrig.ManagedBackendLockException(
+                    "another managed backend is already running"
+                )
+            },
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = startableBackendName(installed),
+            )
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("another managed backend is already running"),
+            "error message should explain lock: ${result.errorText()}")
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.toList() }
 

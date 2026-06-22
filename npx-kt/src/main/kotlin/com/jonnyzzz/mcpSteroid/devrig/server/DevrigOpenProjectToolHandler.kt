@@ -4,6 +4,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.put
 
 class DevrigOpenProjectToolHandler(
@@ -21,8 +22,9 @@ class DevrigOpenProjectToolHandler(
         }
         val ide = try {
             backends.ensureBackendRunning(chosen)
-        } catch (e: BackendStartTimeoutException) {
-            return ToolCallResult.errorResult(e.message!!)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            return ToolCallResult.errorResult(e.message ?: e.toString())
         }
         return bridge.callTool(ide, "steroid_open_project") {
             put("project_path", openProjectParams.projectPath)

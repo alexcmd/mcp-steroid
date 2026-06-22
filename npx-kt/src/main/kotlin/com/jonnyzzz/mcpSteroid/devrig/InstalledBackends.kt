@@ -51,6 +51,18 @@ fun startableBackendName(installed: InstalledBackend): String =
     backendNameFor(sourceKey = "home:" + normalizeHome(installed.ideHome), build = installed.ide.build)
 
 /**
+ * Returns the IDE home directory for a bundle — the directory that contains `bin/` and
+ * `product-info.json`, matching what `PathManager.getHomePath()` returns in the running IDE.
+ *
+ * - macOS app bundle: `bundleDir/Contents` contains `bin/` → return `bundleDir/Contents`
+ * - Linux / Windows: `bundleDir` itself contains `bin/` → return `bundleDir`
+ */
+fun resolveIdeHome(bundleDir: Path): Path {
+    val contentsBin = bundleDir.resolve("Contents/bin")
+    return if (Files.isDirectory(contentsBin)) bundleDir.resolve("Contents") else bundleDir
+}
+
+/**
  * Returns the subset of [installed] backends that are not already running (i.e. no [DiscoveredIde]
  * in [running] has an `ideHome` that matches the backend's `ideHome`, path-normalized).
  */
@@ -80,6 +92,9 @@ fun DevrigServices.installedBackends(): List<InstalledBackend> {
                     val bundleDir = homePaths.backendDir(descriptor.id).resolve(descriptor.bundleDirName)
                     if (!Files.isDirectory(bundleDir)) return@mapNotNull null
                     val launcher = bundleDir.resolve(descriptor.launcherPath)
+                    // Guard against incomplete installs: a missing or non-file launcher means
+                    // the backend cannot be started and must not appear as a startable candidate.
+                    if (!Files.isRegularFile(launcher)) return@mapNotNull null
                     val ide = IdeInfo(
                         name = descriptor.productKey,
                         version = descriptor.version,
@@ -88,7 +103,7 @@ fun DevrigServices.installedBackends(): List<InstalledBackend> {
                     InstalledBackend(
                         id = descriptor.id,
                         ide = ide,
-                        ideHome = normalizeHome(bundleDir.toString()),
+                        ideHome = normalizeHome(resolveIdeHome(bundleDir).toString()),
                         launcher = launcher,
                     )
                 } catch (e: Exception) {
