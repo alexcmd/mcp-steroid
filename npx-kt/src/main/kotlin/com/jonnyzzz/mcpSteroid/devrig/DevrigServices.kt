@@ -90,19 +90,6 @@ class DevrigServices(
         )
     }
 
-    /**
-     * MCP-mode [BackendInventory] for the devrig tool handlers: it consumes [projectRouting] (marker
-     * rows + their project routes) and [portDiscovery] (bounded port scan) directly, plus managed rows
-     * from [backendManager]. The CLI path reuses the same inventory via [collectBackendRows].
-     */
-    val backendInventory: BackendInventory by lazy {
-        BackendInventory(
-            routing = projectRouting,
-            portDiscovery = portDiscovery,
-            managedBackends = { backendManager.list() },
-        )
-    }
-
     val portDiscovery: IntelliJPortDiscovery by lazy {
         IntelliJPortDiscovery(httpClient = commandHttpClient)
     }

@@ -6,7 +6,6 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
@@ -509,17 +508,10 @@ class DevrigToolBridgeClientTest {
             .collectListProjectsResponse()
         val mcpProjectName = mcpResponse.projects.single().projectName
 
-        // CLI surface — the same marker + project rendered by `devrig project --json`. Build the row from
-        // the SAME routing the MCP surface used, so both sides carry identical ProjectRoutes by construction.
-        val rows = listOf(
-            BackendRow.FromMarker(
-                ide = ide,
-                projects = routing.routes(),
-            ),
-        )
+        // CLI surface — rendered by `devrig project --json` from the SAME routing routes.
         val cliJson = java.io.ByteArrayOutputStream().let { buf ->
-            com.jonnyzzz.mcpSteroid.devrig.renderProjectJson(
-                com.jonnyzzz.mcpSteroid.devrig.projectListingFromRows(rows),
+            com.jonnyzzz.mcpSteroid.devrig.renderProjectJson3(
+                routing.routes(),
                 java.io.PrintStream(buf, true, Charsets.UTF_8),
             )
             buf.toString(Charsets.UTF_8)

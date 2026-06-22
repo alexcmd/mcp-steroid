@@ -22,31 +22,10 @@ fun portBackendLocatorLabel(ide: DiscoveredIdeByPort): String = buildString {
     append("port ").append(ide.port)
 }
 
-fun backendDisplayName(row: BackendRow): String = when (row) {
-    is BackendRow.FromMarker -> markerBackendDisplayName(row.ide)
-    is BackendRow.FromPort -> portBackendDisplayName(row.ide)
-    is BackendRow.FromManaged -> row.displayName
-}
-
-fun backendLocatorLabel(row: BackendRow): String = when (row) {
-    is BackendRow.FromMarker -> markerBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
-    is BackendRow.FromPort -> portBackendLocatorLabel(row.ide) + if (row.managed) ", managed" else ""
-    is BackendRow.FromManaged -> row.locatorLabel
-}
-
-fun backendPluginStatusText(row: BackendRow): String = when (row) {
-    is BackendRow.FromMarker -> {
-        val plugin = row.ide.plugin
-        "${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }}"
-    }
-    is BackendRow.FromPort,
-    is BackendRow.FromManaged -> "MCP Steroid: not installed"
-}
-
 /**
  * Identity extras for a port-discovered IDE. Still hand-built JSON because it backs the
  * `devrig backend provision` listing ([provisionTargetJson]); the `backend --json` / MCP path uses the
- * shared [com.jonnyzzz.mcpSteroid.server.BackendInfo] schema instead (see [backendInfoForRow]).
+ * shared [com.jonnyzzz.mcpSteroid.server.BackendInfo] schema instead.
  */
 fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = buildJsonObject {
     put("port", ide.port)
