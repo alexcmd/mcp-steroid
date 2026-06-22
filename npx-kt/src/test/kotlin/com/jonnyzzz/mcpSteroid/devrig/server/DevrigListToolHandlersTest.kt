@@ -55,7 +55,7 @@ class DevrigListToolHandlersTest {
             ide = discoveredIde(pid = 42, build = "IU-261.1"),
             projects = listOf(IdeProjectState("alpha", homeA.toString())),
         )
-        // A discovered IDE with NO open project contributes no projects (but was also the only source of backends[]).
+        // A discovered IDE with NO open project contributes no projects.
         val idle = IdeMonitorState(ide = discoveredIde(pid = 43, build = "IU-253.9"))
         val routing = DevrigProjectRoutingService { listOf(withProject, idle) }
 

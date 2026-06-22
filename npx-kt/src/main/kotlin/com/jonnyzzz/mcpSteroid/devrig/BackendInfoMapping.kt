@@ -2,19 +2,14 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.server.backendNameFor
-import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 
 // R3.3 — the shared backend_name formula (backendNameFor + backendNameForMarker) lives in
 // mcp-steroid-server (com.jonnyzzz.mcpSteroid.server.BackendName) so the in-IDE plugin and devrig
-// recompute the same id for the same input. The port/managed variants below are devrig-only sources.
+// recompute the same id for the same input. The port variant below is devrig-only.
 
 /** Port-discovered backend_name: keyed by the scanned port. */
 fun backendNameForPort(port: Int, build: String?): String =
     backendNameFor(sourceKey = "port:$port", build = build)
-
-/** Managed-backend backend_name: keyed by the managed id (works before the backend is running). */
-fun backendNameForManaged(managedId: String, build: String?): String =
-    backendNameFor(sourceKey = "managed:$managedId", build = build)
 
 /**
  * Strip a leading product-code prefix (letters + hyphen, e.g. `IU-`, `PC-`,

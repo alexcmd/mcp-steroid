@@ -2,15 +2,13 @@
 package com.jonnyzzz.mcpSteroid.devrig
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
-import com.jonnyzzz.mcpSteroid.PluginInfo
-import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
-import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.server.base36FixedWidth
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.nio.file.Path
 
 /** R3.3: one uniform `backend_name` scheme `<productCodeLower>-<hash8>` for every source. */
 class BackendIdentityTest {
@@ -45,12 +43,26 @@ class BackendIdentityTest {
     }
 
     @Test
-    fun `backendNameForManaged is deterministic and keyed by managed id`() {
-        val a = backendNameForManaged(managedId = "idea-community-2025.2.6.2", build = "IC-252.1")
-        val aAgain = backendNameForManaged(managedId = "idea-community-2025.2.6.2", build = "IC-252.1")
-        val b = backendNameForManaged(managedId = "idea-community-2025.3.0", build = "IC-253.1")
+    fun `startableBackendName is deterministic and keyed by normalized ideHome`() {
+        fun installed(home: String) = InstalledBackend(
+            id = "idea-community-2025.3.0",
+            ide = IdeInfo(name = "IntelliJ IDEA Community", version = "2025.3", build = "IC-253.1"),
+            ideHome = home,
+            launcher = Path.of(home, "bin", "idea.sh"),
+        )
+        val home = "/opt/idea/2025.3"
+        val a = startableBackendName(installed(home))
+        val aAgain = startableBackendName(installed(home))
+        // Same home → same id
         assertEquals(a, aAgain)
+        // Different home → different id
+        val b = startableBackendName(installed("/opt/idea/2025.2"))
         assertNotEquals(a, b)
-        assertTrue(a.startsWith("ic-"))
+        assertTrue(a.startsWith("ic-"), "startable id should start with ic- but was: $a")
+        // Normalised home must produce the same id regardless of trailing slash
+        val withSlash = startableBackendName(installed("$home/"))
+        // normalizeHome strips trailing slash via toAbsolutePath().normalize()
+        assertEquals(a, withSlash,
+            "startableBackendName must be stable under path normalisation (trailing slash)")
     }
 }

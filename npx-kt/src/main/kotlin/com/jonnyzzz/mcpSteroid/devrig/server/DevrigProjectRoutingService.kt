@@ -22,7 +22,6 @@ class DevrigProjectRoutingService(
     private val stateProvider: () -> List<IdeMonitorState>,
 ) {
 
-    //TODO: it should include inventory#backends
     fun routes(): List<ProjectRoute> {
         return stateProvider().flatMap { ide ->
             ide.projects.map { proj ->
