@@ -4,39 +4,26 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.put
 
 class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
-    private val routing: DevrigProjectRoutingService,
+    private val backends: DevrigBackendService,
 ) : OpenProjectToolHandler {
     override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
-        val requestedBackend = openProjectParams.backendName?.trim()?.takeIf { it.isNotEmpty() }
-
-        val backends = routing.discoveredBackends()
-
-        val ide = if (requestedBackend != null) {
-            // An explicit backend_name that resolves to no discovered IDE must NOT silently fall back to
-            // the newest IDE (that would route the agent's open_project to an unrelated backend). Fail with
-            // a self-correcting list of the routable backend_names instead.
-            backends.firstOrNull { it.backendName == requestedBackend }
-                ?: return ToolCallResult.errorResult(
-                    "Unknown backend_name '$requestedBackend'. Only running IDEs with the MCP Steroid plugin " +
-                        "are routable for open_project; port-only and not-yet-running managed backends listed by " +
-                        "'devrig backend --json' are not. " +
-                        if (backends.isEmpty()) "No routable IDE backends are currently discovered; start an IDE or call steroid_list_projects."
-                        else "Routable backends: ${backends.joinToString { it.backendName }}. Call steroid_list_projects to refresh."
-                )
-        } else {
-            DevrigProjectRoutingService.newestOf(backends)
-                ?: return ToolCallResult.errorResult(
-                    "open_project requires at least one discovered IDE backend (a running IDE with the MCP " +
-                        "Steroid plugin). None is currently discovered; start an IDE or call steroid_list_projects."
-                )
+        val requested = openProjectParams.backendName?.trim()?.takeIf { it.isNotEmpty() }
+        val candidates = backends.candidates()
+        val chosen = when {
+            requested != null -> candidates.firstOrNull { it.backendName == requested }
+                ?: return ToolCallResult.errorResult(unknownBackendMessage(requested, candidates))
+            candidates.size == 1 -> candidates.single()
+            else -> return ToolCallResult.errorResult(chooseBackendMessage(candidates))
         }
-
+        val ide = try {
+            backends.ensureBackendRunning(chosen)
+        } catch (e: BackendStartTimeoutException) {
+            return ToolCallResult.errorResult(e.message!!)
+        }
         return bridge.callTool(ide, "steroid_open_project") {
             put("project_path", openProjectParams.projectPath)
             put("trust_project", openProjectParams.trustProject)
@@ -44,4 +31,23 @@ class DevrigOpenProjectToolHandler(
             put("reason", "Open project through devrig")
         }
     }
+}
+
+private fun unknownBackendMessage(requested: String, candidates: List<OpenProjectCandidate>): String {
+    val list = candidateList(candidates)
+    return "Unknown backend_name '$requested'. $list"
+}
+
+private fun chooseBackendMessage(candidates: List<OpenProjectCandidate>): String {
+    val list = candidateList(candidates)
+    return "open_project requires exactly one candidate or an explicit backend_name. $list"
+}
+
+private fun candidateList(candidates: List<OpenProjectCandidate>): String {
+    if (candidates.isEmpty()) return "No candidates are currently available; start an IDE or call steroid_list_projects."
+    val items = candidates.joinToString("\n") { c ->
+        val tag = if (c is OpenProjectCandidate.Startable) " (startable)" else ""
+        "  ${c.backendName} — ${c.displayName}$tag"
+    }
+    return "Available candidates:\n$items"
 }

@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.devrig.server
 
-import com.jonnyzzz.mcpSteroid.devrig.compareBackendVersions
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
@@ -69,25 +68,6 @@ class DevrigProjectRoutingService(
 
     companion object {
         /**
-         * Orders discovered IDEs so the "newest" sorts last (greatest): highest IDE build first,
-         * ties broken by the most recently started IDE, then by pid. Use with [maxWithOrNull].
-         * IDE builds carry a product-code prefix (`IU-261.…`); it is stripped so the numeric build
-         * components drive the comparison rather than the product letters.
-         */
-        private val NEWEST_IDE_FIRST: Comparator<DiscoveredIde> = Comparator { left, right ->
-            val byBuild = compareBackendVersions(
-                stripProductCode(left.ide.build),
-                stripProductCode(right.ide.build),
-            )
-            if (byBuild != 0) return@Comparator byBuild
-            left.pid.compareTo(right.pid)
-        }
-
-        private val PRODUCT_CODE_PREFIX = Regex("^[A-Za-z]+-")
-
-        private fun stripProductCode(build: String): String = build.replaceFirst(PRODUCT_CODE_PREFIX, "")
-
-        /**
          * Canonicalizes a project home for routing/hash purposes. `toRealPath()` resolves symlinks but
          * THROWS when the directory no longer exists — and a single vanished project (e.g. a test
          * project deleted while its IDE snapshot is still cached) must not break routing for every
@@ -100,10 +80,6 @@ class DevrigProjectRoutingService(
             } catch (_: IOException) {
                 path.toAbsolutePath().normalize()
             }.toString()
-        }
-
-        fun newestOf(ides: List<DiscoveredIde>): DiscoveredIde? {
-            return ides.maxWithOrNull(NEWEST_IDE_FIRST)
         }
     }
 }

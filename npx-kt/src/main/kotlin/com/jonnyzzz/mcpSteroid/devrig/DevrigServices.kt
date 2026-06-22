@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdePidDiscoveryService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectMonitorService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
+import com.jonnyzzz.mcpSteroid.devrig.server.DevrigBackendService
 import com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService
 import com.jonnyzzz.mcpSteroid.server.NPX_STREAM_IDLE_TIMEOUT_MILLIS
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
@@ -108,6 +109,14 @@ class DevrigServices(
 
     val beacon by lazy {
         DevrigBeacon(homePaths, lifetime)
+    }
+
+    val devrigBackendService: DevrigBackendService by lazy {
+        DevrigBackendService(
+            stateProvider = { projectRouting.discoveredBackends() },
+            installedProvider = { installedBackends() },
+            starter = { backendManager.start(parseBackendId(it.id)) },
+        )
     }
 
 }

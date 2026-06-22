@@ -13,7 +13,6 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.io.TempDir
 
@@ -124,93 +123,6 @@ class DevrigProjectRoutingServiceTest {
     }
 
     @Test
-    fun `newest ide returns null when no ides are discovered`() {
-        assertEquals(null, routingService().newestIde())
-    }
-
-    @Test
-    fun `newest ide returns the only discovered ide`() {
-        val projectHome = Files.createDirectories(tempDir.resolve("project"))
-        val service = routingService(
-            state(pid = 42, projects = listOf(IdeProjectState("mcp-steroid", projectHome.toString()))),
-        )
-
-        assertNotNull(service.newestIde())
-        assertEquals(42, service.newestIde()?.pid)
-    }
-
-    @Test
-    fun `newest ide prefers the highest build regardless of start order or pid`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val service = routingService(
-            // Higher pid and later start time, but the older build must not win.
-            state(
-                pid = 99,
-                projects = listOf(IdeProjectState("a", projectA.toString())),
-                build = "IU-253.24374.151",
-            ),
-            state(
-                pid = 1,
-                projects = listOf(IdeProjectState("b", projectB.toString())),
-                build = "IU-261.1",
-            ),
-        )
-
-        assertEquals(1, service.newestIde()?.pid)
-    }
-
-    @Test
-    fun `newest ide breaks build ties by the most recently started ide`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        val service = routingService(
-            state(
-                pid = 1,
-                projects = listOf(IdeProjectState("a", projectA.toString())),
-                build = "IU-261.24374.151",
-            ),
-            state(
-                pid = 2,
-                projects = listOf(IdeProjectState("b", projectB.toString())),
-                build = "IU-261.24374.151",
-            ),
-        )
-
-        assertEquals(2, service.newestIde()?.pid)
-    }
-
-    @Test
-    fun `newest ide compares builds numerically across product codes`() {
-        val projectA = Files.createDirectories(tempDir.resolve("a"))
-        val projectB = Files.createDirectories(tempDir.resolve("b"))
-        // "IU" sorts after "GO" lexically; numeric build comparison must ignore the product code.
-        val service = routingService(
-            state(
-                pid = 1,
-                projects = listOf(IdeProjectState("a", projectA.toString())),
-                build = "IU-253.1",
-            ),
-            state(
-                pid = 2,
-                projects = listOf(IdeProjectState("b", projectB.toString())),
-                build = "GO-261.1",
-            ),
-        )
-
-        assertEquals(2, service.newestIde()?.pid)
-    }
-
-    @Test
-    fun `newest ide considers an ide that has no project open`() {
-        val service = routingService(
-            state(pid = 7, projects = emptyList(), build = "IU-261.1"),
-        )
-
-        assertEquals(7, service.newestIde()?.pid)
-    }
-
-    @Test
     fun `prompt context is parsed from routed IDE build number`() = runTest {
         val projectHome = Files.createDirectories(tempDir.resolve("project"))
         val routing = routingService(
@@ -274,10 +186,6 @@ class DevrigProjectRoutingServiceTest {
             assertEquals(253, context.baselineVersion, build)
         }
     }
-
-    /** The newest discovered IDE — relocated from the removed `newestIdeOrNull()` to the kept companion. */
-    private fun DevrigProjectRoutingService.newestIde(): DiscoveredIde? =
-        DevrigProjectRoutingService.newestOf(discoveredBackends())
 
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.toList() }
