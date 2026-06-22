@@ -461,7 +461,7 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `devrig list_projects tags each project with its backend and lists routable backends`(
+    fun `devrig list_projects tags each project with its backend_name`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
@@ -482,24 +482,12 @@ class DevrigToolBridgeClientTest {
         val name42 = backendNameForMarker(42L, "IU-261.1")
         val name43 = backendNameForMarker(43L, "IU-253.9")
 
-        // Every project carries its owning backend_name, and that id is one of the listed backends.
+        // Every project carries its owning backend_name.
         assertTrue(response.projects.all { it.backendName != null })
-        assertEquals(
-            response.backends.map { it.backendName }.toSet(),
-            response.projects.mapNotNull { it.backendName }.toSet(),
-        )
-        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
+        assertEquals(setOf(name42, name43), response.projects.mapNotNull { it.backendName }.toSet())
         // Each project also carries the devrig-exposed project_name (and the raw name for jq consumers).
         assertEquals(setOf("alpha", "beta"), response.projects.map { it.name }.toSet())
         assertTrue(response.projects.all { it.projectName.isNotBlank() })
-        // Each listed backend carries the routable IDE's identity (display name + build/version).
-        for (backend in response.backends) {
-            assertEquals("IntelliJ IDEA", backend.displayName, "display name identifies the IDE: $backend")
-            assertTrue(!backend.version.isNullOrBlank(), "version must be populated: $backend")
-            assertTrue(!backend.build.isNullOrBlank(), "build must be populated: $backend")
-        }
-        assertEquals("IU-261.1", response.backends.single { it.backendName == name42 }.build)
-        assertEquals("IU-253.9", response.backends.single { it.backendName == name43 }.build)
     }
 
     @Test

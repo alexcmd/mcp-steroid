@@ -18,11 +18,8 @@ class DevrigListProjectsToolHandler(
             )
         }
 
-        // backends[] = exactly the routing-discovered backends (open_project-routable IDEs). Port-only and
-        // managed backends are a CLI concern (`devrig backend`) and are intentionally kept off this surface.
         return ListProjectsResponse(
             projects = listedProjects,
-            backends = routing.listedBackends(),
         )
     }
 }

@@ -38,8 +38,7 @@ import org.junit.jupiter.api.io.TempDir
 
 /**
  * devrig MCP list handlers ([DevrigListProjectsToolHandler] / [DevrigListWindowsToolHandler]):
- *  - `backends[]` is exactly the routing-discovered backends — port-only and managed backends are a CLI
- *    concern (`devrig backend`) and never leak onto the MCP surface;
+ *  - every project in `steroid_list_projects` carries the backend_name of its source IDE;
  *  - every `steroid_list_windows` window/background-task carries the backend_name of its source IDE;
  *  - the inventory's own dead-pid liveness downgrade is asserted on the rich CLI [BackendInventory] surface.
  */
@@ -53,7 +52,7 @@ class DevrigListToolHandlersTest {
     }
 
     @Test
-    fun `list_projects backends are exactly the routing-discovered backends (no port or managed leak)`(
+    fun `list_projects projects carry backend_name of their source ide`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val homeA = Files.createDirectories(tempDir.resolve("alpha"))
@@ -61,25 +60,13 @@ class DevrigListToolHandlersTest {
             ide = discoveredIde(pid = 42, build = "IU-261.1"),
             projects = listOf(IdeProjectState("alpha", homeA.toString())),
         )
-        // A discovered IDE with NO open project is still a routable backend, so it must appear in backends[].
+        // A discovered IDE with NO open project contributes no projects (but was also the only source of backends[]).
         val idle = IdeMonitorState(ide = discoveredIde(pid = 43, build = "IU-253.9"))
         val routing = DevrigProjectRoutingService { listOf(withProject, idle) }
 
         val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
 
         val name42 = backendNameForMarker(42L, "IU-261.1")
-        val name43 = backendNameForMarker(43L, "IU-253.9")
-
-        // backends[] = every discovered IDE (incl. the idle one), and nothing else — these are all marker
-        // backend_names (`iu-…`); no port/managed entry is ever synthesized onto this surface.
-        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
-        assertTrue(response.backends.all { it.backendName.startsWith("iu-") }, "$response")
-
-        // Identity fields are carried from the IDE.
-        val b42 = response.backends.single { it.backendName == name42 }
-        assertEquals("IntelliJ IDEA", b42.displayName)
-        assertEquals("IU-261.1", b42.build)
-        assertEquals("2026.1", b42.version)
 
         // projects[] only lists the IDE that actually has a project open, tagged with its own backend_name.
         assertEquals(listOf(name42), response.projects.map { it.backendName })
@@ -184,8 +171,6 @@ class DevrigListToolHandlersTest {
             val route = routing.routes().single { it.route.pid == pid }
             assertEquals(route.exposedProjectName, window.projectName)
         }
-        // backends[] = the routing-discovered backends, joined by the same names.
-        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
     }
 
     private fun windowsResponseJson(pid: Long): String = McpJson.encodeToString(

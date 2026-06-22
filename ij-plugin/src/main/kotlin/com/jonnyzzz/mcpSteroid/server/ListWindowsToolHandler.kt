@@ -27,7 +27,6 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
         return ListWindowsResponse(
             windows = snapshot.windows.map { it.listed(it.projectName, self.backendName) },
             backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName, self.backendName) },
-            backends = listOf(self.backend),
         )
     }
 }

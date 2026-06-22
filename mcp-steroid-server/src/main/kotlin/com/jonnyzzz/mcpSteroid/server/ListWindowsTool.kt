@@ -31,18 +31,12 @@ interface ListWindowsToolHandler {
 /**
  * MCP-only output of `steroid_list_windows` — never crosses the devrig<->IDE wire. There is no
  * top-level `ide`/`plugin`/`pid` header: the responding server's identity lives in the MCP server
- * info, and per-entry attribution happens via `backend_name` against [backends].
+ * info, and per-entry attribution happens via `backend_name` on each window/task entry.
  */
 @Serializable
 data class ListWindowsResponse(
     val windows: List<ListedWindow>,
     val backgroundTasks: List<ListedBackgroundTask>,
-    /**
-     * Backends reachable through this connection. On a direct in-IDE connection exactly one entry (this
-     * IDE); on devrig one entry per discovered backend. Each window/background-task entry references its
-     * owning backend via `backend_name`.
-     */
-    val backends: List<ListedBackendInfo> = emptyList(),
 )
 
 /**

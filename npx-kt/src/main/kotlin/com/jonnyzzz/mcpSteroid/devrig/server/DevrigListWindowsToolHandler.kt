@@ -44,9 +44,6 @@ class DevrigListWindowsToolHandler(
                     )
                 }
             },
-            // backends[] = exactly the routing-discovered backends, same source as list_projects. Port-only
-            // and managed backends are a CLI concern (`devrig backend`), kept off this MCP surface.
-            backends = routing.listedBackends(),
         )
     }
 }

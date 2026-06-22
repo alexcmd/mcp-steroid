@@ -34,7 +34,7 @@ interface ListProjectsToolHandler {
 /**
  * MCP-only output of `steroid_list_projects` — never crosses the devrig<->IDE wire. There is no
  * top-level `ide`/`plugin`/`pid` header: the responding server's identity lives in the MCP server
- * info, and per-entry attribution happens via `backend_name` against [backends].
+ * info, and per-entry attribution happens via `backend_name` on each project entry.
  */
 @Serializable
 data class ListProjectsResponse(
@@ -44,22 +44,6 @@ data class ListProjectsResponse(
      * name and `backend_name` is the owning discovered IDE.
      */
     val projects: List<ListedProject>,
-    /**
-     * Backends reachable through this connection. On a direct in-IDE connection exactly one entry (this
-     * IDE); on devrig one entry per discovered IDE. The `backend_name` of any routable entry is a valid
-     * argument for steroid_open_project.
-     */
-    val backends: List<ListedBackendInfo> = emptyList(),
-)
-
-@Serializable
-data class ListedBackendInfo(
-    @SerialName("backend_name")
-    val backendName: String,
-
-    val displayName: String,
-    val version: String?,
-    val build: String?,
 )
 
 /**
@@ -175,16 +159,6 @@ fun markerLocator(build: String?, pid: Long): String = buildString {
     }
     append("pid ").append(pid)
 }
-
-fun markerBackendInfo2(
-    backendName: String,
-    ide: IdeInfo,
-): ListedBackendInfo = ListedBackendInfo(
-    backendName = backendName,
-    displayName = ide.displayName,
-    version = ide.version,
-    build = ide.build,
-)
 
 /**
  * The ONE marker-row -> [BackendInfo] assembler, shared by the in-IDE `steroid_list_projects`

@@ -17,9 +17,9 @@ class ListProjectsToolSpecSchemaTest {
     }
 
     @Test
-    fun `response decodes ListedProject and defaults backends to empty`() {
-        // No top-level ide/plugin/pid header (#89) — projects[] + backends[] only.
-        // ListedProject uses snake_case `project_name`/`backend_name` (@SerialName); `backends` defaults empty.
+    fun `response decodes ListedProject with snake_case keys`() {
+        // No top-level ide/plugin/pid header (#89) — projects[] only.
+        // ListedProject uses snake_case `project_name`/`backend_name` (@SerialName).
         val json = """{"projects":[{"project_name":"n","name":"n","path":"/p"}]}"""
         val decoded = McpJson.decodeFromString(ListProjectsResponse.serializer(), json)
         val project = decoded.projects.single()
@@ -27,7 +27,6 @@ class ListProjectsToolSpecSchemaTest {
         assertEquals("n", project.name)
         assertEquals("/p", project.path)
         assertNull(project.backendName)
-        assertTrue(decoded.backends.isEmpty())
     }
 
     @Test
