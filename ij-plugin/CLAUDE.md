@@ -442,17 +442,20 @@ per-project backend reference now lives on the devrig-owned, MCP-surface-only `L
 which never crosses the wire. `ProjectsStreamService` only ever builds `ProjectInfo(name, path)`, so the
 reversion changed zero emitted bytes.) A **wire-pristineness guard test** (`WirePristinenessTest`,
 `mcp-steroid-server`) asserts `NpxStreamEnvelope` (`/projects/stream`) and `NpxBridgeWindowsResponse`
-(`/windows`) never serialize the devrig-only `backend_name` / `project_name` / `BackendInfo` / `ListedProject`
-keys.
+(`/windows`) never serialize the devrig-only `backend_name` / `project_name` / `ListedProject`
+keys (`BackendInfo` and `ListedBackendInfo` were deleted in the startable-backends release).
 
 **MCP-surface-only, never wire-crossing:**
 - `OpenProjectParams.backendName: String? = null` is **MCP-surface only** and is **NOT forwarded** to the
   IDE bridge. devrig resolves it locally to a target IDE and POSTs the byte-identical `steroid_open_project`
   body (`project_path` / `trust_project` / `task_id` / `reason`). The non-forwarding invariant is pinned in
   `DevrigToolBridgeClientTest` (forwarded `arguments["backend_name"] == null`).
-- `ListProjectsResponse.backends` / `BackendInfo` / `ListedProject` are devrig-computed MCP/CLI output types
+- `ListProjectsResponse` / `ListWindowsResponse` / `ListedProject` are devrig-computed MCP/CLI output types
   (built from devrig's routing snapshot, never fetched from the IDE) — devrig-owned and outside the wire
-  contract. See PHILOSOPHY.md Tenet 5.
+  contract. Note: `BackendInfo` and `ListedBackendInfo` were **deleted** in the startable-backends release;
+  `backends[]` was **removed** from both response types (they now carry only `projects` / `windows` +
+  `backgroundTasks`). The one-release additive-only waiver that permitted this is recorded in
+  `docs/PHILOSOPHY.md` Tenet 5 and `docs/startable-backends-design.md`.
 
 Deferred (revisit with a baseline release): (a) a cross-version test (devrig HEAD ↔ an older plugin build);
 (b) giving devrig its **own** copy of the marker/bridge DTOs so the two version independently and only the

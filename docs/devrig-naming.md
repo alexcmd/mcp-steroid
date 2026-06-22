@@ -292,22 +292,17 @@ both terminate at `projectHash(input1 \0 input2 \0 …)`.
 
 ### Implementation pointers (to be wired)
 
-- New helpers in `BackendIdentity.kt`:
-  - `exposedBackendName(row: BackendRow): String`
-  - `backendHash8(row: BackendRow): String`
-- The source-specific backend label already returns
-  `originalBackendName`. The exposed name is composed at render time.
-- `backends[].id` is the exposed name. It is the only id this spec
-  defines. Lifecycle commands consume the **same** exposed name as
-  their positional argument — `devrig backend start <id>` /
-  `devrig backend stop <id>` /
-  `devrig backend provision <id>` accept the exposed name. The
-  implementation parses the exposed name back to the underlying
+- The source-specific backend label returns `originalBackendName`; the
+  exposed name is composed at render time and placed in `id`.
+- `id` is the exposed name. It is the only id this spec defines.
+  Lifecycle commands consume the **same** exposed name as their
+  positional argument — `devrig backend start <id>` /
+  `devrig backend stop <id>` / `devrig backend provision <id>` accept
+  the exposed name. The implementation parses it back to the underlying
   source row via the same in-memory map used for routing (no suffix
-  parsing). Follow-up implementation task:
-  `BackendCommand.kt`'s `isSupportedBackendLifecycleId` /
-  `isSupportedProvisionTargetId` must resolve exposed names through
-  the snapshot map and reject every non-exposed source identifier.
+  parsing). Note: `BackendRow` is deleted (startable-backends release);
+  the three explicit source types (marker / port / managed-not-running)
+  compose the output directly.
 - Marker payload schema (`<pid>.mcp-steroid` JSON) gains
   `bootHash: String` and `startedTime: String` fields. Publish from
   `ij-plugin/.../server/SteroidsMcpServerStartupActivity.kt` (or the
@@ -322,16 +317,23 @@ labels stay available so humans can still see what's underneath.
 ### `devrig backend` (text)
 
 ```
-Discovered 2 backends:
+MCP Steroid backends:
 
   [1] IntelliJ_IDEA_2025.3.3-AbC4Df01 (build IU-261.23567.138, pid 24017)
         MCP Steroid: 0.95.0-b14969e1
         myproject-XyZ01204     →  /Users/me/Work/myproject
         scratchpad-Pq89Rs05    →  /Users/me/Work/scratchpad
 
+Other running IDEs (no MCP Steroid plugin — cannot be driven):
+
   [2] IntelliJ_IDEA_Ultimate-9F8E7D02 (build 261.24374.151, port 63342)
-        MCP Steroid: not installed
         (project list unavailable)
+
+Installed managed backends, not running (startable via open_project):
+
+  [3] idea-community_2025.3.3-1z8KqM03 (installed, not running)
+
+To install more: devrig backend download
 ```
 
 The hash suffix is **part of the displayed name**, not a separate
@@ -347,7 +349,7 @@ MCP call. For row-based surfaces, `id` is the canonical reference (the
 exposed name); source-specific identifiers (`pid`, `port`, `mcpUrl`)
 are present when known. The download/provision target listings carry an
 `actions[]` array with every applicable follow-up command (the
-`backends[]`/`projects[]` rows do NOT carry `actions[]` — drive those
+backend rows and `projects[]` rows do NOT carry `actions[]` — drive those
 via the documented `devrig backend` commands instead). The execution channel is `actions[].argv` (array,
 shell-free). Scripts that exec via `actions[].command` (the derived
 display string) MUST shell-quote the argument list themselves —
@@ -358,14 +360,12 @@ in its current state.
 ```json
 {
   "tool": { "name": "devrig", "version": "0.95.0" },
-  "backends": [
+  "mcpSteroidBackends": [
     {
       "id": "IntelliJ_IDEA_2025.3.3-AbC4Df01",
       "originalName": "IntelliJ IDEA 2025.3.3",
       "locator": "build IU-261.23567.138, pid 24017",
       "source": "marker",
-      "managed": false,
-      "reachable": true,
       "pid": 24017,
       "bootHash": "G6h8sQwIu5b3xL9p2mN0Aq",
       "startedTime": "2026-05-22T09:42:11Z",
@@ -374,29 +374,28 @@ in its current state.
       "plugins": [
         { "id": "com.jonnyzzz.mcp-steroid", "name": "MCP Steroid", "version": "0.95.0", "kind": "mcp-steroid" }
       ]
-    },
+    }
+  ],
+  "otherIdes": [
     {
       "id": "IntelliJ_IDEA_Ultimate-9F8E7D02",
       "originalName": "IntelliJ IDEA Ultimate",
       "locator": "build 261.24374.151, port 63342",
       "source": "port",
-      "managed": false,
-      "reachable": true,
       "port": 63342,
       "buildNumber": "261.24374.151",
       "plugins": []
-    },
+    }
+  ],
+  "startableBackends": [
     {
       "id": "idea-community_2025.3.3-1z8KqM03",
       "originalName": "idea-community 2025.3.3",
-      "locator": "managed, installed",
+      "locator": "managed, not running",
       "source": "managed",
-      "managed": true,
-      "reachable": false,
       "buildNumber": "IC-261.23567.138",
       "installPath": "/Users/me/.mcp-steroid/backends/idea-community-2025.3.3",
-      "cachePath": "/Users/me/.cache/mcp-steroid/backends/idea-community-2025.3.3",
-      "plugins": []
+      "cachePath": "/Users/me/.cache/mcp-steroid/backends/idea-community-2025.3.3"
     }
   ],
   "projects": [
@@ -413,11 +412,13 @@ in its current state.
 
 **Per-row schema**
 
-`backends[]`:
+`mcpSteroidBackends[]` / `otherIdes[]` / `startableBackends[]` (three
+explicit groups replacing the old single `backends[]`; each entry has the
+same field set where applicable):
 
 | Field | Meaning |
 |---|---|
-| `id` | Exposed backend name. Primary key for devrig backend JSON and CLI commands. The same backend identity is exposed as `backends[].backend_name` in `steroid_list_projects` (both the devrig and the in-IDE MCP surfaces self-describe). |
+| `id` | Exposed backend name. Primary key for devrig backend JSON and CLI commands. Running MCP Steroid IDEs (`mcpSteroidBackends[]`) expose this as `backend_name` on each item in `steroid_list_projects` and `steroid_list_windows`. |
 | `originalName` | Raw label from the source (marker/port/managed). Display only. |
 | `locator` | Human-readable "how do I reach this" hint. Never parsed. |
 | `source` | `"marker"` / `"port"` / `"managed"`. |
@@ -440,8 +441,8 @@ in its current state.
 | `id` | Exposed project name. Primary key. Same string flows through `steroid_list_projects`'s `ProjectInfo.name` field and MCP tool calls' `project_name` parameter. |
 | `originalName` | Raw `Project.name` from the running IntelliJ. Display only. |
 | `path` | Canonical project base path (`Path.of(projectBasePath).toRealPath()`). Same value the hash computes over. Symlinks resolved. |
-| `idePid` | OS PID of the IntelliJ JVM that owns this project row. Same value as `backends[].pid` for the row referenced by `backend`. Folded into the project hash for debuggability and as a redundancy check against `bootHash`. |
-| `backend` | Foreign key to `backends[].id`. |
+| `idePid` | OS PID of the IntelliJ JVM that owns this project row. Same value as the `pid` field on the `mcpSteroidBackends[]` entry referenced by `backend`. Folded into the project hash for debuggability and as a redundancy check against `bootHash`. |
+| `backend` | Foreign key to the owning backend's `id` (from `mcpSteroidBackends[]`). |
 
 On Unix, `toRealPath()` resolves symlinks. On Windows, it additionally
 resolves directory junctions and reparse points. Both produce a path
@@ -475,7 +476,7 @@ snapshot is malformed; see the routing-service invariant below.
 
 `ProjectInfo.name` returned over the wire is always
 `exposedProjectName`. Implementation: `DevrigListProjectsToolHandler`
-in `StubMcpSteroidTools.kt:82-87`.
+in `StubMcpSteroidTools.kt` (line numbers may shift with refactors).
 
 For `steroid_list_windows`, `DevrigProjectRoutingService.rewriteWindow`
 rewrites **only** `WindowInfo.projectName` to the exposed project name
@@ -660,8 +661,8 @@ backend (same hash convention as `backends[].id`).
 
 Same shape as `backend --json` but filtered: `start` lists installed
 managed backends (with `start` action), `stop` lists running managed
-backends (with `stop` action). The row schema matches `backends[]` in
-`backend --json`.
+backends (with `stop` action). Each row's schema matches the entries in
+`mcpSteroidBackends[]` / `startableBackends[]` in `backend --json`.
 
 ### `devrig backend provision <id>` (action mode)
 
@@ -756,7 +757,7 @@ Per-call snapshot invariants:
 
 Every `projects[].id` is unique within one snapshot by construction
 (different `idePid`+`bootHash` ⇒ different `projectHash`). The same holds
-for `backends[].id` across all four source kinds.
+for backend `id` across all four source kinds.
 
 If `rebuildSnapshot()` nevertheless observes a collision on `id`
 while building the `Map<exposed, route>`, the snapshot is treated as
@@ -764,8 +765,8 @@ while building the `Map<exposed, route>`, the snapshot is treated as
 
 - The first occurrence (in iteration order) is kept.
 - All subsequent rows with the same `id` are dropped from the map, but
-  **published verbatim** in the JSON `projects[]` / `backends[]`
-  array — so an operator running `devrig backend --json` can see the
+  **published verbatim** in the JSON `projects[]` / backend arrays
+  — so an operator running `devrig backend --json` can see the
   duplicate and diagnose.
 - A warning is logged on the SLF4J logger
   `com.jonnyzzz.mcpSteroid.devrig.routing` at level `WARN`. The
@@ -810,28 +811,25 @@ routing).
 
 `steroid_open_project` is the sole exception. It opens a project
 *not yet open* anywhere, so it takes a filesystem `project_path`
-rather than a `project_name` and cannot route by project name. When
-one or more IDEs are discovered it selects a target in two tiers
-rather than failing:
+rather than a `project_name` and cannot route by project name.
+Candidates = running MCP Steroid IDEs (S1) + startable managed backends
+(S3). Port-discovered IDEs without the plugin (S2) are not candidates.
 
-1. **Prefer a running devrig-managed backend.** If the agent started
-   an IDE via `devrig backend start`, open_project lands there — the
-   agent's own sandbox — even when the user has a newer IDE open. This
-   is what makes "download/start the IDE for this project, then open it
-   there" deterministic. Managed backends are correlated by pid
-   (`devrig backend list` running pid == the IDE's marker pid).
-2. **Otherwise pick the newest discovered IDE** — highest IDE build,
-   ties broken by most recently started (marker `createdAt`), then pid.
+Selection rules:
 
-Within each tier the newest IDE wins. Every discovered IDE runs the
-MCP Steroid plugin (markers are written only by the plugin), so the
-target always resolves to an IDE that can open the project. The
-selection lives in `DevrigProjectRoutingService.openProjectTargetIde()`
-(`newestIdeOrNull()` implements tier 2). A managed backend that has
-been started but whose marker has not appeared yet is simply not in
-the discovered set, so the agent should poll `steroid_list_projects`
-after `backend start` before calling open_project — see the
-`mcp-steroid://open-project/managing-backends` recipe.
+- **Without `backend_name`**: exactly one candidate ⇒ use it
+  automatically; more than one ⇒ return the candidate list (running and
+  startable, clearly grouped) and require the agent to call again with a
+  chosen `backend_name`. There is no `newestOf` auto-pick.
+- **With `backend_name`**: resolve to a candidate. If it is a startable
+  managed backend, devrig **starts the IDE and blocks until reachable**
+  (up to 120 s), then opens the project. An unknown `backend_name`
+  returns a self-correcting error listing the current candidates.
+
+The agent never needs to call `devrig backend start` before
+`open_project` — starting is implicit when a startable candidate is
+chosen. See `mcp-steroid://open-project/managing-backends` for the full
+recipe.
 
 If an MCP tool definition currently allows `project_name` to be
 optional, the implementation MUST reject the call with
