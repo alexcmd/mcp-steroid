@@ -58,7 +58,7 @@ data class ListedWindow(
     val indexingInProgress: Boolean? = null,
     /** True if the project has been fully initialized */
     val projectInitialized: Boolean? = null,
-    /** Owning backend's [BackendInfo.backendName]; null only when unknown. */
+    /** Owning backend's backend_name; null only when unknown. */
     @SerialName("backend_name") val backendName: String? = null,
 )
 
@@ -98,7 +98,7 @@ data class ListedBackgroundTask(
     val isCancellable: Boolean,
     /** Project name this task belongs to (if known) */
     val projectName: String?,
-    /** Owning backend's [BackendInfo.backendName]; null only when unknown. */
+    /** Owning backend's backend_name; null only when unknown. */
     @SerialName("backend_name") val backendName: String? = null,
 )
 

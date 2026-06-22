@@ -317,24 +317,25 @@ labels stay available so humans can still see what's underneath.
 ### `devrig backend` (text)
 
 ```
-MCP Steroid backends:
+MCP Steroid backends (1):
 
-  [1] IntelliJ_IDEA_2025.3.3-AbC4Df01 (build IU-261.23567.138, pid 24017)
+  [1] IntelliJ IDEA 2025.3.3 (build IU-261.23567.138, pid 24017)
         MCP Steroid: 0.95.0-b14969e1
-        myproject-XyZ01204     →  /Users/me/Work/myproject
-        scratchpad-Pq89Rs05    →  /Users/me/Work/scratchpad
 
-Other running IDEs (no MCP Steroid plugin — cannot be driven):
+Other running IDEs (no MCP Steroid) (1):
 
-  [2] IntelliJ_IDEA_Ultimate-9F8E7D02 (build 261.24374.151, port 63342)
-        (project list unavailable)
+  [2] IntelliJ IDEA Ultimate (build 261.24374.151, port 63342)
+        MCP Steroid: not installed
 
-Installed managed backends, not running (startable via open_project):
+Installed, not running (startable) (1):
 
-  [3] idea-community_2025.3.3-1z8KqM03 (installed, not running)
+  [3] idea-community 2025.3.3 (managed: idea-community-2025.3.3)
+        ideHome: /Users/me/.mcp-steroid/backends/idea-community-2025.3.3/idea-community
 
-To install more: devrig backend download
+To download additional backends: devrig backend download …
 ```
+
+Per-backend open projects are listed under `devrig project`, not `devrig backend`.
 
 The hash suffix is **part of the displayed name**, not a separate
 column. Locator label stays parenthesised.
@@ -422,10 +423,8 @@ same field set where applicable):
 | `originalName` | Raw label from the source (marker/port/managed). Display only. |
 | `locator` | Human-readable "how do I reach this" hint. Never parsed. |
 | `source` | `"marker"` / `"port"` / `"managed"`. |
-| `managed` | `true` if this backend is devrig-managed. |
-| `plugins[]` | Relevant installed plugins, each `{id, name, version, kind}`; `kind` is `"mcp-steroid"` for the MCP Steroid plugin (`"other"` otherwise; room reserved for `"intellij-native-mcp"`). Empty on port/managed rows. A managed backend that is running with the plugin writes a marker and surfaces as `source = marker, managed = true` — it does **not** surface as `source = managed`. The `managed` source is reserved for managed backends that are installed but not running (no marker yet). |
-| `reachable` | `true` if the backend currently answers HTTP / has a project snapshot. |
-| `pid` | OS pid (marker / managed-running). Omitted otherwise. Published on marker rows (and on managed-running rows surfaced as markers). The same value is fed into the marker `sourceKey` and into the project hash, so operators can correlate JSON rows with OS processes without parsing the opaque suffix. |
+| `plugins[]` | Relevant installed plugins, each `{id, name, version, kind}`; `kind` is `"mcp-steroid"` for the MCP Steroid plugin (`"other"` otherwise; room reserved for `"intellij-native-mcp"`). Empty on port/managed rows. |
+| `pid` | OS pid (marker rows). Omitted otherwise. Published so operators can correlate JSON rows with OS processes without parsing the opaque suffix. |
 | `bootHash` | Plugin-generated per-startup secret (marker rows only). Long base64url string. Folded into `id`'s hash for marker rows. |
 | `startedTime` | ISO-8601 instant when the plugin generated `bootHash` (marker rows only). Part of the data model; not used in hash computation. |
 | `port` | Built-in HTTP server port (port-discovered). Omitted otherwise. |

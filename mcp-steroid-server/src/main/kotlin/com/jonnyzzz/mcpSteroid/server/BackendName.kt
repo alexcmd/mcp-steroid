@@ -19,7 +19,7 @@ fun productCodeFromBuild(buildNumber: String?): String? =
  *   sourceKey        = "pid:<pid>" | "port:<port>" | "managed:<managedId>"
  * ```
  *
- * The pid/port/source/routability live as their own [BackendInfo] fields — never encoded into the id
+ * The pid/port/source/routability live as their own per-backend fields — never encoded into the id
  * shape. Deterministic and round-trippable: devrig recomputes it per discovered backend to resolve
  * `backend_name -> backend`. One definition for both modules; devrig's `backendNameForMarker/Port/Managed`
  * delegate here.

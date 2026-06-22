@@ -24,8 +24,8 @@ fun portBackendLocatorLabel(ide: DiscoveredIdeByPort): String = buildString {
 
 /**
  * Identity extras for a port-discovered IDE. Still hand-built JSON because it backs the
- * `devrig backend provision` listing ([provisionTargetJson]); the `backend --json` / MCP path uses the
- * shared [com.jonnyzzz.mcpSteroid.server.BackendInfo] schema instead.
+ * `devrig backend provision` listing ([provisionTargetJson]); the `backend --json` / MCP path emits
+ * inline JSON objects rather than a shared schema type.
  */
 fun portBackendIdentityJson(ide: DiscoveredIdeByPort): JsonObject = buildJsonObject {
     put("port", ide.port)
