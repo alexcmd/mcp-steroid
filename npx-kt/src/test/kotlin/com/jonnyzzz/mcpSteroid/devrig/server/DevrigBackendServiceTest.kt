@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.InstalledBackend
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.devrig.startableBackendName
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Path
 import kotlin.test.Test
@@ -35,6 +36,28 @@ class DevrigBackendServiceTest {
     }
 
     @Test
+    fun `candidates returns running first then startable`() = runTest {
+        val running1 = discoveredIde(ideHome = "/b/running1")
+        val running2 = discoveredIde(ideHome = "/b/running2")
+        val installable = installed(id = "goland", home = "/b/goland")
+        val svc = service(running = listOf(running1, running2), installed = listOf(installable))
+        val candidates = svc.candidates()
+        // Running candidates come first, startable last.
+        assertEquals(3, candidates.size)
+        assertTrue(candidates[0] is OpenProjectCandidate.Running)
+        assertTrue(candidates[1] is OpenProjectCandidate.Running)
+        assertTrue(candidates[2] is OpenProjectCandidate.Startable)
+    }
+
+    @Test
+    fun `Startable candidate backendName matches startableBackendName`() {
+        val installed = installed(id = "goland", home = "/b/goland")
+        val candidate = OpenProjectCandidate.Startable(installed)
+        assertEquals(startableBackendName(installed), candidate.backendName,
+            "Startable.backendName must equal startableBackendName() — they must use the same formula")
+    }
+
+    @Test
     fun `startable times out with a clear error when no marker appears`() = runTest {
         val installed = installed(id = "goland", home = "/b/goland")
         val svc = service(stateProvider = { emptyList() }, installed = listOf(installed),
@@ -54,9 +77,11 @@ class DevrigBackendServiceTest {
         launcher = Path.of(home, "bin", "idea.sh"),
     )
 
+    private var discoveredIdeCounter = 0
+
     private fun discoveredIde(ideHome: String?): DiscoveredIde = DiscoveredIde(
-        backendName = "test-backend",
-        pid = 12345L,
+        backendName = "test-backend-${++discoveredIdeCounter}",
+        pid = 12345L + discoveredIdeCounter,
         rpcBaseUrl = "http://localhost:9999",
         bridgeHeaders = emptyMap(),
         ide = IdeInfo(name = "Test IDE", version = "2026.1", build = "TEST-1"),

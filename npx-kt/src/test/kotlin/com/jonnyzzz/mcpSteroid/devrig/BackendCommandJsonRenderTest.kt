@@ -192,7 +192,7 @@ class BackendCommandJsonRenderTest {
         assertEquals(1, startable.size)
         val entry = startable.single().jsonObject
 
-        assertEquals(backendNameForManaged("goland-2026.1", "GO-261.1"), entry["backend_name"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(startableBackendName(installed), entry["backend_name"]?.jsonPrimitive?.contentOrNull)
         assertEquals("GoLand 2026.1", entry["displayName"]?.jsonPrimitive?.contentOrNull)
         assertEquals("GO-261.1", entry["build"]?.jsonPrimitive?.contentOrNull)
         assertEquals(installed.ideHome, entry["ideHome"]?.jsonPrimitive?.contentOrNull)

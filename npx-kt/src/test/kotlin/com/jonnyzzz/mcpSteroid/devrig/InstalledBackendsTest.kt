@@ -6,6 +6,8 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
 
 class InstalledBackendsTest {
@@ -58,5 +60,44 @@ class InstalledBackendsTest {
         val runningIdea = discoveredIde(ideHome = "/b/idea")
         val startable = startableBackends(listOf(a), listOf(runningIdea))
         assertEquals(emptyList<InstalledBackend>(), startable)
+    }
+
+    @Test
+    fun `installedBackends returns backend with ideHome equal to bundleDir realpath`(@TempDir tempDir: Path) {
+        // Build the on-disk layout that installedBackends() expects:
+        //   <backendsDir>/<id>/backend.json
+        //   <backendsDir>/<id>/<bundleDirName>/
+        val id = "idea-community-2025.3.3"
+        val bundleDirName = "idea-community"
+        val backendDir = tempDir.resolve("backends").resolve(id)
+        val bundleDir = backendDir.resolve(bundleDirName)
+        Files.createDirectories(bundleDir)
+        val launcherPath = "bin/idea.sh"
+        val descriptor = BackendDescriptor(
+            id = id,
+            productKey = "idea-community",
+            productCode = "IIC",
+            version = "2025.3.3",
+            buildNumber = "IC-261.1",
+            bundleDirName = bundleDirName,
+            launcherPath = launcherPath,
+            downloadedAt = "2026-01-01T00:00:00Z",
+        )
+        writeDescriptor(descriptorPath(backendDir), descriptor)
+
+        val homePaths = HomePaths(tempDir)
+        val services = DevrigServices(
+            com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost(),
+            homePaths = homePaths,
+            mcpStdin = System.`in`,
+            mcpStdout = System.out,
+        )
+        val backends = services.installedBackends()
+
+        assertEquals(1, backends.size, "expected one installed backend")
+        val backend = backends.single()
+        assertEquals(id, backend.id)
+        // ideHome must equal normalizeHome(bundleDir) — toRealPath() resolves symlinks (e.g. /var → /private/var on macOS).
+        assertEquals(normalizeHome(bundleDir.toString()), backend.ideHome)
     }
 }
