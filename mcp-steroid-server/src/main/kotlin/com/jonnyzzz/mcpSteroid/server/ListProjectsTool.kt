@@ -38,9 +38,10 @@ interface ListProjectsToolHandler {
 data class ListProjectsResponse(
     /**
      * Projects reachable through this connection. On a direct in-IDE connection `project_name` is a
-     * stable base36 hash of the real project name (see [projectNameFor]) and `backend_name` is this
-     * IDE's self-id; on devrig `project_name` is the disambiguated exposed name and `backend_name`
-     * is the owning discovered IDE. The human-readable name is always in the `name` field.
+     * stable base36 hash of the project's base dir + name (computed by the plugin's `projectNameFor`)
+     * and `backend_name` is this IDE's self-id; on devrig `project_name` is the disambiguated exposed
+     * name and `backend_name` is the owning discovered IDE. The human-readable name is always in the
+     * `name` field.
      */
     val projects: List<ListedProject>,
 )
@@ -68,7 +69,7 @@ fun markerLocator(build: String?, pid: Long): String = buildString {
 
 @Serializable
 data class ListedProject(
-    /** devrig: exposed disambiguated name; IDE-direct: the real project name. */
+    /** devrig: exposed disambiguated name; IDE-direct: a stable base36 hash of the project's base dir + name. */
     @SerialName("project_name") val projectName: String,
     /** Raw folder name (R3.7) — kept so existing `jq '.projects[].name'` consumers do not break. */
     val name: String,

@@ -25,8 +25,8 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
         val snapshot = service<IdeWindowsCollector>().collect()
         val self = describeSelfBackend()
         return ListWindowsResponse(
-            windows = snapshot.windows.map { it.listed(it.projectName?.let(::projectNameFor), self.backendName) },
-            backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName?.let(::projectNameFor), self.backendName) },
+            windows = snapshot.windows.map { it.listed(it.projectName, self.backendName) },
+            backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName, self.backendName) },
         )
     }
 }
@@ -106,14 +106,14 @@ class IdeWindowsCollector {
                                     fraction = if (progressModel.isIndeterminate()) null else progressModel.getFraction(),
                                     isIndeterminate = progressModel.isIndeterminate(),
                                     isCancellable = progressModel.isCancellable(),
-                                    projectName = project?.name
+                                    projectName = project?.let { projectNameFor(it) }
                                 )
                             )
                         }
                     }
 
                     WindowInfo(
-                        projectName = project?.name,
+                        projectName = project?.let { projectNameFor(it) },
                         projectPath = project?.basePath,
                         title = (window as? Frame)?.title,
                         isActive = window?.isActive ?: false,

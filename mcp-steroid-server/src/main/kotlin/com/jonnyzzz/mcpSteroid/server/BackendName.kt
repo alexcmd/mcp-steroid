@@ -33,10 +33,3 @@ fun backendNameFor(sourceKey: String, build: String?): String {
 /** Marker-IDE backend_name: keyed by the IDE's real pid (the only open_project-routable source). */
 fun backendNameForMarker(pid: Long, build: String?): String =
     backendNameFor(sourceKey = "pid:$pid", build = build)
-
-/**
- * Stable, opaque base36 id for a project, derived from its display name — the value returned as
- * `project_name` by list_projects/list_windows. The human name stays in the `name` field.
- * resolveProject accepts this hash (and the raw name) so agents can pass either back.
- */
-fun projectNameFor(projectName: String): String = base36FixedWidth("project", projectName)

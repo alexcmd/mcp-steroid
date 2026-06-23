@@ -305,8 +305,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
     /**
      * R3.6 — the direct in-IDE surface self-describes with the SAME shape devrig emits: exactly one
      * routable backend (this IDE), and every project's `project_name` is a stable base36 hash of the
-     * real name (`projectNameFor(name)`), with the human-readable name in `name`, and `backend_name`
-     * pointing at that single backend. Replaces the round-2 "direct surface stays empty" guard.
+     * project's base dir + name (`projectNameFor(project)`), with the human-readable name in `name`,
+     * and `backend_name` pointing at that single backend. Replaces the round-2 "direct surface stays empty" guard.
      */
     fun testDirectIdeListProjectsSelfDescribes(): Unit = timeoutRunBlocking(30.seconds) {
         val server = SteroidsMcpServer.getInstance()
@@ -340,8 +340,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
         response.projects.forEach { project ->
             assertEquals(
-                "Direct-IDE project_name must be the stable hash of the real name",
-                com.jonnyzzz.mcpSteroid.server.projectNameFor(project.name),
+                "Direct-IDE project_name must be the stable base36 hash of (base dir, name) — mirrors projectNameFor",
+                com.jonnyzzz.mcpSteroid.server.base36FixedWidth("project", project.path, project.name),
                 project.projectName
             )
             assertTrue(
