@@ -32,9 +32,9 @@ class ProjectScopedToolHandler {
             // to the wrong one (#92).
             val triples = ProjectManager.getInstance().openProjects.map { Triple(projectNameFor(it), it.name, it) }
             val resolved = triples.firstOrNull { it.first == projectName }?.third
-                ?: triples.filter { it.second == projectName }.singleOrNull()?.third
-            // Surface the project_name routing keys (not raw names) — that is the key callers must pass.
-            resolved to triples.map { it.first }
+                ?: triples.singleOrNull { it.second == projectName }?.third
+            // Surface the sorted project_name routing keys (not raw names) — that is the key callers must pass.
+            resolved to triples.map { it.first }.sorted()
         }
         return project ?: throw ToolCallErrorException(
             "Project not found: \"$projectName\". Available project_name values: $availableProjectNames"
