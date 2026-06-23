@@ -457,6 +457,16 @@ keys (`BackendInfo` and `ListedBackendInfo` were deleted in the startable-backen
   `backgroundTasks`). The one-release additive-only waiver that permitted this is recorded in
   `docs/PHILOSOPHY.md` Tenet 5 and `docs/startable-backends-design.md`.
 
+**`PidMarker` fields added in the startable-backends release (additive, nullable):**
+- `PidMarker.ideHome: String? = null` — the IDE install home (`PathManager.getHomePath()`), written by
+  `ServerUrlWriter`. It is devrig's **cross-process identity**: it correlates a running IDE to its managed
+  install (path-normalized on both sides) and replaces the old process/pid-file scanning. Its **presence
+  also signals plugin compatibility** — a running marker without `ideHome` means an old/incompatible plugin,
+  shown in the "Other IDEs" group and never offered as an `open_project` candidate.
+- `McpSteroidServerInfo.pluginPath: String? = null` — the mcp-steroid plugin install folder (from
+  `PluginDescriptorProvider`). Plumbing for the deferred "update plugin before run" step (Finding A,
+  `TASKS.md` #12); no logic reads it yet.
+
 Deferred (revisit with a baseline release): (a) a cross-version test (devrig HEAD ↔ an older plugin build);
 (b) giving devrig its **own** copy of the marker/bridge DTOs so the two version independently and only the
 JSON wire shape is shared (today devrig reuses `mcp-steroid-server`'s classes, decoding tolerantly).

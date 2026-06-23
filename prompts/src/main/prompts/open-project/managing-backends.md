@@ -13,8 +13,11 @@ etc.) or in a **not-yet-running IDE**.
 When you call `steroid_open_project` through the devrig stdio MCP
 server, devrig composes two candidate sources:
 
-- **Running MCP Steroid IDEs** (S1) — IDEs with the plugin active,
-  discovered from pid markers. These are ready to use immediately.
+- **Running MCP Steroid IDEs** (S1) — IDEs running a **current** MCP
+  Steroid plugin (they self-report their install home), discovered from
+  pid markers. Ready to use immediately. An IDE running an
+  **old/incompatible** plugin is *not* a candidate — it appears in the
+  "Other IDEs" group of `devrig backend` instead.
 - **Startable managed backends** (S3) — IDEs devrig downloaded under
   `~/.mcp-steroid/backends/` that are **not yet running**. devrig can
   start them on demand.
@@ -26,9 +29,10 @@ call again with a chosen `backend_name`.
 
 **With `backend_name`**: devrig resolves the name to a candidate. If
 the candidate is a startable managed backend, devrig **starts the IDE
-and waits (blocking, up to 120 s) until the IDE is reachable**, then
-opens the project — all in a single `open_project` call. You never
-need to run `devrig backend start` first.
+and waits (blocking, up to 5 minutes) until the IDE is reachable**,
+reporting progress (e.g. "Starting <IDE>…") as it goes, then opens the
+project — all in a single `open_project` call. You never need to run
+`devrig backend start` first.
 
 The command never branches on running-vs-startable — devrig handles
 the lifecycle transparently.
@@ -63,17 +67,23 @@ explicitly control lifecycle. It is **not a prerequisite** to
 `open_project` — if the IDE you need is already installed (even if
 not running), `open_project` can start it.
 
-- `devrig backend` — show three groups:
-  - **MCP Steroid backends** (running, routable) — you can open
+- `devrig backend` — shows four groups:
+  - **MCP Steroid backends** (running, compatible) — you can open
     projects here now.
-  - **Other running IDEs** (no MCP Steroid plugin) — detected only;
-    devrig cannot drive them.
-  - **Installed managed backends, not running** — startable via
-    `open_project` or `devrig backend start`.
+  - **Other IDEs (incompatible or no MCP Steroid)** — running IDEs with
+    an old/incompatible plugin (no self-reported install home) or none
+    at all; detected only, devrig cannot drive them.
+  - **Installed, not running (startable)** — startable via `open_project`
+    or `devrig backend start`.
+  - **Downloadable** — not listed individually; the footer points at the
+    full-cycle install command `devrig backend download <product>`, which
+    downloads + installs an IDE so it becomes startable.
 - `devrig backend --json` — machine-readable:
-  `{ tool, mcpSteroidBackends[], otherIdes[], startableBackends[] }`.
-- `devrig backend download <id>` — fetch an IDE (may take minutes;
-  cached and resumable).
+  `{ tool, mcpSteroidBackends[], otherIdes[], startableBackends[] }`;
+  each entry carries `compatible: <bool>`.
+- `devrig backend download <id>` — fetch + install an IDE (may take
+  minutes; cached and resumable). This is the full install cycle — the
+  IDE then appears as startable.
 - `devrig backend start <id>` / `devrig backend stop <id>` — explicit
   lifecycle control.
 
