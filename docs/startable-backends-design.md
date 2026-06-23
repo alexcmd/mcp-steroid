@@ -1,6 +1,6 @@
 # Startable backends + backend-listing simplification
 
-**Status:** design approved 2026-06-22; implementation plan pending.
+**Status:** core shipped in PR #139; Finding A (re-provision the current plugin on managed start) shipped in PR #143.
 
 ## Goal
 
@@ -151,7 +151,7 @@ sources — no `BackendRow`:
 2. **Other IDEs (incompatible or no MCP Steroid)** (S1 `ideHome == null` + S2) — *detected; cannot
    be driven; use the `devrig backend` subcommands to make one usable.*
 3. **Installed, not running (startable)** (S3) — *startable; a fresh start re-provisions vmoptions +
-   plugins.*
+   the mcp-steroid plugin.*
 4. **footer** — how to download/install more (`devrig backend download …`); group 4 is advertised
    here, never enumerated.
 
