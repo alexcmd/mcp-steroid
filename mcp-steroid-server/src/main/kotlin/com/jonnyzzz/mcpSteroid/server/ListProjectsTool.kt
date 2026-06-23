@@ -37,9 +37,10 @@ interface ListProjectsToolHandler {
 @Serializable
 data class ListProjectsResponse(
     /**
-     * Projects reachable through this connection. On a direct in-IDE connection `project_name == name`
-     * and `backend_name` is this IDE's self-id; on devrig `project_name` is the disambiguated exposed
-     * name and `backend_name` is the owning discovered IDE.
+     * Projects reachable through this connection. On a direct in-IDE connection `project_name` is a
+     * stable base36 hash of the real project name (see [projectNameFor]) and `backend_name` is this
+     * IDE's self-id; on devrig `project_name` is the disambiguated exposed name and `backend_name`
+     * is the owning discovered IDE. The human-readable name is always in the `name` field.
      */
     val projects: List<ListedProject>,
 )

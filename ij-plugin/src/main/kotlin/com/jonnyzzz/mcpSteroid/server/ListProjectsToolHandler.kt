@@ -7,8 +7,8 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 
 /**
  * Direct in-IDE `steroid_list_projects`. No top-level `ide`/`plugin`/`pid` header (the responding
- * server's identity lives in the MCP server info). Each [ListedProject] carries `project_name == name`
- * and `backend_name` pointing at this IDE's self-id.
+ * server's identity lives in the MCP server info). Each [ListedProject] carries a stable base36
+ * hash as `project_name` (derived from the real name) and `backend_name` pointing at this IDE's self-id.
  */
 class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
     override suspend fun collectListProjectsResponse(): ListProjectsResponse {
@@ -22,7 +22,7 @@ class ListProjectsToolHandlerIJ : ListProjectsToolHandler {
 class SelfBackendDescription(
     /** This IDE's own `backend_name` ([backendNameForMarker] over its pid + build). */
     val backendName: String,
-    /** Open projects, each with `project_name == name` and `backend_name == `[backendName]. */
+    /** Open projects, each with a hashed `project_name` ([projectNameFor]) and `backend_name == `[backendName]. */
     val projects: List<ListedProject>,
 )
 
@@ -38,7 +38,7 @@ suspend fun describeSelfBackend(): SelfBackendDescription {
     val listedProjects = openProjects.map { project ->
         val name = project.name
         ListedProject(
-            projectName = name,
+            projectName = projectNameFor(name),
             name = name,
             path = project.basePath ?: "",
             backendName = selfBackendName,

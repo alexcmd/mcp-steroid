@@ -25,8 +25,8 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
         val snapshot = service<IdeWindowsCollector>().collect()
         val self = describeSelfBackend()
         return ListWindowsResponse(
-            windows = snapshot.windows.map { it.listed(it.projectName, self.backendName) },
-            backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName, self.backendName) },
+            windows = snapshot.windows.map { it.listed(it.projectName?.let(::projectNameFor), self.backendName) },
+            backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName?.let(::projectNameFor), self.backendName) },
         )
     }
 }
