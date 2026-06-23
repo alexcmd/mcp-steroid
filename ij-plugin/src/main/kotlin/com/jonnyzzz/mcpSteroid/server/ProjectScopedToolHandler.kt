@@ -27,7 +27,13 @@ class ProjectScopedToolHandler {
     suspend fun resolveProject(projectName: String): Project {
         val (project, availableNames) = readAction {
             val openProjects = ProjectManager.getInstance().openProjects
-            openProjects.find { projectNameFor(it) == projectName || it.name == projectName } to openProjects.map { it.name }
+            // Primary: the opaque project_name (the <name>-<hash> id from list_projects) — unique per project.
+            // Backward-compat: accept the raw project name ONLY when it is unambiguous (exactly one match) —
+            // never first-match, so two same-named projects (e.g. a checkout and its git worktree) can't
+            // silently collapse to the wrong one (#92).
+            val resolved = openProjects.firstOrNull { projectNameFor(it) == projectName }
+                ?: openProjects.filter { it.name == projectName }.singleOrNull()
+            resolved to openProjects.map { it.name }
         }
         return project ?: throw ToolCallErrorException(
             "Project not found: \"$projectName\". Available projects: $availableNames"
