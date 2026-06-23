@@ -37,7 +37,7 @@ val takeScreenshotJson = """
 {
   "tool": "steroid_take_screenshot",
   "arguments": {
-    "project_name": "existing-project-name",
+    "project_name": "existing-project-9fk2a0xq",
     "task_id": "check-dialogs",
     "reason": "Checking for trust dialog or other prompts"
   }
@@ -58,7 +58,7 @@ val inputJson = """
 {
   "tool": "steroid_input",
   "arguments": {
-    "project_name": "existing-project-name",
+    "project_name": "existing-project-9fk2a0xq",
     "task_id": "handle-trust-dialog",
     "reason": "Clicking Trust Project button",
     "window_id": "window_id_from_list_windows",

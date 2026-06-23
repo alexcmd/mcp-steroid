@@ -58,13 +58,8 @@ Expected response includes your project:
 ```kotlin
 val expectedResponseExample = """
 {
-  "ide": {
-    "name": "IntelliJ IDEA",
-    "version": "2025.3.2",
-    "build": "IU-253.30387.160"
-  },
   "projects": [
-    {"name": "your-project", "path": "/absolute/path/to/your/project"}
+    {"project_name": "your-project-9fk2a0xq", "name": "your-project", "path": "/absolute/path/to/your/project", "backend_name": "iu-9fk2a0xq"}
   ]
 }
 """.trimIndent()
@@ -80,7 +75,7 @@ val executeCodeJson = """
 {
   "tool": "steroid_execute_code",
   "arguments": {
-    "project_name": "your-project",
+    "project_name": "your-project-9fk2a0xq",
     "code": "println(\"Project: ${'$'}{project.name}\")",
     "task_id": "verify-project",
     "reason": "Verifying project is accessible"
