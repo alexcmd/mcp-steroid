@@ -32,7 +32,7 @@ fun DevrigServices.runBackendCommand(command: DevrigCommand.DevrigCommandBackend
     val s2 = runBlocking(Dispatchers.IO) {
         withTimeoutOrNull(1.seconds) { collectPortDiscoveredIdes(portDiscovery) } ?: emptySet()
     }
-    val s3 = startableBackends(installedBackends(), s1)
+    val s3 = startableBackends(installedBackends(), s1, runningManagedIds())
     if (command.json) {
         renderBackendJson3(s1, s2, s3, mcpStdout)
     } else {
@@ -379,18 +379,17 @@ fun renderBackendOutput3(
     if (s1Incompatible.isEmpty() && s2Sorted.isEmpty()) {
         out.println("  (none)")
     } else {
-        val totalGroup2 = s1Incompatible.size + s2Sorted.size
         for ((index, ide) in s1Incompatible.withIndex()) {
             out.println("  [${index + 1}] ${markerBackendDisplayName(ide)} (${markerBackendLocatorLabel(ide)}) (incompatible plugin, old version)")
             val plugin = ide.plugin
             out.println("        ${plugin.name.ifBlank { "MCP Steroid" }}: ${plugin.version.ifBlank { "unknown" }} (incompatible)")
-            if (index < totalGroup2 - 1) out.println()
+            if (index < group2Count - 1) out.println()
         }
         for ((index, ide) in s2Sorted.withIndex()) {
             val entryIndex = s1Incompatible.size + index + 1
             out.println("  [$entryIndex] ${portBackendDisplayName(ide)} (${portBackendLocatorLabel(ide)}) (run: ${provisionCommand(provisionTargetId(ide.port))})")
             out.println("        MCP Steroid: not installed")
-            if (s1Incompatible.size + index < totalGroup2 - 1) out.println()
+            if (s1Incompatible.size + index < group2Count - 1) out.println()
         }
     }
     out.println()
@@ -431,8 +430,8 @@ fun renderBackendOutput3(
  * Compatible entries carry `"compatible": true`.
  *
  * `otherIdes` contains incompatible markers (`"compatible": false`) followed by port-discovered IDEs
- * (no `compatible` field — they are never MCP-capable by definition). Port IDEs whose normalised build
- * matches any marker build are deduplicated out to avoid double-counting.
+ * (also `"compatible": false` — they are never MCP-capable by definition). Port IDEs whose normalised
+ * build matches any marker build are deduplicated out to avoid double-counting.
  */
 fun renderBackendJson3(
     s1: List<DiscoveredIde>,
@@ -481,6 +480,7 @@ fun renderBackendJson3(
                     put("displayName", portBackendDisplayName(ide))
                     ide.buildNumber?.let { put("build", it) }
                     put("port", ide.port)
+                    put("compatible", false)
                 })
             }
         }

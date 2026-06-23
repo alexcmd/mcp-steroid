@@ -90,6 +90,25 @@ class DevrigBackendServiceTest {
             "a no-ideHome running IDE must not be an open_project candidate")
     }
 
+    @Test
+    fun `candidates excludes installed managed backend whose id is in runningManagedIds`() = runTest {
+        val installed = installed(id = "goland-2026.1", home = "/b/goland")
+        val svc = service(installed = listOf(installed), runningManagedIds = setOf("goland-2026.1"))
+        val candidates = svc.candidates()
+        assertTrue(candidates.isEmpty(),
+            "installed managed backend with a live pid (runningManagedIds) must not appear as Startable; got: $candidates")
+    }
+
+    @Test
+    fun `candidates includes installed managed backend whose id is NOT in runningManagedIds`() = runTest {
+        val installed = installed(id = "goland-2026.1", home = "/b/goland")
+        val svc = service(installed = listOf(installed), runningManagedIds = emptySet())
+        val candidates = svc.candidates()
+        assertEquals(1, candidates.size,
+            "installed managed backend with no live pid must appear as Startable; got: $candidates")
+        assertTrue(candidates.single() is OpenProjectCandidate.Startable)
+    }
+
     // ---- helpers ----
 
     private fun installed(id: String, home: String): InstalledBackend = InstalledBackend(
@@ -118,9 +137,11 @@ class DevrigBackendServiceTest {
         installed: List<InstalledBackend> = emptyList(),
         starter: suspend (InstalledBackend) -> Unit = failStarter(),
         stateProvider: () -> List<DiscoveredIde> = { running },
+        runningManagedIds: Set<String> = emptySet(),
     ): DevrigBackendService = DevrigBackendService(
         stateProvider = stateProvider,
         installedProvider = { installed },
         starter = starter,
+        runningManagedIdsProvider = { runningManagedIds },
     )
 }

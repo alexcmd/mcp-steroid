@@ -168,6 +168,15 @@ class BackendCommandJsonRenderTest {
     }
 
     @Test
+    fun `port-discovered otherIdes entry carries compatible=false`() {
+        val ide = portIde(port = 63342, buildNumber = "IU-253.21581.142")
+        val root = render(s2 = setOf(ide))
+        val entry = root["otherIdes"]!!.jsonArray.single().jsonObject
+        assertEquals(false, entry["compatible"]?.jsonPrimitive?.boolean,
+            "port-discovered otherIdes entry must carry compatible=false; entry=$entry")
+    }
+
+    @Test
     fun `otherIdes entry omits build when buildNumber is null`() {
         val ide = portIde(buildNumber = null)
         val root = render(s2 = setOf(ide))

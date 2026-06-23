@@ -103,13 +103,19 @@ class DevrigServices(
             stateProvider = { ideDiscovery.stateSnapshot() },
             installedProvider = { installedBackends() },
             starter = { backendManager.start(parseBackendId(it.id)) },
-            runningManagedIdsProvider = {
-                backendManager.list()
-                    .filter { it.state == ManagedBackendState.RUNNING }
-                    .map { it.id }
-                    .toSet()
-            },
+            runningManagedIdsProvider = { runningManagedIds() },
         )
     }
+
+    /**
+     * Returns the set of managed backend IDs that currently have a live pid file (RUNNING state).
+     * Used by both [devrigBackendService] and [runBackendCommand] so the exclusion logic stays
+     * consistent across the service path and the CLI render path.
+     */
+    fun runningManagedIds(): Set<String> =
+        backendManager.list()
+            .filter { it.state == ManagedBackendState.RUNNING }
+            .map { it.id }
+            .toSet()
 
 }

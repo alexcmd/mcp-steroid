@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIdeByPort
+import com.jonnyzzz.mcpSteroid.devrig.startableBackends
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Path
@@ -320,6 +321,40 @@ class BackendCommandRenderTest {
         // Group 2 must have 1 entry (the port IDE with a different build)
         assertTrue(text.contains("Other IDEs (incompatible or no MCP Steroid) (1):"),
             "port IDE with different build must NOT be deduped; got:\n$text")
+    }
+
+    // -------------------- Finding B: runningManagedIds exclusion ----------------
+
+    @Test
+    fun `managed backend whose id is in runningManagedIds is NOT rendered in group 3`() {
+        val installed = installedBackend(id = "goland-2026.1")
+        // With the managed id in runningManagedIds, startableBackends() should exclude it
+        val s3WithExclusion = startableBackends(
+            installed = listOf(installed),
+            running = emptyList(),
+            runningManagedIds = setOf("goland-2026.1"),
+        )
+        // Provide a running s1 IDE so we get the full render (not the "No backends detected." shortcut)
+        val text = render(s1 = listOf(markerIde("IntelliJ IDEA", "2026.1", pid = 1L)), s3 = s3WithExclusion)
+        assertTrue(text.contains("Installed, not running (startable) (0):"),
+            "managed running backend must be excluded from group 3; got:\n$text")
+        assertFalse(text.contains("goland-2026.1"),
+            "excluded managed backend must not appear in output; got:\n$text")
+    }
+
+    @Test
+    fun `managed backend whose id is NOT in runningManagedIds IS rendered in group 3`() {
+        val installed = installedBackend(id = "goland-2026.1")
+        val s3 = startableBackends(
+            installed = listOf(installed),
+            running = emptyList(),
+            runningManagedIds = emptySet(),
+        )
+        val text = render(s3 = s3)
+        assertTrue(text.contains("Installed, not running (startable) (1):"),
+            "non-running managed backend must appear in group 3; got:\n$text")
+        assertTrue(text.contains("GoLand"),
+            "non-running managed backend must be rendered; got:\n$text")
     }
 
 }

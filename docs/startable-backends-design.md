@@ -147,12 +147,20 @@ sources — no `BackendRow`:
 explicit groups. **No back-compat shape needed** (no external consumers; output just has to be
 valid JSON).
 
+Each backend entry in `--json` output carries a `"compatible": <bool>` field:
+- `mcpSteroidBackends` entries: always `"compatible": true` (only S1 markers with `ideHome` reach here).
+- `otherIdes` entries: always `"compatible": false` — both incompatible markers (S1, no `ideHome`) and
+  port-discovered IDEs (S2) are not driveable and set this field to `false`.
+
 ### 7. Deletions
 
-`BackendRow` (sealed) · `BackendInfo` · `ListedBackendInfo` · `mergeRows` + dedup helpers
-(`normaliseBuildForDedup`, `matchingManagedIds`) · `BackendInventory`'s merge + process-scan
-correlation (`scanRunningManagedProcesses` for *listing*, `isProcessAlive` in the inventory) ·
+`BackendRow` (sealed) · `BackendInfo` · `ListedBackendInfo` · `mergeRows` + dedup helper
+(`matchingManagedIds`) · `BackendInventory`'s merge + process-scan correlation
+(`scanRunningManagedProcesses` for *listing*, `isProcessAlive` in the inventory) ·
 `collectBackendInfos` · `DevrigProjectRoutingService.newestOf` (auto-pick).
+
+Note: `normaliseBuildForDedup` is **retained** — it is used by Finding B (port dedup in
+`BackendCommand` and `BackendProvisionCommand`).
 
 `BackendManager.start` / `download` / `stop` and the descriptor model stay — they do the real
 install/launch work behind `ensureBackendRunning` and the CLI `backend download/start/stop`.

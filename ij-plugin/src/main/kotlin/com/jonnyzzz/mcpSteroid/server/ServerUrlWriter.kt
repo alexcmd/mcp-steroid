@@ -183,6 +183,7 @@ class ServerUrlWriter : Disposable {
 private fun pluginInstallPath(): String? = try {
     PluginDescriptorProvider.getInstance().descriptor.pluginPath?.toString()
 } catch (e: Exception) {
+    System.err.println("WARN: could not resolve plugin install path (marker will omit pluginPath): ${e.message}")
     null
 }
 
