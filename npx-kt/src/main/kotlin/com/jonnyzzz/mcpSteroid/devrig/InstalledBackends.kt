@@ -8,6 +8,9 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.streams.asSequence
+import org.slf4j.LoggerFactory
+
+private val log = LoggerFactory.getLogger("com.jonnyzzz.mcpSteroid.devrig.InstalledBackends")
 
 /**
  * A devrig-managed (installed under `~/.mcp-steroid/backends/`) IDE that can be started on demand.
@@ -116,7 +119,7 @@ fun DevrigServices.installedBackends(): List<InstalledBackend> {
                         launcher = launcher,
                     )
                 } catch (e: Exception) {
-                    System.err.println("WARN: failed to read installed backend from $dir: ${e.message}")
+                    log.warn("failed to read installed backend from $dir", e)
                     null
                 }
             }

@@ -21,6 +21,7 @@ import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
@@ -333,7 +334,8 @@ class DevrigToolBridgeClientTest {
             OpenProjectParams(
                 projectPath = tempDir.resolve("target").toString(),
                 trustProject = true,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(true, result.isError)
@@ -357,7 +359,8 @@ class DevrigToolBridgeClientTest {
             OpenProjectParams(
                 projectPath = tempDir.resolve("target").toString(),
                 trustProject = true,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         // No auto-pick: with 2 candidates the handler must return an error listing both backend_names.
@@ -382,7 +385,8 @@ class DevrigToolBridgeClientTest {
             OpenProjectParams(
                 projectPath = targetProject.toString(),
                 trustProject = false,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(false, result.isError)
@@ -413,7 +417,8 @@ class DevrigToolBridgeClientTest {
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = backendNameForMarker(42L, "IU-253.1"),
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(false, result.isError)
@@ -447,7 +452,8 @@ class DevrigToolBridgeClientTest {
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = unknown,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(true, result.isError)
@@ -764,7 +770,8 @@ class DevrigToolBridgeClientTest {
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = startableBackendName(installed),
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(false, result.isError)
@@ -801,7 +808,8 @@ class DevrigToolBridgeClientTest {
             OpenProjectParams(
                 projectPath = targetProject.toString(),
                 trustProject = false,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(false, result.isError)
@@ -831,7 +839,8 @@ class DevrigToolBridgeClientTest {
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = startableBackendName(installed),
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(true, result.isError)
@@ -864,7 +873,8 @@ class DevrigToolBridgeClientTest {
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = startableBackendName(installed),
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(true, result.isError)

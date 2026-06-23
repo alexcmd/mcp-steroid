@@ -6,11 +6,13 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.devrig.InstalledBackend
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.startableBackendName
+import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -21,7 +23,8 @@ class DevrigBackendServiceTest {
     fun `running candidate is returned as-is without starting`() = runTest {
         val ide = discoveredIde(ideHome = "/b/idea")
         val svc = service(running = listOf(ide), installed = emptyList(), starter = failStarter())
-        val out = svc.ensureBackendRunning(OpenProjectCandidate.Running(ide))
+        val candidate = BackendCandidate(ide.backendName, ideDisplayName(ide.ide), running = ide)
+        val out = svc.ensureBackendRunning(candidate)
         assertSame(ide, out)
     }
 
@@ -31,7 +34,8 @@ class DevrigBackendServiceTest {
         val state = mutableListOf<DiscoveredIde>()
         val svc = service(stateProvider = { state.toList() }, installed = listOf(installed),
             starter = { state += discoveredIde(ideHome = "/b/goland") }) // simulate marker appearing
-        val out = svc.ensureBackendRunning(OpenProjectCandidate.Startable(installed))
+        val candidate = BackendCandidate(startableBackendName(installed), ideDisplayName(installed.ide), startable = installed)
+        val out = svc.ensureBackendRunning(candidate)
         assertEquals("/b/goland", out.ideHome)
     }
 
@@ -44,17 +48,20 @@ class DevrigBackendServiceTest {
         val candidates = svc.candidates()
         // Running candidates come first, startable last.
         assertEquals(3, candidates.size)
-        assertTrue(candidates[0] is OpenProjectCandidate.Running)
-        assertTrue(candidates[1] is OpenProjectCandidate.Running)
-        assertTrue(candidates[2] is OpenProjectCandidate.Startable)
+        assertNotNull(candidates[0].running, "first candidate should be running")
+        assertNotNull(candidates[1].running, "second candidate should be running")
+        assertNotNull(candidates[2].startable, "third candidate should be startable")
     }
 
     @Test
     fun `Startable candidate backendName matches startableBackendName`() {
         val installed = installed(id = "goland", home = "/b/goland")
-        val candidate = OpenProjectCandidate.Startable(installed)
+        val svc = service(installed = listOf(installed))
+        val candidates = svc.candidates()
+        assertEquals(1, candidates.size)
+        val candidate = candidates.single()
         assertEquals(startableBackendName(installed), candidate.backendName,
-            "Startable.backendName must equal startableBackendName() — they must use the same formula")
+            "Startable backendName must equal startableBackendName() — they must use the same formula")
     }
 
     @Test
@@ -62,12 +69,12 @@ class DevrigBackendServiceTest {
         val installed = installed(id = "goland", home = "/b/goland")
         val svc = service(stateProvider = { emptyList() }, installed = listOf(installed),
             starter = { /* never writes a marker */ })
+        val candidate = BackendCandidate(startableBackendName(installed), ideDisplayName(installed.ide), startable = installed)
         val e = assertFailsWith<BackendStartTimeoutException> {
-            svc.ensureBackendRunning(OpenProjectCandidate.Startable(installed), timeout = 100.milliseconds)
+            svc.ensureBackendRunning(candidate, timeout = 100.milliseconds)
         }
         assertTrue(e.message!!.contains("did not become reachable"))
     }
-
 
     @Test
     fun `candidates excludes running IDE without ideHome (incompatible plugin)`() = runTest {
@@ -77,8 +84,9 @@ class DevrigBackendServiceTest {
         val candidates = svc.candidates()
         assertEquals(1, candidates.size, "only the compatible IDE (with ideHome) should be a candidate")
         val c = candidates.single()
-        assertTrue(c is OpenProjectCandidate.Running)
-        assertEquals("/b/idea", (c as OpenProjectCandidate.Running).ide.ideHome)
+        val running = c.running
+        assertNotNull(running, "candidate must be a running candidate")
+        assertEquals("/b/idea", running.ideHome)
     }
 
     @Test
@@ -106,14 +114,35 @@ class DevrigBackendServiceTest {
         val candidates = svc.candidates()
         assertEquals(1, candidates.size,
             "installed managed backend with no live pid must appear as Startable; got: $candidates")
-        assertTrue(candidates.single() is OpenProjectCandidate.Startable)
+        assertNotNull(candidates.single().startable, "candidate must be startable")
+    }
+
+    @Test
+    fun `displayName includes build number in candidate`() = runTest {
+        val installed = installed(id = "iu-261", home = "/b/iu")
+        val svc = service(installed = listOf(installed))
+        val candidate = svc.candidates().single()
+        assertTrue(candidate.displayName.contains("IU-261.100"), "displayName must include build; got: ${candidate.displayName}")
+    }
+
+    @Test
+    fun `progress reporter receives at least one message when starting a Startable candidate`() = runTest {
+        val installed = installed(id = "goland", home = "/b/goland")
+        val state = mutableListOf<DiscoveredIde>()
+        val svc = service(stateProvider = { state.toList() }, installed = listOf(installed),
+            starter = { state += discoveredIde(ideHome = "/b/goland") })
+        val candidate = BackendCandidate(startableBackendName(installed), ideDisplayName(installed.ide), startable = installed)
+        val messages = mutableListOf<String>()
+        val reporter = object : McpProgressReporter { override fun report(message: String) { messages += message } }
+        svc.ensureBackendRunning(candidate, progress = reporter)
+        assertTrue(messages.isNotEmpty(), "progress reporter must receive at least one message when starting a Startable candidate")
     }
 
     // ---- helpers ----
 
     private fun installed(id: String, home: String): InstalledBackend = InstalledBackend(
         id = id,
-        ide = IdeInfo(name = "Test IDE", version = "2026.1", build = "TEST-1"),
+        ide = IdeInfo(name = "Test IDE", version = "2026.1", build = "IU-261.100"),
         ideHome = home,
         launcher = Path.of(home, "bin", "idea.sh"),
     )
@@ -125,7 +154,7 @@ class DevrigBackendServiceTest {
         pid = 12345L + discoveredIdeCounter,
         rpcBaseUrl = "http://localhost:9999",
         bridgeHeaders = emptyMap(),
-        ide = IdeInfo(name = "Test IDE", version = "2026.1", build = "TEST-1"),
+        ide = IdeInfo(name = "Test IDE", version = "2026.1", build = "IU-261.100"),
         plugin = PluginInfo(id = "com.test", name = "Test", version = "1.0"),
         ideHome = ideHome,
     )

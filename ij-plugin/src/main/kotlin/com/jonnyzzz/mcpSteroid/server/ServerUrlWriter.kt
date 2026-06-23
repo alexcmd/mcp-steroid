@@ -6,6 +6,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.util.Disposer
 import com.intellij.util.Urls
@@ -180,10 +181,12 @@ class ServerUrlWriter : Disposable {
  * it cannot be resolved (e.g. in a test environment where no descriptor is registered).
  * Null-safe: callers must never crash when this returns null — older markers omit the field.
  */
+private val pluginInstallPathLogger = Logger.getInstance(ServerUrlWriter::class.java)
+
 private fun pluginInstallPath(): String? = try {
     PluginDescriptorProvider.getInstance().descriptor.pluginPath?.toString()
 } catch (e: Exception) {
-    System.err.println("WARN: could not resolve plugin install path (marker will omit pluginPath): ${e.message}")
+    pluginInstallPathLogger.warn("could not resolve plugin install path (marker will omit pluginPath)", e)
     null
 }
 

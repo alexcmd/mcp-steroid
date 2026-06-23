@@ -107,7 +107,8 @@ class OpenProjectToolSpec(
                 projectPath = projectPath.toString(),
                 trustProject = trustProject,
                 backendName = backendNameValue,
-            )
+            ),
+            context.mcpProgressReporter,
         )
     }
 
@@ -162,5 +163,8 @@ data class OpenProjectParams(
 )
 
 interface OpenProjectToolHandler {
-    suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult
+    suspend fun handleOpenProject(
+        openProjectParams: OpenProjectParams,
+        callProgress: McpProgressReporter,
+    ): ToolCallResult
 }

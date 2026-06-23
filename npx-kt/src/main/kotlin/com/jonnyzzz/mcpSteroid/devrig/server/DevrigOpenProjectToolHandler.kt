@@ -2,6 +2,7 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import kotlinx.coroutines.CancellationException
@@ -11,7 +12,10 @@ class DevrigOpenProjectToolHandler(
     private val bridge: DevrigToolBridgeClient,
     private val backends: DevrigBackendService,
 ) : OpenProjectToolHandler {
-    override suspend fun handleOpenProject(openProjectParams: OpenProjectParams): ToolCallResult {
+    override suspend fun handleOpenProject(
+        openProjectParams: OpenProjectParams,
+        callProgress: McpProgressReporter,
+    ): ToolCallResult {
         val requested = openProjectParams.backendName?.trim()?.takeIf { it.isNotEmpty() }
         val candidates = backends.candidates()
         val chosen = when {
@@ -21,12 +25,12 @@ class DevrigOpenProjectToolHandler(
             else -> return ToolCallResult.errorResult(chooseBackendMessage(candidates))
         }
         val ide = try {
-            backends.ensureBackendRunning(chosen)
+            backends.ensureBackendRunning(chosen, progress = callProgress)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             return ToolCallResult.errorResult(e.message ?: e.toString())
         }
-        return bridge.callTool(ide, "steroid_open_project") {
+        return bridge.callTool(ide, "steroid_open_project", callProgress) {
             put("project_path", openProjectParams.projectPath)
             put("trust_project", openProjectParams.trustProject)
             put("task_id", "open-project")
@@ -35,20 +39,20 @@ class DevrigOpenProjectToolHandler(
     }
 }
 
-private fun unknownBackendMessage(requested: String, candidates: List<OpenProjectCandidate>): String {
+private fun unknownBackendMessage(requested: String, candidates: List<BackendCandidate>): String {
     val list = candidateList(candidates)
     return "Unknown backend_name '$requested'. $list"
 }
 
-private fun chooseBackendMessage(candidates: List<OpenProjectCandidate>): String {
+private fun chooseBackendMessage(candidates: List<BackendCandidate>): String {
     val list = candidateList(candidates)
     return "open_project requires exactly one candidate or an explicit backend_name. $list"
 }
 
-private fun candidateList(candidates: List<OpenProjectCandidate>): String {
+private fun candidateList(candidates: List<BackendCandidate>): String {
     if (candidates.isEmpty()) return "No candidates are currently available; start an IDE or call steroid_list_projects."
     val items = candidates.joinToString("\n") { c ->
-        val tag = if (c is OpenProjectCandidate.Startable) " (startable)" else ""
+        val tag = if (c.startable != null) " (startable)" else ""
         "  ${c.backendName} — ${c.displayName}$tag"
     }
     return "Available candidates:\n$items"
