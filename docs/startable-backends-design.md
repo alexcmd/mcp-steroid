@@ -103,14 +103,21 @@ Group-specific contracts:
 
 - devrig enumerates S3 by scanning `~/.mcp-steroid/backends/` (reuse the installed-backend
   descriptor read; no `BackendManager.list()` process-state probing for *listing*).
-- A service method — `ensureBackendRunning(selected): DiscoveredIde` — owns the running-vs-startable
-  decision and **blocks until the IDE is reachable**:
+- A service method — `ensureBackendRunning(candidate, timeout, progress): DiscoveredIde` — owns the
+  running-vs-startable decision and **blocks until the IDE is reachable**:
   - **running (S1)** → return its `DiscoveredIde` (no-op).
   - **startable (S3)** → launch the IDE at its `ideHome` (`BackendManager.start` does the real
-    launcher/vmoptions/spawn work), then **poll discovery until a marker reports that same
-    `ideHome`**, bounded by a timeout, then return that `DiscoveredIde`.
-  - **timeout** (default **120 s** — cold IDE start + plugin init to first marker) → fail with a
-    clear error: *"started <ide> but it did not become reachable within 120s"*.
+    launcher/vmoptions/spawn work), then **poll discovery (250 ms) until a marker reports that same
+    `ideHome`** (homes normalized on both sides), bounded by a timeout, then return that
+    `DiscoveredIde`. Progress is reported through the MCP `McpProgressReporter` ("Starting <ide>…",
+    "Waiting for <ide> to become reachable…") so the caller sees the IDE coming up.
+  - **timeout** (default **5 minutes / 300 s** — cold IDE start + plugin init to first marker) → fail
+    with a clear error: *"started <ide> but it did not become reachable within 5m"*.
+
+Candidates are surfaced as a single `List<BackendCandidate>` — a plain descriptor
+`{ backendName, displayName (incl. version + build), running: DiscoveredIde?, startable: InstalledBackend? }`
+that back-references its source; `ensureBackendRunning` dispatches on whichever back-reference is set
+(no sealed wrapper type).
 
 ### 3. `open_project` (devrig)
 
