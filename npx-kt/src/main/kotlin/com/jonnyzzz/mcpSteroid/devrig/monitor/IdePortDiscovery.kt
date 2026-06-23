@@ -48,8 +48,8 @@ data class DiscoveredIdeByPort(
 )
 
 /**
- * Port-scan discovery seam consumed by [com.jonnyzzz.mcpSteroid.devrig.BackendInventory]. Extracted so
- * the inventory depends on the capability ("give me the IDEs answering on local HTTP ports"), not on the
+ * Port-scan discovery seam consumed by the `devrig backend` / `devrig project` commands. Extracted so
+ * callers depend on the capability ("give me the IDEs answering on local HTTP ports"), not on the
  * concrete [IntelliJPortDiscovery] which needs a live [HttpClient] — tests inject a trivial fake instead.
  */
 fun interface PortDiscovery {

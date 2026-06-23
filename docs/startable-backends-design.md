@@ -77,10 +77,11 @@ Group-specific contracts:
 - **Group 2** is display-only — devrig cannot drive or start these. The group exists to *advertise
   the `devrig backend` subcommands* (download/start) so the user can move an incompatible/plugin-less
   IDE toward a usable state. Never an `open_project` candidate.
-- **Group 3** backends are started fresh by devrig. **Starting fresh re-provisions vmoptions and
-  plugins** before launch — this is the contract that guarantees a managed backend boots with the
-  *current* mcp-steroid plugin (and is the proper home for Finding A's "update plugin before run";
-  the `McpSteroidServerInfo.pluginPath` marker field is the hook). Excluded from startable while a
+- **Group 3** backends are started fresh by devrig. Today `BackendManager.start` re-provisions
+  **vmoptions** before launch; the mcp-steroid **plugin** is provisioned at `download` time (so a
+  freshly-downloaded backend boots with the current plugin). Re-provisioning the *current* plugin on
+  every `start` ("update plugin before run") is **Finding A — deferred** (see `TASKS.md` item 12); the
+  `McpSteroidServerInfo.pluginPath` marker field is the hook for it. Excluded from startable while a
   live managed pid exists (Finding B).
 - **Group 4** is never enumerated in the listing — the command only surfaces the install entry point.
   The promotion footer picks the **full-cycle install command** `devrig backend download <product>`,

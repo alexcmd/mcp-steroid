@@ -16,12 +16,13 @@ import kotlinx.serialization.json.putJsonArray
 
 fun DevrigServices.runProjectCommand(command: DevrigCommand.DevrigCommandProject): Int {
     val routes = projectRouting.routes()
-    val s2 = runBlocking(Dispatchers.IO) {
-        withTimeoutOrNull(1.seconds) { collectPortDiscoveredIdes(portDiscovery) } ?: emptySet()
-    }
     if (command.json) {
         renderProjectJson3(routes, mcpStdout)
     } else {
+        // Port scan only feeds the text "skipped backends" footer; --json ignores it, so skip the 1s cost there.
+        val s2 = runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(1.seconds) { collectPortDiscoveredIdes(portDiscovery) } ?: emptySet()
+        }
         renderProjectOutput3(routes, s2, mcpStdout)
     }
     return 0

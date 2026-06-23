@@ -78,9 +78,11 @@ selected agent.
 
 ### `devrig backend [--json]`
 
-Lists discovered backends (with versions) and the projects each one has open.
-`--json` emits a single machine-readable object on stdout (pipe through `jq`);
-the default is human-readable text.
+Lists discovered backends (with versions), grouped as MCP Steroid backends,
+other/incompatible IDEs, and installed-but-not-running (startable) backends.
+Per-backend open projects are listed by `devrig project`. `--json` emits a
+single machine-readable object on stdout (pipe through `jq`); the default is
+human-readable text.
 
 ### `devrig project [--json]`
 
