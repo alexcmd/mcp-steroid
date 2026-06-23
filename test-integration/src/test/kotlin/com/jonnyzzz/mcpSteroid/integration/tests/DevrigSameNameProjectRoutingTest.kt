@@ -29,7 +29,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -104,14 +103,17 @@ class DevrigSameNameProjectRoutingTest {
         val process = startContainerStdioMcp(methodStack, devrigCommand)
         process.initialize()
 
-        // 4. Discover the two same-named projects through devrig: each has a hash-disambiguated
-        //    `project_name` + its real `path`.
-        val routes = waitForSameNamedRoutes(process, expectedPaths = paths, diagnostics = diagnostics)
+        // 4. Discover the two same-named projects through devrig: each gets a distinct hash-disambiguated
+        //    project_name (the IDE owns within-IDE uniqueness). We deliberately do NOT compare devrig's
+        //    reported path to the literal dirs — devrig canonicalizes it (toRealPath) — so correctness is
+        //    proven below via which.txt (whose content is the literal dir), independent of path string form.
+        val projectNames = waitForTwoSameNamedProjectNames(process, diagnostics)
 
-        // 5. For EACH discovered project, run execute_code against its disambiguated project_name and ask
-        //    which project it landed in. Correct routing → reads its own path back.
-        val mismatches = mutableListOf<String>()
-        for ((projectName, path) in routes) {
+        // 5. Run execute_code against each disambiguated project_name and read which.txt — its content is
+        //    the literal dir that project was created in. Correct routing → the two runs read two DISTINCT
+        //    dirs, together covering both. The #92 bug → both project_names collapse to ONE project, so
+        //    both runs read the SAME which.txt.
+        val landedByProjectName = projectNames.associateWith { projectName ->
             val result = toolCall(
                 process = process,
                 name = "steroid_execute_code",
@@ -128,49 +130,38 @@ class DevrigSameNameProjectRoutingTest {
                 diagnostics = diagnostics,
             )
             assertFalse(isToolError(result), "execute_code returned a tool error for $projectName\n$diagnostics\n$result")
-            val landed = WHICH.find(textContent(result))?.groupValues?.get(1)
+            WHICH.find(textContent(result))?.groupValues?.get(1)
                 ?: error("execute_code output missing WHICH_PROJECT marker for $projectName\n$diagnostics\n${textContent(result)}")
-            if (landed != path) {
-                mismatches += "project_name='$projectName' targeted path '$path' but execute_code ran in '$landed'"
-            }
         }
 
-        assertTrue(
-            mismatches.isEmpty(),
-            "#92 reproduced — devrig mis-routed execute_code across same-named projects:\n" +
-                mismatches.joinToString("\n") { "  - $it" } +
-                "\n(discovered routes: $routes)\n$diagnostics",
+        val landed = landedByProjectName.values.toList()
+        assertEquals(
+            landed.size, landed.toSet().size,
+            "#92 reproduced — two same-named project_names collapsed to the same project (identical which.txt):\n" +
+                "$landedByProjectName\n$diagnostics",
+        )
+        assertEquals(
+            paths.toSet(), landed.toSet(),
+            "each disambiguated project_name must route to its OWN dir:\n$landedByProjectName\n$diagnostics",
         )
     }
 
-    /** Polls devrig `steroid_list_projects` until both same-named projects are discovered; returns
-     *  (disambiguated `project_name` → real `path`) for the entries whose raw folder name is [DUP_LEAF]. */
-    private fun waitForSameNamedRoutes(
-        process: StdioMcpProcess,
-        expectedPaths: List<String>,
-        diagnostics: String,
-    ): Map<String, String> {
-        repeat(120) {
+    /** Polls devrig `steroid_list_projects` until the two same-named ([DUP_LEAF]) projects are discovered as
+     *  TWO entries with DISTINCT `project_name`s; returns those project_names. Does NOT depend on the
+     *  reported path (devrig canonicalizes it) — routing correctness is verified by the caller via which.txt. */
+    private fun waitForTwoSameNamedProjectNames(process: StdioMcpProcess, diagnostics: String): List<String> {
+        repeat(240) {
             val result = toolCall(process, "steroid_list_projects", buildJsonObject {}, diagnostics)
             assertFalse(isToolError(result), "list_projects returned a tool error\n$diagnostics\n$result")
             val projects = json.parseToJsonElement(textContent(result)).jsonObject["projects"]?.jsonArray.orEmpty()
-            val dup = projects.map { it.jsonObject }.filter { it["name"]?.jsonPrimitive?.contentOrNull == DUP_LEAF }
-            val byPath = dup.mapNotNull { p ->
-                val name = p["project_name"]?.jsonPrimitive?.contentOrNull
-                val path = p["path"]?.jsonPrimitive?.contentOrNull
-                if (name != null && path != null) name to path else null
-            }.toMap()
-            if (byPath.values.toSet().containsAll(expectedPaths)) {
-                // Distinct disambiguated names, one per path — the discovery contract this test relies on.
-                assertEquals(
-                    expectedPaths.size, byPath.size,
-                    "expected one disambiguated project_name per same-named project\n$diagnostics\n$byPath",
-                )
-                return byPath.entries.associate { (name, path) -> name to path }
-            }
+            val names = projects.map { it.jsonObject }
+                .filter { it["name"]?.jsonPrimitive?.contentOrNull == DUP_LEAF }
+                .mapNotNull { it["project_name"]?.jsonPrimitive?.contentOrNull }
+                .distinct()
+            if (names.size >= 2) return names
             Thread.sleep(250)
         }
-        error("Timed out waiting for devrig to discover both same-named projects ($expectedPaths)\n$diagnostics")
+        error("Timed out waiting for devrig to discover two same-named ($DUP_LEAF) projects with distinct project_names\n$diagnostics")
     }
 
     private fun startContainerStdioMcp(stack: CloseableStack, devrigCommand: StdioMcpCommand): StdioMcpProcess =

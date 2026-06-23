@@ -37,7 +37,7 @@ class ProjectScopedToolHandler {
             resolved to triples.map { it.first }.sorted()
         }
         return project ?: throw ToolCallErrorException(
-            "Project not found: \"$projectName\". Available project_name values: $availableProjectNames"
+            "Project not found: \"$projectName\". Available project_name values: ${availableProjectNames.joinToString()}"
         )
     }
 }
