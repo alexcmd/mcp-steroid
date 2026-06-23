@@ -3,10 +3,6 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.PluginInfo
-import com.jonnyzzz.mcpSteroid.devrig.BackendInventory
-import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendInfo
-import com.jonnyzzz.mcpSteroid.devrig.ManagedBackendState
-import com.jonnyzzz.mcpSteroid.devrig.collectBackendInfos
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
@@ -38,10 +34,8 @@ import org.junit.jupiter.api.io.TempDir
 
 /**
  * devrig MCP list handlers ([DevrigListProjectsToolHandler] / [DevrigListWindowsToolHandler]):
- *  - `backends[]` is exactly the routing-discovered backends — port-only and managed backends are a CLI
- *    concern (`devrig backend`) and never leak onto the MCP surface;
- *  - every `steroid_list_windows` window/background-task carries the backend_name of its source IDE;
- *  - the inventory's own dead-pid liveness downgrade is asserted on the rich CLI [BackendInventory] surface.
+ *  - every project in `steroid_list_projects` carries the backend_name of its source IDE;
+ *  - every `steroid_list_windows` window/background-task carries the backend_name of its source IDE.
  */
 class DevrigListToolHandlersTest {
     private var server: EmbeddedServer<*, *>? = null
@@ -53,7 +47,7 @@ class DevrigListToolHandlersTest {
     }
 
     @Test
-    fun `list_projects backends are exactly the routing-discovered backends (no port or managed leak)`(
+    fun `list_projects projects carry backend_name of their source ide`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val homeA = Files.createDirectories(tempDir.resolve("alpha"))
@@ -61,57 +55,17 @@ class DevrigListToolHandlersTest {
             ide = discoveredIde(pid = 42, build = "IU-261.1"),
             projects = listOf(IdeProjectState("alpha", homeA.toString())),
         )
-        // A discovered IDE with NO open project is still a routable backend, so it must appear in backends[].
+        // A discovered IDE with NO open project contributes no projects.
         val idle = IdeMonitorState(ide = discoveredIde(pid = 43, build = "IU-253.9"))
         val routing = DevrigProjectRoutingService { listOf(withProject, idle) }
 
         val response = DevrigListProjectsToolHandler(routing).collectListProjectsResponse()
 
         val name42 = backendNameForMarker(42L, "IU-261.1")
-        val name43 = backendNameForMarker(43L, "IU-253.9")
-
-        // backends[] = every discovered IDE (incl. the idle one), and nothing else — these are all marker
-        // backend_names (`iu-…`); no port/managed entry is ever synthesized onto this surface.
-        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
-        assertTrue(response.backends.all { it.backendName.startsWith("iu-") }, "$response")
-
-        // Identity fields are carried from the IDE.
-        val b42 = response.backends.single { it.backendName == name42 }
-        assertEquals("IntelliJ IDEA", b42.displayName)
-        assertEquals("IU-261.1", b42.build)
-        assertEquals("2026.1", b42.version)
 
         // projects[] only lists the IDE that actually has a project open, tagged with its own backend_name.
         assertEquals(listOf(name42), response.projects.map { it.backendName })
         assertEquals(listOf("alpha"), response.projects.map { it.name })
-    }
-
-    @Test
-    fun `managed backend with a dead pid degrades to unreachable without any http fetch`(
-        @TempDir tempDir: Path,
-    ): Unit = runBlocking {
-        // RUNNING per its (stale) pid file, but the process is dead. The liveness check must settle this
-        // BEFORE any HTTP — there is no marker or port source to fetch from, so the only path to a
-        // not-running verdict is the inventory's own ProcessHandle-style liveness downgrade. Managed
-        // backends are CLI-only, so this is asserted on the inventory's rich BackendInfo (the
-        // `devrig backend --json` surface), not on the routing-backed MCP `steroid_list_projects`.
-        val managed = managedBackendInfo(tempDir, runningPid = 99999L, state = ManagedBackendState.RUNNING)
-        val inventory = BackendInventory(
-            routing = DevrigProjectRoutingService { emptyList() },
-            portDiscovery = { emptySet() },
-            managedBackends = { listOf(managed) },
-            isProcessAlive = { false },
-        )
-
-        val backend = inventory.collectBackendInfos().single()
-
-        assertEquals("managed", backend.source)
-        assertEquals(false, backend.reachable)
-        assertEquals(false, backend.routable)
-        assertEquals(null, backend.pid)
-        val detail = backend.managedDetail ?: error("managed row must carry managedDetail: $backend")
-        assertEquals("unreachable", detail.state)
-        assertEquals(null, detail.runningPid)
     }
 
     @Test
@@ -184,8 +138,6 @@ class DevrigListToolHandlersTest {
             val route = routing.routes().single { it.route.pid == pid }
             assertEquals(route.exposedProjectName, window.projectName)
         }
-        // backends[] = the routing-discovered backends, joined by the same names.
-        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
     }
 
     private fun windowsResponseJson(pid: Long): String = McpJson.encodeToString(
@@ -220,22 +172,6 @@ class DevrigListToolHandlersTest {
             schemaVersion = "1",
             updatedAt = "2026-06-10T00:00:00Z",
         ),
-    )
-
-    private fun managedBackendInfo(
-        tempDir: Path,
-        runningPid: Long?,
-        state: ManagedBackendState,
-    ): ManagedBackendInfo = ManagedBackendInfo(
-        id = "ideaIC-2026.1",
-        productKey = "ideaIC",
-        productCode = "IC",
-        version = "2026.1",
-        buildNumber = "261.1",
-        installPath = tempDir.resolve("backends/ideaIC-2026.1"),
-        cachePath = tempDir.resolve("caches/ideaIC-2026.1"),
-        runningPid = runningPid,
-        state = state,
     )
 
     private fun discoveredIde(

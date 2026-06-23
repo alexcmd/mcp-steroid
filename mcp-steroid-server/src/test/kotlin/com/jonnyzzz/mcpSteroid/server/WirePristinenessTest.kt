@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * R3.5 — mechanical guard that the devrig<->IDE WIRE stays pristine. The MCP/CLI-surface types
- * [BackendInfo] / [ListedProject] (and their `backend_name` / `project_name` keys) must NEVER serialize
+ * [ListedProject] (and their `backend_name` / `project_name` keys) must NEVER serialize
  * into a wire-crossing payload. The only wire DTOs are [NpxStreamEnvelope] (`/projects/stream`, carrying
  * the pristine `{name, path}` [ProjectInfo]) and [NpxBridgeWindowsResponse] (`/windows`).
  */

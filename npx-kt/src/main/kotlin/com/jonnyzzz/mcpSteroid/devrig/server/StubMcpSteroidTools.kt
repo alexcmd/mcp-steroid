@@ -71,7 +71,7 @@ class StubMcpSteroidTools(
     private val openProject by lazy {
         DevrigOpenProjectToolHandler(
             bridge = bridge,
-            routing = services.projectRouting,
+            backends = services.devrigBackendService,
         )
     }
 

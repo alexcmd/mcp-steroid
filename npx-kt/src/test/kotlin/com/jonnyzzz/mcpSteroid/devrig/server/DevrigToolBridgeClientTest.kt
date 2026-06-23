@@ -6,12 +6,13 @@ import com.jonnyzzz.mcpSteroid.PluginInfo
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
-import com.jonnyzzz.mcpSteroid.devrig.BackendRow
 import com.jonnyzzz.mcpSteroid.devrig.DevrigBeacon
 import com.jonnyzzz.mcpSteroid.devrig.HomePaths
+import com.jonnyzzz.mcpSteroid.devrig.InstalledBackend
 import com.jonnyzzz.mcpSteroid.server.backendNameForMarker
 import com.jonnyzzz.mcpSteroid.devrig.backendNameForPort
 import com.jonnyzzz.mcpSteroid.devrig.monitor.DiscoveredIde
+import com.jonnyzzz.mcpSteroid.devrig.startableBackendName
 import com.jonnyzzz.mcpSteroid.devrig.testDevrigEndpoint
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStackHost
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeMonitorState
@@ -20,9 +21,11 @@ import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.server.FeedbackParams
 import com.jonnyzzz.mcpSteroid.server.InputParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.OpenProjectParams
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectState
 import com.jonnyzzz.mcpSteroid.server.ScreenshotParams
+import com.jonnyzzz.mcpSteroid.devrig.server.DevrigBackendService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -321,74 +324,69 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `open project bridge handler rejects zero discovered ides`(
+    fun `open project bridge handler lists candidates when no backend_name and zero discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val routing = routingService()
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val backends = backendService()
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
                 projectPath = tempDir.resolve("target").toString(),
                 trustProject = true,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(true, result.isError)
-        assertTrue(result.errorText().contains("requires at least one discovered IDE"))
+        // No bridge call was made.
         assertEquals(null, receivedAuth)
         assertEquals(null, receivedBody)
     }
 
     @Test
-    fun `open project bridge handler forwards to the newest ide when several are discovered`(
+    fun `open project bridge handler lists candidates when no backend_name and several are discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
-        val routing = routingService(
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, build = "IU-253.999", token = "secret-older"),
-            ),
-            IdeMonitorState(
-                ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-newer"),
-            ),
+        val states = listOf(
+            IdeMonitorState(ide = discoveredIde(pid = 42, build = "IU-253.999", token = "secret-older")),
+            IdeMonitorState(ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-newer")),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val backends = backendService(*states.toTypedArray())
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
                 projectPath = tempDir.resolve("target").toString(),
                 trustProject = true,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
-        assertEquals(false, result.isError)
-        // The newest build (IU-261.1) wins, so its bearer token is the one forwarded.
-        assertEquals("Bearer secret-newer", receivedAuth)
-        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
-        assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
+        // No auto-pick: with 2 candidates the handler must return an error listing both backend_names.
+        assertEquals(true, result.isError)
+        val message = result.errorText()
+        assertTrue(message.contains(backendNameForMarker(42L, "IU-253.999")), message)
+        assertTrue(message.contains(backendNameForMarker(43L, "IU-261.1")), message)
+        // No bridge call.
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
     }
-
-    // NOTE: the former `prefers the running managed backend over a newer ide` test was removed with the
-    // managed-pid open_project preference (DevrigProjectRoutingService.openProjectTargetIde / managedRunningPids).
-    // open_project now picks the newest discovered IDE, or the IDE named by an explicit backend_name.
 
     @Test
     fun `open project bridge handler forwards request when exactly one ide is discovered`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
-        val routing = routingService(
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42),
-            )
-        )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val backends = backendService(IdeMonitorState(ide = discoveredIde(pid = 42)))
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
                 projectPath = targetProject.toString(),
                 trustProject = false,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(false, result.isError)
@@ -407,32 +405,29 @@ class DevrigToolBridgeClientTest {
         @TempDir tempDir: Path,
     ) = runBlocking {
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
-        val routing = routingService(
-            // pid 43 is the newer build (auto-pick would choose it); the backend_name for pid 42 must override.
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, build = "IU-253.1", token = "secret-42"),
-            ),
-            IdeMonitorState(
-                ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-43"),
-            ),
+        val backends = backendService(
+            // pid 43 is the newer build; the backend_name for pid 42 must override.
+            IdeMonitorState(ide = discoveredIde(pid = 42, build = "IU-253.1", token = "secret-42")),
+            IdeMonitorState(ide = discoveredIde(pid = 43, build = "IU-261.1", token = "secret-43")),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
 
         val result = handler.handleOpenProject(
             OpenProjectParams(
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = backendNameForMarker(42L, "IU-253.1"),
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(false, result.isError)
-        // backend_name overrode the auto-pick: the POST hit pid 42's bridge (its token), not the newer pid 43.
+        // backend_name routes to pid 42 (its token), not pid 43.
         assertEquals("Bearer secret-42", receivedAuth)
         val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
         assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
         val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
-        // The forwarded args are byte-identical to today: backend_name is resolved locally, never forwarded.
+        // backend_name is resolved locally, never forwarded.
         assertEquals(targetProject.toString(), arguments["project_path"]?.jsonPrimitive?.content)
         assertEquals("true", arguments["trust_project"]?.jsonPrimitive?.content)
         assertEquals("open-project", arguments["task_id"]?.jsonPrimitive?.content)
@@ -441,19 +436,15 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `open project with unknown backend_name returns an error listing routable backends`(
+    fun `open project with unknown backend_name returns an error listing candidates`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val targetProject = Files.createDirectories(tempDir.resolve("target"))
-        val routing = routingService(
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, token = "secret-42"),
-            ),
-            IdeMonitorState(
-                ide = discoveredIde(pid = 43, token = "secret-43"),
-            ),
+        val backends = backendService(
+            IdeMonitorState(ide = discoveredIde(pid = 42, token = "secret-42")),
+            IdeMonitorState(ide = discoveredIde(pid = 43, token = "secret-43")),
         )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
 
         val unknown = backendNameForMarker(999L, "IU-261.1")
         val result = handler.handleOpenProject(
@@ -461,13 +452,14 @@ class DevrigToolBridgeClientTest {
                 projectPath = targetProject.toString(),
                 trustProject = true,
                 backendName = unknown,
-            )
+            ),
+            NoOpProgressReporter,
         )
 
         assertEquals(true, result.isError)
         val message = result.errorText()
         assertTrue(message.contains("Unknown backend_name '$unknown'"), message)
-        // Self-correcting: the agent can read the routable backend_names and retry.
+        // Self-correcting: lists available candidates.
         assertTrue(message.contains(backendNameForMarker(42L, "IU-261.1")), message)
         assertTrue(message.contains(backendNameForMarker(43L, "IU-261.1")), message)
         // No bridge call was made.
@@ -476,39 +468,7 @@ class DevrigToolBridgeClientTest {
     }
 
     @Test
-    fun `open project with a non-routable backend_name explains only running plugin IDEs are routable`(
-        @TempDir tempDir: Path,
-    ) = runBlocking {
-        val targetProject = Files.createDirectories(tempDir.resolve("target"))
-        val routing = routingService(
-            IdeMonitorState(
-                ide = discoveredIde(pid = 42, token = "secret-42"),
-            ),
-        )
-        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), routing)
-
-        // A backend_name the agent might have copied from `devrig backend --json` for a port-only / managed
-        // backend: it is not a routable marker, so resolveBackend misses and the error self-corrects.
-        val portishName = backendNameForPort(63342, "IU-253.21581.142")
-        val result = handler.handleOpenProject(
-            OpenProjectParams(
-                projectPath = targetProject.toString(),
-                trustProject = true,
-                backendName = portishName,
-            )
-        )
-
-        assertEquals(true, result.isError)
-        val message = result.errorText()
-        assertTrue(message.contains("Unknown backend_name '$portishName'"), message)
-        assertTrue(message.contains("Only running IDEs with the MCP Steroid plugin"), message)
-        // The routable marker is listed so the agent can retry.
-        assertTrue(message.contains(backendNameForMarker(42L, "IU-261.1")), message)
-        assertEquals(null, receivedBody)
-    }
-
-    @Test
-    fun `devrig list_projects tags each project with its backend and lists routable backends`(
+    fun `devrig list_projects tags each project with its backend_name`(
         @TempDir tempDir: Path,
     ) = runBlocking {
         val homeA = Files.createDirectories(tempDir.resolve("a"))
@@ -529,24 +489,12 @@ class DevrigToolBridgeClientTest {
         val name42 = backendNameForMarker(42L, "IU-261.1")
         val name43 = backendNameForMarker(43L, "IU-253.9")
 
-        // Every project carries its owning backend_name, and that id is one of the listed backends.
+        // Every project carries its owning backend_name.
         assertTrue(response.projects.all { it.backendName != null })
-        assertEquals(
-            response.backends.map { it.backendName }.toSet(),
-            response.projects.mapNotNull { it.backendName }.toSet(),
-        )
-        assertEquals(setOf(name42, name43), response.backends.map { it.backendName }.toSet())
+        assertEquals(setOf(name42, name43), response.projects.mapNotNull { it.backendName }.toSet())
         // Each project also carries the devrig-exposed project_name (and the raw name for jq consumers).
         assertEquals(setOf("alpha", "beta"), response.projects.map { it.name }.toSet())
         assertTrue(response.projects.all { it.projectName.isNotBlank() })
-        // Each listed backend carries the routable IDE's identity (display name + build/version).
-        for (backend in response.backends) {
-            assertEquals("IntelliJ IDEA", backend.displayName, "display name identifies the IDE: $backend")
-            assertTrue(!backend.version.isNullOrBlank(), "version must be populated: $backend")
-            assertTrue(!backend.build.isNullOrBlank(), "build must be populated: $backend")
-        }
-        assertEquals("IU-261.1", response.backends.single { it.backendName == name42 }.build)
-        assertEquals("IU-253.9", response.backends.single { it.backendName == name43 }.build)
     }
 
     @Test
@@ -568,17 +516,10 @@ class DevrigToolBridgeClientTest {
             .collectListProjectsResponse()
         val mcpProjectName = mcpResponse.projects.single().projectName
 
-        // CLI surface — the same marker + project rendered by `devrig project --json`. Build the row from
-        // the SAME routing the MCP surface used, so both sides carry identical ProjectRoutes by construction.
-        val rows = listOf(
-            BackendRow.FromMarker(
-                ide = ide,
-                projects = routing.routes(),
-            ),
-        )
+        // CLI surface — rendered by `devrig project --json` from the SAME routing routes.
         val cliJson = java.io.ByteArrayOutputStream().let { buf ->
-            com.jonnyzzz.mcpSteroid.devrig.renderProjectJson(
-                com.jonnyzzz.mcpSteroid.devrig.projectListingFromRows(rows),
+            com.jonnyzzz.mcpSteroid.devrig.renderProjectJson3(
+                routing.routes(),
                 java.io.PrintStream(buf, true, Charsets.UTF_8),
             )
             buf.toString(Charsets.UTF_8)
@@ -805,13 +746,159 @@ class DevrigToolBridgeClientTest {
         assertEquals("ndjson ok", (result.content.single() as ContentItem.Text).text)
     }
 
+    @Test
+    fun `open project starts a startable backend and forwards the bridge call`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val ideHome = tempDir.resolve("ide-home").toString()
+        val installed = installedBackend(id = "idea-community-2025.3.3", home = ideHome)
+        val startedIdes = mutableListOf<DiscoveredIde>()
+        val backends = DevrigBackendService(
+            stateProvider = { startedIdes.toList() },
+            installedProvider = { listOf(installed) },
+            starter = {
+                // Simulate the IDE writing its pid marker after start.
+                startedIdes += discoveredIde(pid = 99, build = "IC-261.1",
+                    token = "startable-token", ideHome = ideHome)
+            },
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = startableBackendName(installed),
+            ),
+            NoOpProgressReporter,
+        )
+
+        assertEquals(false, result.isError)
+        // The bridge call reached the fake server.
+        assertEquals("Bearer startable-token", receivedAuth)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals(targetProject.toString(), arguments["project_path"]?.jsonPrimitive?.content)
+        // backend_name is never forwarded to the plugin.
+        assertEquals(null, arguments["backend_name"])
+    }
+
+    @Test
+    fun `open project auto-uses sole startable candidate without an explicit backend_name`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val ideHome = tempDir.resolve("ide-home-solo").toString()
+        val installed = installedBackend(id = "idea-community-2025.3.3", home = ideHome)
+        val startedIdes = mutableListOf<DiscoveredIde>()
+        val backends = DevrigBackendService(
+            stateProvider = { startedIdes.toList() },
+            installedProvider = { listOf(installed) },
+            starter = {
+                startedIdes += discoveredIde(pid = 77, build = "IC-261.1",
+                    token = "sole-startable-token", ideHome = ideHome)
+            },
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
+
+        // Only one candidate (startable) — the handler must use it automatically.
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = false,
+            ),
+            NoOpProgressReporter,
+        )
+
+        assertEquals(false, result.isError)
+        assertEquals("Bearer sole-startable-token", receivedAuth)
+        val json = McpJson.parseToJsonElement(receivedBody ?: error("missing request body")).jsonObject
+        assertEquals("steroid_open_project", json["name"]?.jsonPrimitive?.content)
+        val arguments = json["arguments"]?.jsonObject ?: error("missing arguments: $json")
+        assertEquals(targetProject.toString(), arguments["project_path"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `open project returns error when starter throws RuntimeException`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val ideHome = tempDir.resolve("ide-home-fail").toString()
+        val installed = installedBackend(id = "idea-community-2025.3.3", home = ideHome)
+        val backends = DevrigBackendService(
+            stateProvider = { emptyList() },
+            installedProvider = { listOf(installed) },
+            starter = { throw RuntimeException("boom") },
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = startableBackendName(installed),
+            ),
+            NoOpProgressReporter,
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("boom"), "error message should contain 'boom': ${result.errorText()}")
+        // The bridge was never called — the error happened before forwarding.
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
+    @Test
+    fun `open project returns error when starter throws ManagedBackendLockException`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
+        val targetProject = Files.createDirectories(tempDir.resolve("target"))
+        val ideHome = tempDir.resolve("ide-home-locked").toString()
+        val installed = installedBackend(id = "idea-community-2025.3.3", home = ideHome)
+        val backends = DevrigBackendService(
+            stateProvider = { emptyList() },
+            installedProvider = { listOf(installed) },
+            starter = {
+                throw com.jonnyzzz.mcpSteroid.devrig.ManagedBackendLockException(
+                    "another managed backend is already running"
+                )
+            },
+        )
+        val handler = DevrigOpenProjectToolHandler(DevrigToolBridgeClient(httpClient), backends)
+
+        val result = handler.handleOpenProject(
+            OpenProjectParams(
+                projectPath = targetProject.toString(),
+                trustProject = true,
+                backendName = startableBackendName(installed),
+            ),
+            NoOpProgressReporter,
+        )
+
+        assertEquals(true, result.isError)
+        assertTrue(result.errorText().contains("another managed backend is already running"),
+            "error message should explain lock: ${result.errorText()}")
+        assertEquals(null, receivedAuth)
+        assertEquals(null, receivedBody)
+    }
+
     private fun routingService(vararg states: IdeMonitorState): DevrigProjectRoutingService =
         DevrigProjectRoutingService { states.toList() }
+
+    private fun backendService(vararg states: IdeMonitorState): DevrigBackendService =
+        DevrigBackendService(
+            stateProvider = { states.map { it.ide } },
+            installedProvider = { emptyList() },
+            starter = { error("no start in this test") },
+        )
 
     private fun discoveredIde(
         pid: Long,
         build: String = "IU-261.1",
         token: String = "secret-token",
+        ideHome: String? = "/mock/ide/home/$pid",
     ): DiscoveredIde =
         DiscoveredIde(
             backendName = backendNameForMarker(pid, build),
@@ -820,7 +907,15 @@ class DevrigToolBridgeClientTest {
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
             plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+            ideHome = ideHome,
         )
+
+    private fun installedBackend(id: String, home: String): InstalledBackend = InstalledBackend(
+        id = id,
+        ide = IdeInfo(name = "IntelliJ IDEA Community", version = "2025.3.3", build = "IC-261.1"),
+        ideHome = home,
+        launcher = Path.of(home, "bin", "idea.sh"),
+    )
 
     private fun route(tempDir: Path, token: String = "secret-token"): ProjectRoute =
         ProjectRoute(

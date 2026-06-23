@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdePidDiscoveryService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IdeProjectMonitorService
 import com.jonnyzzz.mcpSteroid.devrig.monitor.IntelliJPortDiscovery
+import com.jonnyzzz.mcpSteroid.devrig.server.DevrigBackendService
 import com.jonnyzzz.mcpSteroid.devrig.server.DevrigProjectRoutingService
 import com.jonnyzzz.mcpSteroid.server.NPX_STREAM_IDLE_TIMEOUT_MILLIS
 import com.jonnyzzz.mcpSteroid.testHelper.CloseableStack
@@ -89,19 +90,6 @@ class DevrigServices(
         )
     }
 
-    /**
-     * MCP-mode [BackendInventory] for the devrig tool handlers: it consumes [projectRouting] (marker
-     * rows + their project routes) and [portDiscovery] (bounded port scan) directly, plus managed rows
-     * from [backendManager]. The CLI path reuses the same inventory via [collectBackendRows].
-     */
-    val backendInventory: BackendInventory by lazy {
-        BackendInventory(
-            routing = projectRouting,
-            portDiscovery = portDiscovery,
-            managedBackends = { backendManager.list() },
-        )
-    }
-
     val portDiscovery: IntelliJPortDiscovery by lazy {
         IntelliJPortDiscovery(httpClient = commandHttpClient)
     }
@@ -109,5 +97,25 @@ class DevrigServices(
     val beacon by lazy {
         DevrigBeacon(homePaths, lifetime)
     }
+
+    val devrigBackendService: DevrigBackendService by lazy {
+        DevrigBackendService(
+            stateProvider = { ideDiscovery.stateSnapshot() },
+            installedProvider = { installedBackends() },
+            starter = { backendManager.start(parseBackendId(it.id)) },
+            runningManagedIdsProvider = { runningManagedIds() },
+        )
+    }
+
+    /**
+     * Returns the set of managed backend IDs that currently have a live pid file (RUNNING state).
+     * Used by both [devrigBackendService] and [runBackendCommand] so the exclusion logic stays
+     * consistent across the service path and the CLI render path.
+     */
+    fun runningManagedIds(): Set<String> =
+        backendManager.list()
+            .filter { it.state == ManagedBackendState.RUNNING }
+            .map { it.id }
+            .toSet()
 
 }
