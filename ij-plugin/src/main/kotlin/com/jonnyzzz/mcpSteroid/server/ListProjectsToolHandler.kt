@@ -7,15 +7,16 @@ import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.IdeInfo
 
 /**
- * Stable, opaque base36 id for an open [project] — the value returned as `project_name` by
- * list_projects/list_windows (the human name stays in the `name` field). Derived from the project's
- * **base directory** and display name via the shared [base36FixedWidth] util (same family as
- * `backend_name`); the base dir is essential so two same-named projects in different folders do not
+ * Stable id for an open [project] — the value returned as `project_name` by list_projects/list_windows.
+ * Shape: `<readable project name>-<hash8>`, mirroring devrig's `exposedProjectName`. The hash (via the
+ * shared [base36FixedWidth] util, same family as `backend_name`) covers the project's **base directory**
+ * and display name — the base dir is essential so two same-named projects in different folders do not
  * collide. Computed at the call sites that hold the [Project] (the producers and
  * [ProjectScopedToolHandler.resolveProject]) so `/projects` and `/windows` always emit the same id
  * for the same project.
  */
-fun projectNameFor(project: Project): String = base36FixedWidth("project", project.basePath, project.name)
+fun projectNameFor(project: Project): String =
+    "${project.name}-${base36FixedWidth("project", project.basePath, project.name)}"
 
 /**
  * Direct in-IDE `steroid_list_projects`. No top-level `ide`/`plugin`/`pid` header (the responding

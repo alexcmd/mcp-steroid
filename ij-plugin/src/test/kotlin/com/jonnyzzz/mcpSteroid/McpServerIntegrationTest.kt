@@ -340,8 +340,8 @@ class McpServerIntegrationTest : BasePlatformTestCase() {
 
         response.projects.forEach { project ->
             assertEquals(
-                "Direct-IDE project_name must be the stable base36 hash of (base dir, name) — mirrors projectNameFor",
-                com.jonnyzzz.mcpSteroid.server.base36FixedWidth("project", project.path, project.name),
+                "Direct-IDE project_name must be '<name>-<base36 hash of (base dir, name)>' — mirrors projectNameFor",
+                "${project.name}-${com.jonnyzzz.mcpSteroid.server.base36FixedWidth("project", project.path, project.name)}",
                 project.projectName
             )
             assertTrue(
