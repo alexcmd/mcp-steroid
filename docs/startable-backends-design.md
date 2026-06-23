@@ -67,7 +67,7 @@ four groups. This is the authoritative list — the CLI rendering (§6), `open_p
 | 1 | **Running, compatible** — can open your project now | S1 marker **with `ideHome`** (current plugin) | yes (group 1) | **yes** |
 | 2 | **Running, incompatible** — no plugin / wrong version | S1 marker **without `ideHome`**, or S2 port-scanned IDE | yes (group 2) | no |
 | 3 | **Startable fresh** — installed & managed, not running | S3 (`~/.mcp-steroid/backends/`, no live managed pid) | yes (group 3) | **yes** (start re-provisions, then opens) |
-| 4 | **Downloadable** — new IDEs we could fetch & start | catalog | **no** — advertised only (footer → `devrig backend download …`) | no |
+| 4 | **Downloadable** — new IDEs we could fetch & start | catalog | **no** — advertised only (footer → `devrig backend download <product>`) | no |
 
 Group-specific contracts:
 
@@ -82,8 +82,11 @@ Group-specific contracts:
   *current* mcp-steroid plugin (and is the proper home for Finding A's "update plugin before run";
   the `McpSteroidServerInfo.pluginPath` marker field is the hook). Excluded from startable while a
   live managed pid exists (Finding B).
-- **Group 4** is never enumerated in the listing — the command only surfaces the install entry point
-  (`devrig backend download`). Concrete downloadable IDEs are a catalog concern, not a per-run list.
+- **Group 4** is never enumerated in the listing — the command only surfaces the install entry point.
+  The promotion footer picks the **full-cycle install command** `devrig backend download <product>`,
+  which *downloads and installs* the managed backend (per its `--help`); the IDE then appears as a
+  group-3 startable and `open_project` launches it. Concrete downloadable IDEs are a catalog concern,
+  not a per-run list.
 
 ## Changes
 

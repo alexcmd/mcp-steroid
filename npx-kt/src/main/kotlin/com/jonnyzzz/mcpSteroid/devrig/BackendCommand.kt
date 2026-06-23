@@ -323,7 +323,7 @@ suspend fun collectPortDiscoveredIdes(
  *   [1] <IDE name> <version> (managed: <id>)
  *         ideHome: <path>
  *
- * To download additional backends: devrig backend download …
+ * To install another IDE: devrig backend download <product>  (downloads + installs → startable, then open_project launches it)
  * ```
  *
  * Group 1 ("MCP Steroid backends") = S1 markers WITH [DiscoveredIde.ideHome] (compatible plugin).
@@ -409,7 +409,7 @@ fun renderBackendOutput3(
     }
     out.println()
 
-    out.println("To download additional backends: devrig backend download …")
+    out.println("To install another IDE: devrig backend download <product>  (downloads + installs; it then appears above as startable and open_project can launch it)")
     out.println()
 }
 

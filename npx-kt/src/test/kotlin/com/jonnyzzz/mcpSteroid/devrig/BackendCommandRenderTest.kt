@@ -229,10 +229,10 @@ class BackendCommandRenderTest {
     // ---------------------- footer -----------------------------------------
 
     @Test
-    fun `output includes the download footer`() {
+    fun `output includes the install footer pointing at the full-cycle download command`() {
         val text = render(s1 = listOf(markerIde("IntelliJ IDEA", "2026.1", 1L)))
-        assertTrue(text.contains("To download additional backends: devrig backend download"),
-            "expected download footer; got:\n$text")
+        assertTrue(text.contains("To install another IDE: devrig backend download"),
+            "expected install footer; got:\n$text")
     }
 
     // ---------------------- mixed ------------------------------------------
@@ -247,7 +247,7 @@ class BackendCommandRenderTest {
         val s1Idx = text.indexOf("MCP Steroid backends")
         val s2Idx = text.indexOf("Other IDEs (incompatible or no MCP Steroid)")
         val s3Idx = text.indexOf("Installed, not running")
-        val footerIdx = text.indexOf("To download additional backends")
+        val footerIdx = text.indexOf("To install another IDE")
         assertTrue(s1Idx < s2Idx, "S1 should come before S2; got:\n$text")
         assertTrue(s2Idx < s3Idx, "S2 should come before S3; got:\n$text")
         assertTrue(s3Idx < footerIdx, "S3 should come before footer; got:\n$text")
