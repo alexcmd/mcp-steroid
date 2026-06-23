@@ -99,11 +99,14 @@ println(executeCodeJson)
 → [wait 3 seconds]
 
 → steroid_list_projects()
-← {"ide":{"name":"IntelliJ IDEA","version":"2025.3.2","build":"IU-253.30387.160"},"projects":[{"name":"my-app","path":"/Users/me/projects/my-app"}]}
+← {"projects":[{"project_name":"my-app-9fk2a0xq","name":"my-app","path":"/Users/me/projects/my-app","backend_name":"iu-9fk2a0xq"}]}
 
-→ steroid_execute_code(project_name="my-app", code="println(project.basePath)", ...)
+→ steroid_execute_code(project_name="my-app-9fk2a0xq", code="println(project.basePath)", ...)
 ← /Users/me/projects/my-app
 ```
+
+Route by the `project_name` from `steroid_list_projects` (the unique, opaque key), NOT the
+human-readable folder `name`.
 
 ## When to Use This Approach
 
