@@ -5,6 +5,7 @@ import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerDriver
 import com.jonnyzzz.mcpSteroid.testHelper.docker.ContainerPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.mapGuestPortToHostPort
 import com.jonnyzzz.mcpSteroid.testHelper.docker.startProcessInContainer
+import com.jonnyzzz.mcpSteroid.testHelper.docker.writeFileInContainer
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResult
 import com.jonnyzzz.mcpSteroid.testHelper.process.ProcessResultValue
 import com.jonnyzzz.mcpSteroid.testHelper.process.assertExitCode
@@ -526,6 +527,14 @@ try {
     ): Pair<String, Map<String, String>> {
         //TODO: call it directly from the host with an HTTP client
 
+        // Write the request body to a file inside the container and read it with `curl -d @file`.
+        // Passing JSON inline via `-d '...'` through `bash -c` is broken on Windows: Java's
+        // ProcessBuilder does not escape double-quote characters when building the Windows
+        // command-line string, so CommandLineToArgvW strips all `"` from the JSON, producing
+        // unquoted keys/values that the MCP server rejects (-32600 "jsonrpc must be 2.0").
+        val bodyFile = "/tmp/mcp-steroid-request.json"
+        driver.writeFileInContainer(bodyFile, requestBody)
+
         // Create curl command
         val curlCommand = buildList {
             add("curl")
@@ -547,7 +556,7 @@ try {
             }
 
             add("-d")
-            add(requestBody)
+            add("@$bodyFile")
         }
 
         val result = driver.startProcessInContainer {
